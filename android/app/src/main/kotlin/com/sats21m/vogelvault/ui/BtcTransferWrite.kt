@@ -7,6 +7,7 @@ import com.sats21m.vogelvault.data.BtcTransferInput
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcTransfer
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -168,14 +169,8 @@ internal fun launchBtcTransferSave(
     onResult(draftIdWriteOutcome(result, leaseReset))
 }
 
-internal fun btcTransferWriteFailureMessage(result: ConvexResult<*>): String? = when (result) {
-    is ConvexResult.Ok -> null
-    ConvexResult.Disabled -> "Bitcoin transfer not saved: authenticated writes are disabled."
-    ConvexResult.NotConfigured -> "Bitcoin transfer not saved: Convex is not configured on this device."
-    ConvexResult.Unauthorized -> "Bitcoin transfer not saved: the paired-device credential is missing or was rejected."
-    ConvexResult.Missing -> "Bitcoin transfer not saved: Convex returned no write result."
-    is ConvexResult.Failed -> "Bitcoin transfer not saved: the write failed (${result.reason})."
-}
+internal fun btcTransferWriteFailureMessage(result: ConvexResult<*>): String? =
+    convexWriteFailureMessage("Bitcoin transfer not saved", result)
 
 internal fun btcTransferWriteFailureMessage(outcome: DraftIdWriteOutcome<*>): String? =
     when (outcome) {

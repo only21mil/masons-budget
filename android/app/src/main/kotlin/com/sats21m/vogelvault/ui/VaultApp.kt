@@ -199,28 +199,20 @@ fun VaultApp(
                             onSwitchProfile(state.activeProfile)
                         }
                         HorizontalHairline()
-                        Box(Modifier.weight(1f)) {
-                            Column(Modifier.fillMaxSize()) {
-                                ProfileSwitchRefusalNotice(refusal)
-                                AuthorizationNotice(state)
-                                RowReadFailureNotice(state)
-                                RefreshFailureNotice(state)
-                                ScreenHost(
-                                    destination = current,
-                                    state = state,
-                                    onEnableRemoteRows = onEnableRemoteRows,
-                                    onRemoteRowsConnected = onRemoteRowsConnected,
-                                    onWriteSucceeded = onWriteSucceeded,
-                                    onStartRiverBillPay = onStartRiverBillPay,
-                                    displayUnit = displayUnit,
-                                    onDisplayUnitChange = onDisplayUnitChange,
-                                    ledgerSettings = ledgerSettings,
-                                    onLedgerSettingsChange = onLedgerSettingsChange,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                            LedgerAtmosphere()
-                        }
+                        VaultScreenContent(
+                            state = state,
+                            refusal = refusal,
+                            current = current,
+                            onEnableRemoteRows = onEnableRemoteRows,
+                            onRemoteRowsConnected = onRemoteRowsConnected,
+                            onWriteSucceeded = onWriteSucceeded,
+                            onStartRiverBillPay = onStartRiverBillPay,
+                            displayUnit = displayUnit,
+                            onDisplayUnitChange = onDisplayUnitChange,
+                            ledgerSettings = ledgerSettings,
+                            onLedgerSettingsChange = onLedgerSettingsChange,
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 }
             } else {
@@ -229,33 +221,69 @@ fun VaultApp(
                         onSwitchProfile(state.activeProfile)
                     }
                     HorizontalHairline()
-                    Box(Modifier.weight(1f)) {
-                        Column(Modifier.fillMaxSize()) {
-                            ProfileSwitchRefusalNotice(refusal)
-                            AuthorizationNotice(state)
-                            RowReadFailureNotice(state)
-                            RefreshFailureNotice(state)
-                            ScreenHost(
-                                destination = current,
-                                state = state,
-                                onEnableRemoteRows = onEnableRemoteRows,
-                                onRemoteRowsConnected = onRemoteRowsConnected,
-                                onWriteSucceeded = onWriteSucceeded,
-                                onStartRiverBillPay = onStartRiverBillPay,
-                                displayUnit = displayUnit,
-                                onDisplayUnitChange = onDisplayUnitChange,
-                                ledgerSettings = ledgerSettings,
-                                onLedgerSettingsChange = onLedgerSettingsChange,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        LedgerAtmosphere()
-                    }
+                    VaultScreenContent(
+                        state = state,
+                        refusal = refusal,
+                        current = current,
+                        onEnableRemoteRows = onEnableRemoteRows,
+                        onRemoteRowsConnected = onRemoteRowsConnected,
+                        onWriteSucceeded = onWriteSucceeded,
+                        onStartRiverBillPay = onStartRiverBillPay,
+                        displayUnit = displayUnit,
+                        onDisplayUnitChange = onDisplayUnitChange,
+                        ledgerSettings = ledgerSettings,
+                        onLedgerSettingsChange = onLedgerSettingsChange,
+                        modifier = Modifier.weight(1f),
+                    )
                     HorizontalHairline()
                     VaultBottomBar(destinations, current, onNavigate)
                 }
             }
         }
+    }
+}
+
+/**
+ * The posture-independent body shared by the unfolded and folded shells: the
+ * four notice banners above the active screen, with the ledger atmosphere
+ * drawn behind both. The branches differ only by navigation chrome.
+ */
+@Composable
+private fun VaultScreenContent(
+    state: VaultUiState,
+    refusal: ProfileSwitchRefusal?,
+    current: Destination,
+    onEnableRemoteRows: (String) -> Unit,
+    onRemoteRowsConnected: () -> Unit,
+    onWriteSucceeded: () -> Unit,
+    onStartRiverBillPay: (BillPayPrefill) -> Unit,
+    displayUnit: DisplayUnit,
+    onDisplayUnitChange: (DisplayUnit) -> Unit,
+    ledgerSettings: LedgerUiSettings,
+    onLedgerSettingsChange: (LedgerUiSettings) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier) {
+        Column(Modifier.fillMaxSize()) {
+            ProfileSwitchRefusalNotice(refusal)
+            AuthorizationNotice(state)
+            RowReadFailureNotice(state)
+            RefreshFailureNotice(state)
+            ScreenHost(
+                destination = current,
+                state = state,
+                onEnableRemoteRows = onEnableRemoteRows,
+                onRemoteRowsConnected = onRemoteRowsConnected,
+                onWriteSucceeded = onWriteSucceeded,
+                onStartRiverBillPay = onStartRiverBillPay,
+                displayUnit = displayUnit,
+                onDisplayUnitChange = onDisplayUnitChange,
+                ledgerSettings = ledgerSettings,
+                onLedgerSettingsChange = onLedgerSettingsChange,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        LedgerAtmosphere()
     }
 }
 

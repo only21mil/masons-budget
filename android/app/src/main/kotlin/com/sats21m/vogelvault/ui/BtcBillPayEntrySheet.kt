@@ -35,12 +35,13 @@ import com.sats21m.vogelvault.draftIdWriteOutcome
 import com.sats21m.vogelvault.onServerAccepted
 import com.sats21m.vogelvault.data.BTC_BILL_PAYS_SOURCE_FILE
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.data.RIVER_BITCOIN_BILL_PAY_PLATFORM
 import com.sats21m.vogelvault.domain.BillPayBudgetEffect
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import java.util.UUID
@@ -115,13 +116,13 @@ internal fun btcBillPayWriteRequest(
         BillPayBudgetEffect.CREDIT_CARD_PAYMENT -> BTC_BILL_PAY_CATEGORY
     }
 
-    val amountCents = exactBillPayMinorUnits(amountUsd, scale = 2, allowZero = false)
+    val amountCents = Money.exactPositiveMinorUnitsOrNull(amountUsd, scale = 2, allowZero = false)
         ?: return WriteDraftResult.Invalid("Amount must be positive with at most two decimal places.")
     val spentSats = sats.trim().replace(",", "").toLongOrNull()?.takeIf { it > 0L }
         ?: return WriteDraftResult.Invalid("Sats must be a positive whole number.")
-    val priceCents = exactBillPayMinorUnits(priceUsd, scale = 2, allowZero = false)
+    val priceCents = Money.exactPositiveMinorUnitsOrNull(priceUsd, scale = 2, allowZero = false)
         ?: return WriteDraftResult.Invalid("BTC price must be positive with at most two decimal places.")
-    val feeCents = exactBillPayMinorUnits(feeUsd, scale = 2, allowZero = true)
+    val feeCents = Money.exactPositiveMinorUnitsOrNull(feeUsd, scale = 2, allowZero = true)
         ?: return WriteDraftResult.Invalid("Fee must be non-negative with at most two decimal places.")
 
     return WriteDraftResult.Valid(
@@ -142,24 +143,8 @@ internal fun btcBillPayWriteRequest(
     )
 }
 
-private fun exactBillPayMinorUnits(raw: String, scale: Int, allowZero: Boolean): Long? =
-    runCatching {
-        val normalized = raw.trim().removePrefix("$").replace(",", "")
-        if (normalized.isEmpty()) return@runCatching null
-        val value = BigDecimal(normalized)
-        if (value.scale().coerceAtLeast(0) > scale) return@runCatching null
-        val minorUnits = value.movePointRight(scale).longValueExact()
-        if (if (allowZero) minorUnits >= 0L else minorUnits > 0L) minorUnits else null
-    }.getOrNull()
-
-internal fun btcBillPayWriteFailureMessage(result: ConvexResult<*>): String? = when (result) {
-    is ConvexResult.Ok -> null
-    ConvexResult.Disabled -> "Bitcoin bill pay not saved: live writes are switched off."
-    ConvexResult.NotConfigured -> "Bitcoin bill pay not saved: no Convex deployment is configured."
-    ConvexResult.Unauthorized -> "Bitcoin bill pay not saved: the paired-device credential is missing or was rejected."
-    ConvexResult.Missing -> "Bitcoin bill pay not saved: Convex returned no write result."
-    is ConvexResult.Failed -> "Bitcoin bill pay not saved: ${result.reason}."
-}
+internal fun btcBillPayWriteFailureMessage(result: ConvexResult<*>): String? =
+    convexWriteFailureMessage("Bitcoin bill pay not saved", result)
 
 internal fun btcBillPayWriteFailureMessage(outcome: DraftIdWriteOutcome<*>): String? =
     when (outcome) {

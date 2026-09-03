@@ -50,6 +50,7 @@ import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.data.ConvexValue
 import com.sats21m.vogelvault.data.LinkedIncomeInput
 import com.sats21m.vogelvault.domain.BudgetHealth
@@ -64,7 +65,6 @@ import com.sats21m.vogelvault.ui.components.Badge
 import com.sats21m.vogelvault.ui.theme.LedgerNumeral
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import java.util.UUID
@@ -241,7 +241,7 @@ internal fun btcBuyFromIncomeWriteRequest(
     if (normalizedSource.isEmpty()) return WriteDraftResult.Invalid("Enter a purchase source.")
     val exactSats = sats.trim().toLongOrNull()?.takeIf { it > 0L }
         ?: return WriteDraftResult.Invalid("Sats must be a positive whole number.")
-    val priceCents = exactPositiveMinorUnits(priceUsd, 2, allowZero = false)
+    val priceCents = Money.exactPositiveMinorUnitsOrNull(priceUsd, 2, allowZero = false)
         ?: return WriteDraftResult.Invalid("Price must be positive with at most two decimal places.")
     if (income.amountCents <= 0L) {
         return WriteDraftResult.Invalid("Income amount must be positive.")
@@ -309,7 +309,7 @@ internal fun budgetCategoryWriteRequest(
     if (seed.displayedMonth != seed.budgetDocumentMonth) {
         return WriteDraftResult.Invalid("Only the current budget document month can be edited.")
     }
-    val cents = exactPositiveMinorUnits(dollars, 2, allowZero = true)
+    val cents = Money.exactPositiveMinorUnitsOrNull(dollars, 2, allowZero = true)
         ?: return WriteDraftResult.Invalid("Enter a non-negative amount with at most two decimal places.")
     return WriteDraftResult.Valid(
         BudgetCategoryWriteRequest(
@@ -374,9 +374,9 @@ internal fun btcBuyWriteRequest(
     if (normalizedSource.isEmpty()) return WriteDraftResult.Invalid("Enter a purchase source.")
     val exactSats = sats.trim().toLongOrNull()?.takeIf { it > 0L }
         ?: return WriteDraftResult.Invalid("Sats must be a positive whole number.")
-    val priceCents = exactPositiveMinorUnits(priceUsd, 2, allowZero = false)
+    val priceCents = Money.exactPositiveMinorUnitsOrNull(priceUsd, 2, allowZero = false)
         ?: return WriteDraftResult.Invalid("Price must be positive with at most two decimal places.")
-    val purchaseCents = exactPositiveMinorUnits(purchaseUsd, 2, allowZero = false)
+    val purchaseCents = Money.exactPositiveMinorUnitsOrNull(purchaseUsd, 2, allowZero = false)
         ?: return WriteDraftResult.Invalid("Purchase amount must be positive with at most two decimal places.")
     return WriteDraftResult.Valid(
         BtcBuyWriteRequest(
@@ -390,19 +390,6 @@ internal fun btcBuyWriteRequest(
         ),
     )
 }
-
-private fun exactPositiveMinorUnits(
-    raw: String,
-    scale: Int,
-    allowZero: Boolean,
-): Long? =
-    runCatching {
-        val normalized = raw.trim().removePrefix("$").replace(",", "")
-        val value = BigDecimal(normalized)
-        if (value.scale().coerceAtLeast(0) > scale) return null
-        val minorUnits = value.movePointRight(scale).longValueExact()
-        minorUnits.takeIf { if (allowZero) it >= 0L else it > 0L }
-    }.getOrNull()
 
 @Composable
 internal fun EditableBudgetCategoryRow(
@@ -619,26 +606,12 @@ internal fun BudgetCategoryEditorSheet(
                                             ),
                                         )
                                     submitting = false
-                                    when (result) {
-                                        is ConvexResult.Ok -> {
-                                            onWriteSucceeded()
-                                            onDismiss()
-                                        }
-                                        ConvexResult.Unauthorized ->
-                                            message =
-                                                "Budget not saved: Convex rejected the sync token."
-                                        ConvexResult.NotConfigured ->
-                                            message =
-                                                "Budget not saved: Convex is not configured on this device."
-                                        ConvexResult.Disabled ->
-                                            message =
-                                                "Budget not saved: authenticated writes are disabled."
-                                        ConvexResult.Missing ->
-                                            message =
-                                                "Budget not saved: Convex returned no write result."
-                                        is ConvexResult.Failed ->
-                                            message =
-                                                "Budget not saved: the write failed (${result.reason})."
+                                    val budgetFailure = convexWriteFailureMessage("Budget not saved", result)
+                                    if (budgetFailure == null) {
+                                        onWriteSucceeded()
+                                        onDismiss()
+                                    } else {
+                                        message = budgetFailure
                                     }
                                 }
                             }
@@ -793,25 +766,15 @@ internal fun BtcBuyEntrySheet(
                                         }
                                         BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
                                             message = acceptedBtcBuyLeaseResetFailure
-                                        is BtcBuySaveOutcome.Rejected ->
-                                            when (val result = outcome.result) {
-                                                is ConvexResult.Ok -> error("Accepted result cannot be rejected")
-                                                ConvexResult.Unauthorized ->
-                                                    message =
-                                                        "Bitcoin buy not saved: Convex rejected the sync token."
-                                                ConvexResult.NotConfigured ->
-                                                    message =
-                                                        "Bitcoin buy not saved: Convex is not configured on this device."
-                                                ConvexResult.Disabled ->
-                                                    message =
-                                                        "Bitcoin buy not saved: authenticated writes are disabled."
-                                                ConvexResult.Missing ->
-                                                    message =
-                                                        "Bitcoin buy not saved: Convex returned no write result."
-                                                is ConvexResult.Failed ->
-                                                    message =
-                                                        "Bitcoin buy not saved: the write failed (${result.reason})."
+                                        is BtcBuySaveOutcome.Rejected -> {
+                                            check(outcome.result !is ConvexResult.Ok) {
+                                                "Accepted result cannot be rejected"
                                             }
+                                            message = convexWriteFailureMessage(
+                                                "Bitcoin buy not saved",
+                                                outcome.result,
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -903,20 +866,15 @@ internal fun BtcBuyFromIncomeEntrySheet(
                                         }
                                         BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
                                             message = acceptedBtcBuyLeaseResetFailure
-                                        is BtcBuySaveOutcome.Rejected ->
-                                            when (val result = outcome.result) {
-                                                is ConvexResult.Ok -> error("Accepted result cannot be rejected")
-                                                ConvexResult.Unauthorized ->
-                                                    message = "Income and Bitcoin buy not saved: the sync token was rejected."
-                                                ConvexResult.NotConfigured ->
-                                                    message = "Income and Bitcoin buy not saved: Convex is not configured."
-                                                ConvexResult.Disabled ->
-                                                    message = "Income and Bitcoin buy not saved: authenticated writes are disabled."
-                                                ConvexResult.Missing ->
-                                                    message = "Income and Bitcoin buy not saved: Convex returned no write result."
-                                                is ConvexResult.Failed ->
-                                                    message = "Income and Bitcoin buy not saved: ${result.reason}."
+                                        is BtcBuySaveOutcome.Rejected -> {
+                                            check(outcome.result !is ConvexResult.Ok) {
+                                                "Accepted result cannot be rejected"
                                             }
+                                            message = convexWriteFailureMessage(
+                                                "Income and Bitcoin buy not saved",
+                                                outcome.result,
+                                            )
+                                        }
                                     }
                                 }
                             }

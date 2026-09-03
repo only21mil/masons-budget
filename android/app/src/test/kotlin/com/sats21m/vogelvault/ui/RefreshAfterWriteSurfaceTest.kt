@@ -101,7 +101,7 @@ class RefreshAfterWriteSurfaceTest {
                 REJECTION,
                 content,
                 interact,
-                rejectionText = "Transaction was not saved (http 500)",
+                rejectionText = "Transaction was not saved: the write failed (http 500).",
             ),
         )
     }
@@ -359,7 +359,7 @@ class RefreshAfterWriteSurfaceTest {
                 REJECTION,
                 content,
                 interact,
-                rejectionText = "Transaction was not saved (http 500)",
+                rejectionText = "Transaction was not saved: the write failed (http 500).",
             ),
         )
     }
@@ -454,12 +454,16 @@ class RefreshAfterWriteSurfaceTest {
                 return response.await()
             }
         }
-        val client = ConvexMutationClient(
-            configSource = MutableConvexConfigSource(
-                ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud"),
+        val gateway = TransactionDeviceMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(
+                    ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud"),
+                ),
+                credentialSource = ConvexDeviceCredentialSource {
+                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                },
+                http = gatedPoster,
             ),
-            syncTokenSource = ConvexSyncTokenSource { com.sats21m.vogelvault.data.testToken() },
-            http = gatedPoster,
         )
 
         var firstScreenRefreshes = 0
@@ -483,7 +487,7 @@ class RefreshAfterWriteSurfaceTest {
         val save = launchPreparedTransactionSave(
             scope = application.applicationScope,
             row = lifecyclePreparedRow(),
-            client = client,
+            gateway = gateway,
             transactionDraftIds = application.transactionDraftIds,
             isUiActive = uiActive::get,
             onAccepted = { application.noteAcceptedWrite() },
@@ -500,7 +504,7 @@ class RefreshAfterWriteSurfaceTest {
         response.complete(
             HttpTextResponse(
                 200,
-                """{"status":"success","value":{"txId":"lifecycle-row","owner":"victor","month":"2026-07","outcome":"inserted","updatedAtMs":1888888888891}}""",
+                """{"status":"success","value":{"ok":true,"entityId":"lifecycle-row","outcome":"inserted"}}""",
             ),
         )
         runBlocking { save.join() }

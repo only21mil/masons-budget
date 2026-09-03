@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Certificate-pinning scaffold (L1, 2026-09-02 security audit).
+
+  This config is wired from AndroidManifest and currently restates the
+  platform's fail-closed defaults exactly: system trust anchors only, user
+  CAs rejected, cleartext refused. Shipping it changes no trust behavior.
+
+  The pin values themselves are deliberately NOT present yet. Pins are
+  SPKI SHA-256 digests of the deployed chain, and deriving them requires a
+  live TLS session with the production endpoint - which the cleanup lane
+  (offline) must not fake, because a wrong or stale pin silently locks every
+  client out of the deployment. That is the explicit deferred decision from
+  this lane: scaffold now, pin only after deriving the real chain.
+
+  To complete the pin (requires network, do it in a dedicated reviewed PR):
+    1. openssl s_client -connect keen-elephant-452.convex.cloud:443 \
+         -showcerts 2>/dev/null | openssl crl2pkcs7 -nocrl \
+         | openssl pkcs7 -print_certs -out chain.pem
+    2. For the leaf AND one backup (intermediate) certificate:
+       openssl x509 -in cert.pem -pubkey -noout \
+         | openssl pkey -pubin -outform DER \
+         | openssl dgst -sha256 -binary | base64
+    3. Uncomment and fill the domain-config below. Convex deployments sit on
+       AWS ACM certificates whose leaf/intermediate DO rotate: prefer the
+       AWS root + one intermediate as the backup pin, set a conservative
+       expiration, and re-derive on any deployment move.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!--
+    <domain-config>
+        <domain includeSubdomains="false">keen-elephant-452.convex.cloud</domain>
+        <pin-set expiration="2027-01-01">
+            <pin digest="SHA-256">LEAF_SPKI_SHA256_BASE64</pin>
+            <pin digest="SHA-256">BACKUP_SPKI_SHA256_BASE64</pin>
+        </pin-set>
+    </domain-config>
+    -->
+</network-security-config>

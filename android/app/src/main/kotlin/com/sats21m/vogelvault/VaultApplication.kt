@@ -43,6 +43,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Application-owned identity leases for drafts awaiting a definitive server
@@ -197,6 +199,20 @@ open class VaultApplication : Application() {
         btcBuyDraftIds
         btcBillPayDraftIds
         btcTransferDraftIds
+        todoDraftIds
+    }
+
+    /**
+     * Task creates carry the same duplicate-row hazard as every other sheet:
+     * an ambiguous create that outlived its sheet must retry the same id, or
+     * the retry inserts a second server row instead of superseding the first.
+     */
+    internal val todoDraftIds: TransactionDraftIdStore by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        TransactionDraftIdStore(
+            getSharedPreferences(TODO_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE),
+        )
     }
 
     /** Stable retry ids for the one source-scoped Bitcoin bill-pay table. */
@@ -236,7 +252,14 @@ open class VaultApplication : Application() {
     val acceptedWrites: SharedFlow<Unit> = acceptedWriteSignals
 
     internal open fun noteAcceptedWrite() {
-        acceptedWriteSignals.tryEmit(Unit)
+        // tryEmit refuses only when the replay+buffer window is full (slow or
+        // absent collectors, more buffered acceptances than slots). Dropping
+        // silently would strand exactly the stale-ledger outcome the replay=1
+        // contract exists to prevent, so a refused emission retries through a
+        // suspending emit on the process scope: backpressure, never a loss.
+        if (!acceptedWriteSignals.tryEmit(Unit)) {
+            applicationScope.launch { acceptedWriteSignals.emit(Unit) }
+        }
     }
 
     override fun onTerminate() {
@@ -249,10 +272,35 @@ open class VaultApplication : Application() {
         const val BTC_BUY_DRAFT_ID_PREFERENCES = "btc_buy_draft_ids"
         const val BTC_BILL_PAY_DRAFT_ID_PREFERENCES = "btc_bill_pay_draft_ids"
         const val BTC_TRANSFER_DRAFT_ID_PREFERENCES = "btc_transfer_draft_ids"
+        const val TODO_DRAFT_ID_PREFERENCES = "todo_draft_ids"
     }
 
     val database: VaultDatabase by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         VaultDatabase.create(this)
+    }
+
+    /**
+     * Destroys the plaintext Room mirror of the household ledger.
+     *
+     * The cached rows (transactions, merchants, notes, card values, todo text,
+     * BTC buys and accounts) are bulkier and more sensitive-adjacent than the
+     * credentials guarding them, yet they live unencrypted in vogel-vault.db.
+     * Whenever the app's authorization ends — a user reset or a server
+     * rejection — the cached ledger must not outlive the credential, or the
+     * reset would remove the keys while leaving the data they protected.
+     * clearAllTables() runs off the main thread; a failure here is allowed to
+     * surface rather than be swallowed, because silently keeping the ledger is
+     * exactly the state this purge exists to prevent.
+     */
+    internal open suspend fun purgeLedgerCache() {
+        withContext(Dispatchers.IO) {
+            database.clearAllTables()
+        }
+    }
+
+    /** Process-owned, fire-and-forget entry point for [purgeLedgerCache]. */
+    internal open fun launchLedgerCachePurge() {
+        applicationScope.launch { purgeLedgerCache() }
     }
 
     private val convexConfigLock = Any()
@@ -487,13 +535,22 @@ open class VaultApplication : Application() {
      * Reset removes both grants created by combined bootstrap enrollment.
      * Clearing the device credential first prevents retained todo access if the
      * later read-config commit fails. Repeating reset on empty storage succeeds.
+     *
+     * The reset contract removes the household's data, not only the credentials
+     * that could read it: a successful reset also purges the plaintext Room
+     * cache so the ledger does not outlive its keys on device.
      */
     internal open fun removeStoredConvexCredential(): Boolean =
         synchronized(convexConfigLock) {
-            resetStoredConvexBootstrap(
-                stored = storedConvexConfigSource,
-                effective = convexConfigSource,
-            )
+            val reset =
+                resetStoredConvexBootstrap(
+                    stored = storedConvexConfigSource,
+                    effective = convexConfigSource,
+                )
+            if (reset) {
+                launchLedgerCachePurge()
+            }
+            reset
         }
 
     private fun recoverRejectedConvexConfig(rejected: ConvexConfig): Boolean =
@@ -503,6 +560,12 @@ open class VaultApplication : Application() {
                 stored = storedConvexConfigSource,
                 effective = convexConfigSource,
             )
+        }.also {
+            // The 401 self-heal destroyed (or refused) the read credential, so
+            // the cached ledger is no longer backed by any working grant. Purge
+            // it on every rejection, not only when the compare-and-clear won:
+            // a credential the server rejects must not keep rendering its data.
+            launchLedgerCachePurge()
         }
 }
 

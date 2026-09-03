@@ -80,4 +80,60 @@ class TodoWriteAuthorityStateTest {
         assertFalse(original.id in state.busyIds)
         scope.cancel()
     }
+
+    @Test
+    fun `zero-revision rows release the busy flag when authority echoes zero back`() {
+        val original = TodoItem(
+            id = "migrated-task",
+            title = "Original",
+            owner = FamilyMember.MASON,
+            updatedAtMs = 0L,
+        )
+        val localEdit = original.copy(title = "Local edit")
+        val poster = RecordingPoster(
+            HttpTextResponse(
+                200,
+                """{"status":"success","value":{"ok":true,"entityId":"${original.id}","outcome":"updated"}}""",
+            ),
+        )
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        var refreshes = 0
+        val state = TodoWriteState(
+            gateway = TodoMutationGateway(
+                ConvexDeviceMutationClient(
+                    configSource = MutableConvexConfigSource(
+                        ConvexConfig(deploymentUrl = "https://todo-device-test.convex.cloud"),
+                    ),
+                    credentialSource = ConvexDeviceCredentialSource {
+                        ConvexDeviceCredential(
+                            "test-device",
+                            "t".repeat(43),
+                            FamilyMember.MASON,
+                        )
+                    },
+                    http = poster,
+                ),
+            ),
+            activeProfile = FamilyMember.MASON,
+            scope = scope,
+            snackbar = SnackbarHostState(),
+            nowMillis = { 1_000L },
+            onWriteSucceeded = { refreshes += 1 },
+            onCredentialRejected = { null },
+            deletedMessage = { "deleted" },
+            undoLabel = "Undo",
+        )
+
+        state.upsert(localEdit, baseUpdatedAtMs = 0L, TodoWriteAction.UPDATE) { }
+        assertEquals(1, refreshes)
+        assertTrue(original.id in state.busyIds)
+
+        // The migrated row's revision never advances: authority echoes 0 at 0.
+        // That equality is the only confirmation this write can produce, so
+        // the row must not stay disabled until an unrelated refresh happens
+        // to mint a larger revision.
+        assertEquals(listOf(original), state.filterIncoming(listOf(original)))
+        assertFalse(original.id in state.busyIds)
+        scope.cancel()
+    }
 }

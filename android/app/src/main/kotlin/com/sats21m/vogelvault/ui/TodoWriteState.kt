@@ -254,6 +254,13 @@ internal class TodoWriteState(
             if (baseRevision != null && row.updatedAtMs > baseRevision) {
                 awaitingAuthoritativeRevision.remove(row.id)
                 busyIds = busyIds - row.id
+            } else if (baseRevision == 0L && row.updatedAtMs == 0L) {
+                // Migrated rows may legitimately carry updatedAtMs = 0, and a
+                // server that never mints a larger revision echoes 0 back at 0.
+                // Strictly-greater comparisons would leave the row busy forever;
+                // equality is the only confirmation such a write can produce.
+                awaitingAuthoritativeRevision.remove(row.id)
+                busyIds = busyIds - row.id
             }
         }
         val pending = pendingDeletion

@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.view.WindowManager
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -137,6 +138,15 @@ class MainActivityProfileSwitchWiringTest {
 
         compose.onNodeWithText(context.getString(R.string.onboarding_title))
             .fetchSemanticsNode()
+    }
+
+    @Test
+    fun `ledger activity is excluded from screenshots and the recents thumbnail`() {
+        assertTrue(
+            compose.activity.window.attributes.flags and
+                WindowManager.LayoutParams.FLAG_SECURE != 0,
+            "The ledger-bearing activity must set FLAG_SECURE.",
+        )
     }
 
     private val notificationManager: NotificationManager

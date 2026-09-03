@@ -3,18 +3,15 @@ package com.sats21m.vogelvault.ui
 import com.sats21m.vogelvault.DraftIdWriteOutcome
 import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.data.ConvexConfig
-import com.sats21m.vogelvault.data.ConvexMutationClient
+import com.sats21m.vogelvault.data.ConvexDeviceCredential
+import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
+import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
-import com.sats21m.vogelvault.data.ConvexSyncTokenSource
 import com.sats21m.vogelvault.data.HttpPoster
 import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RecordingPoster
 import com.sats21m.vogelvault.data.TransactionKind
-import com.sats21m.vogelvault.data.TransactionRevisionStore
-import com.sats21m.vogelvault.data.TransactionWriteOutcome
-import com.sats21m.vogelvault.data.TransactionWriteReceipt
-import com.sats21m.vogelvault.data.testToken
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.DisplayUnit
@@ -185,33 +182,18 @@ class AddTransactionSheetTest {
     }
 
     @Test
-    fun `brand new unsynced row saves without a fence and installs accepted revision`() {
-        val revision = 1_888_888_888_889L
-        val poster = RecordingPoster(
-            HttpTextResponse(
-                200,
-                """{"status":"success","value":{"txId":"test-id","owner":"victor","month":"2026-07","outcome":"inserted","updatedAtMs":$revision}}""",
-            ),
-        )
-        val client = ConvexMutationClient(
-            configSource = MutableConvexConfigSource(
-                ConvexConfig(deploymentUrl = DEPLOYMENT),
-            ),
-            syncTokenSource = ConvexSyncTokenSource { testToken() },
-            http = poster,
-        )
-
-        val result = runBlocking {
+    fun `brand new unsynced row saves without a fence`() {
+        val poster = RecordingPoster(acceptedResponse("test-id"))
+        val result: ConvexResult<DeviceTransactionWriteReceipt> = runBlocking {
             savePreparedTransaction(
                 prepare("1.00", DisplayUnit.USD),
-                client,
+                testGateway(poster),
             )
         }
 
-        val receipt = assertIs<ConvexResult.Ok<TransactionWriteReceipt>>(result).value
-        assertEquals(TransactionWriteOutcome.INSERTED, receipt.outcome)
-        assertEquals(revision, receipt.updatedAtMs)
-        assertEquals(revision, client.acceptedTransactionRevision("transactions", "test-id"))
+        val receipt = assertIs<ConvexResult.Ok<DeviceTransactionWriteReceipt>>(result).value
+        assertEquals(DeviceTransactionWriteOutcome.INSERTED, receipt.outcome)
+        assertEquals("test-id", receipt.entityId)
         val args = Json.parseToJsonElement(poster.bodies.single()).jsonObject["args"]!!.jsonObject
         assertTrue("baseUpdatedAtMs" !in args)
         assertEquals("test-id", args["transaction"]!!.jsonObject["id"]!!.jsonPrimitive.content)
@@ -227,11 +209,6 @@ class AddTransactionSheetTest {
                 return response.await()
             }
         }
-        val client = ConvexMutationClient(
-            configSource = MutableConvexConfigSource(ConvexConfig(deploymentUrl = DEPLOYMENT)),
-            syncTokenSource = ConvexSyncTokenSource { testToken() },
-            http = poster,
-        )
         val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val transactionDraftIds = TransactionDraftIdStore()
         val uiActive = AtomicBoolean(true)
@@ -242,7 +219,7 @@ class AddTransactionSheetTest {
             val save = launchPreparedTransactionSave(
                 scope = applicationScope,
                 row = prepare("1.00", DisplayUnit.USD),
-                client = client,
+                gateway = testGateway(poster),
                 transactionDraftIds = transactionDraftIds,
                 isUiActive = uiActive::get,
                 onAccepted = { acceptedCount++ },
@@ -251,12 +228,7 @@ class AddTransactionSheetTest {
             requestStarted.await()
 
             uiActive.set(false)
-            response.complete(
-                HttpTextResponse(
-                    200,
-                    """{"status":"success","value":{"txId":"test-id","owner":"victor","month":"2026-07","outcome":"inserted","updatedAtMs":1888888888890}}""",
-                ),
-            )
+            response.complete(acceptedResponse("test-id"))
             save.join()
 
             assertEquals(
@@ -266,10 +238,6 @@ class AddTransactionSheetTest {
                     "refresh owned by the view model, so a committed write stays visible.",
             )
             assertEquals(0, uiResultCount)
-            assertEquals(
-                1_888_888_888_890L,
-                client.acceptedTransactionRevision("transactions", "test-id"),
-            )
         } finally {
             applicationScope.cancel()
         }
@@ -280,11 +248,6 @@ class AddTransactionSheetTest {
         val transactionDraftIds = TransactionDraftIdStore()
         val firstId = transactionDraftIds.currentId(ADULT_TX_SCOPE)
         val poster = GatedTransactionPoster(requestCount = 1)
-        val client = ConvexMutationClient(
-            configSource = MutableConvexConfigSource(ConvexConfig(deploymentUrl = DEPLOYMENT)),
-            syncTokenSource = ConvexSyncTokenSource { testToken() },
-            http = poster,
-        )
         val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         var rotatedBeforeAcceptedSignal = false
 
@@ -292,7 +255,7 @@ class AddTransactionSheetTest {
             val save = launchPreparedTransactionSave(
                 scope = applicationScope,
                 row = prepare("1.00", DisplayUnit.USD, id = firstId),
-                client = client,
+                gateway = testGateway(poster),
                 transactionDraftIds = transactionDraftIds,
                 isUiActive = { true },
                 onAccepted = {
@@ -305,7 +268,7 @@ class AddTransactionSheetTest {
             val reopenedId = transactionDraftIds.currentId(ADULT_TX_SCOPE)
             assertEquals(firstId, reopenedId)
 
-            poster.responses[0].complete(acceptedResponse(firstId, 1_888_888_888_891L))
+            poster.responses[0].complete(acceptedResponse(firstId))
             save.join()
 
             assertTrue(rotatedBeforeAcceptedSignal)
@@ -318,14 +281,7 @@ class AddTransactionSheetTest {
     @Test
     fun `ambiguous first write then resubmit cannot double-create`() = runBlocking {
         val transactionDraftIds = TransactionDraftIdStore()
-        val transactionRevisions = TransactionRevisionStore()
         val poster = GatedTransactionPoster(requestCount = 2)
-        val client = ConvexMutationClient(
-            configSource = MutableConvexConfigSource(ConvexConfig(deploymentUrl = DEPLOYMENT)),
-            syncTokenSource = ConvexSyncTokenSource { testToken() },
-            http = poster,
-            transactionRevisions = transactionRevisions,
-        )
         val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val firstId = transactionDraftIds.currentId(ADULT_TX_SCOPE)
 
@@ -333,7 +289,7 @@ class AddTransactionSheetTest {
             val firstSave = launchPreparedTransactionSave(
                 scope = applicationScope,
                 row = prepare("1.00", DisplayUnit.USD, id = firstId),
-                client = client,
+                gateway = testGateway(poster),
                 transactionDraftIds = transactionDraftIds,
                 isUiActive = { false },
                 onAccepted = {},
@@ -346,7 +302,7 @@ class AddTransactionSheetTest {
             val secondSave = launchPreparedTransactionSave(
                 scope = applicationScope,
                 row = prepare("2.00", DisplayUnit.USD, id = reopenedId),
-                client = client,
+                gateway = testGateway(poster),
                 transactionDraftIds = transactionDraftIds,
                 isUiActive = { true },
                 onAccepted = {},
@@ -354,27 +310,34 @@ class AddTransactionSheetTest {
             )
             poster.requestStarted[1].await()
 
-            poster.responses[0].complete(acceptedResponse(firstId, 1_888_888_888_892L))
+            poster.responses[0].complete(acceptedResponse(firstId))
             firstSave.join()
             poster.responses[1].complete(
                 acceptedResponse(
                     id = firstId,
-                    revision = 1_888_888_888_893L,
                     outcome = "updated",
                 ),
             )
             secondSave.join()
 
             assertEquals(listOf(firstId, firstId), poster.bodies.map(::transactionIdFromBody))
-            assertEquals(1, transactionRevisions.entryCount())
-            assertEquals(
-                1_888_888_888_893L,
-                transactionRevisions.revisionFor("transactions", firstId),
-            )
         } finally {
             applicationScope.cancel()
         }
     }
+
+    private fun testGateway(poster: HttpPoster): TransactionDeviceMutationGateway =
+        TransactionDeviceMutationGateway(
+            ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(
+                    ConvexConfig(deploymentUrl = DEPLOYMENT),
+                ),
+                credentialSource = ConvexDeviceCredentialSource {
+                    ConvexDeviceCredential("test-device", "t".repeat(43))
+                },
+                http = poster,
+            ),
+        )
 
     private fun prepare(
         amount: String,
@@ -455,11 +418,10 @@ private class GatedTransactionPoster(requestCount: Int) : HttpPoster {
 
 private fun acceptedResponse(
     id: String,
-    revision: Long,
     outcome: String = "inserted",
 ) = HttpTextResponse(
     200,
-    """{"status":"success","value":{"txId":"$id","owner":"victor","month":"2026-07","outcome":"$outcome","updatedAtMs":$revision}}""",
+    """{"status":"success","value":{"ok":true,"entityId":"$id","outcome":"$outcome"}}""",
 )
 
 private fun transactionIdFromBody(body: String): String =
