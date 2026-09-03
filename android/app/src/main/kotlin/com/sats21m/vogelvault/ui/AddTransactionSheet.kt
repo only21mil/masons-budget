@@ -42,12 +42,10 @@ import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.draftIdWriteOutcome
 import com.sats21m.vogelvault.onServerAccepted
 import com.sats21m.vogelvault.data.ConvexMutation
-import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.data.TransactionInput
 import com.sats21m.vogelvault.data.TransactionKind
-import com.sats21m.vogelvault.data.TransactionWriteReceipt
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -130,8 +128,6 @@ data class BillPayPrefill(
     val dateIso: String get() = date.toString()
 }
 
-internal typealias BillPayHandoff = BillPayPrefill
-
 internal const val PAYMENT_SOURCE_SELECTOR_TEST_TAG = "payment-source-selector"
 internal const val BITCOIN_ACCOUNT_SELECTOR_TEST_TAG = "bitcoin-account-selector"
 
@@ -194,58 +190,21 @@ internal fun prepareBillPayHandoff(
 }
 
 /**
- * New rows are the one legitimate unfenced write. The typed receipt installs
- * the server revision on the shared client before the refresh callback runs.
+ * The payment-source surface uses the capability-scoped device gateway.
+ * Device rows are the one legitimate unfenced write: the receipt confirms
+ * acceptance without carrying a server revision.
  */
-internal suspend fun savePreparedTransaction(
-    row: PreparedTransaction,
-    client: ConvexMutationClient,
-): ConvexResult<TransactionWriteReceipt> =
-    client.upsertTransaction(
-        ConvexMutation.UpsertTransaction(
-            transaction = row.input,
-            sourceFile = row.sourceFile,
-        ),
-    )
-
-/** The payment-source surface uses the capability-scoped device gateway. */
 internal suspend fun savePreparedTransaction(
     row: PreparedTransaction,
     gateway: TransactionDeviceMutationGateway,
 ): ConvexResult<DeviceTransactionWriteReceipt> = gateway.upsert(row)
 
 /**
- * Starts the durable part of an add on a process-owned scope. The client
+ * Starts the durable part of an add on a process-owned scope. The gateway
  * installs an accepted receipt before returning; a disposed sheet suppresses
  * only its stale UI callbacks, never the write, the receipt installation, or
  * the acceptance signal.
  */
-internal fun launchPreparedTransactionSave(
-    scope: CoroutineScope,
-    row: PreparedTransaction,
-    client: ConvexMutationClient,
-    transactionDraftIds: TransactionDraftIdStore,
-    isUiActive: () -> Boolean,
-    onAccepted: () -> Unit,
-    onUiResult: (DraftIdWriteOutcome<TransactionWriteReceipt>) -> Unit,
-): Job = scope.launch {
-    val result = savePreparedTransaction(row, client)
-    val leaseReset = result !is ConvexResult.Ok ||
-        transactionDraftIds.rotateAfterAcceptance(row.sourceFile, row.input.id)
-    val outcome = draftIdWriteOutcome(result, leaseReset)
-    outcome.onServerAccepted {
-        // The ledger refresh belongs to the screen's view model, which
-        // outlives this sheet. An accepted write must become visible even
-        // when the user dismissed mid-flight — suppressing this with the
-        // sheet left committed, fenced rows invisible until an unrelated
-        // refresh.
-        onAccepted()
-    }
-    if (isUiActive()) {
-        onUiResult(outcome)
-    }
-}
-
 internal fun launchPreparedTransactionSave(
     scope: CoroutineScope,
     row: PreparedTransaction,
@@ -1014,4 +973,3 @@ private fun DropdownField(
     }
 }
 
-private val CARD_OPTIONS = listOf("Debit", "Credit", "Lightning", "On-chain", "Bank")
