@@ -3,6 +3,8 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 
+declare const process: { env: Record<string, string | undefined> };
+
 export const DEVICE_CAPABILITIES = [
   "todos:write",
   "transactions:write",
@@ -48,6 +50,80 @@ export async function sha256Hex(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+// ── Device-token storage hashing ─────────────────────────────────────────────
+//
+// Stored credentials used to be a single unsalted SHA-256(token). That is fine
+// against a 128-256-bit random token's preimage resistance, but it hands a
+// database leaker a verify-offline oracle for every device they can guess a
+// token for. New tokens are therefore stored peppered: sha256(pepper + token)
+// under a version prefix, where the pepper is a deployment secret that never
+// leaves process.env.
+//
+// Migration is rehash-on-use: legacy rows keep verifying against the unsalted
+// digest, and the first successful authentication with a pepper configured
+// rewrites the row to the peppered form. No token rotation is involved and no
+// client ever sees any of this.
+//
+// Once a deployment has set DEVICE_TOKEN_PEPPER it must keep it: a peppered
+// row without the pepper cannot verify (fail closed), and there is no way to
+// recover the token from its hash to re-derive it.
+
+const PEPPERED_HASH_PREFIX = "v1:";
+
+/** The deployment's device-token pepper; empty when not configured. */
+function deviceTokenPepper(): string {
+  return process.env.DEVICE_TOKEN_PEPPER ?? "";
+}
+
+export type StoredDeviceTokenHash = { hash: string; peppered: boolean };
+
+/** Hash a device token for storage. New rows get the peppered form. */
+export async function hashDeviceToken(
+  deviceToken: string,
+): Promise<StoredDeviceTokenHash> {
+  const pepper = deviceTokenPepper();
+  if (!pepper) {
+    return { hash: await sha256Hex(deviceToken), peppered: false };
+  }
+  return {
+    hash: PEPPERED_HASH_PREFIX + (await sha256Hex(`${pepper}${deviceToken}`)),
+    peppered: true,
+  };
+}
+
+export type DeviceTokenVerdict = {
+  ok: boolean;
+  /** When set after a successful legacy match, rewrite the row to this hash. */
+  rehashTo?: string;
+};
+
+/** Verify a presented token against the stored hash, whichever era it is. */
+export async function verifyDeviceToken(
+  deviceToken: string,
+  storedHash: string,
+): Promise<DeviceTokenVerdict> {
+  if (storedHash.startsWith(PEPPERED_HASH_PREFIX)) {
+    const pepper = deviceTokenPepper();
+    if (!pepper) {
+      // Fail closed: a peppered credential cannot be verified without the
+      // pepper, and there is nothing to fall back to.
+      return { ok: false };
+    }
+    const candidate = await sha256Hex(`${pepper}${deviceToken}`);
+    return { ok: equalSha256Hex(candidate, storedHash.slice(PEPPERED_HASH_PREFIX.length)) };
+  }
+  const candidate = await sha256Hex(deviceToken);
+  if (!equalSha256Hex(candidate, storedHash)) {
+    return { ok: false };
+  }
+  // Legacy row verified. With a pepper configured, upgrade it now — the
+  // rehash-on-use migration.
+  const pepper = deviceTokenPepper();
+  if (!pepper) return { ok: true };
+  const { hash } = await hashDeviceToken(deviceToken);
+  return { ok: true, rehashTo: hash };
 }
 
 /** Constant-time equality of two 64-character lowercase sha256 hex digests. */
@@ -109,17 +185,26 @@ export async function authenticateDevice(
     .query("mobileDevices")
     .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
     .unique();
-  const tokenHash = await sha256Hex(deviceToken);
+  if (!device) {
+    throw new ConvexError({
+      code: "DEVICE_UNAUTHORIZED",
+      message: "Unauthorized mobile device",
+    });
+  }
+  const verdict = await verifyDeviceToken(deviceToken, device.tokenHash);
   if (
-    !device ||
+    !verdict.ok ||
     device.revokedAt !== undefined ||
-    !equalSha256Hex(tokenHash, device.tokenHash) ||
     !normalizeDeviceCapabilities(device.capabilities).includes(capability)
   ) {
     throw new ConvexError({
       code: "DEVICE_UNAUTHORIZED",
       message: "Unauthorized mobile device",
     });
+  }
+  // Rehash-on-use migration for credentials stored before the pepper.
+  if (verdict.rehashTo !== undefined) {
+    await ctx.db.patch(device._id, { tokenHash: verdict.rehashTo });
   }
   return device;
 }
@@ -161,12 +246,21 @@ export async function authenticateDeviceForSelfRevoke(
     .query("mobileDevices")
     .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
     .unique();
-  const tokenHash = await sha256Hex(deviceToken);
-  if (!device || !equalSha256Hex(tokenHash, device.tokenHash)) {
+  if (!device) {
     throw new ConvexError({
       code: "DEVICE_UNAUTHORIZED",
       message: "Unauthorized mobile device",
     });
+  }
+  const verdict = await verifyDeviceToken(deviceToken, device.tokenHash);
+  if (!verdict.ok) {
+    throw new ConvexError({
+      code: "DEVICE_UNAUTHORIZED",
+      message: "Unauthorized mobile device",
+    });
+  }
+  if (verdict.rehashTo !== undefined) {
+    await ctx.db.patch(device._id, { tokenHash: verdict.rehashTo });
   }
   return device;
 }

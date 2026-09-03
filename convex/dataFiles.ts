@@ -12,6 +12,7 @@ import {
   deviceCapabilityValidator,
   deviceProfileValidator,
   equalSha256Hex,
+  hashDeviceToken,
   normalizeDeviceCapabilities,
   sha256Hex,
   timingSafeEqualStrings,
@@ -1063,7 +1064,7 @@ export const claimAndroidReadBootstrap = mutation({
         androidReadBootstrapFailure("CONFIG_MISSING");
       }
 
-      const tokenHash = await sha256Hex(deviceToken);
+      const storedTokenHash = await hashDeviceToken(deviceToken);
       if (bootstrap.profile === undefined) {
         androidReadBootstrapFailure("VALIDATION_FAILED");
       }
@@ -1078,7 +1079,7 @@ export const claimAndroidReadBootstrap = mutation({
       await ctx.db.insert("mobileDevices", {
         deviceId,
         name: "Vogel Vault Android",
-        tokenHash,
+        tokenHash: storedTokenHash.hash,
         pairedAt: now,
         lastSeenAt: now,
         revokedAt: undefined,
@@ -1216,7 +1217,7 @@ export const claimMobilePairing = mutation({
       pairingFailure("PAIRING_EXPIRED", "Pairing expired");
     }
 
-    const tokenHash = await sha256Hex(deviceToken);
+    const tokenHash = await hashDeviceToken(deviceToken);
     const existingDevice = await ctx.db
       .query("mobileDevices")
       .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
@@ -1228,7 +1229,7 @@ export const claimMobilePairing = mutation({
     const deviceRecord = {
       deviceId,
       name: deviceName.trim().slice(0, 80) || "Vogel Vault iPhone",
-      tokenHash,
+      tokenHash: tokenHash.hash,
       pairedAt: now,
       lastSeenAt: now,
       revokedAt: undefined,

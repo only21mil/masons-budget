@@ -296,6 +296,7 @@ const DEPLOYMENT_ENV_KEYS = [
   "ALLOW_TOKENLESS_READ",
   "CONVEX_SYNC_TOKEN",
   "ALLOW_TOKENLESS_SYNC",
+  "DEVICE_TOKEN_PEPPER",
 ] as const;
 
 type DeploymentEnvKey = (typeof DEPLOYMENT_ENV_KEYS)[number];
