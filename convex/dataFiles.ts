@@ -793,18 +793,21 @@ export const claimAndroidReadBootstrap = mutation({
     if (!bootstrap) {
       androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_NOT_FOUND");
     }
-    if (bootstrap.claimedAt !== undefined) {
-      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_ALREADY_CLAIMED");
-    }
 
-    const now = Date.now();
-    if (bootstrap.expiresAt <= now) {
-      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_EXPIRED");
-    }
-
+    // Verify possession of the raw proof BEFORE disclosing claim state or
+    // expiry. ALREADY_CLAIMED / EXPIRED reported ahead of the proof check turn
+    // this mutation into a state oracle for anyone who learns a pairId.
     const suppliedProofHash = await sha256Hex(proof);
     if (!equalSha256Hex(bootstrap.proofHash, suppliedProofHash)) {
       androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_PROOF_INVALID");
+    }
+
+    const now = Date.now();
+    if (bootstrap.claimedAt !== undefined) {
+      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_ALREADY_CLAIMED");
+    }
+    if (bootstrap.expiresAt <= now) {
+      androidReadBootstrapFailure("ANDROID_READ_BOOTSTRAP_EXPIRED");
     }
 
     validateAndroidReadBootstrapCapabilities(bootstrap.capabilities);
@@ -960,14 +963,18 @@ export const claimMobilePairing = mutation({
     if (!pairing) {
       pairingFailure("PAIRING_NOT_FOUND", "Pairing not found");
     }
+    // The proofHash IS the claim credential, so it is compared in constant time
+    // and verified BEFORE claim state or expiry are disclosed. Reporting
+    // ALREADY_CLAIMED / PAIRING_EXPIRED first would let anyone holding a pairId
+    // probe that slot's state without ever possessing its secret.
+    if (!equalSha256Hex(pairing.proofHash, proofHash)) {
+      pairingFailure("PAIRING_PROOF_INVALID", "Invalid pairing proof");
+    }
     if (pairing.claimedAt) {
       pairingFailure("PAIRING_ALREADY_CLAIMED", "Pairing already claimed");
     }
     if (pairing.expiresAt <= now) {
       pairingFailure("PAIRING_EXPIRED", "Pairing expired");
-    }
-    if (pairing.proofHash !== proofHash) {
-      pairingFailure("PAIRING_PROOF_INVALID", "Invalid pairing proof");
     }
 
     const tokenHash = await sha256Hex(deviceToken);
