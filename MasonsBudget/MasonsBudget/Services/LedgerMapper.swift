@@ -1,6 +1,8 @@
 import Foundation
+import os
 
 enum LedgerMapper {
+    private static let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "LedgerMapper")
     // Cached: parseDate runs once per date string per sync (O(rows)), and
     // DateFormatter/ISO8601DateFormatter construction is the dominant
     // avoidable cost on that path.
@@ -37,6 +39,9 @@ enum LedgerMapper {
         if let d = isoFractionalFormatter.date(from: raw) { return d }
         if let d = ymdFormatter.date(from: raw) { return d }
         if let d = ymdTimeFormatter.date(from: raw) { return d }
+        // Value-free diagnostic (date text is household data). A sentinel that
+        // sorts first is bad enough; silently inventing it is worse.
+        log.error("Unparseable ledger date; row falls back to the earliest sentinel")
         return .distantPast
     }
 
@@ -400,7 +405,11 @@ enum LedgerMapper {
                 owner: owner,
                 createdBy: "mc2",
                 createdAt: dto.createdAt.map(parseDate),
-                updatedAt: dto.updatedAt.map(parseDate) ?? .now,
+                // A stable sentinel, not .now: re-stamping every sync with a
+                // fresh timestamp made the Date-LWW comparison
+                // non-deterministic for exactly the rows with the weakest
+                // timestamps. .distantPast loses ties consistently.
+                updatedAt: dto.updatedAt.map(parseDate) ?? .distantPast,
                 completedAt: dto.completedAt.map(parseDate),
                 sourceFile: "todos.json",
                 updatedAtMs: dto.updatedAtMs,

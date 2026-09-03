@@ -5,8 +5,15 @@ enum AppWriteSyncError: Error {
     case unexpectedPayload
 }
 
-/// Carries the revision out of the escaping retry closure without mutating a
-/// captured `var` from concurrently-executing code.
+/// Carries the accepted revision out of the escaping retry closure.
+///
+/// The invariant is actor confinement, not safe concurrent mutation: every
+/// reader and writer runs on the main actor (the service enum, its retry
+/// engine, and the `Task` that awaits the attempt are all @MainActor).
+/// `@unchecked Sendable` exists only so the box can be captured by the
+/// @Sendable `Task` closure without minting a false "trust me" promise —
+/// nothing here is ever touched from another actor.
+@MainActor
 private final class AcceptedRevisionBox: @unchecked Sendable {
     var value: Double?
 }

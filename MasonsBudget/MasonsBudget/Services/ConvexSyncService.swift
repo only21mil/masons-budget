@@ -813,9 +813,62 @@ final class ConvexSyncService {
         local.totalValue = remote.totalValue
         local.weeklyContribution = remote.weeklyContribution
         local.lastUpdated = remote.lastUpdated
-        for h in local.holdings {
-            context.delete(h)
+
+        // Update children in place by holding name instead of delete+reinserting
+        // the whole cascade on every sync: no row churn, and references held by
+        // anything observing the old children stay valid. Holdings carry a name
+        // inside the account; lots have no stable key, so a holding's lots are
+        // replaced only when they actually differ.
+        var localByName: [String: Holding] = [:]
+        for holding in local.holdings {
+            localByName[holding.name] = holding
         }
-        local.holdings = remote.holdings
+        var matchedNames = Set<String>()
+        for remoteHolding in remote.holdings {
+            if let existing = localByName[remoteHolding.name] {
+                matchedNames.insert(remoteHolding.name)
+                existing.category = remoteHolding.category
+                existing.ticker = remoteHolding.ticker
+                existing.value = remoteHolding.value
+                existing.costBasis = remoteHolding.costBasis
+                existing.gainPct = remoteHolding.gainPct
+                existing.shares = remoteHolding.shares
+                existing.avgCost = remoteHolding.avgCost
+                existing.currentPricePerShare = remoteHolding.currentPricePerShare
+                existing.isProxy = remoteHolding.isProxy
+                existing.proxyNote = remoteHolding.proxyNote
+                if !lotsMatch(existing.lots, remoteHolding.lots) {
+                    for lot in existing.lots {
+                        context.delete(lot)
+                    }
+                    existing.lots = remoteHolding.lots
+                }
+            } else {
+                // Brand-new holding from the remote snapshot: its cascade
+                // lots come with it, exactly like the parent insert path.
+                local.holdings.append(remoteHolding)
+            }
+        }
+        for name in localByName.keys where !matchedNames.contains(name) {
+            if let removed = localByName[name] {
+                context.delete(removed)
+            }
+        }
+    }
+
+    private func lotsMatch(_ local: [HoldingLot], _ remote: [HoldingLot]) -> Bool {
+        guard local.count == remote.count else { return false }
+        for (x, y) in zip(local, remote) {
+            if x.date != y.date
+                || x.type != y.type
+                || x.pricePerShare != y.pricePerShare
+                || x.shares != y.shares
+                || x.amountInvested != y.amountInvested
+                || x.note != y.note
+            {
+                return false
+            }
+        }
+        return true
     }
 }

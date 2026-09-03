@@ -182,7 +182,9 @@ struct BudgetView: View {
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(isCurrent ? "Spent / Limit" : "Spent / Income")
+                // The denominator is the sum of category budgets, never
+                // income — label it as the limit it actually is.
+                Text("Spent / Limit")
                     .font(AppFont.labelSmall)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
@@ -208,7 +210,7 @@ struct BudgetView: View {
             .frame(height: 8)
 
             HStack {
-                Text("\(Int(pct * 100))% of income spent")
+                Text("\(Int(pct * 100))% of budget spent")
                     .font(AppFont.labelSmallRegular)
                     .foregroundStyle(theme.textMuted)
                 Spacer()

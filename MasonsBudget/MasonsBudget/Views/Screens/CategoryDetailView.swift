@@ -251,7 +251,13 @@ struct CategoryDetailView: View {
                     deletion.finish(result)
                 }
             } catch {
-                deletion.reject(error.localizedDescription)
+                // Server-derived text must never reach the UI (ConvexWriteResult
+                // docs); classify to an authored message with a fixed fallback.
+                let result = ConvexWriteResult.classify(error)
+                deletion.reject(
+                    result.userMessage(operation: "Delete budget category")
+                        ?? "The category could not be deleted. Try again after the next sync.",
+                )
             }
         }
     }
