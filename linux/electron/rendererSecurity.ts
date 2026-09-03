@@ -24,6 +24,19 @@ function parsedUrl(target: string): URL | null {
   }
 }
 
+/**
+ * Hostnames a development server may live on.
+ *
+ * `VITE_DEV_SERVER_URL` is the one branch where a network document can become
+ * the app shell — and receive the preload bridge — so it is pinned to loopback
+ * rather than merely "no credentials". A LAN URL in this variable fails closed.
+ */
+const DEV_LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set([
+  "localhost",
+  "127.0.0.1",
+  "[::1]",
+])
+
 function devPolicy(rawUrl: string): RendererSecurityPolicy | null {
   const configured = parsedUrl(rawUrl)
   if (
@@ -31,7 +44,8 @@ function devPolicy(rawUrl: string): RendererSecurityPolicy | null {
     (configured.protocol !== "http:" && configured.protocol !== "https:") ||
     configured.username !== "" ||
     configured.password !== "" ||
-    configured.hash !== ""
+    configured.hash !== "" ||
+    !DEV_LOOPBACK_HOSTNAMES.has(configured.hostname)
   ) {
     return null
   }

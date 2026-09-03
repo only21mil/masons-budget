@@ -1321,6 +1321,7 @@ export function createConvexRowRepository(options: ConvexRowRepositoryOptions): 
           return Promise.resolve({ status: "error", code: "disabled" })
         case "unconfigured":
         case "insecure-endpoint":
+        case "untrusted-endpoint":
           return Promise.resolve({ status: "error", code: "unconfigured" })
         case "ready-unauthenticated":
           return Promise.resolve({ status: "error", code: "unauthorized" })

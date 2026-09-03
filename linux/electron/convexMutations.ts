@@ -223,7 +223,6 @@ const REQUEST_ID = /^[A-Za-z0-9_-]{8,128}$/
 const PAIR_PART = /^[A-Za-z0-9_-]{8,256}$/
 const MIN_INT64 = -(1n << 63n)
 const MAX_INT64 = (1n << 63n) - 1n
-const APPROVED_CONVEX_ORIGIN = "https://keen-elephant-452.convex.cloud"
 
 class InvalidRequest extends Error {}
 class InvalidResponse extends Error {}
@@ -288,31 +287,10 @@ function exactKeys(
 /**
  * Resolve the one household deployment the main process approves.
  *
- * Pairing input never supplies transport routing. The environment is trusted
- * host configuration, but it is still parsed narrowly so a typo fails closed.
+ * The rule lives in approvedDeployment.ts so the read path shares the exact
+ * same pin; re-exported here for the pairing/mutation call sites.
  */
-export function resolveApprovedDeploymentOrigin(raw: string | undefined): string | null {
-  if (typeof raw !== "string" || raw.trim() === "" || raw.length > 512) return null
-  let parsed: URL
-  try {
-    parsed = new URL(raw.trim())
-  } catch {
-    return null
-  }
-  if (
-    parsed.protocol !== "https:" ||
-    parsed.username !== "" ||
-    parsed.password !== "" ||
-    parsed.port !== "" ||
-    parsed.pathname !== "/" ||
-    parsed.search !== "" ||
-    parsed.hash !== "" ||
-    parsed.origin !== APPROVED_CONVEX_ORIGIN
-  ) {
-    return null
-  }
-  return parsed.origin
-}
+export { resolveApprovedDeploymentOrigin } from "./approvedDeployment.ts"
 
 function exactObject(
   value: unknown,
