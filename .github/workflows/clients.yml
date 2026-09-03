@@ -541,8 +541,61 @@ jobs:
         run: ./gradlew :domain:test --no-daemon
         working-directory: android
 
-      # Compile and lint the app without assembling an APK. Distributable
-      # Android builds use the separate manual-only workflow.
+      # Materialise the stable debug keystore so the APK assembled below shares
+      # the signing identity already installed on the Fold. Restored from
+      # d86d528: the 6158898 release commit dropped the update-artifact lane,
+      # leaving no routine APK path (the manual-only bootstrap workflow needs a
+      # one-time pairing secret that is deliberately absent between runs).
+      - name: Materialise and validate the stable debug keystore
+        id: debug_keystore
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+          VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
+          VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is required for default-branch Android APK builds."
+            exit 1
+          fi
+
+          KEYSTORE_PATH="$RUNNER_TEMP/vogel-debug.keystore"
+          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 is not valid base64."
+            exit 1
+          fi
+          chmod 600 "$KEYSTORE_PATH"
+
+          KEYSTORE_PATH="$KEYSTORE_PATH" \
+            .github/workflows/scripts/validate_android_debug_keystore.sh
+
+          echo "path=$KEYSTORE_PATH" >> "$GITHUB_OUTPUT"
+          echo "stable=true" >> "$GITHUB_OUTPUT"
+
+      # Debug-signed only — a sideload artifact for the Fold, never a release
+      # build. Release signing stays out of CI.
+      - name: Assemble stable-signed debug APK
+        if: >-
+          steps.probe.outputs.app == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          steps.debug_keystore.outputs.stable == 'true'
+        env:
+          VOGEL_DEBUG_KEYSTORE: ${{ steps.debug_keystore.outputs.path }}
+          VOGEL_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+          VOGEL_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
+          VOGEL_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleDebug --no-daemon
+        working-directory: android
+
+      # Lint the app. The stable-signed debug APK above is the sideload
+      # artifact for the Fold; release signing stays out of CI.
       - name: Lint Android app
         if: steps.probe.outputs.app == 'true'
         run: ./gradlew :app:lintDebug --no-daemon
@@ -658,6 +711,19 @@ jobs:
           name: android-design-packet
           path: android/app/build/outputs/roborazzi
           retention-days: 30
+
+      - name: Upload stable-signed debug APK
+        if: >-
+          success() &&
+          steps.probe.outputs.app == 'true' &&
+          steps.debug_keystore.outputs.stable == 'true' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vogel-vault-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
 
       - name: Upload test report on failure
         if: failure() && steps.probe.outputs.gradle == 'true'
