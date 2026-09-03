@@ -2,6 +2,10 @@
   "status": "success",
   "value": {
     "complete": false,
+    "readAuth": {
+      "deprecated": true,
+      "mode": "shared-token"
+    },
     "rows": [
       {
         "completedAt": "2099-01-01T00:00:00.000Z",
