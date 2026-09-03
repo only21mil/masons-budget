@@ -12,6 +12,7 @@ test("dry-run validates inputs without a token, request, or file write", async (
   const directory = await mkdtemp(path.join(os.tmpdir(), "vv-mobile-pair-dry-"));
   const output = path.join(directory, "pairing-urls.json");
   const b64Output = path.join(directory, "pairing-urls.b64");
+  const manifestOutput = path.join(directory, "pairing-urls-slots.json");
 
   try {
     const result = spawnSync(
@@ -53,7 +54,23 @@ test("dry-run validates inputs without a token, request, or file write", async (
     assert.match(result.stdout, /profile=victor/);
     await assert.rejects(access(output), /ENOENT/);
     await assert.rejects(access(b64Output), /ENOENT/);
+    await assert.rejects(access(manifestOutput), /ENOENT/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("the archive-embedding b64 payload is no longer produced (L-10)", async () => {
+  const source = await import("node:fs/promises").then((fs) =>
+    fs.readFile(script, "utf8"),
+  );
+  assert.ok(
+    !/writeFileSync\([^)]*\.b64/.test(source),
+    "mint script must not write a base64 claim-secret payload",
+  );
+  assert.ok(
+    !/MC2_BUNDLED_PAIRING_URLS_B64\s*=/.test(source),
+    "mint script must not instruct feeding distributable archive manifests",
+  );
+  assert.match(source, /redacted slot manifest/);
 });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Mint bundled mobile pairing slots for a Vogel Vault build (SAT-1508).
+// Mint mobile pairing slots for a Vogel Vault build (SAT-1508).
 //
 // Creates N one-time pairing slots in Convex (dataFiles:createMobilePairing)
 // and writes the matching app pairing URLs to a private file. The URLs embed
@@ -7,9 +7,16 @@
 // MC2MobileWritebackClient.pairFragment parses `#pair=<pairId>.<secret>` and
 // sends (pairId, sha256hex(rawPair)) to claimMobilePairing.
 //
+// SECURITY (audit 2026-09-02, L-10): each pairing URL is a complete claim
+// credential for a 365-day slot. They are therefore minted ON DEMAND, one
+// install at a time, and delivered out of band to that install only. This
+// script deliberately no longer produces the base64 payload that the build
+// pipeline embedded in distributable archives via MC2_BUNDLED_PAIRING_URLS_B64
+// — anyone who could extract a distributed binary could claim a slot. A
+// redacted manifest (pairIds, no secrets) is written for records and support.
+//
 // SECURITY: never print the URLs/base64 to stdout in agent sessions — they are
-// claim secrets. They are written 0600 to --out; the build pipeline reads the
-// .b64 file into MC2_BUNDLED_PAIRING_URLS_B64 at archive time.
+// claim secrets. They are written 0600 to --out.
 //
 // Usage:
 //   node scripts/mint-mobile-pairing-slots.mjs --build 38 [--count 8] [--days 365] \
@@ -60,7 +67,9 @@ Options:
 
 Requires CONVEX_SYNC_TOKEN in .env.local or env.
 CONVEX_URL defaults to ${defaultConvexUrl}.
-Writes the pairing URL JSON and matching .b64 payload to 0600 files.
+Writes the private pairing URL JSON (0600) and a redacted slot manifest (0600,
+pairIds only) — pairing URLs are per-install claim secrets and are NEVER
+embedded in distributable archives.
 `);
 }
 
@@ -104,6 +113,9 @@ const outFile = argValue(
     `vv-build${build}-pairing-urls.json`,
   ),
 );
+// Redacted manifest: identifies the slots for records and support without
+// carrying any claim secret. Kept out of any distributable archive by policy.
+const manifestFile = outFile.replace(/\.json$/, "-slots.json");
 
 const env = { ...parseEnvFile(path.join(repoRoot, ".env.local")), ...process.env };
 const convexUrl = (env.CONVEX_URL || defaultConvexUrl).replace(/\/$/, "");
@@ -121,7 +133,7 @@ if (dryRun) {
   console.log(`days=${days}`);
   console.log(`profile=${profile}`);
   console.log(`out=${outFile}`);
-  console.log(`b64=${outFile.replace(/\.json$/, ".b64")}`);
+  console.log(`redacted-manifest=${manifestFile}`);
   process.exit(0);
 }
 
@@ -148,6 +160,7 @@ async function convexMutation(fnPath, fnArgs) {
 
 const expiresAt = Date.now() + days * 24 * 60 * 60 * 1000;
 const urls = [];
+const redactedSlots = [];
 
 for (let i = 1; i <= count; i++) {
   const pairId = `vv${build}-slot-${i}-${b64url(crypto.randomBytes(6))}`;
@@ -165,16 +178,32 @@ for (let i = 1; i <= count; i++) {
   });
 
   urls.push(`${convexUrl}/#pair=${rawPair}`);
+  redactedSlots.push({ pairId, expiresAt });
   console.log(`minted ${pairId} (expires ${new Date(expiresAt).toISOString()})`);
 }
 
 fs.mkdirSync(path.dirname(outFile), { recursive: true, mode: 0o700 });
 fs.writeFileSync(outFile, JSON.stringify(urls, null, 2) + "\n", { mode: 0o600 });
-const b64File = outFile.replace(/\.json$/, ".b64");
-fs.writeFileSync(b64File, Buffer.from(JSON.stringify(urls)).toString("base64") + "\n", {
-  mode: 0o600,
-});
+fs.writeFileSync(
+  manifestFile,
+  JSON.stringify(
+    {
+      build,
+      profile,
+      mintedAt: new Date().toISOString(),
+      expiresAt,
+      note: "Redacted pairing slot manifest — no claim secrets. Distributable.",
+      slots: redactedSlots,
+    },
+    null,
+    2,
+  ) + "\n",
+  { mode: 0o600 },
+);
 
 console.log(`wrote ${urls.length} pairing URLs -> ${outFile}`);
-console.log(`wrote MC2_BUNDLED_PAIRING_URLS_B64 payload -> ${b64File}`);
-console.log("Pass at archive time: MC2_BUNDLED_PAIRING_URLS_B64=$(cat <b64File>)");
+console.log(`wrote redacted slot manifest -> ${manifestFile}`);
+console.log(
+  "Deliver each URL to its install out of band (per device). Do NOT embed " +
+    "pairing URLs in distributable archives or build payloads.",
+);
