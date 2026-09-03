@@ -35,6 +35,7 @@ import com.sats21m.vogelvault.draftIdWriteOutcome
 import com.sats21m.vogelvault.onServerAccepted
 import com.sats21m.vogelvault.data.BTC_BILL_PAYS_SOURCE_FILE
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.data.RIVER_BITCOIN_BILL_PAY_PLATFORM
 import com.sats21m.vogelvault.domain.BillPayBudgetEffect
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -152,14 +153,8 @@ private fun exactBillPayMinorUnits(raw: String, scale: Int, allowZero: Boolean):
         if (if (allowZero) minorUnits >= 0L else minorUnits > 0L) minorUnits else null
     }.getOrNull()
 
-internal fun btcBillPayWriteFailureMessage(result: ConvexResult<*>): String? = when (result) {
-    is ConvexResult.Ok -> null
-    ConvexResult.Disabled -> "Bitcoin bill pay not saved: live writes are switched off."
-    ConvexResult.NotConfigured -> "Bitcoin bill pay not saved: no Convex deployment is configured."
-    ConvexResult.Unauthorized -> "Bitcoin bill pay not saved: the paired-device credential is missing or was rejected."
-    ConvexResult.Missing -> "Bitcoin bill pay not saved: Convex returned no write result."
-    is ConvexResult.Failed -> "Bitcoin bill pay not saved: ${result.reason}."
-}
+internal fun btcBillPayWriteFailureMessage(result: ConvexResult<*>): String? =
+    convexWriteFailureMessage("Bitcoin bill pay not saved", result)
 
 internal fun btcBillPayWriteFailureMessage(outcome: DraftIdWriteOutcome<*>): String? =
     when (outcome) {

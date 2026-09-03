@@ -44,6 +44,7 @@ import com.sats21m.vogelvault.onServerAccepted
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.data.TransactionInput
 import com.sats21m.vogelvault.data.TransactionKind
 import com.sats21m.vogelvault.data.TransactionWriteReceipt
@@ -275,14 +276,8 @@ internal fun launchPreparedTransactionSave(
  * problem. Keeping those sentences separate tells the user which remedy is
  * available instead of reducing both causes to "not configured".
  */
-internal fun transactionWriteFailureMessage(result: ConvexResult<*>): String? = when (result) {
-    is ConvexResult.Ok -> null
-    ConvexResult.Disabled -> "Remote transaction writes are switched off"
-    ConvexResult.NotConfigured -> "Transaction writing has no usable Convex deployment or token"
-    ConvexResult.Unauthorized -> "The sync credential is missing or was rejected"
-    ConvexResult.Missing -> "Convex returned no write result"
-    is ConvexResult.Failed -> "Transaction was not saved (${result.reason})"
-}
+internal fun transactionWriteFailureMessage(result: ConvexResult<*>): String? =
+    convexWriteFailureMessage("Transaction was not saved", result)
 
 internal fun transactionWriteFailureMessage(outcome: DraftIdWriteOutcome<*>): String? =
     when (outcome) {

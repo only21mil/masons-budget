@@ -50,6 +50,7 @@ import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.data.ConvexValue
 import com.sats21m.vogelvault.data.LinkedIncomeInput
 import com.sats21m.vogelvault.domain.BudgetHealth
@@ -619,26 +620,12 @@ internal fun BudgetCategoryEditorSheet(
                                             ),
                                         )
                                     submitting = false
-                                    when (result) {
-                                        is ConvexResult.Ok -> {
-                                            onWriteSucceeded()
-                                            onDismiss()
-                                        }
-                                        ConvexResult.Unauthorized ->
-                                            message =
-                                                "Budget not saved: Convex rejected the sync token."
-                                        ConvexResult.NotConfigured ->
-                                            message =
-                                                "Budget not saved: Convex is not configured on this device."
-                                        ConvexResult.Disabled ->
-                                            message =
-                                                "Budget not saved: authenticated writes are disabled."
-                                        ConvexResult.Missing ->
-                                            message =
-                                                "Budget not saved: Convex returned no write result."
-                                        is ConvexResult.Failed ->
-                                            message =
-                                                "Budget not saved: the write failed (${result.reason})."
+                                    val budgetFailure = convexWriteFailureMessage("Budget not saved", result)
+                                    if (budgetFailure == null) {
+                                        onWriteSucceeded()
+                                        onDismiss()
+                                    } else {
+                                        message = budgetFailure
                                     }
                                 }
                             }
@@ -793,25 +780,15 @@ internal fun BtcBuyEntrySheet(
                                         }
                                         BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
                                             message = acceptedBtcBuyLeaseResetFailure
-                                        is BtcBuySaveOutcome.Rejected ->
-                                            when (val result = outcome.result) {
-                                                is ConvexResult.Ok -> error("Accepted result cannot be rejected")
-                                                ConvexResult.Unauthorized ->
-                                                    message =
-                                                        "Bitcoin buy not saved: Convex rejected the sync token."
-                                                ConvexResult.NotConfigured ->
-                                                    message =
-                                                        "Bitcoin buy not saved: Convex is not configured on this device."
-                                                ConvexResult.Disabled ->
-                                                    message =
-                                                        "Bitcoin buy not saved: authenticated writes are disabled."
-                                                ConvexResult.Missing ->
-                                                    message =
-                                                        "Bitcoin buy not saved: Convex returned no write result."
-                                                is ConvexResult.Failed ->
-                                                    message =
-                                                        "Bitcoin buy not saved: the write failed (${result.reason})."
+                                        is BtcBuySaveOutcome.Rejected -> {
+                                            check(outcome.result !is ConvexResult.Ok) {
+                                                "Accepted result cannot be rejected"
                                             }
+                                            message = convexWriteFailureMessage(
+                                                "Bitcoin buy not saved",
+                                                outcome.result,
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -903,20 +880,15 @@ internal fun BtcBuyFromIncomeEntrySheet(
                                         }
                                         BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
                                             message = acceptedBtcBuyLeaseResetFailure
-                                        is BtcBuySaveOutcome.Rejected ->
-                                            when (val result = outcome.result) {
-                                                is ConvexResult.Ok -> error("Accepted result cannot be rejected")
-                                                ConvexResult.Unauthorized ->
-                                                    message = "Income and Bitcoin buy not saved: the sync token was rejected."
-                                                ConvexResult.NotConfigured ->
-                                                    message = "Income and Bitcoin buy not saved: Convex is not configured."
-                                                ConvexResult.Disabled ->
-                                                    message = "Income and Bitcoin buy not saved: authenticated writes are disabled."
-                                                ConvexResult.Missing ->
-                                                    message = "Income and Bitcoin buy not saved: Convex returned no write result."
-                                                is ConvexResult.Failed ->
-                                                    message = "Income and Bitcoin buy not saved: ${result.reason}."
+                                        is BtcBuySaveOutcome.Rejected -> {
+                                            check(outcome.result !is ConvexResult.Ok) {
+                                                "Accepted result cannot be rejected"
                                             }
+                                            message = convexWriteFailureMessage(
+                                                "Income and Bitcoin buy not saved",
+                                                outcome.result,
+                                            )
+                                        }
                                     }
                                 }
                             }

@@ -101,7 +101,7 @@ class RefreshAfterWriteSurfaceTest {
                 REJECTION,
                 content,
                 interact,
-                rejectionText = "Transaction was not saved (http 500)",
+                rejectionText = "Transaction was not saved: the write failed (http 500).",
             ),
         )
     }
@@ -359,7 +359,7 @@ class RefreshAfterWriteSurfaceTest {
                 REJECTION,
                 content,
                 interact,
-                rejectionText = "Transaction was not saved (http 500)",
+                rejectionText = "Transaction was not saved: the write failed (http 500).",
             ),
         )
     }
