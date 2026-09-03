@@ -713,7 +713,7 @@ final class ConvexSyncService {
                         log.warning("Skipping imported todo \(remote.id): id belongs to another profile")
                         continue
                     }
-                    installTodoRevision(local, revision: remote.updatedAtMs)
+                    Self.installTodoRevision(local, revision: remote.updatedAtMs)
                     continue
                 }
                 guard local.createdBy == "mc2" else {
@@ -736,7 +736,7 @@ final class ConvexSyncService {
                     local.sourceFile = remote.sourceFile
                     local.createdBy = "mc2"
                 }
-                installTodoRevision(local, revision: remote.updatedAtMs)
+                Self.installTodoRevision(local, revision: remote.updatedAtMs)
             } else if remote.id != pendingDeleteID {
                 context.insert(remote)
             }
