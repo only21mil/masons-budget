@@ -11,6 +11,7 @@ import {
   useIsolatedDeploymentEnv,
 } from "./harness.test-utils";
 import schema from "./schema";
+import type { DeviceProfile } from "./deviceAuth";
 
 useIsolatedDeploymentEnv();
 
@@ -86,8 +87,11 @@ beforeEach(() => {
   setDeploymentEnv({ CONVEX_SYNC_TOKEN: syncToken });
 });
 
-async function budgetDevice(deviceId: string) {
-  return await pairMobileDevice(t, syncToken, deviceId, ["budget:write"]);
+async function budgetDevice(
+  deviceId: string,
+  profile: DeviceProfile = "victor",
+) {
+  return await pairMobileDevice(t, syncToken, deviceId, ["budget:write"], profile);
 }
 
 async function seedBudget(
@@ -137,6 +141,13 @@ describe("budget category deletion lifecycle", () => {
         row.expectedOwner,
         [row.categoryName, "Keep"],
         row.baseUpdatedAtMs,
+      );
+      // The credential must carry the budget owner's profile: the resolved
+      // owner derives from the credential, not the request (H1). Rachel's
+      // credential canonicalizes onto the shared adult budget.
+      const device = await budgetDevice(
+        `category-lifecycle-${row.expectedOwner}`,
+        row.activeProfile,
       );
       const request = {
         deviceId: device.deviceId,
@@ -331,9 +342,11 @@ describe("budget category deletion lifecycle", () => {
       baseUpdatedAtMs: revision,
     };
 
+    // The credential profile gates the request owner before the owner↔source
+    // mapping is ever consulted.
     await expectDeviceError(
       t.mutation(api.deleteCategory, { ...request, owner: "maddox" }),
-      "OWNER_SOURCE_MISMATCH",
+      "OWNER_MISMATCH",
     );
     await expectDeviceError(
       t.mutation(api.deleteCategory, {

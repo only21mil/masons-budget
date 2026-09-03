@@ -47,6 +47,7 @@ import {
   markDeviceSeen,
   requireTaskProfileBinding,
   timingSafeEqualStrings,
+  type DeviceProfile,
 } from "./deviceAuth";
 import {
   addDelta,
@@ -4132,6 +4133,46 @@ function canonicalLedgerOwner(owner: FamilyMember): FamilyMember {
   return owner === "rachel" ? "victor" : owner;
 }
 
+/**
+ * Money authority comes from the credential's server-stored profile, exactly as
+ * task authority does via requireTaskProfileBinding (deviceAuth.ts).
+ *
+ * The resolved owner is DERIVED from the device credential; the client-asserted
+ * owner is an echo that must agree with it. Without this, any paired device
+ * holding a money capability could write or delete any family member's ledger —
+ * a child credential posting to the adult household account, or editing the
+ * adult budget and BTC balance documents.
+ *
+ * Rachel's credential resolves to the canonical adult ledger ("victor"), so
+ * either adult spelling of the household ledger keeps working; a child
+ * credential resolves to itself and cannot name any other owner.
+ */
+function requireMoneyOwnerBinding(
+  device: { profile?: DeviceProfile },
+  requestedOwner: FamilyMember,
+  entityType: RowEntityType,
+  entityId: string,
+): FamilyMember {
+  if (device.profile === undefined) {
+    deviceFailure(
+      "PROFILE_BINDING_REQUIRED",
+      "This device credential is not bound to a profile.",
+      entityType,
+      entityId,
+    );
+  }
+  const authoritative = canonicalLedgerOwner(device.profile);
+  if (canonicalLedgerOwner(requestedOwner) !== authoritative) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Money request owner must match credential profile ${device.profile}.`,
+      entityType,
+      entityId,
+    );
+  }
+  return authoritative;
+}
+
 function foldedCategoryName(value: string): string {
   const normalized = value.trim();
   if (!normalized) {
@@ -5522,7 +5563,12 @@ export const upsertTransactionFromDevice = mutation({
       "transaction.bitcoinAccountKey",
     );
     validateDeviceTransactionPaymentSource(args.transaction, existing);
-    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    const ledgerOwner = requireMoneyOwnerBinding(
+      device,
+      args.owner,
+      "transaction",
+      args.transaction.id,
+    );
     requireSourceOwner(args.sourceFile, "transactions", ledgerOwner);
     if (args.transaction.owner !== args.owner) {
       deviceFailure(
@@ -5612,7 +5658,7 @@ export const deleteTransactionFromDevice = mutation({
     const removed = await deleteTransactionCore(
       ctx,
       args.sourceFile,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(device, args.owner, "transaction", args.entityId),
       args.entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );
@@ -5834,7 +5880,12 @@ export const upsertBudgetCategoryFromDevice = mutation({
     const result = await upsertBudgetCategoryCore(
       ctx,
       args.sourceFile,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(
+        device,
+        args.owner,
+        "budgetCategory",
+        args.category.name,
+      ),
       args.month,
       args.category,
       args.previousName,
@@ -5869,7 +5920,12 @@ export const deleteBudgetCategoryFromDevice = mutation({
     const removed = await deleteBudgetCategoryCore(
       ctx,
       args.sourceFile,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(
+        device,
+        args.owner,
+        "budgetCategory",
+        args.entityId,
+      ),
       args.month,
       args.entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
@@ -5941,7 +5997,12 @@ export const upsertBtcBuyFromDevice = mutation({
         );
       }
     }
-    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    const ledgerOwner = requireMoneyOwnerBinding(
+      device,
+      args.owner,
+      "btcBuy",
+      args.buy.id,
+    );
     requireSourceOwner(args.sourceFile, "btcBuys", ledgerOwner);
     if (args.buy.owner !== args.owner) {
       deviceFailure(
@@ -6018,7 +6079,7 @@ export const deleteBtcBuyFromDevice = mutation({
     const removed = await deleteBtcBuyCore(
       ctx,
       args.sourceFile,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(device, args.owner, "btcBuy", args.entityId),
       args.entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );
@@ -6067,7 +6128,12 @@ export const upsertBtcBillPayFromDevice = mutation({
         args.billPay.id,
       );
     }
-    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    const ledgerOwner = requireMoneyOwnerBinding(
+      device,
+      args.owner,
+      "btcBillPay",
+      args.billPay.id,
+    );
     requireSourceOwner(args.sourceFile, "btcBillPays", ledgerOwner);
     const feeUsdCents = args.billPay.feeUsdCents ?? 0n;
     requireBillPayAmounts({ ...args.billPay, feeUsdCents });
@@ -6130,7 +6196,12 @@ export const deleteBtcBillPayFromDevice = mutation({
     );
     requireDeviceRevision(args.baseUpdatedAtMs, true);
     requireDeviceIdentifier(args.entityId, "entityId");
-    const ledgerOwner = canonicalLedgerOwner(args.owner);
+    const ledgerOwner = requireMoneyOwnerBinding(
+      device,
+      args.owner,
+      "btcBillPay",
+      args.entityId,
+    );
     requireSourceOwner(args.sourceFile, "btcBillPays", ledgerOwner);
     const removed = await deleteBtcBillPayCore(
       ctx,
@@ -6181,7 +6252,12 @@ export const upsertBtcTransferFromDevice = mutation({
         args.transfer.id,
       );
     }
-    const owner = canonicalLedgerOwner(args.owner);
+    const owner = requireMoneyOwnerBinding(
+      device,
+      args.owner,
+      "btcTransfer",
+      args.transfer.id,
+    );
     const now = Date.now();
     const date = requireIsoDate(
       args.transfer.date,
@@ -6233,7 +6309,7 @@ export const deleteBtcTransferFromDevice = mutation({
     requireDeviceIdentifier(args.entityId, "entityId");
     const removed = await deleteBtcTransferCore(
       ctx,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(device, args.owner, "btcTransfer", args.entityId),
       args.entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );
@@ -6304,7 +6380,12 @@ export const upsertBtcAccountFromDevice = mutation({
     }
     const account = {
       ...args.account,
-      owner: canonicalLedgerOwner(args.account.owner),
+      owner: requireMoneyOwnerBinding(
+        device,
+        args.owner,
+        "btcAccount",
+        args.account.key,
+      ),
     };
     const outcome = await upsertBtcAccountCore(ctx, args.sourceFile, account, {
       baseUpdatedAtMs: args.baseUpdatedAtMs,
@@ -6337,7 +6418,7 @@ export const deleteBtcAccountFromDevice = mutation({
     const removed = await deleteBtcAccountCore(
       ctx,
       args.sourceFile,
-      canonicalLedgerOwner(args.owner),
+      requireMoneyOwnerBinding(device, args.owner, "btcAccount", entityId),
       entityId,
       { baseUpdatedAtMs: args.baseUpdatedAtMs },
     );
