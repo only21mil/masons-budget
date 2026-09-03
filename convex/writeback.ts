@@ -40,7 +40,7 @@ import type { DataModel } from "./_generated/dataModel";
 import { mutation, type MutationCtx } from "./_generated/server";
 import { timingSafeEqualStrings } from "./deviceAuth";
 import { requireIsoDate } from "./dateValidation";
-import { mergeTodoPayload, normalizeTodoRecord } from "./todoNormalize";
+import { mergeTodoPayload, normalizeTodoRecord, TODO_LANES } from "./todoNormalize";
 
 export { isRealIsoDate } from "./dateValidation";
 
@@ -439,7 +439,9 @@ function requireCategory(
   return category;
 }
 
-export const TODO_LANES = ["work", "personal", "sats"] as const;
+// Single Convex-side source: convex/todoNormalize.ts owns the lane list (the
+// domain copy is the cross-runtime contract; tests pin all three spellings).
+export { TODO_LANES };
 
 /**
  * The todo "category" is one of three MC2 lanes. `normalizeTodoLane` COERCES

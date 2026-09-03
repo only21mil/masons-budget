@@ -565,3 +565,42 @@ describe("all five source documents have typed projections", () => {
     ).toThrow(/must be one of victor, rachel, mason, maddox/);
   });
 });
+
+describe("the money copy is the shared domain implementation", () => {
+  // The Convex copy was deleted; these pin the context-preserving adapters
+  // against the domain implementation they re-export.
+  it("agrees with the domain implementation on every contract case", async () => {
+    const domain = await import("@vogel-vault/domain/money");
+    for (const value of [
+      "0",
+      "2.5000",
+      "12",
+      "0.000000000001",
+      "123456789012.123456789012",
+    ]) {
+      expect(canonicalizeSharesDecimal(value, "case")).toBe(
+        domain.canonicalizeSharesDecimal(value),
+      );
+      expect(assertSharesDecimal(value, "case")).toBe(
+        domain.assertSharesDecimal(value),
+      );
+    }
+    for (const bad of ["1e5", "01", "+1", "1234567890123", " 1"]) {
+      expect(() => canonicalizeSharesDecimal(bad, "case")).toThrow(
+        domain.RangeError ? RangeError : Error,
+      );
+      expect(() => domain.canonicalizeSharesDecimal(bad)).toThrow();
+    }
+  });
+
+  it("labels rejections with the caller's context, never the value", () => {
+    try {
+      canonicalizeSharesDecimal("1e5", "finances.holdings[2].shares");
+      expect.unreachable();
+    } catch (error) {
+      expect((error as RangeError).message).toBe(
+        "finances.holdings[2].shares is not a canonical share quantity",
+      );
+    }
+  });
+});

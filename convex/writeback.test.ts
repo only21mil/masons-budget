@@ -45,6 +45,7 @@ import {
 } from "../shared/domain/src/family";
 import { parseCents } from "../shared/domain/src/money";
 import { isIsoDate as domainIsIsoDate, TODO_LANES as DOMAIN_TODO_LANES } from "../shared/domain/src/todo";
+import { TODO_LANES as NORMALIZER_TODO_LANES } from "./todoNormalize";
 
 useIsolatedDeploymentEnv();
 
@@ -375,6 +376,9 @@ describe("mirror parity with the shared domain contract", () => {
   });
 
   it("uses the same three todo lanes", () => {
+    // One Convex-side source (todoNormalize.ts), re-exported by writeback and
+    // pinned against the cross-runtime domain contract.
+    expect([...TODO_LANES]).toEqual([...NORMALIZER_TODO_LANES]);
     expect([...TODO_LANES]).toEqual([...DOMAIN_TODO_LANES]);
   });
 

@@ -2280,6 +2280,25 @@ function sameTransaction(
     existing.card === row.card &&
     existing.note === row.note &&
     existing.amountSats === row.amountSats &&
+    // THE ASYMMETRY IS DELIBERATE — do not "fix" it to strict equality.
+    //
+    // A row that carries amountSats always has a resolved key in storage: the
+    // write path stores nextPosting.accountKey (canonical River for Income
+    // rows whose caller omitted the key), so a retried create legitimately
+    // arrives with the key still omitted and MUST match its own stored row,
+    // or every retry of a now-posted create would demand a revision the
+    // original create never needed (see btcLedger.test.ts).
+    //
+    // The other direction — incoming row ADDS a key the stored row lacks —
+    // is NOT a replay: the disjunction is false, the full update path runs,
+    // requestedTransactionBalanceDelta applies the posting, and the key (and
+    // balance leg) is persisted. An incoming row that names a DIFFERENT key
+    // than storage likewise falls through to the full path, where the
+    // posted-Income account-change guard rejects it.
+    //
+    // Net contract: only an exact repeat, or a key-omitting retry that
+    // resolves to the same account, is idempotent; every key ADDITION or
+    // CHANGE reaches the writing path.
     (row.bitcoinAccountKey === undefined ||
       existing.bitcoinAccountKey === row.bitcoinAccountKey)
   );
@@ -3968,6 +3987,11 @@ export const upsertTodo = mutation({
  *
  * Writes both row-native and legacy todo tombstones. The legacy marker remains
  * required while shipped clients still converge through the todos blob.
+ *
+ * The restore capsule is captured exactly as deleteTodoCore does, with the
+ * deleted row's own revision as `deletedFromUpdatedAtMs` — so an
+ * admin-deleted todo is restorable through restoreTodoFromDevice with that
+ * revision, instead of being gone forever.
  */
 export const deleteTodo = mutation({
   args: {
@@ -4000,6 +4024,8 @@ export const deleteTodo = mutation({
       existing.sourceFile,
       todoId,
       existing.owner,
+      existing.updatedAtMs,
+      captureTodoForRestore(existing),
     );
     await upsertLegacyTodoTombstone(ctx, todoId);
     return { todoId, removed: true };
@@ -4281,14 +4307,26 @@ export const upsertBtcAccount = mutation({
     // Legacy bootstrap may populate the compatibility table before the typed
     // document migration creates its authority. Once that document exists,
     // every sync-token write above is routed through the atomic document path.
+    //
+    // Same normalization the document path gets (upsertBtcAccountCore): the
+    // key is trimmed and must be non-empty, and asOf is validated the way the
+    // device path validates it — an unnormalized instant would desynchronize
+    // the compatibility table from the document authority's clock. The result
+    // reports the trimmed key, matching the document branch's return.
+    const accountKey = account.key.trim();
+    if (!accountKey) {
+      throw new ConvexError("upsertBtcAccount: key must not be empty.");
+    }
+    requireDeviceTimestamp(account.asOf, "account.asOf");
     const row = {
       ...account,
+      key: accountKey,
       schemaVersion: account.schemaVersion ?? 0n,
       sourceFile: file,
       updatedAtMs: Date.now(),
     };
     const outcome = await upsertBtcAccountRow(ctx, row);
-    return { key: row.key, owner: row.owner, outcome };
+    return { key: accountKey, owner: row.owner, outcome };
   },
 });
 

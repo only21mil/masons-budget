@@ -8,7 +8,19 @@
 // mergeTodoPayload is Convex-specific: legacy blobs represent whole documents,
 // while Convex accepts one-field edits from a phone and must merge them.
 
-const VALID_TODO_LANES = ["work", "personal", "sats"];
+/**
+ * The three todo lanes — the single Convex-side source.
+ *
+ * Convex functions cannot import from outside convex/ at deploy time (same
+ * constraint as the other mirrors), so this constant lives here and
+ * writeback.ts re-exports it rather than holding its own copy. The domain
+ * copy (shared/domain/src/todo.ts TODO_LANES) is the cross-runtime contract
+ * and cannot be imported at runtime; writeback.test.ts pins all three
+ * spellings against each other so a one-sided edit fails the suite.
+ */
+export const TODO_LANES = ["work", "personal", "sats"] as const;
+
+const VALID_TODO_LANES: readonly string[] = TODO_LANES;
 
 export function normalizeTodoLane(value: unknown): string | null {
   if (value == null) return null;
@@ -292,10 +304,105 @@ export function mergeTodoPayload(
  * unparseable stamp still scores 0 rather than falling through: garbage is a
  * claim about the time, and a record that claims a time it cannot back up must
  * lose, not borrow a better one from the alias behind it.
+ *
+ * The PARSING is the domain's `isoToMillis` contract
+ * (shared/domain/src/todo.ts), mirrored below: strict ISO-8601, zoneless
+ * timestamps read as UTC (not server-local), and anything unrecognised scores
+ * 0. It deliberately replaces `new Date(raw)`, whose zoneless parsing is local
+ * time — for a sync contract the domain calls that a correctness bug, and LWW
+ * here feeds on exactly those stamps.
  */
 export function todoUpdatedMs(todo: Record<string, any>): number {
   const raw = firstNonEmpty(todo, ["updated_at", "updatedAt", "completedAt"]);
   if (raw == null) return 0;
-  const ms = new Date(raw).getTime();
-  return Number.isNaN(ms) ? 0 : ms;
+  return isoToMillis(raw);
+}
+
+// ── Mirror of shared/domain/src/todo.ts isoToMillis ──
+//
+// Copied rather than imported because Convex functions cannot import from
+// outside convex/. The server's own alias chain stays local; only the stamp
+// PARSING is mirrored. writeback.test.ts pins this against the real domain
+// implementation across the fixture matrix.
+
+const ISO_DATE_MIRROR = /^(\d{4})-(\d{2})-(\d{2})$/;
+const ISO_DATETIME_MIRROR =
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|z|[+-]\d{2}:?\d{2})?$/;
+const DAYS_IN_MONTH_MIRROR = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;
+
+function isLeapYearMirror(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+/** Hinnant's civil-from-days, as in the domain: 2026-02-30 is not a date. */
+function daysFromCivilMirror(
+  year: number,
+  month: number,
+  day: number,
+): number | null {
+  if (month < 1 || month > 12 || day < 1) return null;
+  const monthLength =
+    (DAYS_IN_MONTH_MIRROR[month - 1] as number) +
+    (month === 2 && isLeapYearMirror(year) ? 1 : 0);
+  if (day > monthLength) return null;
+
+  const shifted = month <= 2 ? year - 1 : year;
+  const era = Math.floor(shifted / 400);
+  const yearOfEra = shifted - era * 400;
+  const dayOfYear =
+    Math.floor((153 * (month + (month > 2 ? -3 : 9)) + 2) / 5) + day - 1;
+  const dayOfEra =
+    yearOfEra * 365 + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100) + dayOfYear;
+  return era * 146_097 + dayOfEra - 719_468;
+}
+
+function offsetMillisMirror(offset: string | undefined): number {
+  if (offset === undefined || offset === "Z" || offset === "z") return 0;
+  const sign = offset.startsWith("-") ? -1 : 1;
+  const digits = offset.slice(1).replace(":", "");
+  const hours = Number(digits.slice(0, 2));
+  const minutes = Number(digits.slice(2, 4));
+  return sign * (hours * 3_600_000 + minutes * 60_000);
+}
+
+/**
+ * Strict ISO-8601 to epoch ms; 0 for anything unrecognised. Zoneless stamps
+ * mean UTC on every runtime — the domain's documented sync contract.
+ */
+function isoToMillis(value: string): number {
+  const raw = value.trim();
+  if (raw === "") return 0;
+
+  const dateOnly = ISO_DATE_MIRROR.exec(raw);
+  if (dateOnly) {
+    const days = daysFromCivilMirror(
+      Number(dateOnly[1]),
+      Number(dateOnly[2]),
+      Number(dateOnly[3]),
+    );
+    return days === null ? 0 : days * 86_400_000;
+  }
+
+  const match = ISO_DATETIME_MIRROR.exec(raw);
+  if (!match) return 0;
+
+  const days = daysFromCivilMirror(
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+  );
+  if (days === null) return 0;
+
+  const hours = Number(match[4]);
+  const minutes = Number(match[5]);
+  const seconds = match[6] === undefined ? 0 : Number(match[6]);
+  if (hours > 23 || minutes > 59 || seconds > 59) return 0;
+
+  const fraction = match[7] ?? "";
+  const millis = fraction === "" ? 0 : Number(fraction.slice(0, 3).padEnd(3, "0"));
+
+  const utc =
+    days * 86_400_000 + hours * 3_600_000 + minutes * 60_000 + seconds * 1_000 + millis;
+
+  return utc - offsetMillisMirror(match[8]);
 }
