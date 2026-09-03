@@ -42,4 +42,17 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
   },
+  {
+    // electron-builder lifecycle hooks are CommonJS by contract.
+    files: ["scripts/**/*.cjs"],
+    languageOptions: {
+      ecmaVersion: 2023,
+      globals: globals.node,
+      sourceType: "commonjs",
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+    },
+  },
 )
