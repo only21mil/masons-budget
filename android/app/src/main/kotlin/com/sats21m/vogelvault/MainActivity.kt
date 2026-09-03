@@ -4,6 +4,7 @@ import android.app.KeyguardManager
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -91,6 +92,15 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The whole activity surface carries household ledger amounts. FLAG_SECURE
+        // blanks the app from screenshots, screen recordings, and the recents
+        // thumbnail — the standard guard for finance apps, and the only one that
+        // also covers the Onboarding and Settings screens during a locked-session
+        // transition.
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE,
+        )
         val ledgerUiPreferences = LedgerUiPreferences(applicationContext)
         val initialLedgerSettings = ledgerUiPreferences.current()
         applyLedgerSystemBars(

@@ -72,7 +72,7 @@ private class SharedPreferencesBudgetAlertDeduplicator(
     }
 }
 
-private class AndroidBudgetAlertPublisher(
+internal class AndroidBudgetAlertPublisher(
     private val context: Context,
 ) : BudgetAlertPublisher {
     private val notificationManager =
@@ -115,6 +115,11 @@ private class AndroidBudgetAlertPublisher(
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                // The body carries exact spent/budget USD amounts. SECRET hides
+                // every bit of it from the lock screen, closing the residual
+                // window between screen-off and onStop's cancelVisibleAlerts();
+                // the in-app shade is unaffected.
+                .setVisibility(NotificationCompat.VISIBILITY_SECRET)
                 .setContentIntent(openApp)
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
