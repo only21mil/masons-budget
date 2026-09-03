@@ -47,7 +47,7 @@ export const CAPTURE_QUERIES = Object.freeze([
   { name: "rowCounts", path: "tables:rowCounts", args: {} },
 ])
 
-function tokenizeTypeScript(source) {
+export function tokenizeTypeScript(source) {
   const tokens = []
   let index = 0
   while (index < source.length) {
@@ -159,7 +159,7 @@ function declarationEnd(tokens, start, keywordIndex, keyword) {
   throw new Error(`unterminated top-level ${tokens[start].value} declaration`)
 }
 
-function topLevelDeclarations(tokens, source) {
+export function topLevelDeclarations(tokens, source) {
   const declarations = new Map()
   let braces = 0
   let parentheses = 0

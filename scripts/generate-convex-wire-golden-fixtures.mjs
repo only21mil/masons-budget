@@ -13,10 +13,17 @@
 // if the committed fixtures ever drift back toward production-shaped values.
 
 import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
 import { readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import process from "node:process"
 import { fileURLToPath } from "node:url"
+
+import {
+  queryShapeDigests,
+  tokenizeTypeScript,
+  topLevelDeclarations,
+} from "./convex-wire-golden.mjs"
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const goldenRoot = path.join(repoRoot, "shared/domain/fixtures/convex-wire-golden")
@@ -369,6 +376,58 @@ export const SYNTHETIC_DOCUMENTS = Object.freeze({
   rowCounts,
 })
 
+// The synthetic bodies are hand-written, but the wire envelope is derived from
+// the live contract in convex/tables.ts: which queries spread the shared-token
+// read-auth deprecation marker (commit a248216) and what the marker value is.
+// Hand-writing the marker here would let the fixtures drift from what the
+// deployment actually emits, so both are read out of the contract source.
+const TABLES_PATH = "convex/tables.ts"
+
+function tablesDeclarations(source) {
+  return topLevelDeclarations(tokenizeTypeScript(source), TABLES_PATH)
+}
+
+function readAuthMarkerFromTables(source) {
+  const marker = tablesDeclarations(source).get("SHARED_TOKEN_READ_MARKER")
+  if (marker === undefined) {
+    throw new Error(`${TABLES_PATH} no longer declares SHARED_TOKEN_READ_MARKER`)
+  }
+  const literalValue = (key) => {
+    const keyIndex = marker.tokens.findIndex(
+      (token) => token.type === "identifier" && token.value === key,
+    )
+    if (keyIndex === -1 || marker.tokens[keyIndex + 1]?.value !== ":") {
+      throw new Error(`SHARED_TOKEN_READ_MARKER.${key} is not a literal`)
+    }
+    return marker.tokens[keyIndex + 2]
+  }
+  const mode = literalValue("mode")
+  const deprecated = literalValue("deprecated")
+  if (mode.type !== "string" || deprecated.value !== "true") {
+    throw new Error("SHARED_TOKEN_READ_MARKER is not the expected shared-token deprecation literal")
+  }
+  return Object.freeze({ readAuth: { mode: mode.value, deprecated: true } })
+}
+
+function queriesCarryingReadAuth(source, queryNames) {
+  const declarations = tablesDeclarations(source)
+  const carrying = new Set()
+  for (const queryName of queryNames) {
+    const declaration = declarations.get(queryName)
+    if (declaration === undefined) {
+      throw new Error(`${TABLES_PATH} no longer exports the captured query ${queryName}`)
+    }
+    if (
+      declaration.tokens.some(
+        (token) => token.type === "identifier" && token.value === "readAuthDeprecation",
+      )
+    ) {
+      carrying.add(queryName)
+    }
+  }
+  return carrying
+}
+
 // Fields carried on the wire as tagged v.int64() in convex_encoded_json format
 // and as decimal strings in json format. Everything else is unchanged between
 // formats (v.float64 updatedAtMs stays a plain number; counts stay numbers).
@@ -427,9 +486,15 @@ function sortedKeysDeep(value) {
 }
 
 export function wireFiles() {
+  const tablesSource = readFileSync(path.join(repoRoot, TABLES_PATH), "utf8")
+  const readAuthMarker = readAuthMarkerFromTables(tablesSource)
+  const markerQueries = queriesCarryingReadAuth(tablesSource, QUERIES)
   const files = []
   for (const query of QUERIES) {
-    const wire = { status: "success", value: SYNTHETIC_DOCUMENTS[query] }
+    const value = markerQueries.has(query)
+      ? { ...SYNTHETIC_DOCUMENTS[query], ...readAuthMarker }
+      : { ...SYNTHETIC_DOCUMENTS[query] }
+    const wire = { status: "success", value }
     files.push([`${query}.json.json`, sortedKeysDeep(wire)])
     files.push([`${query}.convex_encoded_json.json`, sortedKeysDeep(toEncoded(wire))])
   }
@@ -461,6 +526,27 @@ export async function writeWireFixtures({ repoRoot: root = repoRoot, now = new D
   provenance.captures = Object.fromEntries(
     Object.entries(checksums).sort(([left], [right]) => left.localeCompare(right)),
   )
+  // Re-derive the per-query shape digests from the same contract source the
+  // envelopes were generated against, keeping the previously attested query
+  // set (queries without wire captures keep their entry).
+  if (provenance.queryShapes === undefined) {
+    throw new Error("provenance is missing the queryShapes attestation section")
+  }
+  const shapeQueryNames = Object.keys(provenance.queryShapes.sha256 ?? {})
+  const shapeDigests = await queryShapeDigests(root, [
+    ...new Set([...shapeQueryNames, ...QUERIES]),
+  ])
+  provenance.queryShapes.sha256 = Object.fromEntries(
+    Object.entries(shapeDigests).sort(([left], [right]) => left.localeCompare(right)),
+  )
+  provenance.queryShapes.reattestedNote =
+    "Query shape digests re-derived from the committed contract "
+    + `(${TABLES_PATH}, ${provenance.generatedDate}) after the read-auth change `
+    + "added the readAuth { mode: \"shared-token\", deprecated: true } deprecation "
+    + "marker to every shared-token row-query envelope (commit a248216). The "
+    + "envelope shapes of the 2026-08-22 production captures this file previously "
+    + "carried over are superseded by that contract change; shape parity with the "
+    + "old captures deliberately no longer holds."
   writes.push([provenancePath, Buffer.from(`${JSON.stringify(provenance, null, 2)}\n`)])
   for (const [target, bytes] of writes) {
     await writeFile(target, bytes)

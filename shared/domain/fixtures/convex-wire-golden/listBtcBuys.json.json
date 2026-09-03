@@ -2,6 +2,10 @@
   "status": "success",
   "value": {
     "complete": false,
+    "readAuth": {
+      "deprecated": true,
+      "mode": "shared-token"
+    },
     "rows": [
       {
         "archimedesRequestId": "sample-req-000001",

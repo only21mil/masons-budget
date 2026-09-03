@@ -574,6 +574,10 @@
       "owner": "victor",
       "updatedAtMs": 1700000000000,
       "ytdIncomeCents": "9600000"
+    },
+    "readAuth": {
+      "deprecated": true,
+      "mode": "shared-token"
     }
   }
 }
