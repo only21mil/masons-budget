@@ -1,22 +1,47 @@
 import Foundation
+import os
 
 enum LedgerMapper {
+    private static let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "LedgerMapper")
+    // Cached: parseDate runs once per date string per sync (O(rows)), and
+    // DateFormatter/ISO8601DateFormatter construction is the dominant
+    // avoidable cost on that path.
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static let isoFractionalFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let ymdFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        return f
+    }()
+
+    private static let ymdTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        return f
+    }()
+
     static func parseDate(_ raw: String) -> Date {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        if let d = iso.date(from: raw) { return d }
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = iso.date(from: raw) { return d }
-
-        let ymd = DateFormatter()
-        ymd.dateFormat = "yyyy-MM-dd"
-        ymd.locale = Locale(identifier: "en_US_POSIX")
-        ymd.timeZone = .current
-        if let d = ymd.date(from: raw) { return d }
-
-        ymd.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        if let d = ymd.date(from: raw) { return d }
-
+        if let d = isoFormatter.date(from: raw) { return d }
+        if let d = isoFractionalFormatter.date(from: raw) { return d }
+        if let d = ymdFormatter.date(from: raw) { return d }
+        if let d = ymdTimeFormatter.date(from: raw) { return d }
+        // Value-free diagnostic (date text is household data). A sentinel that
+        // sorts first is bad enough; silently inventing it is worse.
+        log.error("Unparseable ledger date; row falls back to the earliest sentinel")
         return .distantPast
     }
 
@@ -109,8 +134,15 @@ enum LedgerMapper {
     }
 
     private static func sanitizedStrategyNote(_ note: String?) -> String? {
-        let retiredCardToken = ["av", "en"].joined()
-        guard let note, !note.lowercased().contains(retiredCardToken) else { return nil }
+        // "aven" is the retired Aven card's wire name (see
+        // TransactionSourceCatalog). Strategy notes written for that card must
+        // not survive the map, but a substring match also erased unrelated
+        // notes ("Craven savings plan", "avenue of investment") — so match the
+        // token as a whole word instead.
+        guard let note else { return nil }
+        if note.lowercased().range(of: "\\baven\\b", options: .regularExpression) != nil {
+            return nil
+        }
         return note
     }
 
@@ -159,6 +191,19 @@ enum LedgerMapper {
         }
     }
 
+    /// BudgetCategory names carry the `"\(owner):\(name)"` prefix locally to
+    /// satisfy the globally-unique SwiftData `name` attribute; the server's
+    /// budget documents store bare names. Inverse of the prefix applied in
+    /// `mapBudgetCategories`: strip it at the wire boundary so child writes
+    /// never leak the local scheme into the canonical document. Bare names
+    /// (adult documents) pass through unchanged.
+    static func wireBudgetCategoryName(from localName: String, owner: FamilyMember) -> String {
+        guard owner != .victor else { return localName }
+        let prefix = "\(owner.rawValue):"
+        guard localName.hasPrefix(prefix) else { return localName }
+        return String(localName.dropFirst(prefix.count))
+    }
+
     static func mapBTCAccounts(_ snapshot: LegacyBTCSnapshotDTO, owner: FamilyMember) -> [BTCAccount] {
         snapshot.accounts.map { key, entry in
             BTCAccount(
@@ -170,6 +215,22 @@ enum LedgerMapper {
                 owner: owner,
             )
         }
+    }
+
+    /// The server's `btcAccounts` identity is the bare `(owner, key)` pair
+    /// ("strike", "river", …); the local SwiftData identity composes
+    /// `"\(asOf)-\(key)-\(owner)"` because `asOf` is rewritten server-side on
+    /// every posting and the `key` attribute is unique. Derive the wire key by
+    /// stripping that composite back to the bare server key. Server account
+    /// keys are single tokens, so the bare key is the segment after the final
+    /// dash of the owner-stripped composite. Keys stored bare (rows synced
+    /// from the server) carry no owner suffix and pass through unchanged.
+    static func wireAccountKey(from storedKey: String, owner: FamilyMember) -> String {
+        let ownerSuffix = "-\(owner.rawValue)"
+        guard storedKey.hasSuffix(ownerSuffix) else { return storedKey }
+        let withoutOwner = storedKey.dropLast(ownerSuffix.count)
+        guard let lastDash = withoutOwner.lastIndex(of: "-") else { return storedKey }
+        return String(withoutOwner[withoutOwner.index(after: lastDash)...])
     }
 
     static func mapBTCBuy(_ dto: LegacyBTCBuyDTO, owner: FamilyMember = .victor) throws -> BTCBuy {
@@ -344,7 +405,11 @@ enum LedgerMapper {
                 owner: owner,
                 createdBy: "mc2",
                 createdAt: dto.createdAt.map(parseDate),
-                updatedAt: dto.updatedAt.map(parseDate) ?? .now,
+                // A stable sentinel, not .now: re-stamping every sync with a
+                // fresh timestamp made the Date-LWW comparison
+                // non-deterministic for exactly the rows with the weakest
+                // timestamps. .distantPast loses ties consistently.
+                updatedAt: dto.updatedAt.map(parseDate) ?? .distantPast,
                 completedAt: dto.completedAt.map(parseDate),
                 sourceFile: "todos.json",
                 updatedAtMs: dto.updatedAtMs,

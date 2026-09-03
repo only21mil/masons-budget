@@ -1,7 +1,10 @@
+import os
 import SwiftData
 import SwiftUI
 
 struct ExportView: View {
+    private static let exportLog = Logger(subsystem: "com.sats21m.masonsbudget", category: "Export")
+
     @Environment(\.theme) var theme
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
@@ -185,7 +188,7 @@ struct ExportView: View {
             exportURL = fileURL
             showShareSheet = true
         } catch {
-            print("[Export] Failed to write \(filename): \(error)")
+            Self.exportLog.error("Failed to write one export file to temporary storage")
         }
     }
 }

@@ -5,8 +5,15 @@ enum AppWriteSyncError: Error {
     case unexpectedPayload
 }
 
-/// Carries the revision out of the escaping retry closure without mutating a
-/// captured `var` from concurrently-executing code.
+/// Carries the accepted revision out of the escaping retry closure.
+///
+/// The invariant is actor confinement, not safe concurrent mutation: every
+/// reader and writer runs on the main actor (the service enum, its retry
+/// engine, and the `Task` that awaits the attempt are all @MainActor).
+/// `@unchecked Sendable` exists only so the box can be captured by the
+/// @Sendable `Task` closure without minting a false "trust me" promise —
+/// nothing here is ever touched from another actor.
+@MainActor
 private final class AcceptedRevisionBox: @unchecked Sendable {
     var value: Double?
 }
@@ -155,6 +162,82 @@ enum AppWriteSyncService {
         )
     }
 
+    /// The single write-orchestration scaffold every row mutation shares:
+    /// report start -> refuse on preflight -> retry-wrapped attempt -> report
+    /// result with a Retry closure that re-runs this whole operation.
+    ///
+    /// Sites pass their parameters exactly once; the retry closure is built
+    /// here, so a future edit can no longer miss a parameter in one of the
+    /// re-enumerated argument lists.
+    ///
+    /// `attempt` runs inside `withRetry` and may return the revision the
+    /// server accepted (installed via `onAcceptedRevision` on `.ok`).
+    private static func runWriteOperation(
+        label: String,
+        attemptLabel: String? = nil,
+        statusStore: SyncStatusStore? = nil,
+        automaticRetries: Int = maxRetries,
+        retryDelayNanoseconds: UInt64 = retryDelay,
+        preflight: @escaping @MainActor @Sendable () -> ConvexWriteResult?,
+        onOperationStart: (@MainActor @Sendable (UUID) -> Void)? = nil,
+        onAttemptStart: (@MainActor @Sendable () -> Void)? = nil,
+        attempt: @escaping @MainActor @Sendable () async throws -> Double?,
+        onAcceptedRevision: (@MainActor @Sendable (Double) -> Void)? = nil,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+    ) {
+        onAttemptStart?()
+        let operationID = reportSyncStart(label, statusStore: statusStore)
+        onOperationStart?(operationID)
+        let attemptAgain = { @MainActor @Sendable in
+            runWriteOperation(
+                label: label,
+                attemptLabel: attemptLabel,
+                statusStore: statusStore,
+                automaticRetries: automaticRetries,
+                retryDelayNanoseconds: retryDelayNanoseconds,
+                preflight: preflight,
+                onOperationStart: onOperationStart,
+                onAttemptStart: onAttemptStart,
+                attempt: attempt,
+                onAcceptedRevision: onAcceptedRevision,
+                onResult: onResult,
+            )
+        }
+        if let blocked = preflight() {
+            reportSyncResult(
+                label: label,
+                operationID: operationID,
+                result: blocked,
+                retry: attemptAgain,
+                onResult: onResult,
+                statusStore: statusStore,
+            )
+            return
+        }
+
+        Task {
+            let revision = AcceptedRevisionBox()
+            let result = await withRetry(
+                label: attemptLabel ?? label,
+                maxRetryCount: automaticRetries,
+                retryDelayNanoseconds: retryDelayNanoseconds,
+            ) {
+                revision.value = try await attempt()
+            }
+            if case .ok = result, let accepted = revision.value {
+                onAcceptedRevision?(accepted)
+            }
+            reportSyncResult(
+                label: label,
+                operationID: operationID,
+                result: result,
+                retry: attemptAgain,
+                onResult: onResult,
+                statusStore: statusStore,
+            )
+        }
+    }
+
     private static func pushTransactionPayload(
         _ payload: LegacyTransactionDTO,
         owner: FamilyMember,
@@ -169,53 +252,19 @@ enum AppWriteSyncService {
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
         onAcceptedRevision: (@MainActor @Sendable (Double) -> Void)? = nil,
     ) {
-        let label = "Save transaction"
-        onAttemptStart?()
-        let operationID = reportSyncStart(label, statusStore: statusStore)
-        onOperationStart?(operationID)
-        if let blocked = preflight() {
-            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                pushTransactionPayload(
-                    payload, owner: owner, to: fileName,
-                    statusStore: statusStore,
-                    automaticRetries: automaticRetries,
-                    retryDelayNanoseconds: retryDelayNanoseconds,
-                    preflight: preflight,
-                    write: write,
-                    onOperationStart: onOperationStart,
-                    onAttemptStart: onAttemptStart,
-                    onResult: onResult, onAcceptedRevision: onAcceptedRevision,
-                )
-            }, onResult: onResult, statusStore: statusStore)
-            return
-        }
-
-        Task {
-            let revision = AcceptedRevisionBox()
-            let result = await withRetry(
-                label: "push tx \(payload.id)",
-                maxRetryCount: automaticRetries,
-                retryDelayNanoseconds: retryDelayNanoseconds,
-            ) {
-                revision.value = try await write(payload, owner, fileName)
-            }
-            if case .ok = result, let accepted = revision.value {
-                onAcceptedRevision?(accepted)
-            }
-            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                pushTransactionPayload(
-                    payload, owner: owner, to: fileName,
-                    statusStore: statusStore,
-                    automaticRetries: automaticRetries,
-                    retryDelayNanoseconds: retryDelayNanoseconds,
-                    preflight: preflight,
-                    write: write,
-                    onOperationStart: onOperationStart,
-                    onAttemptStart: onAttemptStart,
-                    onResult: onResult, onAcceptedRevision: onAcceptedRevision,
-                )
-            }, onResult: onResult, statusStore: statusStore)
-        }
+        runWriteOperation(
+            label: "Save transaction",
+            attemptLabel: "push tx \(payload.id)",
+            statusStore: statusStore,
+            automaticRetries: automaticRetries,
+            retryDelayNanoseconds: retryDelayNanoseconds,
+            preflight: preflight,
+            onOperationStart: onOperationStart,
+            onAttemptStart: onAttemptStart,
+            attempt: { try await write(payload, owner, fileName) },
+            onAcceptedRevision: onAcceptedRevision,
+            onResult: onResult,
+        )
     }
 
     static func deleteTransaction(
@@ -255,41 +304,21 @@ enum AppWriteSyncService {
         baseUpdatedAtMs: Double?,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let label = "Delete transaction"
-        let operationID = reportSyncStart(label)
-        if let blocked = writeBlocker(requiresSyncToken: true) {
-            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                deleteTransaction(
-                    id: id,
-                    owner: owner,
-                    from: fileName,
-                    baseUpdatedAtMs: baseUpdatedAtMs,
-                    onResult: onResult
-                )
-            }, onResult: onResult)
-            return
-        }
-
-        Task {
-            let client = makeClient()
-            let result = await withRetry(label: "delete tx \(id)") {
-                try await client.deleteTransactionRow(
+        runWriteOperation(
+            label: "Delete transaction",
+            attemptLabel: "delete tx \(id)",
+            preflight: { writeBlocker(requiresSyncToken: true) },
+            attempt: {
+                try await makeClient().deleteTransactionRow(
                     id: id,
                     owner: owner,
                     sourceFile: fileName,
-                    baseUpdatedAtMs: baseUpdatedAtMs
-                )
-            }
-            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                deleteTransaction(
-                    id: id,
-                    owner: owner,
-                    from: fileName,
                     baseUpdatedAtMs: baseUpdatedAtMs,
-                    onResult: onResult
                 )
-            }, onResult: onResult)
-        }
+                return nil
+            },
+            onResult: onResult,
+        )
     }
 
     static func pushBTCBuy(
@@ -334,47 +363,21 @@ enum AppWriteSyncService {
         onAcceptedRevision: (@MainActor @Sendable (Double) -> Void)? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let label = "Save BTC buy"
-        let operationID = reportSyncStart(label)
-        onOperationStart?(operationID)
-        if let blocked = writeBlocker(requiresSyncToken: true) {
-            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                pushBTCBuyPayload(
-                    payload,
-                    owner: owner,
-                    to: fileName,
-                    onOperationStart: onOperationStart,
-                    onAcceptedRevision: onAcceptedRevision,
-                    onResult: onResult,
-                )
-            }, onResult: onResult)
-            return
-        }
-
-        Task {
-            let client = makeClient()
-            let revision = AcceptedRevisionBox()
-            let result = await withRetry(label: "push btc buy \(payload.id)") {
-                revision.value = try await client.upsertBTCBuyRow(
+        runWriteOperation(
+            label: "Save BTC buy",
+            attemptLabel: "push btc buy \(payload.id)",
+            preflight: { writeBlocker(requiresSyncToken: true) },
+            onOperationStart: onOperationStart,
+            attempt: {
+                try await makeClient().upsertBTCBuyRow(
                     payload,
                     owner: owner,
                     sourceFile: fileName,
                 )
-            }
-            if case .ok = result, let accepted = revision.value {
-                onAcceptedRevision?(accepted)
-            }
-            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                pushBTCBuyPayload(
-                    payload,
-                    owner: owner,
-                    to: fileName,
-                    onOperationStart: onOperationStart,
-                    onAcceptedRevision: onAcceptedRevision,
-                    onResult: onResult,
-                )
-            }, onResult: onResult)
-        }
+            },
+            onAcceptedRevision: onAcceptedRevision,
+            onResult: onResult,
+        )
     }
 
     /// Pushes a todo for ANY owner (multi-profile). The optional `onResult` is invoked on the
@@ -578,47 +581,32 @@ enum AppWriteSyncService {
         baseUpdatedAtMs: Double? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let label = "Delete todo"
         let activeProfile = AppWritebackConfig.activeProfile
-        let operationID = reportSyncStart(label)
-        if let blocked = writeBlocker(requiresSyncToken: false) {
-            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                deleteTodo(
-                    id: todoId,
-                    owner: owner,
-                    baseUpdatedAtMs: baseUpdatedAtMs,
-                    onResult: onResult,
-                )
-            }, onResult: onResult)
-            return
-        }
-
-        Task {
-            let result: ConvexWriteResult
-            if baseUpdatedAtMs == nil {
-                result = .failed(.revisionRequired)
-            } else if let owner {
-                let client = AppWritebackClient()
-                result = await withRetry(label: "delete todo via paired device \(todoId)") {
-                    _ = try await client.removeTodo(
-                        id: todoId,
-                        activeProfile: activeProfile,
-                        owner: owner,
-                        baseUpdatedAtMs: baseUpdatedAtMs,
-                    )
+        runWriteOperation(
+            label: "Delete todo",
+            attemptLabel: "delete todo via paired device \(todoId)",
+            preflight: {
+                // A missing revision or owner is a deterministic refusal, not a
+                // transport failure, so it belongs in the preflight gate.
+                writeBlocker(requiresSyncToken: false)
+                    ?? (baseUpdatedAtMs == nil ? ConvexWriteResult.failed(.revisionRequired) : nil)
+                    ?? (owner == nil ? ConvexWriteResult.failed(.ownerMismatch(field: "todo")) : nil)
+            },
+            attempt: {
+                guard let owner, let baseUpdatedAtMs else {
+                    // Unreachable: the preflight gate refuses these states.
+                    throw AppWriteSyncError.unexpectedPayload
                 }
-            } else {
-                result = .failed(.ownerMismatch(field: "todo"))
-            }
-            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                deleteTodo(
+                _ = try await AppWritebackClient().removeTodo(
                     id: todoId,
+                    activeProfile: activeProfile,
                     owner: owner,
                     baseUpdatedAtMs: baseUpdatedAtMs,
-                    onResult: onResult,
                 )
-            }, onResult: onResult)
-        }
+                return nil
+            },
+            onResult: onResult,
+        )
     }
 
     static func restoreTodo(
@@ -628,60 +616,41 @@ enum AppWriteSyncService {
         onAcceptedRevision: (@MainActor @Sendable (Double) -> Void)? = nil,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let label = "Restore todo"
         let activeProfile = AppWritebackConfig.activeProfile
-        let operationID = reportSyncStart(label)
-        if let blocked = writeBlocker(requiresSyncToken: false) {
-            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                restoreTodo(
-                    id: todoId,
-                    owner: owner,
-                    baseUpdatedAtMs: baseUpdatedAtMs,
-                    onAcceptedRevision: onAcceptedRevision,
-                    onResult: onResult,
-                )
-            }, onResult: onResult)
-            return
-        }
-
-        Task {
-            let result: ConvexWriteResult
-            let revision = AcceptedRevisionBox()
-            if baseUpdatedAtMs == nil {
-                result = .failed(.revisionRequired)
-            } else if let owner {
-                let client = AppWritebackClient()
-                result = await withRetry(label: "restore todo via paired device \(todoId)") {
-                    revision.value = try await client.restoreTodo(
-                        id: todoId,
-                        activeProfile: activeProfile,
-                        owner: owner,
-                        baseUpdatedAtMs: baseUpdatedAtMs,
-                    )
+        runWriteOperation(
+            label: "Restore todo",
+            attemptLabel: "restore todo via paired device \(todoId)",
+            preflight: {
+                // A missing revision or owner is a deterministic refusal, not a
+                // transport failure, so it belongs in the preflight gate.
+                writeBlocker(requiresSyncToken: false)
+                    ?? (baseUpdatedAtMs == nil ? ConvexWriteResult.failed(.revisionRequired) : nil)
+                    ?? (owner == nil ? ConvexWriteResult.failed(.ownerMismatch(field: "todo")) : nil)
+            },
+            attempt: {
+                guard let owner, let baseUpdatedAtMs else {
+                    // Unreachable: the preflight gate refuses these states.
+                    throw AppWriteSyncError.unexpectedPayload
                 }
-            } else {
-                result = .failed(.ownerMismatch(field: "todo"))
-            }
-            if case .ok = result, let revision = revision.value {
-                onAcceptedRevision?(revision)
-            }
-            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                restoreTodo(
+                return try await AppWritebackClient().restoreTodo(
                     id: todoId,
+                    activeProfile: activeProfile,
                     owner: owner,
                     baseUpdatedAtMs: baseUpdatedAtMs,
-                    onAcceptedRevision: onAcceptedRevision,
-                    onResult: onResult,
                 )
-            }, onResult: onResult)
-        }
+            },
+            onAcceptedRevision: onAcceptedRevision,
+            onResult: onResult,
+        )
     }
 
     static func pushBudgetCategoryUpdate(
         _ category: BudgetCategory,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let name = category.name
+        // The local name carries the owner prefix for SwiftData uniqueness;
+        // the server document stores bare names, so strip it at the wire.
+        let name = LedgerMapper.wireBudgetCategoryName(from: category.name, owner: category.ownerMember)
         let icon = category.icon
         let budget = category.monthlyBudget
         let viewer = category.ownerMember
@@ -701,41 +670,21 @@ enum AppWriteSyncService {
         viewer: FamilyMember,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let label = "Save budget"
-        let operationID = reportSyncStart(label)
-        if let blocked = writeBlocker(requiresSyncToken: true) {
-            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                pushBudgetCategoryUpdate(
-                    name: name,
-                    icon: icon,
-                    budget: budget,
-                    viewer: viewer,
-                    onResult: onResult,
-                )
-            }, onResult: onResult)
-            return
-        }
-
-        Task {
-            let client = makeClient()
-            let result = await withRetry(label: "update category \(name)") {
-                try await client.upsertBudgetCategoryRow(
+        runWriteOperation(
+            label: "Save budget",
+            attemptLabel: "update category \(name)",
+            preflight: { writeBlocker(requiresSyncToken: true) },
+            attempt: {
+                try await makeClient().upsertBudgetCategoryRow(
                     name: name,
                     icon: icon,
                     budget: budget,
                     viewer: viewer,
                 )
-            }
-            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                pushBudgetCategoryUpdate(
-                    name: name,
-                    icon: icon,
-                    budget: budget,
-                    viewer: viewer,
-                    onResult: onResult,
-                )
-            }, onResult: onResult)
-        }
+                return nil
+            },
+            onResult: onResult,
+        )
     }
 
     /// Contract-only support for current-month deletion. No visual delete control
@@ -744,24 +693,16 @@ enum AppWriteSyncService {
         _ intent: BudgetCategoryDeletionIntent,
         onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
     ) {
-        let label = "Delete budget category"
-        let operationID = reportSyncStart(label)
-        if let blocked = writeBlocker(requiresSyncToken: false) {
-            reportSyncResult(label: label, operationID: operationID, result: blocked, retry: {
-                deleteBudgetCategory(intent, onResult: onResult)
-            }, onResult: onResult)
-            return
-        }
-
-        Task {
-            let client = AppWritebackClient()
-            let result = await withRetry(label: "delete category \(intent.categoryName)") {
-                _ = try await client.deleteBudgetCategory(intent)
-            }
-            reportSyncResult(label: label, operationID: operationID, result: result, retry: {
-                deleteBudgetCategory(intent, onResult: onResult)
-            }, onResult: onResult)
-        }
+        runWriteOperation(
+            label: "Delete budget category",
+            attemptLabel: "delete category \(intent.categoryName)",
+            preflight: { writeBlocker(requiresSyncToken: false) },
+            attempt: {
+                _ = try await AppWritebackClient().deleteBudgetCategory(intent)
+                return nil
+            },
+            onResult: onResult,
+        )
     }
 
     /// The states that refuse a write before any network I/O, or `nil` to proceed.
@@ -772,7 +713,9 @@ enum AppWriteSyncService {
     /// request instead of discovering the rejection three retries later.
     static func writeBlocker(requiresSyncToken: Bool) -> ConvexWriteResult? {
         if !ConvexConfig.writesEnabled { return .disabled }
-        if !ConvexConfig.isConfigured { return .notConfigured }
+        // No `.notConfigured` case: the deployment URL is a compiled constant,
+        // so a Convex write can never run unconfigured (`.notConfigured`
+        // remains reserved for `AppWritebackError.invalidBaseURL` remapping).
         if requiresSyncToken, !ConvexConfig.hasSyncToken { return .unauthorized }
         return nil
     }

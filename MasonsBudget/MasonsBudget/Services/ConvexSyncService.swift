@@ -187,8 +187,9 @@ final class ConvexSyncService {
     private func syncBTCAccounts(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readBTCSnapshot()
-            let owner: FamilyMember = currentMember.isAdult ? .victor : currentMember
-            let accounts = LedgerMapper.mapBTCAccounts(dto, owner: owner)
+            // Only reached from the adult branch of syncAll(); adult rows are
+            // always mapped onto the canonical household owner.
+            let accounts = LedgerMapper.mapBTCAccounts(dto, owner: .victor)
             try replaceBTCAccounts(ownedBy: [.victor, .rachel], with: accounts)
             return accounts.count
         } catch {
@@ -200,9 +201,13 @@ final class ConvexSyncService {
 
     private func syncBTCBuys(_ errors: inout [String]) async -> Int {
         do {
-            let dtos = try await reader.readBTCBuys(viewer: currentMember)
-            let models = try dtos.map { try LedgerMapper.mapBTCBuy($0) }
-            try replaceBTCBuys(ownedBy: [.victor, .rachel], with: models)
+            let batch = try await reader.readBTCBuys(viewer: currentMember)
+            let models = try batch.value.map { try LedgerMapper.mapBTCBuy($0) }
+            try replaceBTCBuys(
+                ownedBy: [.victor, .rachel],
+                with: models,
+                rowAuthoritative: batch.isRowAuthoritative,
+            )
             return models.count
         } catch {
             log.error("BTC buys sync failed: \(error.localizedDescription)")
@@ -329,9 +334,13 @@ final class ConvexSyncService {
 
     private func syncMasonBTCBuys(_ errors: inout [String]) async -> Int {
         do {
-            let dtos = try await reader.readMasonBTCBuys(viewer: currentMember)
-            let models = try dtos.map { try LedgerMapper.mapBTCBuy($0, owner: .mason) }
-            try replaceBTCBuys(ownedBy: [.mason], with: models)
+            let batch = try await reader.readMasonBTCBuys(viewer: currentMember)
+            let models = try batch.value.map { try LedgerMapper.mapBTCBuy($0, owner: .mason) }
+            try replaceBTCBuys(
+                ownedBy: [.mason],
+                with: models,
+                rowAuthoritative: batch.isRowAuthoritative,
+            )
             return models.count
         } catch {
             log.error("Mason BTC buys sync failed: \(error.localizedDescription)")
@@ -546,7 +555,11 @@ final class ConvexSyncService {
         local.updatedAtMs = remote.updatedAtMs
     }
 
-    private func replaceBTCBuys(ownedBy owners: [FamilyMember], with buys: [BTCBuy]) throws {
+    private func replaceBTCBuys(
+        ownedBy owners: [FamilyMember],
+        with buys: [BTCBuy],
+        rowAuthoritative: Bool = false,
+    ) throws {
         let existing = try context.fetch(FetchDescriptor<BTCBuy>())
 
         let remoteIds = Set(buys.map(\.id))
@@ -558,7 +571,13 @@ final class ConvexSyncService {
         for buy in existing {
             guard let member = buy.ownerMember, owners.contains(member) else { continue }
             guard !remoteIds.contains(buy.id) else { continue }
-            guard buy.loggedBy != "app" else { continue }
+            // App-logged buys are exempt from the sweep only while the read is
+            // not row-authoritative: a blob or degraded read cannot prove
+            // absence. A complete authoritative row read does, so a
+            // server-absent app-logged buy is a rejected write or a dead
+            // optimistic row and is reaped instead of surviving every sync.
+            let exemptFromSweep = buy.loggedBy == "app" && !rowAuthoritative
+            guard !exemptFromSweep else { continue }
             context.delete(buy)
         }
 
@@ -627,6 +646,29 @@ final class ConvexSyncService {
         local.updatedAtMs = remote.updatedAtMs
     }
 
+    // MARK: - LWW tie-break policy (single statement of record)
+    //
+    // Every reconciler resolves ties the same way; do not invent a local
+    // variant in a new updater:
+    //   * Content lane (Date `updatedAt`): strict `>`. On an exact tie the
+    //     local row stays — a sync must never rewrite a row it cannot prove
+    //     newer. The server's `listTodos` ordering prefers the
+    //     lexicographically larger todoId on equal `updatedAtMs`, but that is
+    //     a read-stability rule, not a write rule, and does not license
+    //     content churn on ties.
+    //   * Revision lane (`updatedAtMs`): non-strict `>=`. An equal revision
+    //     still proves the authoritative row's identity, so installing it
+    //     (with `hasServerAuthority`) is correct even though content is
+    //     untouched.
+    private static func installTodoRevision(_ local: TodoItem, revision: Double?) {
+        if let revision,
+           local.updatedAtMs == nil || revision >= (local.updatedAtMs ?? -1)
+        {
+            local.updatedAtMs = revision
+            local.hasServerAuthority = true
+        }
+    }
+
     func replaceTodos(
         visibleTo viewer: FamilyMember,
         with remoteTodos: [TodoItem],
@@ -671,18 +713,14 @@ final class ConvexSyncService {
                         log.warning("Skipping imported todo \(remote.id): id belongs to another profile")
                         continue
                     }
-                    if let remoteRevision = remote.updatedAtMs,
-                       local.updatedAtMs == nil || remoteRevision >= (local.updatedAtMs ?? -1)
-                    {
-                        local.updatedAtMs = remoteRevision
-                        local.hasServerAuthority = true
-                    }
+                    Self.installTodoRevision(local, revision: remote.updatedAtMs)
                     continue
                 }
                 guard local.createdBy == "mc2" else {
                     log.warning("Skipping imported todo \(remote.id): id already owned by another source")
                     continue
                 }
+                // Content lane: strict `>` — see the tie-break policy above.
                 if remote.updatedAt > local.updatedAt {
                     local.title = remote.title
                     local.project = remote.project
@@ -698,12 +736,7 @@ final class ConvexSyncService {
                     local.sourceFile = remote.sourceFile
                     local.createdBy = "mc2"
                 }
-                if let remoteRevision = remote.updatedAtMs,
-                   local.updatedAtMs == nil || remoteRevision >= (local.updatedAtMs ?? -1)
-                {
-                    local.updatedAtMs = remoteRevision
-                    local.hasServerAuthority = true
-                }
+                Self.installTodoRevision(local, revision: remote.updatedAtMs)
             } else if remote.id != pendingDeleteID {
                 context.insert(remote)
             }
@@ -780,9 +813,62 @@ final class ConvexSyncService {
         local.totalValue = remote.totalValue
         local.weeklyContribution = remote.weeklyContribution
         local.lastUpdated = remote.lastUpdated
-        for h in local.holdings {
-            context.delete(h)
+
+        // Update children in place by holding name instead of delete+reinserting
+        // the whole cascade on every sync: no row churn, and references held by
+        // anything observing the old children stay valid. Holdings carry a name
+        // inside the account; lots have no stable key, so a holding's lots are
+        // replaced only when they actually differ.
+        var localByName: [String: Holding] = [:]
+        for holding in local.holdings {
+            localByName[holding.name] = holding
         }
-        local.holdings = remote.holdings
+        var matchedNames = Set<String>()
+        for remoteHolding in remote.holdings {
+            if let existing = localByName[remoteHolding.name] {
+                matchedNames.insert(remoteHolding.name)
+                existing.category = remoteHolding.category
+                existing.ticker = remoteHolding.ticker
+                existing.value = remoteHolding.value
+                existing.costBasis = remoteHolding.costBasis
+                existing.gainPct = remoteHolding.gainPct
+                existing.shares = remoteHolding.shares
+                existing.avgCost = remoteHolding.avgCost
+                existing.currentPricePerShare = remoteHolding.currentPricePerShare
+                existing.isProxy = remoteHolding.isProxy
+                existing.proxyNote = remoteHolding.proxyNote
+                if !lotsMatch(existing.lots, remoteHolding.lots) {
+                    for lot in existing.lots {
+                        context.delete(lot)
+                    }
+                    existing.lots = remoteHolding.lots
+                }
+            } else {
+                // Brand-new holding from the remote snapshot: its cascade
+                // lots come with it, exactly like the parent insert path.
+                local.holdings.append(remoteHolding)
+            }
+        }
+        for name in localByName.keys where !matchedNames.contains(name) {
+            if let removed = localByName[name] {
+                context.delete(removed)
+            }
+        }
+    }
+
+    private func lotsMatch(_ local: [HoldingLot], _ remote: [HoldingLot]) -> Bool {
+        guard local.count == remote.count else { return false }
+        for (x, y) in zip(local, remote) {
+            if x.date != y.date
+                || x.type != y.type
+                || x.pricePerShare != y.pricePerShare
+                || x.shares != y.shares
+                || x.amountInvested != y.amountInvested
+                || x.note != y.note
+            {
+                return false
+            }
+        }
+        return true
     }
 }

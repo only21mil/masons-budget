@@ -27,22 +27,7 @@ struct BTCBillPayView: View {
     }
 
     private var grouped: [(String, [BTCBillPay])] {
-        let df = DateFormatter()
-        df.dateFormat = "MMMM yyyy"
-        var map: [String: [BTCBillPay]] = [:]
-        for bp in visibleBillPays {
-            let key = df.string(from: bp.date)
-            map[key, default: []].append(bp)
-        }
-        let sorted = map.keys.sorted { k1, k2 in
-            let d1 = map[k1]?.first?.date ?? .distantPast
-            let d2 = map[k2]?.first?.date ?? .distantPast
-            return d1 > d2
-        }
-        return sorted.compactMap { key in
-            guard let pays = map[key], !pays.isEmpty else { return nil }
-            return (key, pays)
-        }
+        AppFormatter.groupedByMonth(visibleBillPays, by: \.date)
     }
 
     var body: some View {
@@ -181,13 +166,18 @@ struct BTCBillPayComposeView: View {
     @State private var category = ""
 
     private var parsedAmount: Decimal {
-        Decimal(string: amount.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "$", with: "")) ?? 0
+        // Write-path parse: pinned POSIX locale (the entry pad emits
+        // dot-decimal text; the device locale would read "12.50" as 1250).
+        Decimal(
+            string: amount.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "$", with: ""),
+            locale: Locale(identifier: "en_US_POSIX"),
+        ) ?? 0
     }
 
     private var parsedFee: Decimal? {
         let clean = fee.replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "$", with: "")
         guard !clean.isEmpty else { return nil }
-        return Decimal(string: clean)
+        return Decimal(string: clean, locale: Locale(identifier: "en_US_POSIX"))
     }
 
     private var exactFee: Decimal? {

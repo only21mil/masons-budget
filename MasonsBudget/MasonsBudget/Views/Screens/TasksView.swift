@@ -151,10 +151,14 @@ struct TasksView: View {
         }
     }
 
-    private var eyebrow: String {
+    private static let eyebrowFormatter: DateFormatter = {
         let df = DateFormatter()
         df.dateFormat = "EEEE · MMM d"
-        return df.string(from: Date())
+        return df
+    }()
+
+    private var eyebrow: String {
+        Self.eyebrowFormatter.string(from: Date())
     }
 
     var body: some View {

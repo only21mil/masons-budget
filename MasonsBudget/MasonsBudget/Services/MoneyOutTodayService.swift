@@ -12,7 +12,7 @@ enum MoneyOutTodayService {
         let day = dayString(now, calendar: calendar)
         let transactionRows: [MoneyOutTodayTransaction] = try transactions.compactMap { transaction -> MoneyOutTodayTransaction? in
             guard calendar.isDate(transaction.date, inSameDayAs: now),
-                  ownerIsInScope(transaction.ownerMember, viewer: viewer)
+                  viewer.isSpendingScope(of: transaction.ownerMember)
             else { return nil }
             return try MoneyOutTodayTransaction(
                 owner: transaction.ownerMember,
@@ -26,7 +26,7 @@ enum MoneyOutTodayService {
         }
         let billPayRows: [MoneyOutTodayBillPay] = try billPays.compactMap { billPay -> MoneyOutTodayBillPay? in
             guard calendar.isDate(billPay.date, inSameDayAs: now),
-                  ownerIsInScope(billPay.ownerMember, viewer: viewer)
+                  viewer.isSpendingScope(of: billPay.ownerMember)
             else { return nil }
             return try MoneyOutTodayBillPay(
                 owner: billPay.ownerMember,
@@ -50,19 +50,23 @@ enum MoneyOutTodayService {
         )
     }
 
+    // Cached: this runs on every money-out-today derivation. Single-slot memo
+    // — the hot path always passes the same calendar.
+    private static var cachedDayFormatter: (calendar: Calendar, formatter: DateFormatter)?
+
     private static func dayString(_ date: Date, calendar: Calendar) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = "yyyy-MM-dd"
+        let formatter: DateFormatter
+        if let cached = cachedDayFormatter, cached.calendar == calendar {
+            formatter = cached.formatter
+        } else {
+            formatter = DateFormatter()
+            formatter.calendar = calendar
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = calendar.timeZone
+            formatter.dateFormat = "yyyy-MM-dd"
+            cachedDayFormatter = (calendar, formatter)
+        }
         return formatter.string(from: date)
     }
 
-    private static func ownerIsInScope(
-        _ owner: FamilyMember,
-        viewer: FamilyMember,
-    ) -> Bool {
-        viewer.isAdult ? owner.isAdult : owner == viewer
-    }
 }
