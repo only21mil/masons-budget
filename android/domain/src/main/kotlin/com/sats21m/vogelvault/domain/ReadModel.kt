@@ -193,6 +193,13 @@ data class BtcBuy(
     val costBasisStatus: String? = null,
     override val owner: FamilyMember,
     val feeUsdCents: Long = 0L,
+    /**
+     * The server's revision for the row, mirroring Transaction.updatedAtMs.
+     * 0 means "unknown" (fixtures, legacy readers) and must never be treated
+     * as a fetch-local timestamp: cache revisions and server revisions have
+     * to stay comparable inside one table family.
+     */
+    val updatedAtMs: Long = 0L,
 ) : Owned {
     init {
         require(feeUsdCents >= 0L) { "Bitcoin buy feeUsdCents must be nonnegative" }

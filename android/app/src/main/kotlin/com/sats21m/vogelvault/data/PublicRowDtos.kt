@@ -363,6 +363,7 @@ internal data class PublicBtcBuyDto(
         costBasisStatus = costBasisStatus,
         owner = owner,
         feeUsdCents = feeUsdCents,
+        updatedAtMs = updatedAtMs,
     )
 
     companion object {

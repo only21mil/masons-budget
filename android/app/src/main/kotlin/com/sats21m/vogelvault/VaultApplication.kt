@@ -252,7 +252,14 @@ open class VaultApplication : Application() {
     val acceptedWrites: SharedFlow<Unit> = acceptedWriteSignals
 
     internal open fun noteAcceptedWrite() {
-        acceptedWriteSignals.tryEmit(Unit)
+        // tryEmit refuses only when the replay+buffer window is full (slow or
+        // absent collectors, more buffered acceptances than slots). Dropping
+        // silently would strand exactly the stale-ledger outcome the replay=1
+        // contract exists to prevent, so a refused emission retries through a
+        // suspending emit on the process scope: backpressure, never a loss.
+        if (!acceptedWriteSignals.tryEmit(Unit)) {
+            applicationScope.launch { acceptedWriteSignals.emit(Unit) }
+        }
     }
 
     override fun onTerminate() {
