@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import os
 
 @main
 struct MasonsBudgetApp: App {
