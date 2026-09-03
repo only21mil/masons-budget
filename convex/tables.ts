@@ -46,6 +46,7 @@ import {
   authenticateDevice,
   markDeviceSeen,
   requireTaskProfileBinding,
+  timingSafeEqualStrings,
 } from "./deviceAuth";
 import {
   addDelta,
@@ -72,17 +73,22 @@ declare const process: { env: Record<string, string | undefined> };
 // MIRROR 1 — auth gates
 //
 // CANONICAL SOURCE: convex/dataFiles.ts (validateReadToken / validateSyncToken).
-// Copied verbatim, including the hatch-outranks-the-token precedence and the
-// asymmetric throw types (sync throws Error, read throws ConvexError). Do not
-// "tidy" either difference here: the point of a mirror is that a caller cannot
-// tell which file answered it. If you change a gate in dataFiles.ts you MUST
-// change it here, and the auth block in tables.test.ts will fail until you do.
+// Copied verbatim, including the hatch-outranks-the-token precedence, the
+// timing-safe token comparison, and the asymmetric throw types (sync throws
+// Error, read throws ConvexError). Do not "tidy" either difference here: the
+// point of a mirror is that a caller cannot tell which file answered it. If you
+// change a gate in dataFiles.ts you MUST change it here, and the auth block in
+// tables.test.ts will fail until you do.
 //
 // THE ESCAPE HATCH OUTRANKS THE TOKEN. ALLOW_TOKENLESS_{READ,SYNC}="true" admits
 // the call even when the matching token IS configured, and is checked first. The
 // full argument for that ordering is in the banner in dataFiles.ts; the short
 // version is that the opposite ordering locks the whole household out remotely
 // the instant a token is set, and nothing detects that.
+//
+// UNAUTHENTICATED-CALLER ERROR DISCIPLINE (mirrors dataFiles.ts): the
+// client-visible rejection is generic and names no environment variable; the
+// specific configuration detail goes to the server log only.
 //
 // CONVEX_SYNC_TOKEN is the legacy full-admin write credential, not a paired
 // device capability. It authorizes every mutation in this compatibility
@@ -114,13 +120,16 @@ function validateSyncToken(token?: string) {
     return;
   }
   if (!expected) {
+    console.error(
+      "AUTH-FAIL-CLOSED: CONVEX_SYNC_TOKEN is not configured; every write " +
+        "is being rejected. Configure the deployment write credential — do " +
+        "not set ALLOW_TOKENLESS_SYNC to recover.",
+    );
     throw new Error(
-      "Unauthorized: CONVEX_SYNC_TOKEN is not configured (fail-closed). " +
-        "Set the token on the deployment, or set ALLOW_TOKENLESS_SYNC=true to " +
-        "explicitly allow tokenless writes.",
+      "Unauthorized: write auth is not configured (fail-closed).",
     );
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new Error("Unauthorized: invalid sync token");
   }
 }
@@ -136,13 +145,16 @@ function validateReadToken(token?: string) {
     return;
   }
   if (!expected) {
+    console.error(
+      "AUTH-FAIL-CLOSED: CONVEX_READ_TOKEN is not configured; every read " +
+        "is being rejected. Configure the deployment read credential — do " +
+        "not set ALLOW_TOKENLESS_READ to recover.",
+    );
     throw new ConvexError(
-      "Unauthorized: CONVEX_READ_TOKEN is not configured (fail-closed). " +
-        "Set the token on the deployment, or set ALLOW_TOKENLESS_READ=true to " +
-        "explicitly allow unauthenticated reads during cutover.",
+      "Unauthorized: read auth is not configured (fail-closed).",
     );
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new ConvexError("Unauthorized: invalid read token");
   }
 }

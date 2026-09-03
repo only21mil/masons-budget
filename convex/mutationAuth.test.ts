@@ -75,13 +75,13 @@ describe("mutation auth: nothing configured (fail-closed default)", () => {
   for (const mutation of TOKEN_GUARDED_MUTATIONS) {
     it(`${mutation.name} rejects without a token`, async () => {
       await expect(mutation.call(t)).rejects.toThrow(
-        /CONVEX_SYNC_TOKEN is not configured/,
+        /write auth is not configured/,
       );
     });
 
     it(`${mutation.name} rejects a guessed token`, async () => {
       await expect(mutation.call(t, freshSecret())).rejects.toThrow(
-        /CONVEX_SYNC_TOKEN is not configured/,
+        /write auth is not configured/,
       );
     });
   }
@@ -147,7 +147,7 @@ describe("mutation auth: ALLOW_TOKENLESS_SYNC cutover hatch", () => {
       setDeploymentEnv({ ALLOW_TOKENLESS_SYNC: value });
       await expect(
         t.mutation(api.sync, { name: "budget", data: { categories: [] } }),
-      ).rejects.toThrow(/CONVEX_SYNC_TOKEN is not configured/);
+      ).rejects.toThrow(/write auth is not configured/);
     }
   });
 

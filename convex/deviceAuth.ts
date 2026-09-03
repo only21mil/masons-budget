@@ -50,6 +50,34 @@ export async function sha256Hex(value: string): Promise<string> {
     .join("");
 }
 
+/** Constant-time equality of two 64-character lowercase sha256 hex digests. */
+export function equalSha256Hex(left: string, right: string): boolean {
+  if (left.length !== 64 || right.length !== 64) return false;
+  let difference = 0;
+  for (let index = 0; index < 64; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
+}
+
+/**
+ * Constant-time equality for two secret strings of arbitrary length.
+ *
+ * Every byte position of BOTH inputs is folded into one accumulator, and the
+ * length difference is folded in as well, so the observable work does not
+ * depend on where (or whether) the inputs agree. Reading `left` past its own
+ * length yields NaN, normalised to 0, so a length mismatch cannot throw and
+ * the accumulator still settles on a non-zero value.
+ */
+export function timingSafeEqualStrings(left: string, right: string): boolean {
+  let difference = left.length ^ right.length;
+  const longest = Math.max(left.length, right.length);
+  for (let index = 0; index < longest; index += 1) {
+    difference |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
+  }
+  return difference === 0;
+}
+
 export function validateDeviceCredentialShape(
   deviceId: string,
   deviceToken: string,
@@ -85,7 +113,7 @@ export async function authenticateDevice(
   if (
     !device ||
     device.revokedAt !== undefined ||
-    tokenHash !== device.tokenHash ||
+    !equalSha256Hex(tokenHash, device.tokenHash) ||
     !normalizeDeviceCapabilities(device.capabilities).includes(capability)
   ) {
     throw new ConvexError({
@@ -134,7 +162,7 @@ export async function authenticateDeviceForSelfRevoke(
     .withIndex("by_device_id", (q) => q.eq("deviceId", deviceId))
     .unique();
   const tokenHash = await sha256Hex(deviceToken);
-  if (!device || tokenHash !== device.tokenHash) {
+  if (!device || !equalSha256Hex(tokenHash, device.tokenHash)) {
     throw new ConvexError({
       code: "DEVICE_UNAUTHORIZED",
       message: "Unauthorized mobile device",

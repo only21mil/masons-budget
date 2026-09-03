@@ -5,8 +5,10 @@ import {
   authenticateDeviceForSelfRevoke,
   deviceCapabilityValidator,
   deviceProfileValidator,
+  equalSha256Hex,
   normalizeDeviceCapabilities,
   sha256Hex,
+  timingSafeEqualStrings,
   validateDeviceCredentialShape,
 } from "./deviceAuth";
 import {
@@ -88,6 +90,11 @@ function warnPermissive(hatchVar: string, tokenVar: string, tokenSet: boolean) {
 //
 // Every approved caller of these mutations must send CONVEX_SYNC_TOKEN before
 // ALLOW_TOKENLESS_SYNC comes off, or its writes lock out.
+//
+// UNAUTHENTICATED-CALLER ERROR DISCIPLINE: the client-visible rejection is
+// generic and names no environment variable. The specific configuration detail
+// (which variable is missing) goes to the server log only, so a prober learns
+// that the door is locked, not which key unlocks it.
 function validateSyncToken(token?: string) {
   const expected = process.env.CONVEX_SYNC_TOKEN;
   if (process.env.ALLOW_TOKENLESS_SYNC === "true") {
@@ -99,13 +106,16 @@ function validateSyncToken(token?: string) {
     return;
   }
   if (!expected) {
+    console.error(
+      "AUTH-FAIL-CLOSED: CONVEX_SYNC_TOKEN is not configured; every write " +
+        "is being rejected. Configure the deployment write credential — do " +
+        "not set ALLOW_TOKENLESS_SYNC to recover.",
+    );
     throw new Error(
-      "Unauthorized: CONVEX_SYNC_TOKEN is not configured (fail-closed). " +
-        "Set the token on the deployment, or set ALLOW_TOKENLESS_SYNC=true to " +
-        "explicitly allow tokenless writes.",
+      "Unauthorized: write auth is not configured (fail-closed).",
     );
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new Error("Unauthorized: invalid sync token");
   }
 }
@@ -116,7 +126,8 @@ function validateSyncToken(token?: string) {
 // Confirmed live against production before this change.
 //
 // Same shape as validateSyncToken, same hatch precedence, for the reason in the
-// banner above.
+// banner above. Same generic-error discipline: no environment variable names
+// reach an unauthenticated caller.
 function validateReadToken(token?: string) {
   const expected = process.env.CONVEX_READ_TOKEN;
   if (process.env.ALLOW_TOKENLESS_READ === "true") {
@@ -128,13 +139,16 @@ function validateReadToken(token?: string) {
     return;
   }
   if (!expected) {
+    console.error(
+      "AUTH-FAIL-CLOSED: CONVEX_READ_TOKEN is not configured; every read " +
+        "is being rejected. Configure the deployment read credential — do " +
+        "not set ALLOW_TOKENLESS_READ to recover.",
+    );
     throw new ConvexError(
-      "Unauthorized: CONVEX_READ_TOKEN is not configured (fail-closed). " +
-        "Set the token on the deployment, or set ALLOW_TOKENLESS_READ=true to " +
-        "explicitly allow unauthenticated reads during cutover.",
+      "Unauthorized: read auth is not configured (fail-closed).",
     );
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new ConvexError("Unauthorized: invalid read token");
   }
 }
@@ -156,7 +170,7 @@ function validateConfiguredSyncToken(token?: string) {
       message: "Malformed sync credential.",
     });
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new ConvexError({
       code: "DEVICE_UNAUTHORIZED",
       message: "Unauthorized: invalid sync token",
@@ -265,19 +279,13 @@ function validateAndroidReadBootstrapSyncToken(token?: string) {
   ) {
     androidReadBootstrapFailure("VALIDATION_FAILED");
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     androidReadBootstrapFailure("DEVICE_UNAUTHORIZED");
   }
 }
 
-function equalSha256Hex(left: string, right: string): boolean {
-  if (left.length !== 64 || right.length !== 64) return false;
-  let difference = 0;
-  for (let index = 0; index < 64; index += 1) {
-    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
-  return difference === 0;
-}
+// equalSha256Hex and timingSafeEqualStrings live in deviceAuth.ts so every
+// credential comparison in the deployment shares one constant-time implementation.
 
 // ── Queries (called by the iOS app) ──
 

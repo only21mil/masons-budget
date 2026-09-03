@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation, query } from "./_generated/server";
+import { timingSafeEqualStrings } from "./deviceAuth";
 import {
   MARKET_SYMBOLS,
   acquireFixedMarketQuotes,
@@ -73,8 +74,9 @@ function warnPermissive(hatchVar: string, tokenVar: string, tokenSet: boolean) {
 }
 
 // Mirrors the existing runtime-injected read boundary in dataFiles.ts. Keep the
-// hatch precedence and error text aligned so clients cannot distinguish which
-// authenticated read surface answered them.
+// hatch precedence, the timing-safe comparison, and the generic client-visible
+// rejection aligned so clients cannot distinguish which authenticated read
+// surface answered them.
 function validateReadToken(token?: string) {
   const expected = process.env.CONVEX_READ_TOKEN;
   if (process.env.ALLOW_TOKENLESS_READ === "true") {
@@ -86,13 +88,16 @@ function validateReadToken(token?: string) {
     return;
   }
   if (!expected) {
+    console.error(
+      "AUTH-FAIL-CLOSED: CONVEX_READ_TOKEN is not configured; every read " +
+        "is being rejected. Configure the deployment read credential — do " +
+        "not set ALLOW_TOKENLESS_READ to recover.",
+    );
     throw new ConvexError(
-      "Unauthorized: CONVEX_READ_TOKEN is not configured (fail-closed). " +
-        "Set the token on the deployment, or set ALLOW_TOKENLESS_READ=true to " +
-        "explicitly allow unauthenticated reads during cutover.",
+      "Unauthorized: read auth is not configured (fail-closed).",
     );
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new ConvexError("Unauthorized: invalid read token");
   }
 }

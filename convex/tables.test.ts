@@ -3495,12 +3495,12 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     for (const entry of readEntryPoints) {
       it(`${entry.name} fails closed`, async () => {
         await expect(entry.call()).rejects.toThrow(
-          /CONVEX_READ_TOKEN is not configured/,
+          /read auth is not configured/,
         );
       });
       it(`${entry.name} fails closed even when a token is supplied`, async () => {
         await expect(entry.call(freshSecret())).rejects.toThrow(
-          /CONVEX_READ_TOKEN is not configured/,
+          /read auth is not configured/,
         );
       });
     }
@@ -3508,7 +3508,7 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     for (const entry of writeEntryPoints) {
       it(`${entry.name} fails closed`, async () => {
         await expect(entry.call()).rejects.toThrow(
-          /CONVEX_SYNC_TOKEN is not configured/,
+          /write auth is not configured/,
         );
       });
     }
@@ -3578,15 +3578,15 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
 
     it("both files fail closed identically with neither hatch nor token", async () => {
       await expect(t.query(fn.dataFilesGet, { name: "todos" })).rejects.toThrow(
-        /CONVEX_READ_TOKEN is not configured/,
+        /read auth is not configured/,
       );
       await expect(
         queryRows(fn.listTransactions, { viewer: "victor" }),
-      ).rejects.toThrow(/CONVEX_READ_TOKEN is not configured/);
+      ).rejects.toThrow(/read auth is not configured/);
 
       await expect(
         t.mutation(fn.dataFilesSync, { name: "probe", data: [] }),
-      ).rejects.toThrow(/CONVEX_SYNC_TOKEN is not configured/);
+      ).rejects.toThrow(/write auth is not configured/);
     });
   });
 });

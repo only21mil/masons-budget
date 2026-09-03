@@ -319,10 +319,10 @@ describe("auth", () => {
     // No token configured and no hatch: fail-closed on all four doors.
     await expect(
       t.mutation(api.createTransaction, { ...BASE_TXN, id: "a", amountMinor: -1 }),
-    ).rejects.toThrow(/CONVEX_SYNC_TOKEN is not configured/);
+    ).rejects.toThrow(/write auth is not configured/);
     await expect(
       t.mutation(api.editTransaction, { id: "a", owner: "victor", actor: "x" }),
-    ).rejects.toThrow(/CONVEX_SYNC_TOKEN is not configured/);
+    ).rejects.toThrow(/write auth is not configured/);
     await expect(
       t.mutation(api.createTodo, {
         id: "a",
@@ -331,10 +331,10 @@ describe("auth", () => {
         owner: "victor",
         actor: "x",
       }),
-    ).rejects.toThrow(/CONVEX_SYNC_TOKEN is not configured/);
+    ).rejects.toThrow(/write auth is not configured/);
     await expect(
       t.mutation(api.editTodo, { id: "a", title: "x", actor: "x" }),
-    ).rejects.toThrow(/CONVEX_SYNC_TOKEN is not configured/);
+    ).rejects.toThrow(/write auth is not configured/);
   });
 
   it("writes nothing when the token is refused", async () => {

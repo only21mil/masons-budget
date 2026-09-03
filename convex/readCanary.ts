@@ -1,12 +1,13 @@
 import { ConvexError, v } from "convex/values";
 
 import { query } from "./_generated/server";
+import { timingSafeEqualStrings } from "./deviceAuth";
 
 declare const process: { env: Record<string, string | undefined> };
 
 function validateConfiguredReadToken(token?: string) {
   const expected = process.env.CONVEX_READ_TOKEN;
-  if (!expected || !token || token !== expected) {
+  if (!expected || !token || !timingSafeEqualStrings(token, expected)) {
     throw new ConvexError({
       code: "READ_UNAUTHORIZED",
       message: "Unauthorized read credential.",

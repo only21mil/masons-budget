@@ -38,6 +38,7 @@
 import { ConvexError, v } from "convex/values";
 import type { DataModel } from "./_generated/dataModel";
 import { mutation, type MutationCtx } from "./_generated/server";
+import { timingSafeEqualStrings } from "./deviceAuth";
 import { requireIsoDate } from "./dateValidation";
 import { mergeTodoPayload, normalizeTodoRecord } from "./todoNormalize";
 
@@ -53,7 +54,10 @@ declare const process: { env: Record<string, string | undefined> };
  * MIRROR of `validateSyncToken` in dataFiles.ts, including the escape-hatch
  * precedence documented in that file's banner (ALLOW_TOKENLESS_SYNC=true admits
  * the call even when CONVEX_SYNC_TOKEN is set — the hatch outranks the token, so
- * removing the hatch is the enforcement flip and re-setting it is the rollback).
+ * removing the hatch is the enforcement flip and re-setting it is the rollback),
+ * the timing-safe token comparison, and the generic client-visible rejection
+ * that names no environment variable (the specific detail goes to the server
+ * log only — see dataFiles.ts).
  *
  * A mirror rather than an import because the canonical function is module-
  * private in `dataFiles.ts`, which this change does not own: that file is live
@@ -83,13 +87,16 @@ function validateSyncToken(token?: string) {
     return;
   }
   if (!expected) {
+    console.error(
+      "AUTH-FAIL-CLOSED: CONVEX_SYNC_TOKEN is not configured; every write " +
+        "is being rejected. Configure the deployment write credential — do " +
+        "not set ALLOW_TOKENLESS_SYNC to recover.",
+    );
     throw new Error(
-      "Unauthorized: CONVEX_SYNC_TOKEN is not configured (fail-closed). " +
-        "Set the token on the deployment, or set ALLOW_TOKENLESS_SYNC=true to " +
-        "explicitly allow tokenless writes.",
+      "Unauthorized: write auth is not configured (fail-closed).",
     );
   }
-  if (!token || token !== expected) {
+  if (!token || !timingSafeEqualStrings(token, expected)) {
     throw new Error("Unauthorized: invalid sync token");
   }
 }
