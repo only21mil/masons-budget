@@ -43,6 +43,7 @@ jobs:
     name: Detect changed trees
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       linux: ${{ steps.filter.outputs.linux }}
       android: ${{ steps.filter.outputs.android }}
@@ -52,6 +53,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Compare against the merge base
         id: filter
@@ -154,8 +156,11 @@ jobs:
       github.repository == 'only21mil/masons-budget' &&
       (needs.changes.result != 'success' || needs.changes.outputs.tooling == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -175,8 +180,11 @@ jobs:
     name: Shared domain contract
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -191,18 +199,22 @@ jobs:
       - name: Parity tests against the Swift contract
         run: npm run test --workspace @vogel-vault/domain
 
-  # Real response bodies captured from Convex, replayed through the same
-  # repositories the shipped clients call. No socket or credential is involved.
-  # This runs on every PR rather than following client path filters: a committed
-  # capture, transport setting, or shared wire assumption can invalidate both
-  # clients even when neither client tree changed.
+  # Synthetic response bodies in the committed wire-shape fixture set, replayed
+  # through the same repositories the shipped clients call. No socket or
+  # credential is involved. This runs on every PR rather than following client
+  # path filters: a committed fixture, transport setting, or shared wire
+  # assumption can invalidate both clients even when neither client tree changed.
+  # The synthetic-content guard keeps production-shaped values out of the
+  # fixtures (they replaced verbatim production captures in 2026-09).
   convex-wire-golden:
-    name: Production wire golden decoders
+    name: Convex wire golden decoders
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -211,7 +223,10 @@ jobs:
 
       - run: npm ci
 
-      - name: Fixture provenance and Linux production values
+      - name: Fixture synthetic-content guard
+        run: node scripts/check-convex-wire-golden-synthetic.mjs
+
+      - name: Fixture provenance and Linux values
         run: node scripts/check-convex-wire-golden-provenance.mjs
 
       - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
@@ -224,11 +239,11 @@ jobs:
       # legal and technical review before adoption.
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
-      - name: Linux production decoder
+      - name: Linux wire decoder
         run: npx vitest run test/convex-wire-golden.test.ts
         working-directory: linux
 
-      - name: Android production decoder
+      - name: Android wire decoder
         run: >-
           ./gradlew :app:testDebugUnitTest
           --tests 'com.sats21m.vogelvault.data.ConvexWireGolden*Test'
@@ -247,8 +262,11 @@ jobs:
     name: Convex functions
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -287,8 +305,11 @@ jobs:
       needs.shared-domain.result == 'success' &&
       (needs.changes.result != 'success' || needs.changes.outputs.linux == 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -373,6 +394,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Detect which Android modules exist
         id: probe

@@ -89,6 +89,7 @@ jobs:
   changes:
     name: Detect Apple changes
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       apple: ${{ steps.base-unchanged-edit.outputs.apple || steps.filter.outputs.apple }}
     steps:
