@@ -1,1 +1,53 @@
-{"status":"success","value":{"complete":false,"rows":[{"amountCents":"2366","card":"Aven","category":"Dining & Drinks","date":"2026-08-01","displaySpendAmount":"2366","hasOppositeSpendSign":false,"merchant":"Dunkin","month":"2026-08","note":"Aven activity screenshot batch 2026-08-01","owner":"victor","spendAmount":"2366","txId":"aven-20260801-ef20d6dc6ad5bce1e3569287","updatedAtMs":1785605567371.0},{"amountCents":"10074","card":"Aven","category":"Dining & Drinks","date":"2026-08-01","displaySpendAmount":"10074","hasOppositeSpendSign":false,"merchant":"Paypal *uber Eats","month":"2026-08","note":"Aven activity screenshot batch 2026-08-01","owner":"victor","spendAmount":"10074","txId":"aven-20260801-9346fd6f323ee2d113230ecc","updatedAtMs":1785605567371.0},{"amountCents":"1100","card":"Aven","category":"Dining & Drinks","date":"2026-08-01","displaySpendAmount":"1100","hasOppositeSpendSign":false,"merchant":"Paypal *uber Eats","month":"2026-08","note":"Aven activity screenshot batch 2026-08-01","owner":"victor","spendAmount":"1100","txId":"aven-20260801-f270a73690ecc62e4e710982","updatedAtMs":1785605567371.0}]}}
+{
+  "status": "success",
+  "value": {
+    "complete": false,
+    "rows": [
+      {
+        "amountCents": "1000",
+        "card": "0000",
+        "category": "Sample Category A",
+        "date": "2099-01-02",
+        "displaySpendAmount": "1000",
+        "hasOppositeSpendSign": false,
+        "merchant": "Sample Merchant One",
+        "month": "2099-01",
+        "note": "Synthetic transaction fixture row 1",
+        "owner": "victor",
+        "spendAmount": "1000",
+        "txId": "synthetic-tx-0000000001",
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "amountCents": "250000",
+        "card": "0000",
+        "category": "Sample Category B",
+        "date": "2099-01-03",
+        "displaySpendAmount": "250000",
+        "hasOppositeSpendSign": false,
+        "merchant": "Sample Merchant Two",
+        "month": "2099-01",
+        "note": "Synthetic transaction fixture row 2",
+        "owner": "rachel",
+        "spendAmount": "250000",
+        "txId": "synthetic-tx-0000000002",
+        "updatedAtMs": 1700000000000
+      },
+      {
+        "amountCents": "500",
+        "card": "0000",
+        "category": "Sample Category C",
+        "date": "2099-01-04",
+        "displaySpendAmount": "500",
+        "hasOppositeSpendSign": false,
+        "merchant": "Sample Merchant Three",
+        "month": "2099-01",
+        "note": "Synthetic transaction fixture row 3",
+        "owner": "mason",
+        "spendAmount": "500",
+        "txId": "synthetic-tx-0000000003",
+        "updatedAtMs": 1700000000000
+      }
+    ]
+  }
+}

@@ -62,24 +62,24 @@ describe("production Convex wire captures", () => {
       const result = await repository.query(request, "victor")
       if (request.kind === "transactions") {
         // The client derives presentation fields from the canonical amount,
-        // even though the current production capture now agrees with them.
+        // even though the synthetic capture agrees with them.
         expect(result).toMatchObject({ status: "ok", kind: "transactions" })
         if (result.status !== "ok" || result.kind !== "transactions") {
-          throw new Error("production transaction capture did not decode")
+          throw new Error("synthetic transaction capture did not decode")
         }
         expect(result.rows[0]).toMatchObject({
-          amountCents: 2_366n,
-          spendAmount: 2_366n,
-          displaySpendAmount: 2_366n,
+          amountCents: 1_000n,
+          spendAmount: 1_000n,
+          displaySpendAmount: 1_000n,
           hasOppositeSpendSign: false,
         })
         continue
       }
       if (request.kind === "btcAccounts") {
-        // The production capture deliberately used a bounded request and is
-        // incomplete even though it contains zero rows. This repository's
-        // public account request is unbounded, so the real decoder must retain
-        // the incomplete-envelope signal rather than treating it as live data.
+        // The synthetic capture deliberately models a bounded request and is
+        // incomplete. This repository's public account request is unbounded,
+        // so the real decoder must retain the incomplete-envelope signal
+        // rather than treating it as live data.
         expect(result).toEqual({ status: "error", code: "incomplete-response" })
         continue
       }

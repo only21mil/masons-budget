@@ -1,1 +1,16 @@
-{"status":"success","value":{"balanceDocuments":1.0,"btcAccounts":8.0,"btcBalanceDocuments":2.0,"btcBillPays":37.0,"btcBuys":35.0,"btcTransfers":0.0,"budgetDocuments":2.0,"financeDocuments":1.0,"income":18.0,"todos":9.0,"transactions":993.0}}
+{
+  "status": "success",
+  "value": {
+    "balanceDocuments": 1,
+    "btcAccounts": 3,
+    "btcBalanceDocuments": 1,
+    "btcBillPays": 5,
+    "btcBuys": 5,
+    "btcTransfers": 0,
+    "budgetDocuments": 1,
+    "financeDocuments": 1,
+    "income": 2,
+    "todos": 3,
+    "transactions": 10
+  }
+}

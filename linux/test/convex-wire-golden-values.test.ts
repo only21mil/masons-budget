@@ -51,7 +51,7 @@ function requireOk(
 }
 
 describe("real Convex wire values", () => {
-  it("derives spend projection locally from the current production capture", async () => {
+  it("derives spend projection locally from the synthetic capture", async () => {
     const capture = JSON.parse(
       readFileSync(new URL("listTransactions.json.json", GOLDEN_ROOT), "utf8"),
     ) as {
@@ -64,8 +64,8 @@ describe("real Convex wire values", () => {
       }
     }
     expect(capture.value.rows[0]).toMatchObject({
-      amountCents: "2366",
-      spendAmount: "2366",
+      amountCents: "1000",
+      spendAmount: "1000",
       hasOppositeSpendSign: false,
     })
     const encodedCapture = JSON.parse(
@@ -98,9 +98,9 @@ describe("real Convex wire values", () => {
       throw new Error(`production golden listTransactions decoded as ${result.kind}`)
     }
     expect(result.rows[0]).toMatchObject({
-      amountCents: 2_366n,
-      spendAmount: 2_366n,
-      displaySpendAmount: 2_366n,
+      amountCents: 1_000n,
+      spendAmount: 1_000n,
+      displaySpendAmount: 1_000n,
       hasOppositeSpendSign: false,
     })
   })
@@ -117,9 +117,9 @@ describe("real Convex wire values", () => {
       throw new Error(`production golden listTodos decoded as ${result.kind}`)
     }
     const row = result.rows[0] as VogelVaultTodoRow
-    expect(row.todoId).toBe("8A56A12C-DB12-4766-96BF-6E3AE7D1EFC9")
+    expect(row.todoId).toBe("00000000-0000-4000-8000-000000000001")
     expect(row.priority).toBe(0n)
-    expect(row.updatedAtMs).toBe(1_784_388_713_216)
+    expect(row.updatedAtMs).toBe(1_700_000_000_000)
   })
 
   it("decodes BTC buy values through the production repository", async () => {
@@ -135,10 +135,10 @@ describe("real Convex wire values", () => {
       throw new Error(`production golden listBtcBuys decoded as ${result.kind}`)
     }
     const row = result.rows[0] as VogelVaultBtcBuyRow
-    expect(row.buyId).toBe("river-buy-by5ekey7i4")
-    expect(row.sats).toBe(6_572_537n)
-    expect(row.priceUsdCents).toBe(6_414_981n)
-    expect(row.usdCents).toBe(425_843n)
+    expect(row.buyId).toBe("sample-buy-0000000001")
+    expect(row.sats).toBe(100_000n)
+    expect(row.priceUsdCents).toBe(500_000n)
+    expect(row.usdCents).toBe(500_000n)
   })
 
   it("decodes BTC bill-pay values through the production repository", async () => {
@@ -154,10 +154,10 @@ describe("real Convex wire values", () => {
       throw new Error(`production golden listBtcBillPays decoded as ${result.kind}`)
     }
     const row = result.rows[0] as VogelVaultBtcBillPayRow
-    expect(row.billPayId).toBe("river-billpay-qe3kbvq5qy")
-    expect(row.amountUsdCents).toBe(179_200n)
-    expect(row.btcSpentSats).toBe(2_802_143n)
-    expect(row.btcPriceCents).toBe(6_395_105n)
+    expect(row.billPayId).toBe("sample-billpay-000000001")
+    expect(row.amountUsdCents).toBe(120_000n)
+    expect(row.btcSpentSats).toBe(24_000_000n)
+    expect(row.btcPriceCents).toBe(500_000n)
     expect(row.feeUsdCents).toBe(0n)
   })
 
@@ -170,16 +170,16 @@ describe("real Convex wire values", () => {
       throw new Error(`production golden rowCounts decoded as ${result.kind}`)
     }
     expect(result.value).toEqual({
-      transactions: 993,
-      todos: 9,
-      btcBuys: 35,
-      btcBillPays: 37,
+      transactions: 10,
+      todos: 3,
+      btcBuys: 5,
+      btcBillPays: 5,
       btcTransfers: 0,
-      btcAccounts: 8,
-      income: 18,
+      btcAccounts: 3,
+      income: 2,
       balanceDocuments: 1,
-      budgetDocuments: 2,
-      btcBalanceDocuments: 2,
+      budgetDocuments: 1,
+      btcBalanceDocuments: 1,
       financeDocuments: 1,
     })
   })
@@ -201,17 +201,17 @@ describe("real Convex wire values", () => {
     }
     expect(result.value).toMatchObject({
       owner: "victor",
-      month: "August 2026",
-      coinbaseOneBalanceCents: 2_642n,
-      updatedAtMs: 1_785_605_567_371,
+      month: "June 2099",
+      coinbaseOneBalanceCents: 0n,
+      updatedAtMs: 1_700_000_000_000,
     })
     expect(result.value.categories[0]).toMatchObject({
-      name: "Bills & Utilities",
-      budgetCents: 620_000n,
+      name: "Sample Category 1",
+      budgetCents: 400_000n,
     })
     expect(result.value.monthlyHistory[0]).toMatchObject({
-      month: "January 2026",
-      savingsBps: 5_410,
+      month: "January 2099",
+      savingsBps: 2_500,
     })
   })
 

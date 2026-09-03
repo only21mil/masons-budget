@@ -60,22 +60,14 @@ async function fixtureRepo({ valueTestExitCode = 0, vitestLayout = "root" } = {}
   return root
 }
 
-function capturedDate(root) {
-  const provenance = JSON.parse(readFileSync(
-    path.join(root, "shared/domain/convex-wire-golden-provenance.json"),
-    "utf8",
-  ))
-  return provenance.capturedDate
-}
-
-function runGate(root, { now = capturedDate(root) } = {}) {
+function runGate(root) {
   return spawnSync(
     process.execPath,
     [path.join(root, "scripts/check-convex-wire-golden-provenance.mjs")],
     {
       cwd: root,
       encoding: "utf8",
-      env: { ...process.env, CONVEX_WIRE_GOLDEN_NOW: now },
+      env: { ...process.env },
     },
   )
 }
@@ -202,16 +194,36 @@ test("an attested query without a production capture still guards its shape", as
   assert.match(result.stderr, /query shape checksum mismatch for listIncome/)
 })
 
-test("a capture dated after the injected clock still fails loudly", async (t) => {
+test("a fixture body changed without refreshed checksums fails the gate", async (t) => {
   const root = await fixtureRepo()
   t.after(() => rm(root, { force: true, recursive: true }))
-  const captureDay = new Date(`${capturedDate(root)}T00:00:00.000Z`)
-  captureDay.setUTCDate(captureDay.getUTCDate() - 1)
+  const fixturePath = path.join(
+    root,
+    "shared/domain/fixtures/convex-wire-golden/rowCounts.json.json",
+  )
+  await writeFile(fixturePath, '{"status":"success","value":{"transactions":11}}\n')
 
-  const result = runGate(root, { now: captureDay.toISOString() })
+  const result = runGate(root)
 
   assert.notEqual(result.status, 0, result.stdout)
-  assert.match(result.stderr, /capture date .* is 1 days in the future/)
+  assert.match(result.stderr, /checksum mismatch for rowCounts\.json\.json/)
+})
+
+test("synthetic provenance claiming a production deployment fails the gate", async (t) => {
+  const root = await fixtureRepo()
+  t.after(() => rm(root, { force: true, recursive: true }))
+  const provenancePath = path.join(
+    root,
+    "shared/domain/convex-wire-golden-provenance.json",
+  )
+  const provenance = JSON.parse(await readFile(provenancePath, "utf8"))
+  provenance.deployment = "prod:example-deployment"
+  await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`)
+
+  const result = runGate(root)
+
+  assert.notEqual(result.status, 0, result.stdout)
+  assert.match(result.stderr, /must not claim a production deployment/)
 })
 
 test("a failing Linux value decoder prevents a provenance pass", async (t) => {

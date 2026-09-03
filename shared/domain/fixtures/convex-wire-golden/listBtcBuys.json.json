@@ -1,1 +1,50 @@
-{"status":"success","value":{"complete":false,"rows":[{"archimedesRequestId":"BY5EKEY7I4","buyId":"river-buy-by5ekey7i4","costBasisStatus":"complete","date":"2026-07-29","month":"2026-07","owner":"victor","priceUsdCents":"6414981","sats":"6572537","source":"River","status":"complete","updatedAtMs":1785605567371.0,"usdCents":"425843"},{"archimedesRequestId":"OTBUNT6FA4","buyId":"river-buy-otbunt6fa4","costBasisStatus":"complete","date":"2026-07-22","month":"2026-07","owner":"victor","priceUsdCents":"6629733","sats":"6359608","source":"River","status":"complete","updatedAtMs":1785605567371.0,"usdCents":"425841"},{"archimedesRequestId":"sats-2026-07-15-river-direct-deposit-22546.60-34768611sats-I3DHOFHCMM-btc","buyId":"b1784166379832","costBasisStatus":"complete","date":"2026-07-15","loggedBy":"archimedes","month":"2026-07","note":"River direct-deposit auto-buy from receipt Jul 15 2026 7:50 PM CDT; 99.77% auto-invested; 0.34768611 BTC at $64,696.03/BTC; subtotal $22,493.91; River fee $52.69; total direct deposit $22,546.60.","owner":"victor","priceUsdCents":"6469603","sats":"34768611","source":"River","status":"complete","updatedAtMs":0.0,"usdCents":"2254660"}]}}
+{
+  "status": "success",
+  "value": {
+    "complete": false,
+    "rows": [
+      {
+        "archimedesRequestId": "sample-req-000001",
+        "buyId": "sample-buy-0000000001",
+        "costBasisStatus": "sample",
+        "date": "2099-01-05",
+        "month": "2099-01",
+        "owner": "victor",
+        "priceUsdCents": "500000",
+        "sats": "100000",
+        "source": "Sample",
+        "status": "sample",
+        "updatedAtMs": 1700000000000,
+        "usdCents": "500000"
+      },
+      {
+        "archimedesRequestId": "sample-req-000002",
+        "buyId": "sample-buy-0000000002",
+        "costBasisStatus": "sample",
+        "date": "2099-01-06",
+        "month": "2099-01",
+        "owner": "rachel",
+        "priceUsdCents": "500000",
+        "sats": "200000",
+        "source": "Sample",
+        "status": "sample",
+        "updatedAtMs": 1700000000000,
+        "usdCents": "1000000"
+      },
+      {
+        "archimedesRequestId": "sample-req-000003",
+        "buyId": "sample-buy-0000000003",
+        "costBasisStatus": "sample",
+        "date": "2099-01-07",
+        "month": "2099-01",
+        "owner": "mason",
+        "priceUsdCents": "500000",
+        "sats": "50000",
+        "source": "Sample",
+        "status": "sample",
+        "updatedAtMs": 1700000000000,
+        "usdCents": "250000"
+      }
+    ]
+  }
+}
