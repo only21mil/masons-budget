@@ -187,8 +187,9 @@ final class ConvexSyncService {
     private func syncBTCAccounts(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readBTCSnapshot()
-            let owner: FamilyMember = currentMember.isAdult ? .victor : currentMember
-            let accounts = LedgerMapper.mapBTCAccounts(dto, owner: owner)
+            // Only reached from the adult branch of syncAll(); adult rows are
+            // always mapped onto the canonical household owner.
+            let accounts = LedgerMapper.mapBTCAccounts(dto, owner: .victor)
             try replaceBTCAccounts(ownedBy: [.victor, .rachel], with: accounts)
             return accounts.count
         } catch {

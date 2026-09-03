@@ -773,8 +773,10 @@ final class MasonsBudgetTests: XCTestCase {
         defer { ConvexConfig.setWritesEnabled(original) }
         ConvexConfig.setWritesEnabled(true)
 
-        guard ConvexConfig.isConfigured, !ConvexConfig.hasSyncToken else {
-            throw XCTSkip("Needs a configured deployment with no sync token")
+        // The deployment URL is a compiled constant, so only the token
+        // precondition remains.
+        guard !ConvexConfig.hasSyncToken else {
+            throw XCTSkip("Needs a deployment with no sync token")
         }
         XCTAssertEqual(AppWriteSyncService.writeBlocker(requiresSyncToken: true), .unauthorized)
         // The todo path keeps its paired-device fallback and is not refused here.

@@ -774,7 +774,9 @@ enum AppWriteSyncService {
     /// request instead of discovering the rejection three retries later.
     static func writeBlocker(requiresSyncToken: Bool) -> ConvexWriteResult? {
         if !ConvexConfig.writesEnabled { return .disabled }
-        if !ConvexConfig.isConfigured { return .notConfigured }
+        // No `.notConfigured` case: the deployment URL is a compiled constant,
+        // so a Convex write can never run unconfigured (`.notConfigured`
+        // remains reserved for `AppWritebackError.invalidBaseURL` remapping).
         if requiresSyncToken, !ConvexConfig.hasSyncToken { return .unauthorized }
         return nil
     }

@@ -43,12 +43,23 @@ struct RetirementView: View {
         totalBtc - coldBtc
     }
 
+    // MARK: - Planning-assumption constants (display only)
+    //
+    // These are the household's stated goals, not derived data: the weekly DCA
+    // target is the standing 0.021 BTC/week plan; the BTC goals are the
+    // 1 BTC (Mason) and 5 BTC (household) accumulation targets; the net-worth
+    // goals are the $100k (Mason) and $2.25M (household) milestones. They feed
+    // the progress card only — nothing persists or computes against them.
+
+    /// Standing weekly dollar-cost-average target, in sats.
     private let dcaWeeklySats: Decimal = 2_100_000
 
+    /// BTC accumulation goal: 1 BTC for Mason, 5 BTC for the household.
     private var btcGoal: Decimal {
         activeMember == .mason ? 1 : 5
     }
 
+    /// Net-worth milestone: $100k for Mason, $2.25M for the household.
     private var netWorthGoal: Decimal {
         activeMember == .mason ? 100_000 : 2_250_000
     }

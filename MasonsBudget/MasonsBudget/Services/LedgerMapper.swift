@@ -109,8 +109,15 @@ enum LedgerMapper {
     }
 
     private static func sanitizedStrategyNote(_ note: String?) -> String? {
-        let retiredCardToken = ["av", "en"].joined()
-        guard let note, !note.lowercased().contains(retiredCardToken) else { return nil }
+        // "aven" is the retired Aven card's wire name (see
+        // TransactionSourceCatalog). Strategy notes written for that card must
+        // not survive the map, but a substring match also erased unrelated
+        // notes ("Craven savings plan", "avenue of investment") — so match the
+        // token as a whole word instead.
+        guard let note else { return nil }
+        if note.lowercased().range(of: "\\baven\\b", options: .regularExpression) != nil {
+            return nil
+        }
         return note
     }
 

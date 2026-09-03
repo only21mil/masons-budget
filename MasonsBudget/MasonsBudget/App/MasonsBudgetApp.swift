@@ -3,6 +3,8 @@ import SwiftUI
 
 @main
 struct MasonsBudgetApp: App {
+    private static let resetLog = Logger(subsystem: "com.sats21m.masonsbudget", category: "App")
+
     var sharedModelContainer: ModelContainer = {
         resetSwiftDataStoreIfNeeded()
 
@@ -56,7 +58,7 @@ struct MasonsBudgetApp: App {
             do {
                 try FileManager.default.removeItem(at: url)
             } catch {
-                print("SwiftData store reset skipped \(url.lastPathComponent): \(error)")
+                resetLog.error("SwiftData store reset skipped one file")
             }
         }
 
@@ -141,7 +143,6 @@ struct MasonsBudgetApp: App {
     private func syncFromConvex() async {
         await BTCPriceService.shared.refreshAndStore()
         await StockPriceService.shared.refreshAndStore()
-        guard ConvexConfig.isConfigured else { return }
         let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
         await sync.syncAll()
     }
@@ -154,7 +155,6 @@ struct MasonsBudgetApp: App {
     /// cadence (and on foreground/profile switches via `syncFromConvex`).
     @MainActor
     private func syncIfChanged() async {
-        guard ConvexConfig.isConfigured else { return }
         let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
         let changed = await sync.hasUpdates()
         if changed {

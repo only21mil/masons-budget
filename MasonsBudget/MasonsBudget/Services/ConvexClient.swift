@@ -50,12 +50,6 @@ enum ConvexConfig {
         URL(string: "https://keen-elephant-452.convex.cloud")!
     }
 
-    /// Whether the Convex URL has been configured (not placeholder).
-    static var isConfigured: Bool {
-        let url = deploymentURL.absoluteString
-        return !url.contains("placeholder")
-    }
-
     /// Optional sync token for an authorized write path. NEVER hardcode a shared secret here
     /// (see AGENTS.md). Stored in the Keychain after runtime injection; empty by default so
     /// native writes stay fail-closed (the server rejects an empty/invalid token).
@@ -1179,13 +1173,6 @@ enum ConvexError: LocalizedError {
     }
 }
 
-/// Response envelope from the Convex HTTP API.
-private struct ConvexQueryResponse: Decodable {
-    let status: String
-    let value: AnyCodable?
-    let errorMessage: String?
-}
-
 /// Strictly converts Convex's tagged int64 wire values into Swift `Int64` values.
 ///
 /// Convex serializes `v.int64()` as an object containing one `$integer` key whose
@@ -1284,34 +1271,6 @@ enum ConvexRowMutationError: LocalizedError, Equatable {
             "\(path) returned an unexpected response."
         case .bitcoinPostingRequiresTypedSatsAndAccount:
             "A Bitcoin payment source requires an amount entered in sats and a Bitcoin account."
-        }
-    }
-}
-
-/// Type-erased Codable wrapper for Convex responses.
-struct AnyCodable: Decodable {
-    let value: Any
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if container.decodeNil() {
-            value = NSNull()
-        } else if let bool = try? container.decode(Bool.self) {
-            value = bool
-        } else if let int = try? container.decode(Int64.self) {
-            value = int
-        } else if let double = try? container.decode(Double.self) {
-            value = double
-        } else if let string = try? container.decode(String.self) {
-            value = string
-        } else if let array = try? container.decode([AnyCodable].self) {
-            value = array.map(\.value)
-        } else if let dict = try? container.decode([String: AnyCodable].self) {
-            value = dict.mapValues(\.value)
-        } else {
-            throw DecodingError.dataCorrupted(
-                .init(codingPath: decoder.codingPath, debugDescription: "Unsupported type"),
-            )
         }
     }
 }

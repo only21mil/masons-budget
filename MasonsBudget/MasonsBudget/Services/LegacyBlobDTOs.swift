@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // These DTOs decode the surviving legacy JSON blobs. They describe a wire
 // schema, not a live service or upstream system.
@@ -463,6 +464,8 @@ struct LegacyBillPaysWrapperDTO: Codable {
 }
 
 struct LegacyFinancesRetirementDTO: Decodable {
+    private static let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "LegacyBlob")
+
     let accounts: [String: LegacyFinanceAccountDTO]
 
     enum CodingKeys: String, CodingKey {
@@ -495,7 +498,9 @@ struct LegacyFinancesRetirementDTO: Decodable {
                     let account = try container.decode(LegacyFinanceAccountDTO.self, forKey: key)
                     decoded[key.stringValue] = account
                 } catch {
-                    print("[LegacyBlob] Failed to decode retirement account '\(key.stringValue)': \(error)")
+                    // Value-free diagnostic: the key is a real account name and
+                    // must never reach stdout or the unified log.
+                    Self.log.error("Failed to decode one retirement account row")
                 }
             }
             accounts = decoded
