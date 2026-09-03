@@ -18,7 +18,7 @@ final class ConvexRowsTests: XCTestCase {
         )
         XCTAssertFalse(transactions.complete)
         XCTAssertEqual(transactions.rows.count, 3)
-        XCTAssertEqual(transactions.rows[0].txId, "aven-20260801-ef20d6dc6ad5bce1e3569287")
+        XCTAssertEqual(transactions.rows[0].txId, "synthetic-tx-0000000001")
         XCTAssertEqual(transactions.rows[0].amountCents, 2_366)
 
         let todos: ConvexRowEnvelope<ConvexTodoRow> = try await client.fetchRows(
@@ -36,7 +36,7 @@ final class ConvexRowsTests: XCTestCase {
         )
         XCTAssertFalse(buys.complete)
         XCTAssertEqual(buys.rows.count, 3)
-        XCTAssertEqual(buys.rows[0].buyId, "river-buy-by5ekey7i4")
+        XCTAssertEqual(buys.rows[0].buyId, "sample-buy-0000000001")
         XCTAssertEqual(buys.rows[0].sats, 6_572_537)
         XCTAssertEqual(buys.rows[0].priceUsdCents, 6_414_981)
         XCTAssertEqual(buys.rows[0].usdCents, 425_843)
@@ -48,7 +48,7 @@ final class ConvexRowsTests: XCTestCase {
         )
         XCTAssertFalse(billPays.complete)
         XCTAssertEqual(billPays.rows.count, 3)
-        XCTAssertEqual(billPays.rows[0].billPayId, "river-billpay-qe3kbvq5qy")
+        XCTAssertEqual(billPays.rows[0].billPayId, "sample-billpay-000000001")
         XCTAssertEqual(billPays.rows[0].amountUsdCents, 179_200)
         XCTAssertEqual(billPays.rows[0].btcSpentSats, 2_802_143)
         XCTAssertEqual(billPays.rows[0].btcPriceCents, 6_395_105)
