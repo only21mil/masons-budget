@@ -144,6 +144,9 @@ struct SettingsView: View {
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("app_lock_enabled") private var appLockEnabled = true
     @AppStorage("has_completed_onboarding") private var hasCompletedOnboarding = false
+    @AppStorage(LedgerPreference.scanlinesKey) private var scanlinesEnabled = LedgerPreference.scanlinesDefault
+    @AppStorage(LedgerPreference.phosphorGlowKey) private var phosphorGlowEnabled = LedgerPreference.phosphorGlowDefault
+    @AppStorage(LedgerPreference.reduceMotionKey) private var reduceMotion = LedgerPreference.reduceMotionDefault
 
     var body: some View {
         ScrollView {
@@ -167,17 +170,11 @@ struct SettingsView: View {
                 .padding(.horizontal, AppLayout.sectionPadding)
 
                 VStack(spacing: 0) {
-                    Toggle(isOn: $appLockEnabled) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("APP LOCK")
-                                .font(AppFont.monoMicroStrong)
-                                .foregroundStyle(theme.text)
-                            Text("Require device authentication when the app opens")
-                                .font(AppFont.smallRegular)
-                                .foregroundStyle(theme.textMuted)
-                        }
-                    }
-                    .tint(theme.accent)
+                    LedgerToggle(
+                        "APP LOCK",
+                        detail: "Require device authentication when the app opens",
+                        isOn: $appLockEnabled,
+                    )
                     .padding(14)
 
                     Hairline()
@@ -200,6 +197,8 @@ struct SettingsView: View {
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                 .padding(.horizontal, AppLayout.sectionPadding)
+
+                ledgerEffectsCard
 
                 VStack(spacing: 0) {
                     settingsLink("FAMILY", icon: "person.3.fill", destination: FamilyView())
@@ -224,6 +223,23 @@ struct SettingsView: View {
         #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
+    }
+
+    /// Texture and glow are preferences, not base layers. Scanlines default
+    /// off for new installs; a saved choice is never overridden.
+    private var ledgerEffectsCard: some View {
+        VStack(spacing: 0) {
+            LedgerToggle("SCANLINES", detail: "Terminal texture over the ledger", isOn: $scanlinesEnabled)
+                .padding(14)
+            Hairline()
+            LedgerToggle("PHOSPHOR GLOW", detail: "Glow on the Bitcoin hero in the dark treatment", isOn: $phosphorGlowEnabled)
+                .padding(14)
+            Hairline()
+            LedgerToggle("REDUCE MOTION", detail: "Land every ledger animation immediately", isOn: $reduceMotion)
+                .padding(14)
+        }
+        .glassCard(padding: 0, radius: AppLayout.radiusMedium)
+        .padding(.horizontal, AppLayout.sectionPadding)
     }
 
     private func settingsPicker(

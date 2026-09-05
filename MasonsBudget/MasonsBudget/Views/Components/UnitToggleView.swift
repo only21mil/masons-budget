@@ -62,5 +62,6 @@ struct UnitToggleView: View {
         .overlay(
             Capsule().stroke(theme.border, lineWidth: 1),
         )
+        .ledgerAnimation(.chipAndNavigation, value: unit)
     }
 }

@@ -33,6 +33,7 @@ struct LedgerPalette: Sendable {
     let accentForeground: Color
     let accentFill: Color
     let accentSoft: Color
+    let priceHeroDecimals: Color
     let foregroundOnAccentFill: Color
     let gain: Color
     let loss: Color
@@ -60,11 +61,14 @@ extension LedgerPalette {
         primaryRule: Color(hex: 0xD6EEE0, opacity: 0.10),
         rowRule: Color(hex: 0xD6EEE0, opacity: 0.06),
         primaryForeground: Color(hex: 0xE8EFE9),
-        secondaryForeground: Color(hex: 0xE8EFE9, opacity: 0.56),
-        tertiaryForeground: Color(hex: 0xE8EFE9, opacity: 0.36),
+        // Opaque tiers: E8EFE9 blended over the background at 0.70 and 0.61,
+        // so nothing composites at draw time (contrast audit 2026-09-05).
+        secondaryForeground: Color(hex: 0xA3ABA6),
+        tertiaryForeground: Color(hex: 0x8F9792),
         accentForeground: Color(hex: 0xF7931A),
         accentFill: Color(hex: 0xF7931A),
         accentSoft: Color(hex: 0xF7931A, opacity: 0.12),
+        priceHeroDecimals: Color(hex: 0xF7931A, opacity: LedgerGlowToken.priceHeroDecimalOpacity),
         foregroundOnAccentFill: Color(hex: 0x0A0D0C),
         // Exact Display P3 encodings of oklch(0.74 0.155 158) and
         // oklch(0.70 0.155 28), preserving the handoff colors on Apple displays.
@@ -81,11 +85,15 @@ extension LedgerPalette {
         primaryRule: Color(hex: 0x141715, opacity: 0.14),
         rowRule: Color(hex: 0x141715, opacity: 0.08),
         primaryForeground: Color(hex: 0x141715),
-        secondaryForeground: Color(hex: 0x141715, opacity: 0.60),
-        tertiaryForeground: Color(hex: 0x141715, opacity: 0.42),
-        accentForeground: Color(hex: 0xC96A05),
+        // Opaque tiers: 141715 blended over the background at 0.72 and 0.67.
+        secondaryForeground: Color(hex: 0x505452),
+        tertiaryForeground: Color(hex: 0x5C605D),
+        // The lightest orange of this hue that clears 4.5:1 on panel for text.
+        // Filled controls keep F7931A with dark ink.
+        accentForeground: Color(hex: 0x9E5104),
         accentFill: Color(hex: 0xF7931A),
         accentSoft: Color(hex: 0xC96A05, opacity: 0.10),
+        priceHeroDecimals: Color(hex: 0x9E5104),
         foregroundOnAccentFill: Color(hex: 0x0A0D0C),
         // Exact Display P3 encodings of oklch(0.52 0.13 158) and
         // oklch(0.52 0.15 28). Both are inside Display P3.
@@ -149,36 +157,77 @@ struct LedgerMetrics: Sendable {
     )
 }
 
+/// Motion vocabulary from the handoff prototype and the 2026-09-05 motion
+/// package. Every animated call site goes through `animation(reduceMotion:)`
+/// so reduce motion lands every value immediately.
 enum LedgerMotionToken: Equatable, Sendable {
     case chipAndNavigation
     case toggleAndButton
     case toggleKnob
     case progressAndTheme
+    case rowReveal
+    case pulse
+    case skeletonBreathe
     case cursorBlink
 
     var duration: Double {
         switch self {
-        case .chipAndNavigation: 0.16
+        case .chipAndNavigation, .rowReveal: 0.16
         case .toggleAndButton: 0.18
         case .toggleKnob: 0.20
         case .progressAndTheme: 0.30
+        case .pulse: 0.60
+        case .skeletonBreathe: 1.10
         case .cursorBlink: 1.10
         }
     }
 
     var timing: Timing {
-        self == .cursorBlink ? .stepEnd : .cssEase
+        self == .cursorBlink ? .stepEnd : .ease
     }
 
     func animation(reduceMotion: Bool) -> Animation? {
-        guard !reduceMotion, timing == .cssEase else { return nil }
-        return .timingCurve(0.25, 0.10, 0.25, 1.00, duration: duration)
+        guard !reduceMotion, timing == .ease else { return nil }
+        return .easeInOut(duration: duration)
     }
 
     enum Timing: Equatable, Sendable {
-        case cssEase
+        case ease
         case stepEnd
     }
+
+    /// Row reveal stagger: 0.02s per row, capped at index 7 so a long list
+    /// finishes inside 0.4s.
+    static let rowRevealStagger = 0.02
+    static let rowRevealMaximumIndex = 7
+
+    static func rowRevealDelay(index: Int) -> Double {
+        Double(min(max(index, 0), rowRevealMaximumIndex)) * rowRevealStagger
+    }
+}
+
+// MARK: - Glow, texture, and persisted effect preferences
+
+enum LedgerGlowToken {
+    /// Shadow alpha for phosphor glow. Android ships 0.30; no test pins parity,
+    /// so Apple keeps the release value.
+    static let opacity = 0.35
+    static let priceHeroDecimalOpacity = 0.75
+    static let restingRadius: CGFloat = 18
+    static let pulseRadius: CGFloat = 32
+}
+
+/// UserDefaults keys for the ledger effect preferences. Defaults apply only
+/// when the key is absent, so a saved choice always wins.
+enum LedgerPreference {
+    static let scanlinesKey = "ledger_scanlines_enabled"
+    static let phosphorGlowKey = "ledger_phosphor_glow_enabled"
+    static let reduceMotionKey = "ledger_reduce_motion"
+
+    /// Scanlines are a texture preference, not a base layer: off for new installs.
+    static let scanlinesDefault = false
+    static let phosphorGlowDefault = true
+    static let reduceMotionDefault = false
 }
 
 // MARK: - Source Code Pro typography
@@ -246,6 +295,11 @@ struct LedgerTypeSpecification: Sendable {
 }
 
 extension LedgerTypeRole {
+    /// Type floor from the 2026-09-05 contrast audit: nothing under 11pt, nothing
+    /// under weight 500 on a tier colour, uppercase tracking at most 0.10em.
+    static let minimumSize: CGFloat = 11
+    static let maximumTrackingEm: CGFloat = 0.10
+
     func specification(metrics: LedgerMetrics) -> LedgerTypeSpecification {
         switch self {
         case .screenTitle:
@@ -255,7 +309,7 @@ extension LedgerTypeRole {
             .init(size: 24, weight: .semibold, trackingEm: -0.02,
                   relativeTo: .title, lineHeight: 1.15, uppercase: false, tabularFigures: false)
         case .screenSubtitle:
-            .init(size: 9.5, weight: .regular, trackingEm: 0.18,
+            .init(size: 11, weight: .medium, trackingEm: 0.10,
                   relativeTo: .caption2, lineHeight: 1, uppercase: true, tabularFigures: false)
         case .heroNumeral:
             .init(size: 28, weight: .semibold, trackingEm: -0.03,
@@ -267,35 +321,35 @@ extension LedgerTypeRole {
             .init(size: 20, weight: .semibold, trackingEm: -0.03,
                   relativeTo: .title3, lineHeight: 1, uppercase: false, tabularFigures: true)
         case .kpiLabel:
-            .init(size: 9, weight: .medium, trackingEm: 0.16,
+            .init(size: 11, weight: .medium, trackingEm: 0.10,
                   relativeTo: .caption2, lineHeight: 1, uppercase: true, tabularFigures: false)
         case .kpiValue:
             .init(size: 20, weight: .medium, trackingEm: 0,
                   relativeTo: .title3, lineHeight: 1, uppercase: false, tabularFigures: true)
         case .kpiSub:
-            .init(size: 9, weight: .regular, trackingEm: 0.06,
+            .init(size: 11, weight: .medium, trackingEm: 0.04,
                   relativeTo: .caption2, lineHeight: 1, uppercase: true, tabularFigures: true)
         case .sectionLabel:
-            .init(size: 9.5, weight: .semibold, trackingEm: 0.18,
+            .init(size: 11, weight: .semibold, trackingEm: 0.10,
                   relativeTo: .caption2, lineHeight: 1, uppercase: true, tabularFigures: false)
         case .rowPrimary:
             .init(size: metrics.rowPrimarySize, weight: .regular, trackingEm: 0,
                   relativeTo: .body, lineHeight: 1, uppercase: false, tabularFigures: false)
         case .rowMeta:
-            .init(size: 9.5, weight: .regular, trackingEm: 0.05,
+            .init(size: 11, weight: .medium, trackingEm: 0.03,
                   relativeTo: .caption2, lineHeight: 1, uppercase: true, tabularFigures: true)
         case .rowFigure:
             .init(size: 12.5, weight: .medium, trackingEm: 0,
                   relativeTo: .body, lineHeight: 1, uppercase: false, tabularFigures: true)
         case .chip:
-            .init(size: 10.5, weight: .semibold, trackingEm: 0.08,
+            .init(size: 11, weight: .semibold, trackingEm: 0.06,
                   relativeTo: .caption, lineHeight: 1, uppercase: true, tabularFigures: true)
         case .tabLabel:
-            .init(size: 8.5, weight: .semibold, trackingEm: 0.10,
+            .init(size: 11, weight: .semibold, trackingEm: 0.06,
                   relativeTo: .caption2, lineHeight: 1, uppercase: true, tabularFigures: false)
         case .body:
-            .init(size: 10.5, weight: .regular, trackingEm: 0,
-                  relativeTo: .body, lineHeight: 1.85, uppercase: false, tabularFigures: false)
+            .init(size: 12, weight: .regular, trackingEm: 0,
+                  relativeTo: .body, lineHeight: 1.5, uppercase: false, tabularFigures: false)
         case .button:
             .init(size: 11, weight: .semibold, trackingEm: 0.10,
                   relativeTo: .callout, lineHeight: 1, uppercase: true, tabularFigures: false)
@@ -347,12 +401,13 @@ private struct LedgerFoundationsModifier: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @AppStorage(LedgerPreference.reduceMotionKey) private var prefersReducedMotion = LedgerPreference.reduceMotionDefault
 
     func body(content: Content) -> some View {
         content
             .environment(\.ledgerTokens, LedgerTokens(treatment: .init(colorScheme: colorScheme)))
             .environment(\.ledgerEffects, LedgerEffectsPolicy(
-                reduceMotion: reduceMotion,
+                reduceMotion: reduceMotion || prefersReducedMotion,
                 reduceTransparency: reduceTransparency,
             ))
     }
@@ -458,9 +513,10 @@ struct LedgerTextureOverlay: View {
     @Environment(\.ledgerEffects) private var effects
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @AppStorage(LedgerPreference.scanlinesKey) private var scanlinesEnabled = LedgerPreference.scanlinesDefault
 
     var body: some View {
-        if isEnabled, allowsEffects {
+        if isEnabled, scanlinesEnabled, allowsEffects {
             Canvas { context, size in
                 for y in stride(from: CGFloat.zero, through: size.height, by: 3) {
                     context.fill(
@@ -487,22 +543,26 @@ private struct LedgerGlowModifier: ViewModifier {
     @Environment(\.ledgerEffects) private var effects
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @AppStorage(LedgerPreference.phosphorGlowKey) private var glowEnabled = LedgerPreference.phosphorGlowDefault
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if isEnabled, allowsEffects {
-            content.shadow(color: tokens.colors.accentForeground.opacity(0.35), radius: radius)
+        if isEnabled, glowEnabled, allowsEffects {
+            content.shadow(color: tokens.colors.accentFill.opacity(LedgerGlowToken.opacity), radius: radius)
         } else {
             content
         }
     }
 
+    /// Phosphor glow belongs to the Terminal Ledger treatment only.
     private var allowsEffects: Bool {
-        effects.allowsTextureAndGlow && !reduceMotion && !reduceTransparency
+        tokens.treatment == .terminalLedger && effects.allowsTextureAndGlow && !reduceMotion && !reduceTransparency
     }
 }
 
 extension View {
+    /// Phosphor glow for hero numerals. Off in Daylight, under reduce motion or
+    /// reduce transparency, and when the glow preference is off.
     func ledgerGlow(isEnabled: Bool = true, radius: CGFloat = 8) -> some View {
         modifier(LedgerGlowModifier(isEnabled: isEnabled, radius: radius))
     }
