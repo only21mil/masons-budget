@@ -343,7 +343,7 @@ class RefreshAfterWriteSurfaceTest {
             )
         }
         val interact = {
-            compose.onNodeWithText("Add").performClick()
+            compose.onNodeWithText("+ Add").performClick()
             settle()
             compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
             compose.onNodeWithText("Amount").performTextInput("14.18")

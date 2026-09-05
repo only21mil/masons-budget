@@ -788,6 +788,9 @@ internal fun AddTransactionSheet(
                     Text(stringResource(R.string.add_transaction_cancel))
                 }
                 VaultButton(
+                    label = stringResource(
+                        if (saving) R.string.add_transaction_saving else R.string.add_transaction_save,
+                    ),
                     onClick = {
                         val selectedDate = runCatching { LocalDate.parse(dateIso) }.getOrElse {
                             errorMessage = "Enter a valid date"
@@ -858,17 +861,7 @@ internal fun AddTransactionSheet(
                     },
                     enabled = !saving,
                     modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        stringResource(
-                            if (saving) {
-                                R.string.add_transaction_saving
-                            } else {
-                                R.string.add_transaction_save
-                            },
-                        ),
-                    )
-                }
+                )
             }
             Spacer(Modifier.height(VaultSpace.lg))
         }
@@ -922,11 +915,10 @@ private fun <T> OptionRow(
         options.forEach { option ->
             if (option == selected) {
                 VaultButton(
+                    label = label(option),
                     onClick = { onSelect(option) },
                     modifier = Modifier.weight(1f),
-                ) {
-                    Text(label(option))
-                }
+                )
             } else {
                 OutlinedButton(
                     onClick = { onSelect(option) },

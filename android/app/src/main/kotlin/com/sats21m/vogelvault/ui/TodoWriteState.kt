@@ -332,11 +332,10 @@ internal fun TodoEditDialog(
         },
         confirmButton = {
             VaultButton(
+                label = stringResource(R.string.todo_save),
                 enabled = writeEnabled && !busy && title.isNotBlank(),
                 onClick = { onSave(todo.withTitle(title, Instant.now())) },
-            ) {
-                Text(stringResource(R.string.todo_save))
-            }
+            )
         },
         dismissButton = {
             OutlinedButton(

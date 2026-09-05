@@ -220,6 +220,9 @@ internal fun AddTaskSheet(
                     Text(stringResource(R.string.tasks_cancel))
                 }
                 VaultButton(
+                    label = stringResource(
+                            if (saving) R.string.tasks_saving else R.string.tasks_save,
+                        ),
                     onClick = {
                         val taskTitle = title.trim()
                         val task = prepareTask(
@@ -281,13 +284,7 @@ internal fun AddTaskSheet(
                     },
                     enabled = !saving && !credentialRejected,
                     modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        stringResource(
-                            if (saving) R.string.tasks_saving else R.string.tasks_save,
-                        ),
-                    )
-                }
+                )
             }
             Spacer(Modifier.height(VaultSpace.lg))
         }

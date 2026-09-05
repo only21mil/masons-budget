@@ -74,6 +74,9 @@ internal fun ReadBootstrapConfiguration(
 
         if (access == BootstrapAccess.NONE && available && activeEnrollment != null) {
             VaultButton(
+                label = stringResource(
+                    if (busy) R.string.read_bootstrap_connecting else R.string.read_bootstrap_connect,
+                ),
                 enabled = !busy,
                 onClick = {
                     if (busy) return@VaultButton
@@ -93,13 +96,7 @@ internal fun ReadBootstrapConfiguration(
                         }
                     }
                 },
-            ) {
-                Text(
-                    stringResource(
-                        if (busy) R.string.read_bootstrap_connecting else R.string.read_bootstrap_connect,
-                    ),
-                )
-            }
+            )
         } else if (access == BootstrapAccess.NONE && !available) {
             Text(stringResource(R.string.read_bootstrap_unavailable))
         }
@@ -125,6 +122,7 @@ internal fun ReadBootstrapConfiguration(
                     color = LocalLedgerTheme.current.colors.loss,
                 )
                 VaultButton(
+                    label = stringResource(R.string.read_bootstrap_reset_confirm),
                     enabled = !busy,
                     onClick = {
                         val remaining = runCatching { activeEnrollment.reset() }.getOrNull()
@@ -133,9 +131,7 @@ internal fun ReadBootstrapConfiguration(
                         confirmReset = false
                         status = null
                     },
-                ) {
-                    Text(stringResource(R.string.read_bootstrap_reset_confirm))
-                }
+                )
                 OutlinedButton(onClick = { confirmReset = false }) {
                     Text(stringResource(R.string.write_cancel))
                 }

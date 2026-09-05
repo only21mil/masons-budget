@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -291,6 +290,9 @@ fun TransactionDetailScreen(
                             Text(stringResource(R.string.transaction_cancel))
                         }
                         VaultButton(
+                            label = stringResource(
+                                if (working) R.string.add_transaction_saving else R.string.transaction_save,
+                            ),
                             onClick = {
                                 val draft =
                                     TransactionDraft(
@@ -305,13 +307,7 @@ fun TransactionDetailScreen(
                             },
                             enabled = !working,
                             modifier = Modifier.weight(1f),
-                        ) {
-                            if (working) {
-                                CircularProgressIndicator()
-                            } else {
-                                Text(stringResource(R.string.transaction_save))
-                            }
-                        }
+                        )
                     }
                 }
                 item {

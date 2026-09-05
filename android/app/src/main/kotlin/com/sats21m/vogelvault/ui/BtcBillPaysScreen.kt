@@ -145,7 +145,5 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
 
 @Composable
 internal fun BtcBillPayEntryAction(onClick: () -> Unit) {
-    VaultButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.btc_bill_pay_add_action))
-    }
+    VaultButton(label = stringResource(R.string.btc_bill_pay_add_action), onClick = onClick, modifier = Modifier.fillMaxWidth())
 }

@@ -6,8 +6,12 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class VaultButtonSourcePolicyTest {
+    /**
+     * The ledger button draws its own container. Nothing in the app may reach
+     * for the filled Material button, including the shared wrapper itself.
+     */
     @Test
-    fun `filled Material button is imported only by the shared wrapper`() {
+    fun `filled Material button is not imported anywhere`() {
         val directImports = mutableListOf<Path>()
         Files.walk(Path.of("src/main/kotlin")).use { paths ->
             paths
@@ -20,9 +24,6 @@ class VaultButtonSourcePolicyTest {
                 .forEach(directImports::add)
         }
 
-        assertEquals(
-            listOf(Path.of("src/main/kotlin/com/sats21m/vogelvault/ui/VaultButton.kt")),
-            directImports.sorted(),
-        )
+        assertEquals(emptyList<Path>(), directImports.sorted())
     }
 }

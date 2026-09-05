@@ -44,13 +44,12 @@ internal const val BTC_TRANSFER_SAVE_TEST_TAG = "btc-transfer-save"
 @Composable
 internal fun BtcTransferEntryAction(onClick: () -> Unit) {
     VaultButton(
+        label = stringResource(R.string.btc_transfer_add_action),
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .testTag(BTC_TRANSFER_ACTION_TEST_TAG),
-    ) {
-        Text(stringResource(R.string.btc_transfer_add_action))
-    }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -153,6 +152,7 @@ internal fun BtcTransferEntrySheet(
                     Text(stringResource(R.string.write_cancel))
                 }
                 VaultButton(
+                    label = stringResource(R.string.write_save),
                     modifier = Modifier.testTag(BTC_TRANSFER_SAVE_TEST_TAG),
                     enabled = !submitting && eligibleAccounts.size >= 2,
                     onClick = {
@@ -195,9 +195,7 @@ internal fun BtcTransferEntrySheet(
                             },
                         )
                     },
-                ) {
-                    Text(stringResource(R.string.write_save))
-                }
+                )
             }
         }
     }
@@ -215,14 +213,11 @@ private fun BtcAccountPicker(
         Text(label, style = MaterialTheme.typography.labelMedium)
         Box {
             VaultButton(
+                label = selected?.let { "${it.displayLabel()} · ${Money.formatSats(it.sats)}" }
+                    ?: stringResource(R.string.btc_transfer_select_account),
                 onClick = { expanded = true },
                 modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    selected?.let { "${it.displayLabel()} · ${Money.formatSats(it.sats)}" }
-                        ?: stringResource(R.string.btc_transfer_select_account),
-                )
-            }
+            )
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },

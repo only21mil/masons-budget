@@ -563,9 +563,7 @@ private fun ScreenHeader(
                 destination == Destination.ACTIVITY ||
                 destination == Destination.BUDGET
             ) {
-                VaultButton(onClick = onAddTransaction) {
-                    Text(stringResource(R.string.add_transaction_action))
-                }
+                VaultButton(label = stringResource(R.string.add_transaction_action), onClick = onAddTransaction)
             }
             if (destination.supportsFinancialDisplayUnit) {
                 BitcoinUnitToggle(
@@ -1760,6 +1758,7 @@ internal fun SyncTokenConfiguration() {
                 visualTransformation = PasswordVisualTransformation(),
             )
             VaultButton(
+                label = stringResource(R.string.write_credential_save),
                 enabled = token.isNotBlank() && application != null,
                 onClick = {
                     val app = checkNotNull(application)
@@ -1774,9 +1773,7 @@ internal fun SyncTokenConfiguration() {
                             saveFailure = credentialSaveFailureMessage(it).resolve(context)
                         }
                 },
-            ) {
-                Text(stringResource(R.string.write_credential_save))
-            }
+            )
             if (hasStoredToken && application != null) {
                 androidx.compose.material3.OutlinedButton(
                     onClick = {

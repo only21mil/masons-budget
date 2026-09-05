@@ -134,7 +134,7 @@ class BudgetCategoryDrilldownComposeTest {
 
     @Test
     fun `Budget income editor exposes the atomic Bitcoin buy action`() {
-        compose.onNodeWithText("Add").performClick()
+        compose.onNodeWithText("+ Add").performClick()
         settle()
         compose.onNodeWithText("Income").performClick()
         settle()

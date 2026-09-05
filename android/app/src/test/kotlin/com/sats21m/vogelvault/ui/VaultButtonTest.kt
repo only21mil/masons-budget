@@ -2,9 +2,14 @@ package com.sats21m.vogelvault.ui
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.performClick
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.ui.theme.LedgerColors
 import com.sats21m.vogelvault.ui.theme.LedgerPalettes
@@ -51,26 +56,69 @@ class VaultButtonTest {
         assertPrimaryActionColors(LedgerTreatment.DAYLIGHT_LIGHT, LedgerPalettes.DaylightLight)
     }
 
-    private fun assertPrimaryActionColors(treatment: LedgerTreatment, colors: LedgerColors) {
-        var labelColor: Color? = null
-        var containerColor: Color? = null
-
+    @Test
+    fun `secondary and disabled actions drop to the panel fill and line border`() {
+        var secondary: LedgerButtonColors? = null
+        var disabled: LedgerButtonColors? = null
         compose.runOnUiThread {
             activityController.get().setContent {
-                SovereignLedgerTheme(treatment) {
-                    containerColor = vaultButtonColors().containerColor
-                    VaultButton(onClick = {}) {
-                        Text(
-                            text = "Action",
-                            onTextLayout = { labelColor = it.layoutInput.style.color },
-                        )
+                SovereignLedgerTheme(LedgerTreatment.TERMINAL_DARK) {
+                    secondary = vaultButtonColors(secondary = true)
+                    disabled = vaultButtonColors(enabled = false)
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        val colors = LedgerPalettes.TerminalDark
+        assertEquals(colors.panel, secondary?.containerColor)
+        assertEquals(colors.line, secondary?.borderColor)
+        assertEquals(colors.foreground, secondary?.labelColor)
+        assertEquals(colors.panel, disabled?.containerColor)
+        assertEquals(colors.foregroundTertiary, disabled?.labelColor)
+    }
+
+    @Test
+    fun `label is drawn uppercase but spoken and matched in the caller's casing`() {
+        var clicks = 0
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                SovereignLedgerTheme(LedgerTreatment.TERMINAL_DARK) {
+                    Column {
+                        VaultButton(label = "Save task", onClick = { clicks++ })
+                        VaultButton(label = "Locked", enabled = false, onClick = { clicks++ })
                     }
                 }
             }
         }
         compose.waitForIdle()
 
-        assertEquals(colors.bitcoinFill, containerColor)
+        compose.onNode(hasText("Save task") and hasClickAction()).assertIsEnabled().performClick()
+        compose.waitForIdle()
+        assertEquals(1, clicks)
+        compose.onNode(hasText("Locked")).assertIsNotEnabled().performClick()
+        compose.waitForIdle()
+        assertEquals(1, clicks)
+        assertEquals(0, compose.onAllNodes(hasText("SAVE TASK")).fetchSemanticsNodes().size)
+    }
+
+    private fun assertPrimaryActionColors(treatment: LedgerTreatment, colors: LedgerColors) {
+        var primary: LedgerButtonColors? = null
+        var labelColor: Color? = null
+
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                SovereignLedgerTheme(treatment) {
+                    primary = vaultButtonColors()
+                    labelColor = primary?.labelColor
+                    VaultButton(label = "Action", onClick = {})
+                }
+            }
+        }
+        compose.waitForIdle()
+
+        assertEquals(colors.bitcoinFill, primary?.containerColor)
         assertEquals(LedgerPalettes.TerminalDark.background, labelColor)
+        compose.onNode(hasText("Action") and hasClickAction()).fetchSemanticsNode()
     }
 }

@@ -222,11 +222,10 @@ private fun ProfileTaskListsScreen(
 
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
         VaultButton(
+            label = stringResource(R.string.tasks_add),
             onClick = { addingTask = true },
             enabled = credentialStored,
-        ) {
-            Text(stringResource(R.string.tasks_add))
-        }
+        )
         if (!credentialStored) {
             TodoWriteReprovisionCard()
         }

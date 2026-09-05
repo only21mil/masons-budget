@@ -138,18 +138,11 @@ internal fun VaultLockedScreen(
             color = colors.foregroundSecondary,
         )
         VaultButton(
+            label = stringResource(
+                if (state.isAuthenticating) R.string.vault_unlock_in_progress else R.string.vault_unlock_action,
+            ),
             enabled = !state.isAuthenticating,
             onClick = onUnlock,
-        ) {
-            Text(
-                stringResource(
-                    if (state.isAuthenticating) {
-                        R.string.vault_unlock_in_progress
-                    } else {
-                        R.string.vault_unlock_action
-                    },
-                ),
-            )
-        }
+        )
     }
 }

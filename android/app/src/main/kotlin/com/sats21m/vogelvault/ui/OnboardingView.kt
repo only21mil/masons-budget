@@ -108,7 +108,7 @@ internal fun OnboardingView(
                 onClick = { stepIndex-- },
             ) { Text("Back") }
             if (stepIndex < OnboardingStep.entries.lastIndex) {
-                VaultButton(onClick = { stepIndex++ }) { Text("Next") }
+                VaultButton(label = "Next", onClick = { stepIndex++ })
             }
         }
     }

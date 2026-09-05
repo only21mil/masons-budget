@@ -483,9 +483,7 @@ internal fun EditableBudgetCategoryRow(
 
 @Composable
 internal fun BtcBuyEntryAction(onClick: () -> Unit) {
-    VaultButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.btc_buy_add_action))
-    }
+    VaultButton(label = stringResource(R.string.btc_buy_add_action), onClick = onClick, modifier = Modifier.fillMaxWidth())
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -579,6 +577,7 @@ internal fun BudgetCategoryEditorSheet(
                     Text(stringResource(R.string.write_cancel))
                 }
                 VaultButton(
+                    label = stringResource(R.string.write_save),
                     enabled = !submitting,
                     onClick = {
                         when (val draft = budgetCategoryWriteRequest(seed, dollars)) {
@@ -617,9 +616,7 @@ internal fun BudgetCategoryEditorSheet(
                             }
                         }
                     },
-                ) {
-                    Text(stringResource(R.string.write_save))
-                }
+                )
             }
         }
     }
@@ -721,6 +718,7 @@ internal fun BtcBuyEntrySheet(
                     Text(stringResource(R.string.write_cancel))
                 }
                 VaultButton(
+                    label = stringResource(R.string.write_save),
                     enabled = !submitting,
                     onClick = {
                         when (
@@ -780,9 +778,7 @@ internal fun BtcBuyEntrySheet(
                             }
                         }
                     },
-                ) {
-                    Text(stringResource(R.string.write_save))
-                }
+                )
             }
         }
     }
@@ -829,6 +825,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
                     Text(stringResource(R.string.write_cancel))
                 }
                 VaultButton(
+                    label = stringResource(R.string.write_save),
                     enabled = !submitting,
                     onClick = {
                         when (
@@ -880,9 +877,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
                             }
                         }
                     },
-                ) {
-                    Text(stringResource(R.string.write_save))
-                }
+                )
             }
         }
     }

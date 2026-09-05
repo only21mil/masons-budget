@@ -320,6 +320,7 @@ internal fun BtcBillPayEntrySheet(
                     Text(stringResource(R.string.write_cancel))
                 }
                 VaultButton(
+                    label = if (submitting) stringResource(R.string.add_transaction_saving) else stringResource(R.string.write_save),
                     enabled = !submitting,
                     onClick = {
                         when (
@@ -366,9 +367,7 @@ internal fun BtcBillPayEntrySheet(
                             }
                         }
                     },
-                ) {
-                    Text(if (submitting) stringResource(R.string.add_transaction_saving) else stringResource(R.string.write_save))
-                }
+                )
             }
         }
     }
