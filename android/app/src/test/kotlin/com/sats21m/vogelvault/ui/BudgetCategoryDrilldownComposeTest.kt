@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -167,6 +168,25 @@ class BudgetCategoryDrilldownComposeTest {
 
         contentList().performScrollToKey("budget-category-bill-pays:row:budget-bill-pay")
         compose.onNodeWithText("budget-bill-pay", useUnmergedTree = true).fetchSemanticsNode()
+    }
+
+    @Test
+    fun `category drilldown owns the budget editor for the live current month`() {
+        render(
+            VaultUiState(
+                activeProfile = FamilyMember.VICTOR,
+                destination = Destination.BUDGET,
+                data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE),
+            ),
+        )
+        val edit = activityController.get().getString(R.string.budget_category_edit_action)
+        contentList().performScrollToKey("budget-categories:row:Groceries")
+        assertEquals(0, nodesWithText(edit))
+
+        compose.onNodeWithContentDescription("View Groceries transactions for 2026-07").performClick()
+        settle()
+
+        compose.onNodeWithText(edit).assertHasClickAction()
     }
 
     @Test

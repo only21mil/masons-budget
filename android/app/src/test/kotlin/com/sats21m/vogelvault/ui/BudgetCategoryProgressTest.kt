@@ -3,7 +3,10 @@ package com.sats21m.vogelvault.ui
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import com.sats21m.vogelvault.R
@@ -103,7 +106,7 @@ class BudgetCategoryProgressTest {
     }
 
     @Test
-    fun `category indicator is one labelled progress node and edit remains reachable`() {
+    fun `category indicator is one labelled progress node and the row opens the drilldown`() {
         val category = CategorySpend("Groceries", 10_000L, 8_500L, icon = "cart")
         val progress = budgetCategoryProgress(category.spentCents, category.budgetCents)
         val label = budgetProgressAccessibilityLabel(category, progress)
@@ -111,7 +114,7 @@ class BudgetCategoryProgressTest {
         compose.runOnUiThread {
             activityController.get().setContent {
                 VogelVaultTheme {
-                    EditableBudgetCategoryRow(category, canEdit = true, onEdit = {})
+                    EditableBudgetCategoryRow(category)
                 }
             }
         }
@@ -123,8 +126,13 @@ class BudgetCategoryProgressTest {
                 .config[SemanticsProperties.ProgressBarRangeInfo]
         assertEquals(0.85f, range.current)
         assertEquals(0f..1f, range.range)
-        compose.onNodeWithText(activityController.get().getString(R.string.budget_category_edit_action))
-            .fetchSemanticsNode()
+        compose.onNodeWithContentDescription("View Groceries transactions").assertHasClickAction()
+        // Editing moved to the drilldown: the list row carries no edit link, badge, or percent text.
+        compose.onAllNodesWithText(activityController.get().getString(R.string.budget_category_edit_action))
+            .assertCountEquals(0)
+        compose.onAllNodesWithText("CLOSE").assertCountEquals(0)
+        compose.onAllNodesWithText("15% left").assertCountEquals(0)
+        compose.onNodeWithText("OF $100.00", useUnmergedTree = true).fetchSemanticsNode()
     }
 
     private fun progress(

@@ -1,5 +1,9 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,12 +14,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.MaterialTheme
 import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,7 +29,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.TransactionDraftIdStore
@@ -61,8 +62,9 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.IncomeEntry
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.budgetHealth
-import com.sats21m.vogelvault.ui.components.Badge
-import com.sats21m.vogelvault.ui.theme.LedgerNumeral
+import com.sats21m.vogelvault.ui.theme.LedgerMotion
+import com.sats21m.vogelvault.ui.theme.LedgerSpacing
+import com.sats21m.vogelvault.ui.theme.LocalLedgerEffects
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import java.time.LocalDate
@@ -391,92 +393,92 @@ internal fun btcBuyWriteRequest(
     )
 }
 
+/**
+ * The handoff category row: name and spent figure, a 3dp bar, then `OF <planned>`.
+ *
+ * The whole row opens the drilldown, where editing lives, so there is no badge,
+ * no percent text, and no edit link. The bar fills over 300ms when the fraction
+ * changes and snaps under reduce-motion. The bar turns loss when over; the
+ * figure follows it, and the CLOSE state dims the bar only.
+ */
 @Composable
 internal fun EditableBudgetCategoryRow(
     category: CategorySpend,
-    canEdit: Boolean,
     transactionsContentDescription: String = "View ${category.name} transactions",
     onOpenTransactions: () -> Unit = {},
-    onEdit: () -> Unit,
 ) {
-    val colors = LocalLedgerTheme.current.colors
+    val tokens = LocalLedgerTheme.current
+    val colors = tokens.colors
     val progress = budgetCategoryProgress(category.spentCents, category.budgetCents)
-    val progressColor = when (progress.health.status) {
+    val over = progress.health.status == BudgetHealthStatus.OVER
+    val barColor = when (progress.health.status) {
         BudgetHealthStatus.ON_TRACK -> colors.gain
         BudgetHealthStatus.CLOSE -> colors.foregroundSecondary
         BudgetHealthStatus.OVER -> colors.loss
     }
-    Column {
-        Box(
+    val fraction by animateFloatAsState(
+        targetValue = progress.fillFraction,
+        animationSpec = if (LocalLedgerEffects.current.animate) {
+            tween(LedgerMotion.progressAndThemeMillis, easing = FastOutSlowInEasing)
+        } else {
+            snap()
+        },
+        label = "budget-category-fill",
+    )
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clickable(
+                onClickLabel = transactionsContentDescription,
+                role = Role.Button,
+                onClick = onOpenTransactions,
+            )
+            .semantics {
+                contentDescription = transactionsContentDescription
+            },
+    ) {
+        Column(
             Modifier
-                .fillMaxWidth()
-                .clickable(
-                    onClickLabel = transactionsContentDescription,
-                    role = Role.Button,
-                    onClick = onOpenTransactions,
-                )
-                .semantics {
-                    contentDescription = transactionsContentDescription
-                },
+                .clearAndSetSemantics {
+                    contentDescription = budgetProgressAccessibilityLabel(category, progress)
+                    progressBarRangeInfo = ProgressBarRangeInfo(progress.fillFraction, 0f..1f)
+                }
+                .padding(vertical = tokens.density.categoryRowVerticalPadding),
+            verticalArrangement = Arrangement.spacedBy(LedgerSpacing.small),
         ) {
-            Column(
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    category.name,
+                    style = tokens.type.rowPrimary,
+                    color = colors.foreground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    Money.formatUsd(category.spentCents),
+                    style = tokens.type.rowFigure,
+                    color = if (over) colors.loss else colors.foreground,
+                )
+            }
+            Box(
                 Modifier
-                    .clearAndSetSemantics {
-                        contentDescription = budgetProgressAccessibilityLabel(category, progress)
-                        progressBarRangeInfo = ProgressBarRangeInfo(progress.fillFraction, 0f..1f)
-                    }
-                    .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
-                verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .background(colors.line),
             ) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(category.name, style = MaterialTheme.typography.bodyMedium, color = colors.foreground)
-                            Box(Modifier.width(VaultSpace.sm))
-                            Badge(progress.statusLabel, tone = progressColor)
-                        }
-                        Text(
-                            "planned ${Money.formatUsd(category.budgetCents)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colors.foregroundTertiary,
-                        )
-                    }
-                    Text(
-                        Money.formatUsd(category.spentCents),
-                        style = LedgerNumeral,
-                        color = colors.foreground,
-                    )
-                }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(colors.panelRaised),
-                    ) {
-                        Box(
-                            Modifier
-                                .fillMaxHeight()
-                                .fillMaxWidth(progress.fillFraction)
-                                .background(progressColor),
-                        )
-                    }
-                    Box(Modifier.width(VaultSpace.md))
-                    Text(
-                        progress.percentageLabel,
-                        style = LedgerNumeral,
-                        color = progressColor,
-                    )
-                }
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(fraction)
+                        .background(barColor),
+                )
             }
-        }
-        if (canEdit) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
-                TextButton(onClick = onEdit, modifier = Modifier.padding(horizontal = VaultSpace.sm)) {
-                    Text(stringResource(R.string.budget_category_edit_action))
-                }
-            }
+            Text(
+                "OF ${Money.formatUsd(category.budgetCents)}",
+                style = tokens.type.rowMeta,
+                color = colors.foregroundTertiary,
+            )
         }
     }
 }

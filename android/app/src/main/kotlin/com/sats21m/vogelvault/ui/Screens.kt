@@ -385,16 +385,37 @@ fun ScreenHost(
                             months,
                             budgetSpend,
                             onSelectMonth = { picked = it },
-                            onEditCategory = { budgetEditor = it },
                             onOpenCategory = { scope ->
                                 budgetDrilldownMonth = scope.month
                                 budgetDrilldownCategory = scope.category
                             },
                         )
                     } else {
+                        // Editing lives on the drilldown. Only the current budget
+                        // document month is writable, and only from a live read.
+                        val editorSeed = state.data.budget.value?.let { budget ->
+                            budgetSpend
+                                ?.takeIf {
+                                    drilldownScope.month == budget.month &&
+                                        state.data.budget.status == Freshness.LIVE
+                                }
+                                ?.categories
+                                ?.firstOrNull { it.name == drilldownScope.category }
+                                ?.let { category ->
+                                    BudgetCategoryEditorSeed(
+                                        viewer = state.activeProfile,
+                                        displayedMonth = drilldownScope.month,
+                                        budgetDocumentMonth = budget.month,
+                                        category = category,
+                                        budget = budget,
+                                        sourceFile = budgetCategoryDeleteSourceFile(state.activeProfile),
+                                    )
+                                }
+                        }
                         budgetCategoryDrilldown(
                             state = state,
                             scope = drilldownScope,
+                            onEdit = editorSeed?.let { seed -> { budgetEditor = seed } },
                             transactions =
                                 transactionsInput.budgetCategoryTransactionsFor(
                                     viewer = state.activeProfile,
@@ -954,7 +975,6 @@ private fun VaultLazyListScope.budget(
     months: List<String>,
     spend: BudgetSpend?,
     onSelectMonth: (String) -> Unit,
-    onEditCategory: (BudgetCategoryEditorSeed) -> Unit,
     onOpenCategory: (BudgetCategoryDrilldownScope) -> Unit,
 ) {
     val slice = state.data.budget
@@ -1065,9 +1085,6 @@ private fun VaultLazyListScope.budget(
         ) { category ->
             EditableBudgetCategoryRow(
                 category = category,
-                canEdit =
-                    derived.month == budget.month &&
-                        slice.status == Freshness.LIVE,
                 transactionsContentDescription =
                     stringResource(
                         R.string.budget_category_transactions_accessibility,
@@ -1079,18 +1096,6 @@ private fun VaultLazyListScope.budget(
                         BudgetCategoryDrilldownScope(
                             month = derived.month,
                             category = category.name,
-                        ),
-                    )
-                },
-                onEdit = {
-                    onEditCategory(
-                        BudgetCategoryEditorSeed(
-                            viewer = state.activeProfile,
-                            displayedMonth = derived.month,
-                            budgetDocumentMonth = budget.month,
-                            category = category,
-                            budget = budget,
-                            sourceFile = budgetCategoryDeleteSourceFile(state.activeProfile),
                         ),
                     )
                 },
@@ -1106,10 +1111,22 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
     billPays: List<BtcBillPay>,
     onBack: () -> Unit,
     onSelectTransaction: (Transaction) -> Unit,
+    /** Null when this month or read is not writable; the button is then absent, not disabled. */
+    onEdit: (() -> Unit)? = null,
 ) {
     item {
-        TextButton(onClick = onBack) {
-            Text(stringResource(R.string.budget_category_transactions_back))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) {
+                Text(stringResource(R.string.budget_category_transactions_back))
+            }
+            Spacer(Modifier.weight(1f))
+            if (onEdit != null) {
+                VaultButton(
+                    label = stringResource(R.string.budget_category_edit_action),
+                    onClick = onEdit,
+                    secondary = true,
+                )
+            }
         }
     }
     item { StaleNotice(state.data.transactions.status) }
