@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -302,7 +303,9 @@ class BudgetCategoryDrilldownComposeTest {
     private fun nodesWithText(text: String): Int =
         compose.onAllNodesWithText(text).fetchSemanticsNodes().size
 
-    private fun contentList() = compose.onAllNodes(hasScrollAction())[0]
+    // The unit chips above the list scroll too; the ledger column is the other scroll node.
+    private fun contentList() =
+        compose.onAllNodes(hasScrollAction() and hasTestTag(BITCOIN_UNIT_TOGGLE_TEST_TAG).not())[0]
 
     private fun settle() {
         repeat(3) {

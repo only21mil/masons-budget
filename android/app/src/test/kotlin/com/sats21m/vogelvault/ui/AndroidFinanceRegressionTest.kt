@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -211,8 +212,8 @@ class AndroidFinanceRegressionTest {
         contentList().performScrollToNode(hasContentDescription("Retirement Provider", substring = true))
         compose.onNodeWithContentDescription("Retirement Provider", substring = true)
             .fetchSemanticsNode()
-        contentList().performScrollToNode(hasText("Net worth projections"))
-        compose.onNodeWithText("Net worth projections").fetchSemanticsNode()
+        contentList().performScrollToNode(hasContentDescription("Net worth projections"))
+        compose.onNodeWithContentDescription("Net worth projections").fetchSemanticsNode()
         assertEquals(
             0,
             compose.onAllNodesWithContentDescription("Index holding", substring = true).fetchSemanticsNodes().size,
@@ -356,7 +357,9 @@ class AndroidFinanceRegressionTest {
         settle()
     }
 
-    private fun contentList() = compose.onAllNodes(hasScrollAction())[0]
+    // The unit chips above the list scroll too; the ledger column is the other scroll node.
+    private fun contentList() =
+        compose.onAllNodes(hasScrollAction() and hasTestTag(BITCOIN_UNIT_TOGGLE_TEST_TAG).not())[0]
 
     private fun settle() {
         repeat(3) {
