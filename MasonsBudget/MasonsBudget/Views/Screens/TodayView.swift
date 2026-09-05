@@ -187,6 +187,7 @@ struct TodayView: View {
                 } else {
                     ForEach(Array(todayTodos.enumerated()), id: \.element.id) { idx, todo in
                         TaskRowView(todo: todo)
+                            .ledgerRowReveal(index: idx)
                         if idx < todayTodos.count - 1 {
                             Hairline(indent: 48)
                         }

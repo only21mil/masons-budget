@@ -170,6 +170,7 @@ struct BudgetView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1),
             )
+            .ledgerAnimation(.chipAndNavigation, value: isSelected)
         }
         .buttonStyle(.plain)
     }
@@ -189,25 +190,18 @@ struct BudgetView: View {
                     .foregroundStyle(theme.textMuted)
                 Spacer()
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(AppFormatter.formatCurrency(monthSpent))
-                        .font(AppFont.largeNumberMono)
-                        .foregroundStyle(theme.text)
+                    LedgerSettlingNumeral(value: NSDecimalNumber(decimal: monthSpent).doubleValue) {
+                        AppFormatter.formatCurrency(Decimal($0))
+                    }
+                    .font(AppFont.largeNumberMono)
+                    .foregroundStyle(theme.text)
                     Text("/ \(AppFormatter.formatCurrency(limit))")
                         .font(AppFont.monoCaption)
                         .foregroundStyle(theme.textMuted)
                 }
             }
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(theme.surface2)
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(theme.accent)
-                        .frame(width: geo.size.width * pct)
-                }
-            }
-            .frame(height: 8)
+            LedgerProgressBar(fraction: pct, height: 8, cornerRadius: 4, fill: theme.accent, track: theme.surface2)
 
             HStack {
                 Text("\(Int(pct * 100))% of budget spent")
@@ -247,8 +241,8 @@ struct BudgetView: View {
         let spent = spentInCategory(cat.name)
         let budget = cat.monthlyBudget
         let maxVal = max(spent, budget)
-        let budgetPct = maxVal > 0 ? CGFloat(NSDecimalNumber(decimal: budget / maxVal).doubleValue) : 0
-        let spentPct = maxVal > 0 ? CGFloat(NSDecimalNumber(decimal: spent / maxVal).doubleValue) : 0
+        let budgetPct = maxVal > 0 ? NSDecimalNumber(decimal: budget / maxVal).doubleValue : 0
+        let spentPct = maxVal > 0 ? NSDecimalNumber(decimal: spent / maxVal).doubleValue : 0
         let over = spent > budget
 
         return VStack(alignment: .leading, spacing: 4) {
@@ -262,18 +256,14 @@ struct BudgetView: View {
                     .font(AppFont.monoMicro)
                     .foregroundStyle(over ? theme.danger : theme.textMuted)
             }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(theme.surface2)
-                        .frame(width: geo.size.width * budgetPct, height: 6)
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(over ? theme.danger : theme.accent)
-                        .frame(width: geo.size.width * spentPct, height: 4)
-                        .offset(y: 0)
-                }
-            }
-            .frame(height: 6)
+            LedgerProgressBar(
+                fraction: spentPct,
+                trackFraction: budgetPct,
+                height: 6,
+                fillHeight: 4,
+                fill: over ? theme.danger : theme.accent,
+                track: theme.surface2,
+            )
         }
         .padding(.vertical, 2)
     }
@@ -343,15 +333,7 @@ struct BudgetView: View {
                 }
 
                 HStack(spacing: 10) {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3).fill(theme.surface2)
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(statusColor)
-                                .frame(width: geo.size.width * min(pct, 1))
-                        }
-                    }
-                    .frame(height: 6)
+                    LedgerProgressBar(fraction: pct, height: 6, fill: statusColor, track: theme.surface2)
 
                     Text(over ? "+\(Int((pct - 1) * 100))% over" : "\(remainingPct)% left")
                         .font(AppFont.monoSmallStrong)

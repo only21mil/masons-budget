@@ -336,6 +336,7 @@ struct ContentView: View {
             .padding(2)
             .background(theme.surface2)
             .clipShape(Capsule())
+            .ledgerAnimation(.chipAndNavigation, value: appearanceMode)
         }
 
         private var workspaceSwitcher: some View {

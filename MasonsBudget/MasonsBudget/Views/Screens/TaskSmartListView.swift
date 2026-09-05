@@ -102,14 +102,8 @@ struct TaskRowView: View {
     private var rowForeground: some View {
         HStack(spacing: 12) {
             // Discrete tap-zone: completes without triggering row navigation.
-            Button(action: toggleDone) {
-                Image(systemName: todo.isDone ? AppIcon.checkDone : AppIcon.checkOpen)
-                    .font(AppFont.iconMedium)
-                    .foregroundStyle(todo.isDone ? theme.accent : theme.borderStrong)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(todo.isDone ? "Mark task not done" : "Mark task done")
+            LedgerCheckbox(isOn: todo.isDone, action: toggleDone)
+                .accessibilityLabel(todo.isDone ? "Mark task not done" : "Mark task done")
 
             // Full-row tap opens the editor.
             NavigationLink {
@@ -326,6 +320,7 @@ struct TaskSmartListView: View {
                     VStack(spacing: 0) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { idx, todo in
                             TaskRowView(todo: todo)
+                                .ledgerRowReveal(index: idx)
                             if idx < items.count - 1 {
                                 Hairline(indent: 48)
                             }

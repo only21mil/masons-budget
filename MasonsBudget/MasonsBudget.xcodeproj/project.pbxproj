@@ -45,6 +45,7 @@
 		1798FC8BF60D85845AD1C79D /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E87F8471A5178129ADC32F6 /* ProjectsView.swift */; };
 		17BBEDB466265654289AAE51 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
 		1937D7FCF5D407C26B8C83EC /* Hairline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598608F085B0A81286803F0F /* Hairline.swift */; };
+		1C302851A4D66B595D2B636B /* LedgerMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9E6F41058F2AF266CFF79E5 /* LedgerMotion.swift */; };
 		1CEB4EFB5E07B65F7C3EEC63 /* AppleScreenAdoption.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C69CE7832DBA0B41CAB3C86 /* AppleScreenAdoption.swift */; };
 		1DCAE04D1FD4D959FD8F4048 /* TransactionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BCFC0CB64EDE2474B2E5620 /* TransactionDetailView.swift */; };
 		1E248E2DBD6DBD013AE7BD64 /* MoneyOutTodayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2906B9D375E1697544F4A6B2 /* MoneyOutTodayService.swift */; };
@@ -78,6 +79,7 @@
 		341A877A04A9BA0788B47DF3 /* BTCBillPayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 273950057898C808021DD99E /* BTCBillPayView.swift */; };
 		343BA3F322C725977C4FD80E /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42CB31DA7B47761B37A90E9C /* ExportView.swift */; };
 		353D0C4ED3F4B00D713E03C8 /* AppWriteSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D424253F2EA585494807458 /* AppWriteSyncService.swift */; };
+		395C91C232172EAB2587B8F3 /* LedgerControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65186AEC52AB5A928F12E246 /* LedgerControls.swift */; };
 		3C2F0D3CBBB8D2A03A23CE1F /* TaskUndoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B76057F6E5D01B646C6C3DE7 /* TaskUndoStore.swift */; };
 		3C32EB91AFCE7AE683B55CA6 /* ConvexClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */; };
 		3C5D681E2D464F77A40D8608 /* CategoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FBBF456CA8F45467DE539B3 /* CategoryDetailView.swift */; };
@@ -117,6 +119,7 @@
 		5B7C04B7A70406D9EB0D62FC /* OptimisticSaveFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 974E8027F86EF14E53108D7C /* OptimisticSaveFlowTests.swift */; };
 		5B8933B6B7A64817AE2924C3 /* BTCBuysView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B7551DE4A0BB82EF414D999 /* BTCBuysView.swift */; };
 		5C491764B10B9D634D9C8A32 /* BudgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941AE83F8125080834B45397 /* BudgetView.swift */; };
+		5CBECE1B96C5163C4DF104D2 /* LedgerControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65186AEC52AB5A928F12E246 /* LedgerControls.swift */; };
 		5D301B43723DB13E1F0CF7ED /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBCCD025DF53FB5AB826594 /* TasksView.swift */; };
 		5EA48A752E0FC8F9CCC3058F /* TodoArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEF1482C8EFC171A27117F7 /* TodoArea.swift */; };
 		5EAA31651D7CB8DA2D1CA647 /* ScreenHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */; };
@@ -150,6 +153,7 @@
 		7726E5908E6D0685AF8573FC /* SyncStatusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D86340D4ABE8A55B4DA49FF6 /* SyncStatusStore.swift */; };
 		777A58FB2F9ED9243F50855A /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E87F8471A5178129ADC32F6 /* ProjectsView.swift */; };
 		78CD410FBB0B0F30FC04C2B5 /* AreaTodoListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A36EDB41C72B5F230F05789 /* AreaTodoListView.swift */; };
+		7A1B7A79955D96CC7509BA39 /* LedgerControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65186AEC52AB5A928F12E246 /* LedgerControls.swift */; };
 		7A23F98EAE7CC04F98559625 /* LedgerMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E4D6A837EBFF6D4985DF22 /* LedgerMapper.swift */; };
 		7D48872896D49FB898A12EC5 /* BitcoinIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */; };
 		7E342AEF01715269AE9A04D4 /* money-out-today-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = AEDD1C1FA9DFF789429491D4 /* money-out-today-cases.json */; };
@@ -200,6 +204,7 @@
 		A97366A2EB4EA2FFDBA47FA5 /* Hairline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598608F085B0A81286803F0F /* Hairline.swift */; };
 		A9879A70BEBAAD08D3FA3628 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6D0182EA2E13DE22F30E4E71 /* README.md */; };
 		A9C97F4F24814C2915C6BAD1 /* ConvexSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C3385DCCF03F3E6D6FE6C7 /* ConvexSyncService.swift */; };
+		AAA51CC11DF2BD3BD9F580E9 /* LedgerMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9E6F41058F2AF266CFF79E5 /* LedgerMotion.swift */; };
 		AAEBC48066D2E3E788C9E5AA /* AppWriteSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D424253F2EA585494807458 /* AppWriteSyncService.swift */; };
 		ABCDCCCE43A08655664D0BD1 /* AddTransactionIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB8660E933700241699D6450 /* AddTransactionIntentTests.swift */; };
 		AC4B388167FA9DAB45D43515 /* SyncEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F048D3DB36FA73A8D570960 /* SyncEvent.swift */; };
@@ -227,10 +232,12 @@
 		C196EDE6E90DE6BBB122E90A /* AddTransactionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BED9DCEAF24F0852B41BEDF2 /* AddTransactionView.swift */; };
 		C20B3F463C5014BE4D0BC278 /* SearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */; };
 		C20D34C265A1FDA9FF26D0A4 /* PillButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F77DC014DA99E364F0D6572E /* PillButton.swift */; };
+		C340DBE1F13F2096DDF7F931 /* LedgerMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9E6F41058F2AF266CFF79E5 /* LedgerMotion.swift */; };
 		C366190B325978DE227ED251 /* SourceCodePro-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9EB6BC1656EF505A0B576010 /* SourceCodePro-Light.ttf */; };
 		C3F53E07B321C47FC9A35DE3 /* BitcoinOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB6E2601A51CDBDF03F80E6E /* BitcoinOverviewView.swift */; };
 		C467725DD84089198DA37B58 /* ConvexSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C3385DCCF03F3E6D6FE6C7 /* ConvexSyncService.swift */; };
 		C4732154C67A071211508A18 /* MoreMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4688B09BFCB16C26276040 /* MoreMenuView.swift */; };
+		C47A7C2BB529D1562636E376 /* LedgerMotionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F74762775F46F16C6440B45 /* LedgerMotionTests.swift */; };
 		C4AC630F0736F1FF8E22CB1C /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBD5FB3989AEA4A2A5A5B9A /* TodayView.swift */; };
 		C64C83084A9488E6FB97E4D0 /* ConvexWriteResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0A3F46E4A07D5AA25C0F87E /* ConvexWriteResult.swift */; };
 		C7C1D96BF10E5EF407DBF988 /* ConvexWriteResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0A3F46E4A07D5AA25C0F87E /* ConvexWriteResult.swift */; };
@@ -311,6 +318,7 @@
 		2C99959F828240EDC6CE7CB4 /* AppleScreenAdoptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleScreenAdoptionTests.swift; sourceTree = "<group>"; };
 		2EFC238E2DEC69CA90D81D29 /* SourceCodePro-Semibold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceCodePro-Semibold.ttf"; sourceTree = "<group>"; };
 		2F0D156432CA423919571400 /* manual-fee-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "manual-fee-cases.json"; sourceTree = "<group>"; };
+		2F74762775F46F16C6440B45 /* LedgerMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerMotionTests.swift; sourceTree = "<group>"; };
 		310E21BFB1D9D582BCD6A71B /* MasonsBudget.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MasonsBudget.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3250E7396C07FAB87774D194 /* ConvexInt64WireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexInt64WireTests.swift; sourceTree = "<group>"; };
 		355DA4D064A09FC72695758B /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
@@ -347,6 +355,7 @@
 		5D35827B5A5FFF969AAD61BE /* listBtcBillPays.json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listBtcBillPays.json.json; sourceTree = "<group>"; };
 		5DC543643B1F2899DDB38FE5 /* BTCBillPay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCBillPay.swift; sourceTree = "<group>"; };
 		5EAD4E4602D4D4566CD78E35 /* AmountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AmountView.swift; sourceTree = "<group>"; };
+		65186AEC52AB5A928F12E246 /* LedgerControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerControls.swift; sourceTree = "<group>"; };
 		661693167D7791B43DA9AA2D /* AppWritebackConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppWritebackConfigTests.swift; sourceTree = "<group>"; };
 		69F495FB3EBA9A3F6B589C2E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6D0182EA2E13DE22F30E4E71 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
@@ -413,6 +422,7 @@
 		F28F75A8D3AD287547BB67C7 /* ConvexClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexClient.swift; sourceTree = "<group>"; };
 		F3B18B925AF533486B8311C0 /* finance-market-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "finance-market-cases.json"; sourceTree = "<group>"; };
 		F77DC014DA99E364F0D6572E /* PillButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PillButton.swift; sourceTree = "<group>"; };
+		F9E6F41058F2AF266CFF79E5 /* LedgerMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerMotion.swift; sourceTree = "<group>"; };
 		FDF72B2FFC72BFA2FCC73999 /* task-write-wire-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "task-write-wire-cases.json"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -425,6 +435,7 @@
 				CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */,
 				598608F085B0A81286803F0F /* Hairline.swift */,
 				5514024FC5632566C2498B75 /* InlineAddTaskBar.swift */,
+				65186AEC52AB5A928F12E246 /* LedgerControls.swift */,
 				F77DC014DA99E364F0D6572E /* PillButton.swift */,
 				59DD3C8ADB2447DA2F2ABEF8 /* ScreenHeader.swift */,
 				9217F015BEE5502E0937BDC3 /* TaskUndoBanner.swift */,
@@ -502,6 +513,7 @@
 				2AC58C7449FBDB08006CFC23 /* FamilyVisibilityTests.swift */,
 				D761EFAED478A3508622C89B /* LedgerAdoptionTests.swift */,
 				EAD9232F3449CD8905F765E3 /* LedgerFoundationTests.swift */,
+				2F74762775F46F16C6440B45 /* LedgerMotionTests.swift */,
 				196CEA0279F5A6BEA5F39E8F /* LegacyBlobCompatibilityTests.swift */,
 				EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */,
 				974E8027F86EF14E53108D7C /* OptimisticSaveFlowTests.swift */,
@@ -516,6 +528,7 @@
 			children = (
 				6D9D2114CBEC645F03E11CE8 /* AppTheme.swift */,
 				3D87AD3812997CFF8FDDCF5B /* LedgerDesignSystem.swift */,
+				F9E6F41058F2AF266CFF79E5 /* LedgerMotion.swift */,
 			);
 			path = Theme;
 			sourceTree = "<group>";
@@ -897,8 +910,10 @@
 				A97366A2EB4EA2FFDBA47FA5 /* Hairline.swift in Sources */,
 				4896678F33B0AD12A9247DE2 /* HoldingAccount.swift in Sources */,
 				D027098D14027DE06D9B4266 /* InlineAddTaskBar.swift in Sources */,
+				5CBECE1B96C5163C4DF104D2 /* LedgerControls.swift in Sources */,
 				ED43BE23E08FFAB83EA225ED /* LedgerDesignSystem.swift in Sources */,
 				BAA8B13B0A0FAC1F790BE8EB /* LedgerMapper.swift in Sources */,
+				AAA51CC11DF2BD3BD9F580E9 /* LedgerMotion.swift in Sources */,
 				3CB7AB8307EB64117731F63D /* LegacyBlobDTOs.swift in Sources */,
 				F9EAF981A0A2BBC7BF5398C7 /* LockScreenView.swift in Sources */,
 				FF848533C741DC91C85E63A6 /* MC2DTOs.swift in Sources */,
@@ -974,8 +989,10 @@
 				1937D7FCF5D407C26B8C83EC /* Hairline.swift in Sources */,
 				AC9DFD3F20A65000ABF54CDC /* HoldingAccount.swift in Sources */,
 				617A5624E857EBB25E55CBA7 /* InlineAddTaskBar.swift in Sources */,
+				7A1B7A79955D96CC7509BA39 /* LedgerControls.swift in Sources */,
 				E0D92C6C6EC72A61D5CD620D /* LedgerDesignSystem.swift in Sources */,
 				5689E4DF7A3093CCAD5BCBC3 /* LedgerMapper.swift in Sources */,
+				C340DBE1F13F2096DDF7F931 /* LedgerMotion.swift in Sources */,
 				2D7560FFBE172F8EC89E99A1 /* LegacyBlobDTOs.swift in Sources */,
 				D1F0030EFC8EF2EF555C9F9B /* LockScreenView.swift in Sources */,
 				80A637E625F3EF70CF7EF91A /* MC2DTOs.swift in Sources */,
@@ -1061,9 +1078,12 @@
 				BCDB4955AE6195145DB25EB0 /* HoldingAccount.swift in Sources */,
 				012AAE1E5EF54E82BA42EB70 /* InlineAddTaskBar.swift in Sources */,
 				015AAF7950925FA801DA92EC /* LedgerAdoptionTests.swift in Sources */,
+				395C91C232172EAB2587B8F3 /* LedgerControls.swift in Sources */,
 				71D218811D3DBCEDDF2833BF /* LedgerDesignSystem.swift in Sources */,
 				2698CC3A4DE791992CC3FBB6 /* LedgerFoundationTests.swift in Sources */,
 				7A23F98EAE7CC04F98559625 /* LedgerMapper.swift in Sources */,
+				1C302851A4D66B595D2B636B /* LedgerMotion.swift in Sources */,
+				C47A7C2BB529D1562636E376 /* LedgerMotionTests.swift in Sources */,
 				9A9E95488C6473659AC40BF2 /* LegacyBlobCompatibilityTests.swift in Sources */,
 				DE2E2A91C446B557794A2592 /* LegacyBlobDTOs.swift in Sources */,
 				C156A53D5E586FF9A67A0545 /* LockScreenView.swift in Sources */,

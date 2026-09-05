@@ -60,12 +60,11 @@ struct TaskDetailView: View {
                 }
 
                 fieldCard("DUE DATE") {
-                    Toggle(isOn: $hasDueDate.animation()) {
+                    LedgerToggle(isOn: $hasDueDate.animation()) {
                         Text("Has a due date")
                             .font(AppFont.labelLarge)
                             .foregroundStyle(theme.text)
                     }
-                    .tint(theme.accent)
                     if hasDueDate {
                         DatePicker("Due", selection: $dueDate, displayedComponents: .date)
                             .datePickerStyle(.compact)
@@ -98,7 +97,7 @@ struct TaskDetailView: View {
                 }
 
                 fieldCard("FLAG") {
-                    Toggle(isOn: $isFlagged) {
+                    LedgerToggle(isOn: $isFlagged) {
                         HStack(spacing: 8) {
                             Image(systemName: AppIcon.flagFilled)
                                 .foregroundStyle(theme.accent)
@@ -107,7 +106,6 @@ struct TaskDetailView: View {
                                 .foregroundStyle(theme.text)
                         }
                     }
-                    .tint(theme.accent)
                 }
 
                 saveButton

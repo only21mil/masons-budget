@@ -157,35 +157,52 @@ struct LedgerMetrics: Sendable {
     )
 }
 
+/// Motion vocabulary from the handoff prototype and the 2026-09-05 motion
+/// package. Every animated call site goes through `animation(reduceMotion:)`
+/// so reduce motion lands every value immediately.
 enum LedgerMotionToken: Equatable, Sendable {
     case chipAndNavigation
     case toggleAndButton
     case toggleKnob
     case progressAndTheme
+    case rowReveal
+    case pulse
+    case skeletonBreathe
     case cursorBlink
 
     var duration: Double {
         switch self {
-        case .chipAndNavigation: 0.16
+        case .chipAndNavigation, .rowReveal: 0.16
         case .toggleAndButton: 0.18
         case .toggleKnob: 0.20
         case .progressAndTheme: 0.30
+        case .pulse: 0.60
+        case .skeletonBreathe: 1.10
         case .cursorBlink: 1.10
         }
     }
 
     var timing: Timing {
-        self == .cursorBlink ? .stepEnd : .cssEase
+        self == .cursorBlink ? .stepEnd : .ease
     }
 
     func animation(reduceMotion: Bool) -> Animation? {
-        guard !reduceMotion, timing == .cssEase else { return nil }
-        return .timingCurve(0.25, 0.10, 0.25, 1.00, duration: duration)
+        guard !reduceMotion, timing == .ease else { return nil }
+        return .easeInOut(duration: duration)
     }
 
     enum Timing: Equatable, Sendable {
-        case cssEase
+        case ease
         case stepEnd
+    }
+
+    /// Row reveal stagger: 0.02s per row, capped at index 7 so a long list
+    /// finishes inside 0.4s.
+    static let rowRevealStagger = 0.02
+    static let rowRevealMaximumIndex = 7
+
+    static func rowRevealDelay(index: Int) -> Double {
+        Double(min(max(index, 0), rowRevealMaximumIndex)) * rowRevealStagger
     }
 }
 

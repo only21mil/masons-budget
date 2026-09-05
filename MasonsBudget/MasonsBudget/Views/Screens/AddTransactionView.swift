@@ -82,6 +82,7 @@ struct AddTransactionView: View {
     @State private var merchant = ""
     @State private var btcBuyPrice = ""
     @State private var amountValidationMessage: String?
+    @State private var commitHaptic = LedgerHapticTrigger()
     /// Holds the in-flight write and its cause-specific rejection message. The
     /// sheet stays open until the write is accepted.
     @StateObject private var writeFeedback = WriteFeedbackStore()
@@ -214,6 +215,7 @@ struct AddTransactionView: View {
                     .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
             }
             .background(theme.bg)
+            .ledgerHaptics(commitHaptic)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(writeFeedback.isRetryPending ? "Abandon" : "Cancel") {
@@ -625,9 +627,15 @@ struct AddTransactionView: View {
 
     // MARK: - Save
 
+    /// A refused save plays the error haptic after validation, never on press.
+    private func rejectSave(_ message: String) {
+        amountValidationMessage = message
+        commitHaptic.fire(.error)
+    }
+
     private func saveTransaction() {
         guard let activeMember else {
-            amountValidationMessage = "Select a valid family profile"
+            rejectSave("Select a valid family profile")
             return
         }
         let ledgerOwner = activeMember.ledgerOwner
@@ -645,16 +653,15 @@ struct AddTransactionView: View {
         // and say what the form needs (Linux shows the same message shape).
         if isBitcoinNativeMethod {
             guard inputUnit != .usd else {
-                amountValidationMessage =
-                    "\(selectedLabel) posts Bitcoin. Enter the amount in sats."
+                rejectSave("\(selectedLabel) posts Bitcoin. Enter the amount in sats.")
                 return
             }
             guard sats > 0 else {
-                amountValidationMessage = "Enter an amount"
+                rejectSave("Enter an amount")
                 return
             }
             guard let key = bitcoinAccountKey, !key.isEmpty else {
-                amountValidationMessage = "Choose the Bitcoin account this posts to."
+                rejectSave("Choose the Bitcoin account this posts to.")
                 return
             }
         } else {
@@ -662,7 +669,7 @@ struct AddTransactionView: View {
         }
 
         guard sats != 0 else {
-            amountValidationMessage = "Enter an amount"
+            rejectSave("Enter an amount")
             return
         }
 
@@ -718,7 +725,8 @@ struct AddTransactionView: View {
                     acceptedRevision: tx.updatedAtMs,
                 )
             },
-            afterResult: { [createIDs, dismiss] result in
+            afterResult: { [createIDs, dismiss, haptic = $commitHaptic] result in
+                haptic.wrappedValue.fire(result.isOk ? .success : .error)
                 if createIDs.recordServerResult(result, for: .transaction) { dismiss() }
             },
         )
@@ -728,7 +736,7 @@ struct AddTransactionView: View {
         let ledgerOwner = activeMember.ledgerOwner
         let sats = roundedSats(from: abs(computedSats))
         guard sats > 0 else {
-            amountValidationMessage = "Enter an amount"
+            rejectSave("Enter an amount")
             return
         }
 
@@ -774,7 +782,8 @@ struct AddTransactionView: View {
                     onResult: completion,
                 )
             },
-            afterResult: { [createIDs, dismiss] result in
+            afterResult: { [createIDs, dismiss, haptic = $commitHaptic] result in
+                haptic.wrappedValue.fire(result.isOk ? .success : .error)
                 if createIDs.recordServerResult(result, for: .bitcoinBuy) { dismiss() }
             },
         )

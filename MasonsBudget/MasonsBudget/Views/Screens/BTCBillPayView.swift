@@ -55,6 +55,7 @@ struct BTCBillPayView: View {
                         VStack(spacing: 0) {
                             ForEach(Array(billPays.enumerated()), id: \.element.id) { idx, bp in
                                 billPayRow(bp)
+                                    .ledgerRowReveal(index: idx)
                                 if idx < billPays.count - 1 {
                                     Hairline(indent: 56)
                                 }
@@ -105,6 +106,8 @@ struct BTCBillPayView: View {
                 LinearGradient(colors: [theme.plum, theme.plum.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),
             )
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        } else if case .loading = canonicalFinancials.btcBillPays {
+            LedgerSkeletonRows(rows: 1)
         } else {
             RequiredFinancialSourceView(
                 title: "Bill Pay",

@@ -186,16 +186,7 @@ struct RetirementView: View {
                     .foregroundStyle(.white.opacity(0.9))
             }
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(.white.opacity(0.25))
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(.white)
-                        .frame(width: geo.size.width * min(CGFloat(pct) / 100, 1))
-                }
-            }
-            .frame(height: 5)
+            LedgerProgressBar(fraction: pct / 100, height: 5, fill: .white, track: .white.opacity(0.25))
 
             Text(detail)
                 .font(AppFont.monoSmallStrong)

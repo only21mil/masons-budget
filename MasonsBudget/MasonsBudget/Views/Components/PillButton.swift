@@ -17,6 +17,7 @@ struct PillButton: View {
                 .foregroundStyle(foregroundColor)
                 .background(backgroundColor)
                 .clipShape(Capsule())
+                .ledgerAnimation(.chipAndNavigation, value: isActive)
         }
         .buttonStyle(.plain)
     }

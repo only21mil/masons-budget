@@ -31,6 +31,7 @@ struct BTCAccountDetailView: View {
                     VStack(spacing: 0) {
                         ForEach(Array(visibleAccounts.enumerated()), id: \.element.key) { idx, account in
                             accountRow(account)
+                                .ledgerRowReveal(index: idx)
                             if idx < visibleAccounts.count - 1 {
                                 Hairline(indent: 56)
                             }
@@ -38,6 +39,9 @@ struct BTCAccountDetailView: View {
                     }
                     .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                     .padding(.horizontal, AppLayout.sectionPadding)
+                } else if case .loading = canonicalFinancials.btcBalance {
+                    LedgerSkeletonRows()
+                        .padding(.horizontal, AppLayout.sectionPadding)
                 } else {
                     RequiredFinancialSourceView(
                         title: title,

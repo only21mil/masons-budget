@@ -26,6 +26,7 @@ struct OnboardingView: View {
                                 .frame(height: 3)
                         }
                     }
+                    .ledgerAnimation(.progressAndTheme, value: stepIndex)
                 }
                 .padding(.horizontal, AppLayout.sectionPadding)
                 .padding(.top, 18)

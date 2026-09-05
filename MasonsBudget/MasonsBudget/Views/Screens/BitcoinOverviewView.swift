@@ -41,6 +41,9 @@ struct BitcoinOverviewView: View {
 
                     accountsCard(balance)
                         .padding(.horizontal, AppLayout.sectionPadding)
+                } else if case .loading = canonicalFinancials.btcBalance {
+                    LedgerSkeletonRows()
+                        .padding(.horizontal, AppLayout.sectionPadding)
                 } else {
                     RequiredFinancialSourceView(
                         title: "Bitcoin",
@@ -184,6 +187,7 @@ struct BitcoinOverviewView: View {
                     .padding(14)
                 }
                 .buttonStyle(.plain)
+                .ledgerRowReveal(index: index)
 
                 if index < balance.accounts.count - 1 {
                     Hairline(indent: 54)
@@ -234,14 +238,22 @@ private enum BitcoinComposeRoute: String, Identifiable {
 
 struct BitcoinPriceView: View {
     @Environment(\.theme) private var theme
+    @Environment(\.ledgerTokens) private var tokens
+    @Environment(\.ledgerEffects) private var effects
     @AppStorage(BTCPriceService.priceKey) private var storedPrice = 0.0
     @AppStorage(BTCPriceService.change24hKey) private var change24h = 0.0
     @AppStorage(BTCPriceService.sourceKey) private var source = ""
     @AppStorage(BTCPriceService.updatedAtKey) private var updatedAt = 0.0
+    @AppStorage(LedgerPreference.phosphorGlowKey) private var glowEnabled = LedgerPreference.phosphorGlowDefault
     @State private var isRefreshing = false
+    @State private var glowRadius = LedgerGlowToken.restingRadius
 
     private var displayPrice: Decimal {
         storedPrice > 0 ? Decimal(storedPrice) : BTCPriceService.fallbackPriceUSD
+    }
+
+    private var displayPriceValue: Double {
+        NSDecimalNumber(decimal: displayPrice).doubleValue
     }
 
     var body: some View {
@@ -260,10 +272,21 @@ struct BitcoinPriceView: View {
                             .foregroundStyle(theme.accent)
                     }
 
-                    Text(AppFormatter.formatCurrency(displayPrice))
-                        .font(AppFont.heroNumberMono)
-                        .foregroundStyle(theme.text)
-                        .minimumScaleFactor(0.7)
+                    LedgerSettlingNumeral(value: displayPriceValue) {
+                        AppFormatter.formatCurrency(Decimal($0))
+                    }
+                    .font(AppFont.heroNumberMono)
+                    .foregroundStyle(theme.text)
+                    .minimumScaleFactor(0.7)
+                    .ledgerGlow(radius: glowRadius)
+                    .onChange(of: storedPrice) { _, _ in
+                        LedgerPhosphorPulse.run(
+                            radius: $glowRadius,
+                            reduceMotion: effects.reduceMotion,
+                            treatment: tokens.treatment,
+                            glowEnabled: glowEnabled,
+                        )
+                    }
 
                     if storedPrice > 0 {
                         Text("\(change24h >= 0 ? "+" : "")\(change24h, specifier: "%.2f")% · 24H")
