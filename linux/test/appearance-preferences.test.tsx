@@ -127,6 +127,17 @@ describe("Linux appearance preference persistence", () => {
     })
   })
 
+  it("defaults scanlines off for a new profile without overriding a saved choice", async () => {
+    const fresh = await mountAppearanceProbe()
+    expect(readAppearance(fresh.container).scanlines).toBe("false")
+    expect(window.localStorage.getItem(STORAGE_KEYS.scanlines)).toBeNull()
+    await unmountAppearanceProbe(fresh.root, fresh.container)
+
+    window.localStorage.setItem(STORAGE_KEYS.scanlines, "true")
+    const saved = await mountAppearanceProbe()
+    expect(readAppearance(saved.container).scanlines).toBe("true")
+  })
+
   it.each([
     ["missing", null],
     ["invalid", "sepia"],

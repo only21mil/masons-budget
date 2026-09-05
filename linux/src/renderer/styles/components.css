@@ -1035,8 +1035,8 @@
 .vv-navgroup__label {
   padding: 0 8px;
   color: var(--vv-ledger-ink-meta);
-  font-size: 8.5px;
-  letter-spacing: 0.16em;
+  font-size: var(--vv-ledger-text-tab);
+  letter-spacing: var(--vv-ledger-tracking-label);
 }
 
 .vv-navitem {
@@ -1044,9 +1044,9 @@
   padding: 9px 10px;
   border-radius: 3px;
   color: var(--vv-ledger-ink-secondary);
-  font-size: 9.5px;
+  font-size: var(--vv-ledger-text-tab);
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--vv-ledger-tracking-tab);
   text-transform: uppercase;
 }
 
@@ -1054,6 +1054,11 @@
   color: var(--vv-ledger-bitcoin);
   background: var(--vv-ledger-bitcoin-soft);
   box-shadow: inset 2px 0 0 var(--vv-ledger-bitcoin);
+}
+
+/* Orange on the soft fill is 4.36:1 in Daylight; the active label reads in ink. */
+[data-vv-theme="light"] .vv-navitem--active {
+  color: var(--vv-ledger-ink);
 }
 
 .vv-main,
@@ -1084,9 +1089,22 @@
 .vv-panel__source {
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-meta);
-  font-weight: 400;
+  font-weight: 500;
   letter-spacing: var(--vv-ledger-tracking-label);
   text-transform: uppercase;
+}
+
+/* Tier-coloured text never sits under weight 500 (contrast audit type floor). */
+.vv-kpi__hint,
+.vv-field__hint,
+.vv-table__footer,
+.vv-state__detail,
+.vv-banner__detail,
+.vv-dialog__description,
+.vv-lock__detail,
+.vv-muted,
+.vv-dim {
+  font-weight: var(--vv-ledger-weight-medium);
 }
 
 .vv-panel {
@@ -1135,8 +1153,10 @@
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-kpi-label);
   font-weight: 500;
-  letter-spacing: 0.16em;
+  letter-spacing: var(--vv-ledger-tracking-kpi-label);
   text-transform: uppercase;
+  /* PLANNED and ACTUAL share a strip; the pair never wraps. */
+  white-space: nowrap;
 }
 
 .vv-kpi__value {
@@ -1147,9 +1167,9 @@
 
 .vv-table th {
   color: var(--vv-ledger-ink-meta);
-  font-size: 9px;
+  font-size: var(--vv-ledger-text-kpi-label);
   font-weight: 500;
-  letter-spacing: 0.16em;
+  letter-spacing: var(--vv-ledger-tracking-kpi-label);
   text-transform: uppercase;
 }
 
@@ -1332,9 +1352,9 @@
   display: block;
   margin-bottom: 8px;
   color: var(--vv-ledger-ink-secondary);
-  font-size: 9.5px;
+  font-size: var(--vv-ledger-text-meta);
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: var(--vv-ledger-tracking-label);
   text-transform: uppercase;
 }
 
@@ -1365,7 +1385,9 @@
 
 .vv-setting-toggle span {
   color: var(--vv-ledger-ink-meta);
-  font-size: 9.5px;
+  font-size: var(--vv-ledger-text-meta);
+  font-weight: 500;
+  letter-spacing: var(--vv-ledger-tracking-meta);
 }
 
 .vv-toggle {
@@ -1447,6 +1469,8 @@
   margin-top: 3px;
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-meta);
+  font-weight: 500;
+  letter-spacing: var(--vv-ledger-tracking-meta);
 }
 
 .vv-more-list {
@@ -1499,8 +1523,9 @@
 
 .vv-onboarding__step {
   color: var(--vv-ledger-bitcoin);
-  font-size: 9.5px;
-  letter-spacing: 0.18em;
+  font-size: var(--vv-ledger-text-meta);
+  font-weight: 500;
+  letter-spacing: var(--vv-ledger-tracking-label);
 }
 
 .vv-onboarding__content h1 {
@@ -1530,8 +1555,9 @@
 
 .vv-onboarding__card span {
   color: var(--vv-ledger-ink-meta);
-  font-size: 9px;
-  letter-spacing: 0.16em;
+  font-size: var(--vv-ledger-text-kpi-label);
+  font-weight: 500;
+  letter-spacing: var(--vv-ledger-tracking-kpi-label);
   text-transform: uppercase;
 }
 

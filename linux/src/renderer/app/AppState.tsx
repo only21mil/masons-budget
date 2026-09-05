@@ -166,8 +166,10 @@ export function AppStateProvider({
     () => initialDisplayUnit ?? readDisplayUnit(),
   )
   const [ledgerTheme, setStoredLedgerTheme] = useState<LedgerTheme>(readLedgerTheme)
+  // Scanlines are a texture preference, not a base layer: off for a new
+  // profile, while a saved choice is always honoured.
   const [scanlinesEnabled, setStoredScanlinesEnabled] = useState(
-    () => readBooleanPreference(SCANLINES_STORAGE_KEY, true),
+    () => readBooleanPreference(SCANLINES_STORAGE_KEY, false),
   )
   const [phosphorEnabled, setStoredPhosphorEnabled] = useState(
     () => readBooleanPreference(PHOSPHOR_STORAGE_KEY, true),

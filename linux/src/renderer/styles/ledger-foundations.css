@@ -24,10 +24,14 @@
   --vv-ledger-rule: rgba(214, 238, 224, 0.1);
   --vv-ledger-rule-subtle: rgba(214, 238, 224, 0.06);
   --vv-ledger-ink: #e8efe9;
-  --vv-ledger-ink-secondary: rgba(232, 239, 233, 0.56);
-  --vv-ledger-ink-meta: rgba(232, 239, 233, 0.52);
+  /* Opaque tiers: #E8EFE9 at 0.70 and 0.61 over the background, pre-blended
+     so nothing composites at draw time (contrast audit 2026-09-05). */
+  --vv-ledger-ink-secondary: #a3aba6;
+  --vv-ledger-ink-meta: #8f9792;
   --vv-ledger-bitcoin: #f7931a;
   --vv-ledger-bitcoin-fill: #f7931a;
+  /* Price hero decimals: bitcoin at 0.75 on dark, opaque on light. */
+  --vv-ledger-bitcoin-decimals: rgba(247, 147, 26, 0.75);
   --vv-ledger-on-bitcoin: #0a0d0c;
   --vv-ledger-bitcoin-soft: rgba(247, 147, 26, 0.12);
   --vv-ledger-gain: oklch(0.74 0.155 158);
@@ -41,7 +45,7 @@
   --vv-ledger-row-padding-block: 12px;
   --vv-ledger-screen-title-size: 26px;
   --vv-ledger-row-text-size: 12.5px;
-  --vv-ledger-meta-text-size: 9.5px;
+  --vv-ledger-meta-text-size: 11px;
 
   /* Source Code Pro weights used by the handoff: 300, 400, 500, 600, 700. */
   --vv-ledger-font: "Source Code Pro", ui-monospace, monospace;
@@ -51,11 +55,13 @@
   --vv-ledger-weight-semibold: 600;
   --vv-ledger-weight-bold: 700;
 
-  --vv-ledger-text-tab: 8.5px;
-  --vv-ledger-text-kpi-label: 9px;
-  --vv-ledger-text-meta: 9.5px;
-  --vv-ledger-text-chip: 10px;
-  --vv-ledger-text-body: 10.5px;
+  /* Type floor: nothing under 11px; body 12px on 18px leading. */
+  --vv-ledger-text-tab: 11px;
+  --vv-ledger-text-kpi-label: 11px;
+  --vv-ledger-text-meta: 11px;
+  --vv-ledger-text-chip: 11px;
+  --vv-ledger-text-body: 12px;
+  --vv-ledger-leading-body: 18px;
   --vv-ledger-text-button: 11px;
   --vv-ledger-text-row: var(--vv-ledger-row-text-size);
   --vv-ledger-text-input: 15px;
@@ -66,9 +72,13 @@
 
   --vv-ledger-tracking-title: -0.02em;
   --vv-ledger-tracking-price: -0.03em;
-  --vv-ledger-tracking-meta: 0.05em;
+  /* Uppercase tracking is capped at 0.10em now that labels sit at 11px. */
+  --vv-ledger-tracking-tab: 0.06em;
+  --vv-ledger-tracking-chip: 0.06em;
+  --vv-ledger-tracking-meta: 0.03em;
+  --vv-ledger-tracking-kpi-label: 0.1em;
   --vv-ledger-tracking-button: 0.1em;
-  --vv-ledger-tracking-label: 0.18em;
+  --vv-ledger-tracking-label: 0.1em;
 
   --vv-ledger-space-1: 4px;
   --vv-ledger-space-2: 6px;
@@ -111,10 +121,13 @@
   --vv-ledger-rule: rgba(20, 23, 21, 0.14);
   --vv-ledger-rule-subtle: rgba(20, 23, 21, 0.08);
   --vv-ledger-ink: #141715;
-  --vv-ledger-ink-secondary: rgba(20, 23, 21, 0.64);
-  --vv-ledger-ink-meta: rgba(20, 23, 21, 0.62);
-  --vv-ledger-bitcoin: #c96a05;
+  /* Opaque tiers: #141715 at 0.72 and 0.67 over the background. */
+  --vv-ledger-ink-secondary: #505452;
+  --vv-ledger-ink-meta: #5c605d;
+  /* Bitcoin text clears 4.5:1 on panel; filled controls keep #f7931a. */
+  --vv-ledger-bitcoin: #9e5104;
   --vv-ledger-bitcoin-fill: #f7931a;
+  --vv-ledger-bitcoin-decimals: #9e5104;
   --vv-ledger-on-bitcoin: #0a0d0c;
   --vv-ledger-bitcoin-soft: rgba(201, 106, 5, 0.1);
   --vv-ledger-gain: oklch(0.52 0.13 158);
@@ -127,7 +140,7 @@
   --vv-ledger-row-padding-block: 15px;
   --vv-ledger-screen-title-size: 29px;
   --vv-ledger-row-text-size: 13.5px;
-  --vv-ledger-meta-text-size: 9.5px;
+  --vv-ledger-meta-text-size: 11px;
 }
 
 [data-vv-theme="dark"] {

@@ -1,3 +1,5 @@
+// @vitest-environment happy-dom
+
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
@@ -6,6 +8,7 @@ import { fileURLToPath } from "node:url"
 import { renderToStaticMarkup } from "react-dom/server"
 import { test } from "vitest"
 
+import { AppStateProvider } from "../src/renderer/app/AppState.tsx"
 import { AppShell } from "../src/renderer/components/AppShell.tsx"
 import { PaymentRailGlyph } from "../src/renderer/components/LedgerFoundations.tsx"
 import {
@@ -34,8 +37,19 @@ test("the shell adopts the ledger theme, route scope, Horizon wordmark, and iner
   assert.match(markup, /data-vv-route="dashboard"/)
   assert.match(markup, /SOVEREIGN/)
   assert.match(markup, /BUDGET APP/)
-  assert.match(markup, /vv-ledger-scanlines/)
-  assert.match(markup, /aria-hidden="true"/)
+  // Scanlines are a preference that defaults off; a saved "true" restores them.
+  assert.doesNotMatch(markup, /vv-ledger-scanlines/)
+  window.localStorage.setItem("vogel-vault.scanlines", "true")
+  const textured = renderToStaticMarkup(
+    <AppStateProvider>
+      <AppShell sections={[]} activeId="dashboard" onNavigate={() => {}} topBar={null}>
+        ledger
+      </AppShell>
+    </AppStateProvider>,
+  )
+  window.localStorage.clear()
+  assert.match(textured, /vv-ledger-scanlines/)
+  assert.match(textured, /aria-hidden="true"/)
   assert.match(styles, /--vv-sidebar-width: 130px/)
   assert.match(styles, /var\(--vv-ledger-rule-style\)/)
   assert.match(styles, /font-family: var\(--vv-ledger-font\)/)

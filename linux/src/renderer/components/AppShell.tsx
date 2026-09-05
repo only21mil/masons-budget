@@ -38,7 +38,7 @@ export interface AppShellProps {
 export function AppShell({ sections, activeId, onNavigate, topBar, children }: AppShellProps) {
   const preferences = useOptionalAppState()
   const theme = preferences?.ledgerTheme ?? "dark"
-  const scanlines = preferences?.scanlinesEnabled ?? true
+  const scanlines = preferences?.scanlinesEnabled ?? false
   const phosphor = preferences?.phosphorEnabled ?? true
   const terminalEffectsEnabled = theme === "dark"
 
