@@ -37,6 +37,7 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
+import com.sats21m.vogelvault.ui.theme.rememberLedgerHaptics
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -161,6 +162,11 @@ internal fun AddTaskSheet(
     // the in-flight job. A fresh sheet reconnects to the same process-owned id
     // and safely retries instead.
     var saving by remember(owner) { mutableStateOf(false) }
+    val haptics = rememberLedgerHaptics()
+    fun refuse(reason: String) {
+        message = reason
+        haptics.reject()
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -233,17 +239,17 @@ internal fun AddTaskSheet(
                             ),
                             id = draftTaskId,
                         ).getOrElse {
-                            message = it.message ?: "Task is invalid"
+                            refuse(it.message ?: "Task is invalid")
                             return@VaultButton
                         }
                         val client = gateway
                         if (client == null) {
-                            message = todoWriteUnavailableMessage(TodoWriteAction.ADD)
+                            refuse(todoWriteUnavailableMessage(TodoWriteAction.ADD))
                             return@VaultButton
                         }
                         val writeScope = saveScope
                         if (writeScope == null) {
-                            message = todoWriteUnavailableMessage(TodoWriteAction.ADD)
+                            refuse(todoWriteUnavailableMessage(TodoWriteAction.ADD))
                             return@VaultButton
                         }
                         saving = true
@@ -273,9 +279,10 @@ internal fun AddTaskSheet(
                                     todoWriteFailureMessage(TodoWriteAction.ADD, outcome.result)
                             }
                             if (failure == null) {
+                                haptics.confirm()
                                 onSaved(taskTitle)
                             } else {
-                                message = recoveryFailure ?: failure
+                                refuse(recoveryFailure ?: failure)
                             }
                         }
                     },

@@ -46,6 +46,7 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
+import com.sats21m.vogelvault.ui.theme.rememberLedgerHaptics
 import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -72,6 +73,8 @@ internal class TodoWriteState(
     private val onCredentialRejected: () -> String?,
     private val deletedMessage: (TodoItem) -> String,
     private val undoLabel: String,
+    /** Every reported failure is a refused write; the caller owns the haptic. */
+    private val onWriteRejected: () -> Unit = {},
 ) {
     var busyIds by mutableStateOf(emptySet<String>())
         private set
@@ -102,6 +105,7 @@ internal class TodoWriteState(
     }
 
     private fun report(message: String) {
+        onWriteRejected()
         scope.launch { snackbar.showSnackbar(message = message) }
     }
 
@@ -289,6 +293,7 @@ internal fun rememberTodoWriteState(
     val currentRefresh = rememberUpdatedState(onWriteSucceeded)
     val currentCredentialRejected = rememberUpdatedState(onCredentialRejected)
     val currentClock = rememberUpdatedState(nowMillis)
+    val currentHaptics = rememberUpdatedState(rememberLedgerHaptics())
     val undoLabel = stringResource(R.string.todo_undo)
     val state = remember(gateway, activeProfile, scope, snackbar, context, undoLabel) {
         TodoWriteState(
@@ -301,6 +306,7 @@ internal fun rememberTodoWriteState(
             onCredentialRejected = { currentCredentialRejected.value() },
             deletedMessage = { context.getString(R.string.todo_deleted, it.title) },
             undoLabel = undoLabel,
+            onWriteRejected = { currentHaptics.value.reject() },
         )
     }
     DisposableEffect(state) {

@@ -20,6 +20,7 @@ import com.sats21m.vogelvault.ui.components.HorizontalHairline
 import com.sats21m.vogelvault.ui.components.Panel
 import com.sats21m.vogelvault.ui.theme.LedgerTreatment
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
+import com.sats21m.vogelvault.ui.theme.rememberLedgerHaptics
 
 @Composable
 internal fun LedgerAppearanceSettings(
@@ -101,13 +102,19 @@ private fun LedgerSettingToggle(
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
+    val haptics = rememberLedgerHaptics()
+    // A setting commits locally and never fails, so the toggle haptic fires on the change itself.
+    val commitChange: (Boolean) -> Unit = { next ->
+        haptics.toggle(next)
+        onCheckedChange(next)
+    }
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = tokens.density.minimumHitTarget)
             .then(
                 if (enabled) {
-                    Modifier.clickable(role = Role.Switch) { onCheckedChange(!checked) }
+                    Modifier.clickable(role = Role.Switch) { commitChange(!checked) }
                 } else {
                     Modifier.semantics { disabled() }
                 },
@@ -129,7 +136,7 @@ private fun LedgerSettingToggle(
         Switch(
             checked = checked,
             enabled = enabled,
-            onCheckedChange = if (enabled) onCheckedChange else null,
+            onCheckedChange = if (enabled) commitChange else null,
         )
     }
 }

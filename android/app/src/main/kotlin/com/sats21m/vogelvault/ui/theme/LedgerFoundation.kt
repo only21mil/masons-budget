@@ -133,13 +133,16 @@ private fun sourceCodeProFont(
 fun TextStyle.withLedgerTabularFigures(): TextStyle = copy(fontFeatureSettings = "tnum")
 
 /** The v2 bloom sits behind an unchanged, full-opacity accent glyph. */
-fun TextStyle.withLedgerPhosphorGlow(enabled: Boolean): TextStyle =
+fun TextStyle.withLedgerPhosphorGlow(
+    enabled: Boolean,
+    blurRadius: Float = LedgerPhosphorGlow.restingBlurPx,
+): TextStyle =
     if (enabled) {
         copy(
             shadow = Shadow(
                 color = Color(0xFFF7931A).copy(alpha = 0.30f),
                 offset = Offset.Zero,
-                blurRadius = 18f,
+                blurRadius = blurRadius,
             ),
         )
     } else {
@@ -250,6 +253,8 @@ object LedgerMotion {
     const val toggleKnobMillis = 200
     const val progressAndThemeMillis = 300
     const val onboardingCursorBlinkMillis = 1_100
+    /** One rise and fall of the price glow; the shorter tokens read as a blink. */
+    const val pulseMillis = 600
 }
 
 @Immutable
