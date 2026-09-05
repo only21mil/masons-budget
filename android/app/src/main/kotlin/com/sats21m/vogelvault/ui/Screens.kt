@@ -842,7 +842,7 @@ private fun VaultLazyListScope.activity(
             Panel {
                 Text(
                     "Filtering cached records...",
-                    modifier = Modifier.padding(VaultSpace.md),
+                    modifier = Modifier.padding(vertical = VaultSpace.md),
                     color = LocalLedgerTheme.current.colors.foregroundSecondary,
                 )
             }
@@ -852,7 +852,7 @@ private fun VaultLazyListScope.activity(
     if (transactions.isEmpty()) {
         item {
             Panel {
-                Column(Modifier.padding(VaultSpace.md)) {
+                Column(Modifier.padding(vertical = VaultSpace.md)) {
                     Text("No matching records", color = LocalLedgerTheme.current.colors.foreground)
                     Text(
                         "Try another search or filter.",
@@ -1114,7 +1114,7 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
                 title = stringResource(R.string.budget_category_transactions_title, scope.category),
                 source = "${state.data.transactions.source} · ${scope.month}",
             ) {
-                Column(Modifier.padding(VaultSpace.md)) {
+                Column(Modifier.padding(vertical = VaultSpace.md)) {
                     Text(
                         stringResource(R.string.budget_category_transactions_empty),
                         color = LocalLedgerTheme.current.colors.foreground,
@@ -1683,7 +1683,7 @@ private fun VaultLazyListScope.settings(
             ReadBootstrapConfiguration(
                 remoteReadReady = remoteReadReady,
                 onConnected = { onRemoteRowsConnected() },
-                modifier = Modifier.padding(VaultSpace.md),
+                modifier = Modifier.padding(vertical = VaultSpace.md),
                 allowReset = true,
             )
         }
@@ -1727,7 +1727,7 @@ internal fun SyncTokenConfiguration() {
 
     Panel(stringResource(R.string.write_credential_title)) {
         Column(
-            Modifier.padding(VaultSpace.md),
+            Modifier.padding(vertical = VaultSpace.md),
             verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
         ) {
             Text(

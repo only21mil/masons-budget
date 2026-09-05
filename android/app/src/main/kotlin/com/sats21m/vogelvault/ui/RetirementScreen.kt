@@ -395,7 +395,7 @@ private fun ProjectionBreakdown(
 private fun ProjectionAssumptions(inputs: RetirementProjectionInputs) {
     Panel(stringResource(R.string.retirement_assumptions_title)) {
         Column(
-            Modifier.padding(VaultSpace.md),
+            Modifier.padding(vertical = VaultSpace.md),
             verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
         ) {
             AssumptionLine(

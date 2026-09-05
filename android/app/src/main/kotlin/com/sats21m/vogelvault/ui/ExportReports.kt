@@ -190,7 +190,7 @@ fun ExportScreen(
             verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(VaultSpace.md),
+                .padding(vertical = VaultSpace.md),
         ) {
             ExportButton(stringResource(R.string.export_transactions)) {
                 shareCsv(
