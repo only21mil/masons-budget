@@ -28,7 +28,7 @@ enum class LedgerAppearance(val storageKey: String, val label: String) {
 
 data class LedgerUiSettings(
     val appearance: LedgerAppearance = LedgerAppearance.TERMINAL,
-    val scanlinesEnabled: Boolean = true,
+    val scanlinesEnabled: Boolean = false,
     val phosphorGlowEnabled: Boolean = true,
     val reduceMotion: Boolean = false,
     val reduceTransparency: Boolean = false,
@@ -57,7 +57,7 @@ internal class LedgerUiPreferences(private val preferences: SharedPreferences) {
             appearance = LedgerAppearance.fromStorageKey(
                 preferences.getString(KEY_APPEARANCE, null),
             ),
-            scanlinesEnabled = preferences.getBoolean(KEY_SCANLINES, true),
+            scanlinesEnabled = preferences.getBoolean(KEY_SCANLINES, false),
             phosphorGlowEnabled = preferences.getBoolean(KEY_PHOSPHOR, true),
             reduceMotion = preferences.getBoolean(KEY_REDUCE_MOTION, false),
             reduceTransparency = preferences.getBoolean(KEY_REDUCE_TRANSPARENCY, false),

@@ -28,12 +28,22 @@ class LedgerUiPreferencesTest {
     }
 
     @Test
-    fun `fresh install defaults to Terminal with its effects on`() {
+    fun `fresh install defaults to Terminal with scanlines off and glow on`() {
         val settings = store.current()
 
         assertEquals(LedgerAppearance.TERMINAL, settings.appearance)
-        assertTrue(settings.scanlinesEnabled)
+        assertFalse(settings.scanlinesEnabled)
         assertTrue(settings.phosphorGlowEnabled)
+    }
+
+    @Test
+    fun `scanlines a user turned on survive the off default`() {
+        preferences.edit().putBoolean("scanlines", true).commit()
+
+        assertTrue(store.current().scanlinesEnabled)
+
+        assertTrue(store.save(LedgerUiSettings(scanlinesEnabled = true)))
+        assertTrue(store.current().scanlinesEnabled)
     }
 
     @Test

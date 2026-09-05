@@ -26,6 +26,12 @@ Adding a proposed glyph to a platform asset catalog does not accept it. A
 platform change must preserve the status label until design review accepts the
 glyph.
 
+2026-09-05: the `fg2` and `fg3` tiers became opaque after the Fold readability
+audit, chosen to clear 6:1 on the opaque fills because a 20 percent
+rasterisation loss on a 6:1 nominal still leaves about 5:1 at the stroke body.
+The same change split `btc` into text and fill tokens, raised the type floor to
+11px, and made scanlines default off.
+
 ## Brand identity
 
 The app name is `Sovereign Budget App`. The launcher label is the single word
@@ -80,9 +86,11 @@ also non-production.
 
 ## Color
 
-Bitcoin orange stays `#F7931A` on dark grounds and filled controls. The light
-theme uses `#C96A05` for orange text and line art because `#F7931A` does not
-have enough contrast there.
+Bitcoin orange stays `#F7931A` for filled controls in both treatments; the ink
+on a fill is always `#0A0D0C`. The light theme uses `#9E5104` for orange text
+and line art, the lightest orange of that hue that clears 4.5:1 on `panel`.
+`fg2` and `fg3` are opaque. They are the `fg` ink blended over each
+treatment's `bg`, so the dark grey stays cool and the light grey stays warm.
 
 | Token | Dark | Light |
 | --- | --- | --- |
@@ -92,10 +100,12 @@ have enough contrast there.
 | `line` | `rgba(214,238,224,0.10)` | `rgba(20,23,21,0.14)` |
 | `line2` | `rgba(214,238,224,0.06)` | `rgba(20,23,21,0.08)` |
 | `fg` | `#E8EFE9` | `#141715` |
-| `fg2` | `rgba(232,239,233,0.56)` | `rgba(20,23,21,0.64)` |
-| `fg3` | `rgba(232,239,233,0.52)` | `rgba(20,23,21,0.62)` |
-| `btc` | `#F7931A` | `#C96A05` |
-| `btcSoft` | `rgba(247,147,26,0.12)` | `rgba(201,106,5,0.10)` |
+| `fg2` | `#A3ABA6` | `#505452` |
+| `fg3` | `#8F9792` | `#5C605D` |
+| `btc` (text and icons) | `#F7931A` | `#9E5104` |
+| `btcFill` (filled controls, ink `#0A0D0C`) | `#F7931A` | `#F7931A` |
+| `btcSoft` | `rgba(247,147,26,0.12)` | `rgba(158,81,4,0.10)` |
+| `btcDecimals` (price hero decimals) | `rgba(247,147,26,0.75)` | `#9E5104` |
 | `gain` | `oklch(0.74 0.155 158)` | `oklch(0.52 0.13 158)` |
 | `loss` | `oklch(0.70 0.155 28)` | `oklch(0.52 0.15 28)` |
 | `scan` | `rgba(255,255,255,0.022)` | `rgba(0,0,0,0.012)` |
@@ -114,26 +124,28 @@ count, even though the chosen face is monospaced.
 | --- | --- |
 | Screen title | 26px, 600, -0.02em |
 | Drilldown title | 24px, 600, -0.02em, line-height 1.15 |
-| Screen subtitle | 9.5px, 400, 0.18em, uppercase |
+| Screen subtitle | 11px, 500, 0.10em, uppercase |
 | Hero numeral | 27 to 28px, 500 to 600, -0.02em to -0.03em |
-| Price hero | 38px, 600, -0.03em; decimals 20px at 0.55 opacity |
-| KPI label | 9px, 500, 0.16em, uppercase |
+| Price hero | 38px, 600, -0.03em; decimals 20px in `btcDecimals` |
+| KPI label | 11px, 500, 0.10em, uppercase |
 | KPI value | 19 to 20px, 500 |
-| KPI sub | 9px, 400, 0.06em, uppercase |
-| Section label | 9.5px, 600, 0.18em, uppercase |
+| KPI sub | 11px, 500, 0.04em, uppercase |
+| Section label | 11px, 600, 0.10em, uppercase |
 | List primary | 12.5px, 400 |
-| List meta | 9.5px, 400, 0.05em, uppercase |
+| List meta | 11px, 500, 0.03em, uppercase |
 | List figure | 12.5px, 500 |
-| Chip | 10 to 10.5px, 500 to 600, 0.06em to 0.10em, uppercase |
-| Tab label | 8.5px, 600, 0.10em, uppercase |
+| Chip | 11px, 600, 0.06em, uppercase |
+| Tab label | 11px, 600, 0.06em, uppercase |
 | Tab glyph | 17px, 400 |
-| Body and assumptions | 10.5px, 400, line-height 1.85 |
+| Body and assumptions | 12px, 400, line-height 18px |
 | Button | 11px, 600, 0.10em, uppercase |
 | Amount input | 26 to 28px, 500 |
 | Text input | 14 to 15px, 400 |
 
-The minimum type size is 8.5px. Use it only for uppercase tab labels and
-provenance tags.
+The minimum type size is 11px. Metadata that carries a fact (dates,
+categories, sources, hints) is at least weight 500 when set in `fg2` or `fg3`;
+uppercase tracking stays at or under 0.10em so the wider labels keep the width
+the old 0.18em labels had. The PLANNED and ACTUAL label pairs keep nowrap.
 
 ## Density, shape, and texture
 
@@ -144,7 +156,7 @@ provenance tags.
 | List-row vertical padding | 12px | 15px |
 | Screen title | 26px | 29px |
 | List primary | 12.5px | 13.5px |
-| List meta | 9.5px | 9.5px |
+| List meta | 11px | 11px |
 
 - Card interior padding is 15 to 17px.
 - A section starts 20 to 22px after the preceding content. Its label has 9px
@@ -158,8 +170,10 @@ provenance tags.
   by 800dp with a 130dp rail and a 296dp secondary column where specified.
 - The scanline is `repeating-linear-gradient(180deg, scan 0 1px, transparent 1px 3px)`.
   It never intercepts input or enters the accessibility tree.
-- Scanlines and phosphor glow are separate settings, default on. Reduce-motion
-  or reduce-transparency settings force both effects off.
+- Scanlines and phosphor glow are separate settings. Scanlines default off
+  since 2026-09-05; the texture is a preference, not a base layer. Phosphor
+  glow defaults on. Reduce-motion or reduce-transparency settings force both
+  effects off.
 
 Transitions are 160ms for chips and navigation, 180ms for controls, 200ms for
 the toggle knob, and 300ms for progress width and theme changes. The only

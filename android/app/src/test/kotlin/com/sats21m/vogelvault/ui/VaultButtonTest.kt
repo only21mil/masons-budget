@@ -70,7 +70,7 @@ class VaultButtonTest {
         }
         compose.waitForIdle()
 
-        assertEquals(colors.bitcoin, containerColor)
+        assertEquals(colors.bitcoinFill, containerColor)
         assertEquals(LedgerPalettes.TerminalDark.background, labelColor)
     }
 }

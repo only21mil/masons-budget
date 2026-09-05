@@ -1405,7 +1405,7 @@ internal fun BitcoinPriceHero(quote: MarketQuote?, nowMillis: Long? = null) {
                     Text(
                         formatted.substring(decimalStart),
                         style = tokens.type.priceHeroDecimals.withLedgerPhosphorGlow(effects.showPhosphorGlow),
-                        color = tokens.colors.bitcoin.copy(alpha = 0.55f),
+                        color = tokens.colors.priceDecimals,
                     )
                 }
             }
