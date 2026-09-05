@@ -265,6 +265,23 @@ class DesignPacketUnfoldedTest {
         )
     }
 
+    /**
+     * The two-pane screens: rail, capped content, 296dp sidebar with recent
+     * activity and today's tasks. Named so a reviewer finds them without reading
+     * the destination loop.
+     */
+    @Test
+    fun twoPaneDashboardAndBudget() {
+        capture(
+            "unfolded-dashboard-victor-two-pane",
+            VaultUiState.of(FamilyMember.VICTOR, Destination.DASHBOARD),
+        )
+        capture(
+            "unfolded-budget-victor-two-pane",
+            VaultUiState.of(FamilyMember.VICTOR, Destination.BUDGET),
+        )
+    }
+
     /** The month row has far more width to lay out against beside the rail. */
     @Test
     fun budgetOnAnEarlierMonth() {
