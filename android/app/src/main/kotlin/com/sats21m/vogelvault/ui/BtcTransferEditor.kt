@@ -12,7 +12,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
+import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,13 +44,12 @@ internal const val BTC_TRANSFER_SAVE_TEST_TAG = "btc-transfer-save"
 @Composable
 internal fun BtcTransferEntryAction(onClick: () -> Unit) {
     VaultButton(
+        label = stringResource(R.string.btc_transfer_add_action),
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .testTag(BTC_TRANSFER_ACTION_TEST_TAG),
-    ) {
-        Text(stringResource(R.string.btc_transfer_add_action))
-    }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -153,6 +152,7 @@ internal fun BtcTransferEntrySheet(
                     Text(stringResource(R.string.write_cancel))
                 }
                 VaultButton(
+                    label = stringResource(R.string.write_save),
                     modifier = Modifier.testTag(BTC_TRANSFER_SAVE_TEST_TAG),
                     enabled = !submitting && eligibleAccounts.size >= 2,
                     onClick = {
@@ -195,9 +195,7 @@ internal fun BtcTransferEntrySheet(
                             },
                         )
                     },
-                ) {
-                    Text(stringResource(R.string.write_save))
-                }
+                )
             }
         }
     }
@@ -215,14 +213,11 @@ private fun BtcAccountPicker(
         Text(label, style = MaterialTheme.typography.labelMedium)
         Box {
             VaultButton(
+                label = selected?.let { "${it.displayLabel()} · ${Money.formatSats(it.sats)}" }
+                    ?: stringResource(R.string.btc_transfer_select_account),
                 onClick = { expanded = true },
                 modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    selected?.let { "${it.displayLabel()} · ${Money.formatSats(it.sats)}" }
-                        ?: stringResource(R.string.btc_transfer_select_account),
-                )
-            }
+            )
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
@@ -250,10 +245,10 @@ private fun TransferEditorField(
     label: String,
     keyboardType: KeyboardType = KeyboardType.Text,
 ) {
-    OutlinedTextField(
+    LedgerTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label) },
+        label = label,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),

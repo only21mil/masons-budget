@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -17,6 +16,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
+import com.sats21m.vogelvault.ui.components.LedgerToggle
 import com.sats21m.vogelvault.ui.components.Panel
 import com.sats21m.vogelvault.ui.theme.LedgerTreatment
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
@@ -29,13 +29,8 @@ internal fun LedgerAppearanceSettings(
 ) {
     val tokens = LocalLedgerTheme.current
     val terminalEffectsAvailable = tokens.treatment == LedgerTreatment.TERMINAL_DARK
-    val effectDetail = if (terminalEffectsAvailable) {
-        null
-    } else {
-        "Dark theme only — Daylight is ink on paper."
-    }
     Panel("Appearance") {
-        Column(Modifier.padding(tokens.density.cardPadding)) {
+        Column(Modifier.padding(vertical = tokens.density.cardPadding)) {
             Text(
                 "LEDGER TREATMENT",
                 style = tokens.type.sectionLabel,
@@ -59,21 +54,30 @@ internal fun LedgerAppearanceSettings(
             }
         }
         HorizontalHairline()
-        LedgerSettingToggle(
-            label = "Scanlines",
-            detail = effectDetail ?: "One-pixel ledger texture",
-            checked = settings.scanlinesEnabled,
-            enabled = terminalEffectsAvailable,
-            onCheckedChange = { onSettingsChange(settings.copy(scanlinesEnabled = it)) },
-        )
-        HorizontalHairline()
-        LedgerSettingToggle(
-            label = "Phosphor glow",
-            detail = effectDetail ?: "Subtle Bitcoin focus glow",
-            checked = settings.phosphorGlowEnabled,
-            enabled = terminalEffectsAvailable,
-            onCheckedChange = { onSettingsChange(settings.copy(phosphorGlowEnabled = it)) },
-        )
+        // Daylight is ink on paper: the texture toggles are hidden, not shown
+        // disabled, because a grey control beside "dark theme only" reads as broken.
+        if (terminalEffectsAvailable) {
+            LedgerSettingToggle(
+                label = "Scanlines",
+                detail = "One-pixel ledger texture",
+                checked = settings.scanlinesEnabled,
+                onCheckedChange = { onSettingsChange(settings.copy(scanlinesEnabled = it)) },
+            )
+            HorizontalHairline()
+            LedgerSettingToggle(
+                label = "Phosphor glow",
+                detail = "Subtle Bitcoin focus glow",
+                checked = settings.phosphorGlowEnabled,
+                onCheckedChange = { onSettingsChange(settings.copy(phosphorGlowEnabled = it)) },
+            )
+        } else {
+            Text(
+                "SCANLINES AND GLOW ARE DARK THEME ONLY",
+                style = tokens.type.rowMeta,
+                color = tokens.colors.foregroundTertiary,
+                modifier = Modifier.padding(vertical = tokens.density.denseRowVerticalPadding),
+            )
+        }
     }
 
     Panel("Behavior") {
@@ -126,17 +130,14 @@ private fun LedgerSettingToggle(
                     if (!enabled) append(", disabled")
                 }
             }
-            .padding(horizontal = tokens.density.cardPadding, vertical = tokens.density.denseRowVerticalPadding),
+            .padding(vertical = tokens.density.denseRowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(label, style = tokens.type.rowPrimary, color = tokens.colors.foreground)
             Text(detail.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
         }
-        Switch(
-            checked = checked,
-            enabled = enabled,
-            onCheckedChange = if (enabled) commitChange else null,
-        )
+        // The row owns the switch semantics; the control itself adds no node.
+        LedgerToggle(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }

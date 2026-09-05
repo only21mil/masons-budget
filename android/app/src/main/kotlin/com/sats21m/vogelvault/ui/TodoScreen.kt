@@ -12,12 +12,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -39,6 +37,7 @@ import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.components.Kpi
 import com.sats21m.vogelvault.ui.components.KpiStrip
+import com.sats21m.vogelvault.ui.components.LedgerGlyphs
 import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.components.ledgerColor
 import com.sats21m.vogelvault.ui.components.ledgerRowReveal
@@ -190,18 +189,16 @@ internal fun TodoScreen(
 
             item {
                 Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(ledgerColor(VaultSurface))
-                        .padding(VaultSpace.sm),
+                    Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    OutlinedTextField(
+                    LedgerTextField(
                         value = draft,
                         onValueChange = { draft = it },
                         modifier = Modifier.weight(1f),
-                        label = { Text(stringResource(R.string.todo_new_task)) },
-                        singleLine = true,
+                        placeholder = stringResource(R.string.todo_new_task),
+                        prefixGlyph = LedgerGlyphs.Calendar,
+                        prefixTint = ledgerTokens.colors.gain,
                         enabled = credentialStored,
                     )
                     Spacer(Modifier.width(VaultSpace.sm))
@@ -218,7 +215,15 @@ internal fun TodoScreen(
                             mutate(todo, TodoWriteAction.ADD, null) { haptics.confirm() }
                         },
                     ) {
-                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.todo_add))
+                        Icon(
+                            LedgerGlyphs.Plus,
+                            contentDescription = stringResource(R.string.todo_add),
+                            tint = if (credentialStored && draft.isNotBlank()) {
+                                ledgerTokens.colors.bitcoin
+                            } else {
+                                ledgerTokens.colors.foregroundTertiary
+                            },
+                        )
                     }
                 }
             }

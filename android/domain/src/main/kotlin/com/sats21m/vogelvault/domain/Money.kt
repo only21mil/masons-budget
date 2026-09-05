@@ -35,7 +35,8 @@ enum class DisplayUnit(
 object Money {
 
     const val SATS_PER_BTC: Long = 100_000_000L
-    const val PRICE_UNAVAILABLE = "Price unavailable"
+    /** A dash in the figure slot; the screen explains the missing quote once, in a banner. */
+    const val PRICE_UNAVAILABLE = "—"
     const val SHARES_DECIMAL_MAX_INTEGER_DIGITS = 12
     const val SHARES_DECIMAL_MAX_SCALE = 12
     const val SHARES_DECIMAL_MAX_PRECISION = 24

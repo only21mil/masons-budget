@@ -76,7 +76,7 @@ class FinancePresentationTest {
         assertEquals(10_000_000L, selection.bitcoinValueCents)
         assertEquals(10_024_000L, selection.totalValueCents)
         assertEquals(
-            "market service · updated 1 minute ago",
+            "market service · 1 min ago",
             selection.valuationQualityHint(state.now),
         )
     }
@@ -143,7 +143,7 @@ class FinancePresentationTest {
         val selection = requireNotNull(state.netWorthSelection())
 
         assertEquals(
-            "market service · updated 1 minute ago · Retirement: 1 stale quote · 1 stored value",
+            "market service · 1 min ago · Retirement: 1 stale quote · 1 stored value",
             selection.valuationQualityHint(state.now),
         )
         assertEquals(
@@ -207,7 +207,7 @@ class FinancePresentationTest {
 
         assertNull(selection.totalValueCents)
         assertEquals(12_000L, selection.retirementValueCents)
-        assertEquals("Price unavailable", state.formatFinanceCents(12_000L, DisplayUnit.SATS))
+        assertEquals(Money.PRICE_UNAVAILABLE, state.formatFinanceCents(12_000L, DisplayUnit.SATS))
     }
 
     @Test
@@ -256,7 +256,7 @@ class FinancePresentationTest {
         assertTrue(state.netWorthSelectionResult().isFailure)
         assertNull(state.netWorthSelection())
         assertEquals(
-            "Price unavailable",
+            Money.PRICE_UNAVAILABLE,
             state.formatFinanceCents(Long.MAX_VALUE, DisplayUnit.SATS),
         )
     }

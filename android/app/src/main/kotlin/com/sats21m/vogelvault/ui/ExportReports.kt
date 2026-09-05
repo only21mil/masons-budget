@@ -9,10 +9,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -194,7 +190,7 @@ fun ExportScreen(
             verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(VaultSpace.md),
+                .padding(vertical = VaultSpace.md),
         ) {
             ExportButton(stringResource(R.string.export_transactions)) {
                 shareCsv(
@@ -224,12 +220,10 @@ private fun ExportButton(
     onClick: () -> Unit,
 ) {
     VaultButton(
+        label = label,
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-    ) {
-        Icon(Icons.Filled.Share, contentDescription = null)
-        Text(label)
-    }
+    )
 }
 
 private fun shareCsv(

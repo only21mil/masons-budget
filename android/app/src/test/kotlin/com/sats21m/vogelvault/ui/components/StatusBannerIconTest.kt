@@ -1,10 +1,5 @@
 package com.sats21m.vogelvault.ui.components
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.ui.graphics.Color
 import com.sats21m.vogelvault.ui.theme.LedgerPalettes
 import com.sats21m.vogelvault.ui.theme.VaultInfo
@@ -12,29 +7,33 @@ import com.sats21m.vogelvault.ui.theme.VaultNegative
 import com.sats21m.vogelvault.ui.theme.VaultPositive
 import com.sats21m.vogelvault.ui.theme.VaultTextMuted
 import com.sats21m.vogelvault.ui.theme.VaultWarning
-import org.junit.Assert.assertSame
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
+/**
+ * The banner glyph is a status dot. Its mark still follows the semantic tone,
+ * so a gain-toned banner reads as gain in both the legacy and ledger palettes.
+ */
 class StatusBannerIconTest {
     @Test
-    fun legacySemanticTonesUseMatchingIcons() {
-        assertSame(Icons.Filled.CheckCircle, statusBannerIcon(VaultPositive))
-        assertSame(Icons.Filled.ErrorOutline, statusBannerIcon(VaultNegative))
-        assertSame(Icons.Filled.WarningAmber, statusBannerIcon(VaultWarning))
+    fun legacySemanticTonesUseMatchingMarks() {
+        assertEquals(LedgerStatusMark.GAIN, statusBannerMark(VaultPositive))
+        assertEquals(LedgerStatusMark.LOSS, statusBannerMark(VaultNegative))
+        assertEquals(LedgerStatusMark.LOSS, statusBannerMark(VaultWarning))
     }
 
     @Test
-    fun currentLedgerGainAndLossTonesUseMatchingIcons() {
-        assertSame(Icons.Filled.CheckCircle, statusBannerIcon(LedgerPalettes.TerminalDark.gain))
-        assertSame(Icons.Filled.CheckCircle, statusBannerIcon(LedgerPalettes.DaylightLight.gain))
-        assertSame(Icons.Filled.ErrorOutline, statusBannerIcon(LedgerPalettes.TerminalDark.loss))
-        assertSame(Icons.Filled.ErrorOutline, statusBannerIcon(LedgerPalettes.DaylightLight.loss))
+    fun currentLedgerGainAndLossTonesUseMatchingMarks() {
+        assertEquals(LedgerStatusMark.GAIN, statusBannerMark(LedgerPalettes.TerminalDark.gain))
+        assertEquals(LedgerStatusMark.GAIN, statusBannerMark(LedgerPalettes.DaylightLight.gain))
+        assertEquals(LedgerStatusMark.LOSS, statusBannerMark(LedgerPalettes.TerminalDark.loss))
+        assertEquals(LedgerStatusMark.LOSS, statusBannerMark(LedgerPalettes.DaylightLight.loss))
     }
 
     @Test
-    fun neutralTonesUseInfoIcon() {
-        assertSame(Icons.Filled.Info, statusBannerIcon(VaultInfo))
-        assertSame(Icons.Filled.Info, statusBannerIcon(VaultTextMuted))
-        assertSame(Icons.Filled.Info, statusBannerIcon(Color.Magenta))
+    fun neutralTonesUseTheNeutralMark() {
+        assertEquals(LedgerStatusMark.NEUTRAL, statusBannerMark(VaultInfo))
+        assertEquals(LedgerStatusMark.NEUTRAL, statusBannerMark(VaultTextMuted))
+        assertEquals(LedgerStatusMark.NEUTRAL, statusBannerMark(Color.Magenta))
     }
 }

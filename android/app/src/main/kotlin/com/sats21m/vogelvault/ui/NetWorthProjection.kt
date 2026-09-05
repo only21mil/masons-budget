@@ -155,8 +155,8 @@ internal fun NetWorthProjectionPanel(state: VaultUiState, displayUnit: DisplayUn
         }
     }.getOrNull()
 
-    Panel("Net worth projections", "Scenario, not a forecast") {
-        Column(Modifier.padding(VaultSpace.md)) {
+    Panel("Net worth projections", "Scenario, not a forecast", raised = true) {
+        Column(Modifier.padding(top = VaultSpace.md)) {
             HorizonSelector(NET_WORTH_HORIZONS, years) { years = it }
             if (projection == null) {
                 StateBlock(

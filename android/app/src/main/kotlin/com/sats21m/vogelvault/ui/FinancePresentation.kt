@@ -443,16 +443,17 @@ internal fun MarketQuote.quoteHint(nowMillis: Long): String {
     val age = ageMinutesAt(nowMillis)?.let {
         when (it) {
             0L -> "now"
-            1L -> "1 minute ago"
-            else -> "$it minutes ago"
+            1L -> "1 min ago"
+            else -> "$it min ago"
         }
     }
     val failure = errorCode?.name?.lowercase()?.replace('_', ' ')
+    // Short enough for a row's meta line and the 296dp sidebar: "Kraken · 2 min ago".
     return buildString {
         append(source)
         when (status) {
-            MarketQuoteStatus.LIVE -> append(" · updated ${age ?: "now"}")
-            MarketQuoteStatus.STALE -> append(" · cached · updated ${age ?: "at an unknown time"}")
+            MarketQuoteStatus.LIVE -> append(" · ${age ?: "now"}")
+            MarketQuoteStatus.STALE -> append(" · cached · ${age ?: "age unknown"}")
             MarketQuoteStatus.UNAVAILABLE -> append(" · unavailable")
         }
         if (failure != null) append(" · refresh failed: $failure")

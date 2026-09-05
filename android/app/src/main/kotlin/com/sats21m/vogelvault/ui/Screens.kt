@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -15,7 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -352,20 +353,20 @@ fun ScreenHost(
         return
     }
 
-    LazyColumn(
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter),
-    ) {
-        vaultContent {
+    Column(modifier.fillMaxWidth()) {
+        ScreenActionBar(
+            destination = destination,
+            displayUnit = displayUnit,
+            onDisplayUnitChange = onDisplayUnitChange,
+            onAddTransaction = { addingTransaction = true },
+        )
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter),
+        ) {
+            vaultContent {
             item {
-                ScreenHeader(
-                    destination,
-                    state,
-                    budgetSelectedMonth,
-                    displayUnit,
-                    onDisplayUnitChange,
-                    onAddTransaction = { addingTransaction = true },
-                )
+                ScreenHeader(destination, state, budgetSelectedMonth)
             }
             when (destination) {
                 Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
@@ -387,16 +388,37 @@ fun ScreenHost(
                             months,
                             budgetSpend,
                             onSelectMonth = { picked = it },
-                            onEditCategory = { budgetEditor = it },
                             onOpenCategory = { scope ->
                                 budgetDrilldownMonth = scope.month
                                 budgetDrilldownCategory = scope.category
                             },
                         )
                     } else {
+                        // Editing lives on the drilldown. Only the current budget
+                        // document month is writable, and only from a live read.
+                        val editorSeed = state.data.budget.value?.let { budget ->
+                            budgetSpend
+                                ?.takeIf {
+                                    drilldownScope.month == budget.month &&
+                                        state.data.budget.status == Freshness.LIVE
+                                }
+                                ?.categories
+                                ?.firstOrNull { it.name == drilldownScope.category }
+                                ?.let { category ->
+                                    BudgetCategoryEditorSeed(
+                                        viewer = state.activeProfile,
+                                        displayedMonth = drilldownScope.month,
+                                        budgetDocumentMonth = budget.month,
+                                        category = category,
+                                        budget = budget,
+                                        sourceFile = budgetCategoryDeleteSourceFile(state.activeProfile),
+                                    )
+                                }
+                        }
                         budgetCategoryDrilldown(
                             state = state,
                             scope = drilldownScope,
+                            onEdit = editorSeed?.let { seed -> { budgetEditor = seed } },
                             transactions =
                                 transactionsInput.budgetCategoryTransactionsFor(
                                     viewer = state.activeProfile,
@@ -460,6 +482,7 @@ fun ScreenHost(
                     onLedgerSettingsChange,
                 )
             }
+            }
         }
     }
     budgetEditor?.let { seed ->
@@ -511,14 +534,58 @@ fun ScreenHost(
     }
 }
 
+/**
+ * The action row under the top bar: unit chips and the one primary action,
+ * once per screen. Screens with neither draw nothing here, so the first data
+ * is never more than the title and one subtitle line away.
+ */
+@Composable
+private fun ScreenActionBar(
+    destination: Destination,
+    displayUnit: DisplayUnit,
+    onDisplayUnitChange: (DisplayUnit) -> Unit,
+    onAddTransaction: () -> Unit,
+) {
+    val tokens = LocalLedgerTheme.current
+    val canAdd = destination in ADD_TRANSACTION_DESTINATIONS
+    val showsUnit = destination.supportsFinancialDisplayUnit
+    if (!canAdd && !showsUnit) return
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(tokens.colors.panel)
+                .padding(horizontal = tokens.density.screenGutter, vertical = VaultSpace.sm),
+            horizontalArrangement = Arrangement.spacedBy(tokens.density.actionGap, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (showsUnit) {
+                BitcoinUnitToggle(
+                    selected = displayUnit,
+                    onSelect = onDisplayUnitChange,
+                    modifier = Modifier.weight(1f, fill = false).widthIn(max = 200.dp),
+                )
+            }
+            if (canAdd) {
+                VaultButton(label = stringResource(R.string.add_transaction_action), onClick = onAddTransaction)
+            }
+        }
+        HorizontalHairline()
+    }
+}
+
+private val ADD_TRANSACTION_DESTINATIONS = setOf(
+    Destination.DASHBOARD,
+    Destination.ACTIVITY,
+    Destination.BUDGET,
+)
+
+/** Two lines: the screen title and one tracked subtitle. Nothing else sits above the first data. */
 @Composable
 private fun ScreenHeader(
     destination: Destination,
     state: VaultUiState,
     budgetMonth: String?,
-    displayUnit: DisplayUnit,
-    onDisplayUnitChange: (DisplayUnit) -> Unit,
-    onAddTransaction: () -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
     val subtitle = when (destination) {
@@ -528,7 +595,7 @@ private fun ScreenHeader(
         Destination.ACTIVITY -> "Transactions visible to this profile"
         // The month in scope, not the budget file's month: the two differ while an
         // earlier month is picked, and the header must not contradict the picker.
-        // A profile with no budget file still says so — Maddox has none.
+        // A profile with no budget file still says so; Maddox has none.
         Destination.BUDGET -> state.data.budget.value?.let { monthLabel(budgetMonth ?: it.month) } ?: "No budget"
         Destination.BITCOIN -> "Stack and custody"
         Destination.BTC_BUYS -> "Purchases visible to this profile"
@@ -541,43 +608,14 @@ private fun ScreenHeader(
         Destination.FAMILY -> "Who can see what"
         Destination.SETTINGS -> "Runtime and boundaries"
     }
-    Column {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Text(
-                destination.label,
-                style = tokens.type.screenTitle,
-                color = tokens.colors.foreground,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                subtitle.uppercase(),
-                style = tokens.type.screenSubtitle,
-                color = tokens.colors.foregroundSecondary,
-                modifier = Modifier.weight(1f),
-            )
-            if (
-                destination == Destination.DASHBOARD ||
-                destination == Destination.ACTIVITY ||
-                destination == Destination.BUDGET
-            ) {
-                VaultButton(onClick = onAddTransaction) {
-                    Text(stringResource(R.string.add_transaction_action))
-                }
-            }
-            if (destination.supportsFinancialDisplayUnit) {
-                BitcoinUnitToggle(
-                    selected = displayUnit,
-                    onSelect = onDisplayUnitChange,
-                    modifier = Modifier.widthIn(max = 168.dp),
-                )
-            }
-        }
+    Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.xs)) {
+        Text(destination.label, style = tokens.type.screenTitle, color = tokens.colors.foreground)
+        Text(
+            subtitle.uppercase(),
+            style = tokens.type.screenSubtitle,
+            color = tokens.colors.foregroundSecondary,
+            maxLines = 1,
+        )
     }
 }
 
@@ -626,7 +664,7 @@ internal fun BitcoinConversionNotice(state: VaultUiState) {
     if (quote != null) {
         StatusBanner(
             text = if (quote.status == MarketQuoteStatus.STALE) "BTC conversion · stale quote" else "BTC conversion",
-            detail = "Uses ${quote.quoteHint(state.now)}.",
+            detail = quote.quoteHint(state.now),
             tone = if (quote.status == MarketQuoteStatus.STALE) {
                 LocalLedgerTheme.current.colors.loss
             } else {
@@ -848,7 +886,7 @@ private fun VaultLazyListScope.activity(
             Panel {
                 Text(
                     "Filtering cached records...",
-                    modifier = Modifier.padding(VaultSpace.md),
+                    modifier = Modifier.padding(vertical = VaultSpace.md),
                     color = LocalLedgerTheme.current.colors.foregroundSecondary,
                 )
             }
@@ -858,7 +896,7 @@ private fun VaultLazyListScope.activity(
     if (transactions.isEmpty()) {
         item {
             Panel {
-                Column(Modifier.padding(VaultSpace.md)) {
+                Column(Modifier.padding(vertical = VaultSpace.md)) {
                     Text("No matching records", color = LocalLedgerTheme.current.colors.foreground)
                     Text(
                         "Try another search or filter.",
@@ -942,7 +980,6 @@ private fun VaultLazyListScope.budget(
     months: List<String>,
     spend: BudgetSpend?,
     onSelectMonth: (String) -> Unit,
-    onEditCategory: (BudgetCategoryEditorSeed) -> Unit,
     onOpenCategory: (BudgetCategoryDrilldownScope) -> Unit,
 ) {
     val slice = state.data.budget
@@ -1054,9 +1091,6 @@ private fun VaultLazyListScope.budget(
         ) { category ->
             EditableBudgetCategoryRow(
                 category = category,
-                canEdit =
-                    derived.month == budget.month &&
-                        slice.status == Freshness.LIVE,
                 transactionsContentDescription =
                     stringResource(
                         R.string.budget_category_transactions_accessibility,
@@ -1068,18 +1102,6 @@ private fun VaultLazyListScope.budget(
                         BudgetCategoryDrilldownScope(
                             month = derived.month,
                             category = category.name,
-                        ),
-                    )
-                },
-                onEdit = {
-                    onEditCategory(
-                        BudgetCategoryEditorSeed(
-                            viewer = state.activeProfile,
-                            displayedMonth = derived.month,
-                            budgetDocumentMonth = budget.month,
-                            category = category,
-                            budget = budget,
-                            sourceFile = budgetCategoryDeleteSourceFile(state.activeProfile),
                         ),
                     )
                 },
@@ -1095,10 +1117,22 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
     billPays: List<BtcBillPay>,
     onBack: () -> Unit,
     onSelectTransaction: (Transaction) -> Unit,
+    /** Null when this month or read is not writable; the button is then absent, not disabled. */
+    onEdit: (() -> Unit)? = null,
 ) {
     item {
-        TextButton(onClick = onBack) {
-            Text(stringResource(R.string.budget_category_transactions_back))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) {
+                Text(stringResource(R.string.budget_category_transactions_back))
+            }
+            Spacer(Modifier.weight(1f))
+            if (onEdit != null) {
+                VaultButton(
+                    label = stringResource(R.string.budget_category_edit_action),
+                    onClick = onEdit,
+                    secondary = true,
+                )
+            }
         }
     }
     item { StaleNotice(state.data.transactions.status) }
@@ -1122,7 +1156,7 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
                 title = stringResource(R.string.budget_category_transactions_title, scope.category),
                 source = "${state.data.transactions.source} · ${scope.month}",
             ) {
-                Column(Modifier.padding(VaultSpace.md)) {
+                Column(Modifier.padding(vertical = VaultSpace.md)) {
                     Text(
                         stringResource(R.string.budget_category_transactions_empty),
                         color = LocalLedgerTheme.current.colors.foreground,
@@ -1698,7 +1732,7 @@ private fun VaultLazyListScope.settings(
             ReadBootstrapConfiguration(
                 remoteReadReady = remoteReadReady,
                 onConnected = { onRemoteRowsConnected() },
-                modifier = Modifier.padding(VaultSpace.md),
+                modifier = Modifier.padding(vertical = VaultSpace.md),
                 allowReset = true,
             )
         }
@@ -1742,7 +1776,7 @@ internal fun SyncTokenConfiguration() {
 
     Panel(stringResource(R.string.write_credential_title)) {
         Column(
-            Modifier.padding(VaultSpace.md),
+            Modifier.padding(vertical = VaultSpace.md),
             verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
         ) {
             Text(
@@ -1762,17 +1796,18 @@ internal fun SyncTokenConfiguration() {
                 color = LocalLedgerTheme.current.colors.foregroundSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
-            OutlinedTextField(
+            LedgerTextField(
                 value = token,
                 onValueChange = {
                     token = it
                     saveFailure = null
                 },
-                label = { Text(stringResource(R.string.write_credential_label)) },
+                label = stringResource(R.string.write_credential_label),
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
             )
             VaultButton(
+                label = stringResource(R.string.write_credential_save),
                 enabled = token.isNotBlank() && application != null,
                 onClick = {
                     val app = checkNotNull(application)
@@ -1787,9 +1822,7 @@ internal fun SyncTokenConfiguration() {
                             saveFailure = credentialSaveFailureMessage(it).resolve(context)
                         }
                 },
-            ) {
-                Text(stringResource(R.string.write_credential_save))
-            }
+            )
             if (hasStoredToken && application != null) {
                 androidx.compose.material3.OutlinedButton(
                     onClick = {

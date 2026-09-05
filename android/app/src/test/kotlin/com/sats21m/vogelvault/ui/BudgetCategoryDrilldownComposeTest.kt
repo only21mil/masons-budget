@@ -14,8 +14,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -134,7 +136,7 @@ class BudgetCategoryDrilldownComposeTest {
 
     @Test
     fun `Budget income editor exposes the atomic Bitcoin buy action`() {
-        compose.onNodeWithText("Add").performClick()
+        compose.onNodeWithText("+ Add").performClick()
         settle()
         compose.onNodeWithText("Income").performClick()
         settle()
@@ -167,6 +169,25 @@ class BudgetCategoryDrilldownComposeTest {
 
         contentList().performScrollToKey("budget-category-bill-pays:row:budget-bill-pay")
         compose.onNodeWithText("budget-bill-pay", useUnmergedTree = true).fetchSemanticsNode()
+    }
+
+    @Test
+    fun `category drilldown owns the budget editor for the live current month`() {
+        render(
+            VaultUiState(
+                activeProfile = FamilyMember.VICTOR,
+                destination = Destination.BUDGET,
+                data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE),
+            ),
+        )
+        val edit = activityController.get().getString(R.string.budget_category_edit_action)
+        contentList().performScrollToKey("budget-categories:row:Groceries")
+        assertEquals(0, nodesWithText(edit))
+
+        compose.onNodeWithContentDescription("View Groceries transactions for 2026-07").performClick()
+        settle()
+
+        compose.onNodeWithText(edit).assertHasClickAction()
     }
 
     @Test
@@ -229,7 +250,8 @@ class BudgetCategoryDrilldownComposeTest {
         }
         settle()
 
-        compose.onNodeWithText("Convex row data unavailable").fetchSemanticsNode()
+        compose.onNodeWithText(activityController.get().getString(R.string.convex_read_error_title))
+            .fetchSemanticsNode()
         assertEquals(0, nodesWithText("Neighborhood Market"))
     }
 
@@ -282,7 +304,9 @@ class BudgetCategoryDrilldownComposeTest {
     private fun nodesWithText(text: String): Int =
         compose.onAllNodesWithText(text).fetchSemanticsNodes().size
 
-    private fun contentList() = compose.onAllNodes(hasScrollAction())[0]
+    // The unit chips above the list scroll too; the ledger column is the other scroll node.
+    private fun contentList() =
+        compose.onAllNodes(hasScrollAction() and hasTestTag(BITCOIN_UNIT_TOGGLE_TEST_TAG).not())[0]
 
     private fun settle() {
         repeat(3) {

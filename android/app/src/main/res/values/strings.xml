@@ -2,8 +2,8 @@
 <resources>
     <string name="app_name">Vogel Vault</string>
     <string name="launcher_label">The Vogel Vault</string>
-    <string name="convex_read_error_title">Convex row data unavailable</string>
-    <string name="convex_read_error_detail">The row read failed. Check the connection and read-token settings, then retry.</string>
+    <string name="convex_read_error_title">The ledger could not be read</string>
+    <string name="convex_read_error_detail">The read failed. Check the connection and read-token settings, then retry.</string>
     <string name="convex_row_failure_unauthorized_title">Convex read credential rejected</string>
     <string name="convex_row_failure_unauthorized_detail">%1$s could not refresh because Convex rejected the configured read credential. Re-enter a valid credential; cached financial figures remain hidden.</string>
     <string name="convex_row_failure_disabled_title">Convex row reads disabled</string>
@@ -31,11 +31,11 @@
     <string name="convex_projection_finance">Finance</string>
     <string name="convex_projection_market_quotes">Market quotes</string>
     <string name="convex_read_stale_title">Showing stale data</string>
-    <string name="convex_read_stale_detail">The last successful Convex row response is old. Treat these figures as out of date.</string>
-    <string name="convex_read_loading_title">Loading Convex rows</string>
-    <string name="convex_read_loading_detail">Requesting Convex row tables over HTTP.</string>
-    <string name="convex_read_empty_title">No rows returned</string>
-    <string name="convex_read_empty_detail">Convex returned an authoritative empty result for this view.</string>
+    <string name="convex_read_stale_detail">The last successful read is old. Treat these figures as out of date.</string>
+    <string name="convex_read_loading_title">Loading the ledger</string>
+    <string name="convex_read_loading_detail">Reading the household ledger.</string>
+    <string name="convex_read_empty_title">Nothing recorded yet</string>
+    <string name="convex_read_empty_detail">The ledger has nothing for this view on this profile.</string>
     <string name="convex_auth_error_title">Convex read token not accepted</string>
     <string name="convex_auth_error_detail">Convex rejected the configured read credential. Cached financial figures are hidden.</string>
     <string name="convex_rows_inactive_title">Convex row reads are not active</string>
@@ -46,8 +46,8 @@
     <string name="convex_read_token_remove_failed">The stored read token could not be removed.</string>
     <string name="convex_sync_token_save_failed">The sync token could not be stored securely. Writes remain unconfigured.</string>
     <string name="convex_sync_token_remove_failed">The stored sync token could not be removed.</string>
-    <string name="convex_budget_period_mismatch_detail">Convex returned targets for %1$s. Actuals were re-derived from %2$s transaction rows; the targets were not.</string>
-    <string name="convex_uncategorized_spend_detail">The Convex transaction rows have no matching budget category, so this spend is counted on Activity only.</string>
+    <string name="convex_budget_period_mismatch_detail">The saved targets are for %1$s. Actuals were re-derived from %2$s transactions; the targets were not.</string>
+    <string name="convex_uncategorized_spend_detail">These transactions match no budget category, so this spend is counted on Activity only.</string>
     <string name="navigation_more">More</string>
     <string name="btc_buys_screen_title">BTC Buys</string>
     <string name="btc_bill_pays_screen_title">BTC Bill Pays</string>
@@ -55,7 +55,7 @@
     <string name="refresh_unavailable">Refresh unavailable while live reads are disabled</string>
     <string name="refresh_failed_title">Refresh failed</string>
     <string name="refresh_failed_detail">Live reads did not complete. Check the connection and read-token settings, then try again.</string>
-    <string name="add_transaction_action">Add</string>
+    <string name="add_transaction_action">+ Add</string>
     <string name="add_transaction_title">New transaction</string>
     <string name="add_transaction_merchant">Merchant or destination</string>
     <string name="add_transaction_category">Category</string>

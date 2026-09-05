@@ -18,7 +18,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -607,13 +607,13 @@ internal fun AddTransactionSheet(
                 },
             )
 
-            OutlinedTextField(
+            LedgerTextField(
                 value = merchant,
                 onValueChange = {
                     merchant = it
                     errorMessage = null
                 },
-                label = { Text(stringResource(R.string.add_transaction_merchant)) },
+                label = stringResource(R.string.add_transaction_merchant),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -685,19 +685,18 @@ internal fun AddTransactionSheet(
                 )
             }
 
-            OutlinedTextField(
+            LedgerTextField(
                 value = amount,
                 onValueChange = {
                     amount = it
                     errorMessage = null
                 },
-                label = { Text(stringResource(R.string.add_transaction_amount)) },
-                supportingText = {
-                    conversionPreview(amount, inputUnit, operationalBtcPriceCents)?.let { Text(it) }
-                },
+                label = stringResource(R.string.add_transaction_amount),
+                prefix = amountPrefix(inputUnit),
+                supporting = conversionPreview(amount, inputUnit, operationalBtcPriceCents),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
+                textStyle = LocalLedgerTheme.current.type.amountInput,
             )
 
             if (paymentSource.isBitcoinTransaction) {
@@ -728,11 +727,12 @@ internal fun AddTransactionSheet(
                 Text("${stringResource(R.string.add_transaction_date)}: $dateIso")
             }
 
-            OutlinedTextField(
+            LedgerTextField(
                 value = note,
                 onValueChange = { note = it },
-                label = { Text(stringResource(R.string.add_transaction_note)) },
+                label = stringResource(R.string.add_transaction_note),
                 modifier = Modifier.fillMaxWidth(),
+                singleLine = false,
                 minLines = 2,
                 maxLines = 4,
             )
@@ -794,6 +794,9 @@ internal fun AddTransactionSheet(
                     Text(stringResource(R.string.add_transaction_cancel))
                 }
                 VaultButton(
+                    label = stringResource(
+                        if (saving) R.string.add_transaction_saving else R.string.add_transaction_save,
+                    ),
                     onClick = {
                         val selectedDate = runCatching { LocalDate.parse(dateIso) }.getOrElse {
                             refuse("Enter a valid date")
@@ -865,17 +868,7 @@ internal fun AddTransactionSheet(
                     },
                     enabled = !saving,
                     modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        stringResource(
-                            if (saving) {
-                                R.string.add_transaction_saving
-                            } else {
-                                R.string.add_transaction_save
-                            },
-                        ),
-                    )
-                }
+                )
             }
             Spacer(Modifier.height(VaultSpace.lg))
         }
@@ -929,11 +922,10 @@ private fun <T> OptionRow(
         options.forEach { option ->
             if (option == selected) {
                 VaultButton(
+                    label = label(option),
                     onClick = { onSelect(option) },
                     modifier = Modifier.weight(1f),
-                ) {
-                    Text(label(option))
-                }
+                )
             } else {
                 OutlinedButton(
                     onClick = { onSelect(option) },
@@ -980,3 +972,10 @@ private fun DropdownField(
     }
 }
 
+
+/** The unit sign drawn before an amount input: `$` for dollars, the unit code otherwise. */
+internal fun amountPrefix(unit: DisplayUnit): String = when (unit) {
+    DisplayUnit.USD -> "$"
+    DisplayUnit.BTC -> "BTC"
+    DisplayUnit.SATS -> "SATS"
+}

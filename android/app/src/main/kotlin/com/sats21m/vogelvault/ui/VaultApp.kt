@@ -1,7 +1,6 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.AccountBalance
@@ -29,7 +27,6 @@ import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.CurrencyBitcoin
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Refresh
@@ -41,10 +38,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -70,6 +63,7 @@ import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.ui.components.Badge
 import com.sats21m.vogelvault.ui.components.FreshnessTag
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
+import com.sats21m.vogelvault.ui.components.LedgerGlyphs
 import com.sats21m.vogelvault.ui.components.StatusBanner
 import com.sats21m.vogelvault.ui.components.VerticalHairline
 import com.sats21m.vogelvault.ui.theme.LocalIsUnfolded
@@ -142,8 +136,6 @@ internal const val VAULT_RAIL_TEST_TAG = "vault-navigation-rail"
 internal const val VAULT_RAIL_MORE_TEST_TAG = "vault-navigation-rail-more"
 internal const val VAULT_SCREEN_CONTENT_TEST_TAG = "vault-screen-content"
 
-private val BAR_INDICATOR_WIDTH = 64.dp
-private val NAVIGATION_INDICATOR_HEIGHT = 32.dp
 private val RAIL_EDGE_MARKER_WIDTH = 2.dp
 private val RAIL_GLYPH_SIZE = 24.dp
 private val RAIL_ITEM_HEIGHT = 48.dp
@@ -400,52 +392,6 @@ private fun RefreshFailureNotice(state: VaultUiState) {
     )
 }
 
-@Composable
-private fun NavigationDestinationIcon(
-    destination: Destination,
-    selected: Boolean,
-    indicatorWidth: Dp,
-    contentDescription: String? = destination.label,
-) {
-    val colors = LocalLedgerTheme.current.colors
-    Box(
-        modifier = Modifier
-            .size(width = indicatorWidth, height = NAVIGATION_INDICATOR_HEIGHT)
-            .then(
-                if (selected) {
-                    Modifier.border(1.dp, colors.bitcoin, CircleShape)
-                } else {
-                    Modifier
-                },
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(destination.icon, contentDescription = contentDescription)
-    }
-}
-
-@Composable
-private fun MoreNavigationIcon(selected: Boolean, overflowCount: Int) {
-    val colors = LocalLedgerTheme.current.colors
-    Box(
-        modifier = Modifier
-            .size(width = BAR_INDICATOR_WIDTH, height = NAVIGATION_INDICATOR_HEIGHT)
-            .then(
-                if (selected) {
-                    Modifier.border(1.dp, colors.bitcoin, CircleShape)
-                } else {
-                    Modifier
-                },
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            Icons.Filled.MoreHoriz,
-            contentDescription = moreNavigationLabel(overflowCount),
-        )
-    }
-}
-
 /**
  * The unfolded rail.
  *
@@ -502,7 +448,7 @@ private fun VaultRail(
             ) { index ->
                 val destination = primary[index]
                 RailItem(
-                    icon = destination.icon,
+                    icon = destination.ledgerGlyph(),
                     label = destination.label,
                     selected = destination == current,
                     onClick = { onNavigate(destination) },
@@ -512,7 +458,7 @@ private fun VaultRail(
                 item(key = "more") {
                     Box {
                         RailItem(
-                            icon = Icons.Filled.MoreHoriz,
+                            icon = LedgerGlyphs.Dots,
                             label = moreNavigationLabel(overflow.size),
                             selected = current in overflow,
                             onClick = { overflowExpanded = true },
@@ -536,7 +482,12 @@ private fun VaultRail(
                                         onNavigate(destination)
                                     },
                                     leadingIcon = {
-                                        Icon(destination.icon, contentDescription = null, tint = ink)
+                                        Icon(
+                                            destination.ledgerGlyph(),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = ink,
+                                        )
                                     },
                                 )
                             }
@@ -598,89 +549,61 @@ private fun VaultBottomBar(
     val overflow = foldedOverflowDestinations(destinations)
     var overflowExpanded by remember { mutableStateOf(false) }
 
-    NavigationBar(containerColor = tokens.colors.panel) {
+    LedgerTabBar {
         primary.forEach { destination ->
-            NavigationBarItem(
+            LedgerTabItem(
+                glyph = destination.ledgerGlyph(),
+                label = destination.tabLabel(),
+                semanticLabel = destination.label,
                 selected = destination == current,
                 onClick = { onNavigate(destination) },
-                icon = {
-                    NavigationDestinationIcon(
-                        destination = destination,
-                        selected = destination == current,
-                        indicatorWidth = BAR_INDICATOR_WIDTH,
-                    )
-                },
-                label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = ledgerNavigationSelectedTint(destination, tokens.colors),
-                    selectedTextColor = tokens.colors.foreground,
-                    indicatorColor = tokens.colors.bitcoinSoft,
-                    unselectedIconColor = unselectedTint,
-                    unselectedTextColor = unselectedTint,
-                ),
+                modifier = Modifier.weight(1f),
             )
         }
         if (overflow.isNotEmpty()) {
-            NavigationBarItem(
-                selected = current in overflow,
-                onClick = { overflowExpanded = true },
-                icon = {
-                    Box {
-                        MoreNavigationIcon(
-                            selected = current in overflow,
-                            overflowCount = overflow.size,
-                        )
-                        DropdownMenu(
-                            expanded = overflowExpanded,
-                            onDismissRequest = { overflowExpanded = false },
-                            containerColor = tokens.colors.panel,
-                        ) {
-                            overflow.forEach { destination ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            destination.label,
-                                            color = if (destination == current) {
-                                                tokens.colors.foreground
-                                            } else {
-                                                unselectedTint
-                                            },
-                                        )
-                                    },
-                                    onClick = {
-                                        overflowExpanded = false
-                                        onNavigate(destination)
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            destination.icon,
-                                            contentDescription = null,
-                                            tint = when {
-                                                destination == current ->
-                                                    ledgerNavigationSelectedTint(destination, tokens.colors)
-                                                else -> unselectedTint
-                                            },
-                                        )
+            Box(Modifier.weight(1f)) {
+                LedgerTabItem(
+                    glyph = LedgerGlyphs.Dots,
+                    label = stringResource(R.string.navigation_more),
+                    semanticLabel = moreNavigationLabel(overflow.size),
+                    selected = current in overflow,
+                    onClick = { overflowExpanded = true },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                DropdownMenu(
+                    expanded = overflowExpanded,
+                    onDismissRequest = { overflowExpanded = false },
+                    containerColor = tokens.colors.panel,
+                ) {
+                    overflow.forEach { destination ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    destination.label,
+                                    style = tokens.type.rowPrimary,
+                                    color = if (destination == current) {
+                                        tokens.colors.foreground
+                                    } else {
+                                        unselectedTint
                                     },
                                 )
-                            }
-                        }
+                            },
+                            onClick = {
+                                overflowExpanded = false
+                                onNavigate(destination)
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    destination.ledgerGlyph(),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = if (destination == current) tokens.colors.bitcoin else unselectedTint,
+                                )
+                            },
+                        )
                     }
-                },
-                label = {
-                    Text(
-                        moreNavigationLabel(overflow.size),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = tokens.colors.foreground,
-                    selectedTextColor = tokens.colors.foreground,
-                    indicatorColor = tokens.colors.bitcoinSoft,
-                    unselectedIconColor = unselectedTint,
-                    unselectedTextColor = unselectedTint,
-                ),
-            )
+                }
+            }
         }
     }
 }

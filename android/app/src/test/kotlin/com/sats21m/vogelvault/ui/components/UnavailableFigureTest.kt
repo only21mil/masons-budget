@@ -20,9 +20,18 @@ class UnavailableFigureTest {
     }
 
     @Test
-    fun onlyUnavailablePriceWrapsInKpiCells() {
-        assertEquals(true, kpiFigureWraps(Money.PRICE_UNAVAILABLE))
-        assertEquals(false, kpiFigureWraps(SUPPRESSED))
-        assertEquals(false, kpiFigureWraps("\$1,250.00"))
+    fun unavailablePriceIsTheSameDashAsSuppression() {
+        assertEquals(SUPPRESSED, Money.PRICE_UNAVAILABLE)
+        assertEquals(true, Money.PRICE_UNAVAILABLE.isUnavailableFigure())
+    }
+
+    @Test
+    fun sectionSourcesDropBackendNouns() {
+        assertEquals("transactions", userFacingSource("Convex rows · transactions"))
+        assertEquals("budget not cached", userFacingSource("Convex rows · budget not cached"))
+        assertEquals(null, userFacingSource("Convex rows"))
+        assertEquals(null, userFacingSource("Convex finance document"))
+        assertEquals("BTC · VOO · IBIT", userFacingSource("BTC · VOO · IBIT"))
+        assertEquals(null, userFacingSource(null))
     }
 }

@@ -17,21 +17,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Inbox
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.WarningAmber
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -207,50 +200,74 @@ fun LazyListScope.vaultContent(content: VaultLazyListScope.() -> Unit) {
 
 @Composable
 private fun LazyPanelHeader(title: String, source: String?) {
-    val tokens = LocalLedgerTheme.current
-    val shape = RoundedCornerShape(topStart = LedgerRadii.card, topEnd = LedgerRadii.card)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .border(1.dp, tokens.colors.line, shape)
-            .background(tokens.colors.panel, shape),
-    ) {
-        Column(
-            Modifier.padding(horizontal = tokens.density.cardPadding, vertical = LedgerSpacing.medium),
-        ) {
-            Text(
-                title,
-                style = tokens.type.sectionLabel,
-                color = tokens.colors.foregroundSecondary,
-                modifier = Modifier.semantics { heading() },
-            )
-            if (source != null) {
-                Text(source.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
-            }
-        }
+    Column(Modifier.fillMaxWidth()) {
+        SectionHeading(title, source, trailing = null)
+        LedgerRule()
     }
 }
 
+/** Rows sit between subtle rules with no outer box; the section rule above opens the first. */
 @Composable
 private fun LazyPanelRow(
     isLast: Boolean,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val tokens = LocalLedgerTheme.current
-    val shape = if (isLast) {
-        RoundedCornerShape(bottomStart = LedgerRadii.card, bottomEnd = LedgerRadii.card)
-    } else {
-        RoundedCornerShape(0.dp)
-    }
-    Column(
-        modifier
-            .fillMaxWidth()
-            .border(1.dp, tokens.colors.line, shape)
-            .background(tokens.colors.panel, shape),
-    ) {
+    Column(modifier.fillMaxWidth()) {
         content()
+        if (!isLast) LedgerRule(subtle = true)
     }
+}
+
+/**
+ * A section label with its source line: 11sp 600 uppercase over 11sp meta,
+ * 9dp above the rule the caller draws beneath it.
+ */
+@Composable
+private fun SectionHeading(
+    title: String,
+    source: String?,
+    trailing: @Composable (() -> Unit)?,
+) {
+    val tokens = LocalLedgerTheme.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = tokens.density.sectionLabelBottomSpace),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            // Marked as a heading so TalkBack's heading navigation can jump
+            // section to section; a long ledger screen is unusable swipe by swipe.
+            Text(
+                title.uppercase(),
+                style = tokens.type.sectionLabel,
+                color = tokens.colors.foregroundSecondary,
+                modifier = Modifier.clearAndSetSemantics {
+                    contentDescription = title
+                    heading()
+                },
+            )
+            userFacingSource(source)?.let {
+                Text(it.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
+            }
+        }
+        trailing?.invoke()
+    }
+}
+
+/**
+ * A slice source as the household sees it: "Convex rows · transactions" reads
+ * as "transactions". Backend nouns stay in Settings, where they are diagnostics.
+ * Returns null when nothing user-facing is left.
+ */
+internal fun userFacingSource(source: String?): String? {
+    if (source == null) return null
+    val stripped = source
+        .replace(Regex("^Convex finance document(\\s*·\\s*)?"), "")
+        .replace(Regex("^Convex rows(\\s*·\\s*)?"), "")
+        .trim()
+    return stripped.takeIf { it.isNotEmpty() }
 }
 
 /** Suppress a figure when the slice it came from did not load. */
@@ -267,26 +284,25 @@ fun figure(suppress: Boolean, render: () -> String): String =
 private fun spokenFigure(value: String): String =
     if (value == SUPPRESSED) "unavailable" else value
 
+/**
+ * The hairline KPI grid: rules on the grid's top and left and on each cell's
+ * right and bottom, no fill, no card. An odd last figure spans its row.
+ */
 @Composable
 fun KpiStrip(items: List<Kpi>, modifier: Modifier = Modifier) {
-    val tokens = LocalLedgerTheme.current
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .border(1.dp, tokens.colors.line, RoundedCornerShape(LedgerRadii.card))
-            .background(tokens.colors.panel, RoundedCornerShape(LedgerRadii.card)),
-    ) {
-        items.chunked(2).forEachIndexed { rowIndex, row ->
-            if (rowIndex > 0) HorizontalHairline()
+    Column(modifier.fillMaxWidth()) {
+        LedgerRule()
+        items.chunked(2).forEach { row ->
             // IntrinsicSize.Min makes both cells adopt the taller one's height,
-            // so a cell carrying a hint line cannot leave a stub of bare surface
-            // beside its neighbour.
+            // so a cell carrying a hint line cannot leave a short rule beside it.
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                row.forEachIndexed { index, item ->
-                    if (index > 0) VerticalHairline(Modifier.fillMaxHeight())
+                VerticalHairline(Modifier.fillMaxHeight())
+                row.forEach { item ->
                     KpiCell(item, Modifier.weight(1f).fillMaxHeight())
+                    VerticalHairline(Modifier.fillMaxHeight())
                 }
             }
+            LedgerRule()
         }
     }
 }
@@ -315,14 +331,11 @@ private fun Kpi.spoken(): String = buildString {
     }
 }
 
-internal fun kpiFigureWraps(value: String): Boolean = value == Money.PRICE_UNAVAILABLE
-
 @Composable
 private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
     val tokens = LocalLedgerTheme.current
     val effects = LocalLedgerEffects.current
     val unavailable = item.value.isUnavailableFigure()
-    val wrapsUnavailablePrice = kpiFigureWraps(item.value)
     val spoken = item.spoken()
     val figureColor = when {
         unavailable -> tokens.colors.foregroundTertiary
@@ -334,8 +347,7 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .clearAndSetSemantics { contentDescription = spoken }
-            .background(tokens.colors.panel)
-            .padding(horizontal = tokens.density.cardPadding, vertical = tokens.density.cardPadding),
+            .padding(LedgerSpacing.large),
     ) {
         Text(
             item.label.uppercase(),
@@ -345,8 +357,7 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(2.dp))
         Text(
             item.value,
-            maxLines = if (wrapsUnavailablePrice) 2 else 1,
-            softWrap = wrapsUnavailablePrice,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = tokens.type.kpiValue.withLedgerPhosphorGlow(
                 enabled = effects.showPhosphorGlow && figureColor == tokens.colors.bitcoin,
@@ -360,45 +371,35 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * A section: label, rule, rows. No border and no fill unless [raised], which
+ * is reserved for the two cards the handoff draws (the Bitcoin projection and
+ * the retirement scenario).
+ */
 @Composable
 fun Panel(
     title: String? = null,
     source: String? = null,
     modifier: Modifier = Modifier,
+    raised: Boolean = false,
     trailing: @Composable (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
     val shape = RoundedCornerShape(LedgerRadii.card)
-    Column(
-        modifier = modifier
+    val container = if (raised) {
+        modifier
             .fillMaxWidth()
             .border(1.dp, tokens.colors.line, shape)
-            .background(tokens.colors.panel, shape),
-    ) {
+            .background(tokens.colors.panel, shape)
+            .padding(tokens.density.cardPadding)
+    } else {
+        modifier.fillMaxWidth()
+    }
+    Column(container) {
         if (title != null) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = tokens.density.cardPadding, vertical = LedgerSpacing.medium),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    // Marked as a heading so TalkBack's heading navigation can jump
-                    // panel to panel; a long ledger screen is unusable swipe by swipe.
-                    Text(
-                        title,
-                        style = tokens.type.sectionLabel,
-                        color = tokens.colors.foregroundSecondary,
-                        modifier = Modifier.semantics { heading() },
-                    )
-                    if (source != null) {
-                        Text(source.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
-                    }
-                }
-                trailing?.invoke()
-            }
-            HorizontalHairline()
+            SectionHeading(title, source, trailing)
+            LedgerRule()
         }
         content()
     }
@@ -433,7 +434,7 @@ fun LedgerRow(
         Modifier
             .fillMaxWidth()
             .clearAndSetSemantics { contentDescription = spoken }
-            .padding(horizontal = tokens.density.cardPadding, vertical = tokens.density.rowVerticalPadding),
+            .padding(vertical = tokens.density.rowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -484,7 +485,9 @@ fun Badge(
 ) {
     val tokens = LocalLedgerTheme.current
     val resolvedTone = tone?.let { ledgerColor(it) }
-    val border = resolvedTone ?: if (accented) tokens.colors.bitcoin else tokens.colors.line
+    // An accented tag is a meta tag in Bitcoin ink with no box: one orange
+    // rectangle per row was competing with the tab and the hero.
+    val border = if (accented) Color.Transparent else tokens.colors.line
     Box(
         Modifier
             // role = Role.Button: a bare clickable() announces as static text with
@@ -496,16 +499,13 @@ fun Badge(
             // Merged rather than cleared so the click action above survives.
             .semantics(mergeDescendants = true) { contentDescription = spoken }
             .border(1.dp, border, RoundedCornerShape(LedgerRadii.control))
-            .background(
-                if (accented) tokens.colors.bitcoinSoft else tokens.colors.background,
-                RoundedCornerShape(LedgerRadii.control),
-            )
             .padding(horizontal = 7.dp, vertical = 2.dp),
     ) {
         Text(
             text,
             style = tokens.type.chip,
             color = resolvedTone ?: if (accented) tokens.colors.bitcoin else tokens.colors.foregroundSecondary,
+            maxLines = 1,
         )
     }
 }
@@ -530,7 +530,30 @@ fun FreshnessTag(status: Freshness, updatedAt: Long?, now: Long) {
         Freshness.STALE -> "Stale, updated $age"
         else -> label
     }
-    Badge(label, tone = tone, spoken = spoken)
+    val tokens = LocalLedgerTheme.current
+    Row(
+        Modifier.semantics(mergeDescendants = true) { contentDescription = spoken },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LedgerStatusDot(ledgerColor(tone))
+        Spacer(Modifier.width(LedgerSpacing.small))
+        Text(label.uppercase(), style = tokens.type.chip, color = tokens.colors.foregroundSecondary, maxLines = 1)
+    }
+}
+
+/**
+ * A 6dp status dot in the tone it reports. It is the only place a status tone
+ * is drawn as a shape; the text beside it carries the meaning for a reader
+ * who cannot see the colour.
+ */
+@Composable
+fun LedgerStatusDot(tone: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(6.dp)
+            .clearAndSetSemantics { }
+            .background(tone, CircleShape),
+    )
 }
 
 private fun relativeTime(updatedAt: Long?, now: Long): String {
@@ -561,35 +584,30 @@ fun StateBlock(
         return
     }
     val tokens = LocalLedgerTheme.current
-    val icon: ImageVector
     val fallbackTitle: String
     val fallbackDetail: String
-    val tint: Color
+    val tone: Color
 
     when (status) {
         Freshness.DEMO -> {
-            icon = Icons.Filled.WarningAmber
             fallbackTitle = "Demo data"
             fallbackDetail = "These are sample figures for preview only. They have never been synced."
-            tint = VaultInfo
+            tone = tokens.colors.foregroundSecondary
         }
         Freshness.ERROR -> {
-            icon = Icons.Filled.ErrorOutline
             fallbackTitle = stringResource(R.string.convex_read_error_title)
             fallbackDetail = stringResource(R.string.convex_read_error_detail)
-            tint = VaultNegative
+            tone = tokens.colors.loss
         }
         Freshness.STALE -> {
-            icon = Icons.Filled.WarningAmber
             fallbackTitle = stringResource(R.string.convex_read_stale_title)
             fallbackDetail = stringResource(R.string.convex_read_stale_detail)
-            tint = VaultWarning
+            tone = tokens.colors.loss
         }
         else -> {
-            icon = Icons.Filled.Inbox
             fallbackTitle = stringResource(R.string.convex_read_empty_title)
             fallbackDetail = stringResource(R.string.convex_read_empty_detail)
-            tint = VaultTextDim
+            tone = tokens.colors.foregroundTertiary
         }
     }
 
@@ -599,11 +617,11 @@ fun StateBlock(
             // A screen swapping to "could not load" is a state change a sighted user
             // sees instantly; announce it rather than leaving it to be discovered.
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
-            .padding(vertical = VaultSpace.xxl, horizontal = VaultSpace.lg),
+            .padding(vertical = VaultSpace.xl, horizontal = VaultSpace.lg),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(VaultSpace.xs),
     ) {
-        Icon(icon, contentDescription = null, tint = ledgerColor(tint))
+        LedgerStatusDot(tone, Modifier.padding(bottom = VaultSpace.xs))
         Text(
             title ?: fallbackTitle,
             style = tokens.type.rowPrimary,
@@ -622,7 +640,11 @@ fun StateBlock(
 @Composable
 fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) {
     val tokens = LocalLedgerTheme.current
-    val resolvedTone = ledgerColor(tone)
+    val dotTone = when (statusBannerMark(tone)) {
+        LedgerStatusMark.GAIN -> tokens.colors.gain
+        LedgerStatusMark.LOSS -> tokens.colors.loss
+        LedgerStatusMark.NEUTRAL -> tokens.colors.foregroundTertiary
+    }
     Row(
         Modifier
             .fillMaxWidth()
@@ -630,10 +652,11 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
             .border(1.dp, tokens.colors.line, RoundedCornerShape(LedgerRadii.card))
             .background(tokens.colors.panel, RoundedCornerShape(LedgerRadii.card))
             .padding(tokens.density.cardPadding),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
-        Icon(statusBannerIcon(tone), contentDescription = null, tint = resolvedTone)
-        Spacer(Modifier.width(VaultSpace.sm))
+        // Optically centred on the first line of the title.
+        LedgerStatusDot(dotTone, Modifier.padding(top = 6.dp))
+        Spacer(Modifier.width(LedgerSpacing.medium))
         Column {
             Text(text, style = tokens.type.rowPrimary, color = tokens.colors.foreground)
             if (detail != null) {
@@ -643,17 +666,20 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
     }
 }
 
-internal fun statusBannerIcon(tone: Color): ImageVector = when (tone) {
+/** What a banner's dot reports. Warning collapses into loss, as [ledgerColor] already does. */
+enum class LedgerStatusMark { GAIN, LOSS, NEUTRAL }
+
+internal fun statusBannerMark(tone: Color): LedgerStatusMark = when (tone) {
     VaultPositive,
     LedgerPalettes.TerminalDark.gain,
     LedgerPalettes.DaylightLight.gain,
-    -> Icons.Filled.CheckCircle
+    -> LedgerStatusMark.GAIN
     VaultNegative,
+    VaultWarning,
     LedgerPalettes.TerminalDark.loss,
     LedgerPalettes.DaylightLight.loss,
-    -> Icons.Filled.ErrorOutline
-    VaultWarning -> Icons.Filled.WarningAmber
-    else -> Icons.Filled.Info
+    -> LedgerStatusMark.LOSS
+    else -> LedgerStatusMark.NEUTRAL
 }
 
 @Composable
@@ -664,7 +690,7 @@ fun SectionLabel(text: String) {
         style = tokens.type.sectionLabel,
         color = tokens.colors.foregroundSecondary,
         modifier = Modifier
-            .padding(horizontal = tokens.density.cardPadding, vertical = LedgerSpacing.medium)
+            .padding(vertical = LedgerSpacing.medium)
             // Speak the original casing: TalkBack spells short all-caps strings out
             // letter by letter, so "BTC" and "CASH" arrive as initialisms.
             .clearAndSetSemantics {

@@ -150,7 +150,8 @@ class LedgerAdoptionComposeTest {
                 state = VaultUiState.of(FamilyMember.RACHEL, Destination.FAMILY),
             )
         }
-        compose.onNodeWithText("Active profile scope").fetchSemanticsNode()
+        // Section labels draw uppercase and speak their original casing.
+        compose.onNodeWithContentDescription("Active profile scope").fetchSemanticsNode()
         compose.onNodeWithText(
             "Adult household + child oversight",
             useUnmergedTree = true,
