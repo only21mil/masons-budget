@@ -187,7 +187,7 @@ jobs:
   # The synthetic-content guard keeps production-shaped values out of the
   # fixtures (they replaced verbatim production captures in 2026-09).
   convex-wire-golden:
-    name: Convex wire golden decoders
+    name: Production wire golden decoders
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
     timeout-minutes: 20
