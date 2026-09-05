@@ -48,6 +48,9 @@ DAYLIGHT_PNGS = frozenset(
     | {
         "unfolded-dashboard-mason-normal.png",
         "unfolded-budget-victor-2026-06.png",
+        # Two-pane unfolded captures added with the ledger sidebar (2026-09-05).
+        "unfolded-dashboard-victor-two-pane.png",
+        "unfolded-budget-victor-two-pane.png",
     }
 )
 TERMINAL_PNGS = frozenset(
@@ -59,7 +62,7 @@ TERMINAL_PNGS = frozenset(
 )
 EXPECTED_PNGS = DAYLIGHT_PNGS | TERMINAL_PNGS
 
-EXPECTED_COUNT = 67
+EXPECTED_COUNT = 69
 if len(EXPECTED_PNGS) != EXPECTED_COUNT:
     raise RuntimeError(
         f"design-packet manifest has {len(EXPECTED_PNGS)} names; expected {EXPECTED_COUNT}"
