@@ -59,8 +59,13 @@ data class LedgerColors(
     val foreground: Color,
     val foregroundSecondary: Color,
     val foregroundTertiary: Color,
+    /** Bitcoin orange for text and icons. Light drops to a darker orange so it clears AA on panel. */
     val bitcoin: Color,
+    /** Bitcoin orange for filled controls carrying the dark ink; both treatments use the brand orange. */
+    val bitcoinFill: Color,
     val bitcoinSoft: Color,
+    /** Price hero decimals. Dark dims the text orange; light keeps it opaque so nothing composites alpha. */
+    val priceDecimals: Color,
     val gainSpec: LedgerOklch,
     val lossSpec: LedgerOklch,
     val scanline: Color,
@@ -78,10 +83,12 @@ object LedgerPalettes {
         line = Color(0xFFD6EEE0).copy(alpha = 0.10f),
         lineSubtle = Color(0xFFD6EEE0).copy(alpha = 0.06f),
         foreground = Color(0xFFE8EFE9),
-        foregroundSecondary = Color(0xFFE8EFE9).copy(alpha = 0.56f),
-        foregroundTertiary = Color(0xFFE8EFE9).copy(alpha = 0.52f),
+        foregroundSecondary = Color(0xFFA3ABA6),
+        foregroundTertiary = Color(0xFF8F9792),
         bitcoin = Color(0xFFF7931A),
+        bitcoinFill = Color(0xFFF7931A),
         bitcoinSoft = Color(0xFFF7931A).copy(alpha = 0.12f),
+        priceDecimals = Color(0xFFF7931A).copy(alpha = 0.75f),
         gainSpec = LedgerOklch(0.74f, 0.155f, 158f),
         lossSpec = LedgerOklch(0.70f, 0.155f, 28f),
         scanline = Color.White.copy(alpha = 0.022f),
@@ -95,10 +102,12 @@ object LedgerPalettes {
         line = Color(0xFF141715).copy(alpha = 0.14f),
         lineSubtle = Color(0xFF141715).copy(alpha = 0.08f),
         foreground = Color(0xFF141715),
-        foregroundSecondary = Color(0xFF141715).copy(alpha = 0.64f),
-        foregroundTertiary = Color(0xFF141715).copy(alpha = 0.62f),
-        bitcoin = Color(0xFFC96A05),
-        bitcoinSoft = Color(0xFFC96A05).copy(alpha = 0.10f),
+        foregroundSecondary = Color(0xFF505452),
+        foregroundTertiary = Color(0xFF5C605D),
+        bitcoin = Color(0xFF9E5104),
+        bitcoinFill = Color(0xFFF7931A),
+        bitcoinSoft = Color(0xFF9E5104).copy(alpha = 0.10f),
+        priceDecimals = Color(0xFF9E5104),
         gainSpec = LedgerOklch(0.52f, 0.13f, 158f),
         lossSpec = LedgerOklch(0.52f, 0.15f, 28f),
         scanline = Color.Black.copy(alpha = 0.012f),
@@ -183,21 +192,21 @@ private fun ledgerTypeTokens(treatment: LedgerTreatment): LedgerTypeTokens {
     return LedgerTypeTokens(
         screenTitle = style(if (daylight) 29.sp else 26.sp, FontWeight.SemiBold, (-0.02).em),
         drilldownTitle = style(24.sp, FontWeight.SemiBold, (-0.02).em, 27.6.sp),
-        screenSubtitle = style(9.5.sp, FontWeight.Normal, 0.18.em),
+        screenSubtitle = style(11.sp, FontWeight.Medium, 0.10.em),
         heroNumeral = style(28.sp, FontWeight.SemiBold, (-0.03).em, tabular = true),
         priceHero = style(38.sp, FontWeight.SemiBold, (-0.03).em, tabular = true),
         priceHeroDecimals = style(20.sp, FontWeight.SemiBold, (-0.03).em, tabular = true),
-        kpiLabel = style(9.sp, FontWeight.Medium, 0.16.em),
+        kpiLabel = style(11.sp, FontWeight.Medium, 0.10.em),
         kpiValue = style(20.sp, FontWeight.Medium, tabular = true),
-        kpiSub = style(9.sp, FontWeight.Normal, 0.06.em),
-        sectionLabel = style(9.5.sp, FontWeight.SemiBold, 0.18.em),
+        kpiSub = style(11.sp, FontWeight.Medium, 0.04.em),
+        sectionLabel = style(11.sp, FontWeight.SemiBold, 0.10.em),
         rowPrimary = style(if (daylight) 13.5.sp else 12.5.sp, FontWeight.Normal),
-        rowMeta = style(9.5.sp, FontWeight.Normal, 0.05.em),
+        rowMeta = style(11.sp, FontWeight.Medium, 0.03.em),
         rowFigure = style(if (daylight) 13.5.sp else 12.5.sp, FontWeight.Medium, tabular = true),
-        chip = style(10.5.sp, FontWeight.SemiBold, 0.08.em),
-        tabLabel = style(8.5.sp, FontWeight.SemiBold, 0.10.em),
+        chip = style(11.sp, FontWeight.SemiBold, 0.06.em),
+        tabLabel = style(11.sp, FontWeight.SemiBold, 0.06.em),
         tabGlyphSize = 17.sp,
-        body = style(10.5.sp, FontWeight.Normal, lineHeight = 19.425.sp),
+        body = style(12.sp, FontWeight.Normal, lineHeight = 18.sp),
         button = style(11.sp, FontWeight.SemiBold, 0.10.em),
         amountInput = style(28.sp, FontWeight.Medium, tabular = true),
         textInput = style(15.sp, FontWeight.Normal),
@@ -251,7 +260,8 @@ data class LedgerAccessibilityPreferences(
 
 @Immutable
 data class LedgerEffectSettings(
-    val scanlinesEnabled: Boolean = true,
+    /** Off by default since the 2026-09-05 readability audit; the texture is a preference, not a base layer. */
+    val scanlinesEnabled: Boolean = false,
     val phosphorGlowEnabled: Boolean = true,
 )
 
@@ -338,7 +348,7 @@ fun SovereignLedgerTheme(
 internal fun LedgerColors.toMaterialScheme(treatment: LedgerTreatment): ColorScheme {
     val base = if (treatment == LedgerTreatment.TERMINAL_DARK) darkColorScheme() else lightColorScheme()
     return base.copy(
-        primary = bitcoin,
+        primary = bitcoinFill,
         onPrimary = LedgerPalettes.TerminalDark.background,
         primaryContainer = bitcoinSoft,
         onPrimaryContainer = foreground,
@@ -366,7 +376,7 @@ internal fun LedgerColors.toMaterialScheme(treatment: LedgerTreatment): ColorSch
         surfaceContainer = panel,
         surfaceContainerHigh = panelRaised,
         surfaceContainerHighest = panelRaised,
-        surfaceTint = bitcoin,
+        surfaceTint = bitcoinFill,
         outline = line,
         outlineVariant = lineSubtle,
         error = loss,

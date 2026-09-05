@@ -3,6 +3,8 @@ package com.sats21m.vogelvault.ui.theme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.colorspace.ColorSpaces
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.max
@@ -22,9 +24,12 @@ class ThemeContrastTest {
         assertEquals(Color(0xFF0C100E), dark.panel)
         assertEquals(Color(0xFF111614), dark.panelRaised)
         assertEquals(Color(0xFFE8EFE9), LedgerPalettes.TerminalDark.foreground)
-        assertEquals(Color(0xFFE8EFE9).copy(alpha = 0.56f), dark.foregroundSecondary)
-        assertEquals(Color(0xFFE8EFE9).copy(alpha = 0.52f), dark.foregroundTertiary)
+        assertEquals(Color(0xFFA3ABA6), dark.foregroundSecondary)
+        assertEquals(Color(0xFF8F9792), dark.foregroundTertiary)
         assertEquals(Color(0xFFF7931A), dark.bitcoin)
+        assertEquals(Color(0xFFF7931A), dark.bitcoinFill)
+        assertEquals(Color(0xFFF7931A).copy(alpha = 0.12f), dark.bitcoinSoft)
+        assertEquals(Color(0xFFF7931A).copy(alpha = 0.75f), dark.priceDecimals)
         assertEquals(LedgerOklch(0.74f, 0.155f, 158f), dark.gainSpec)
         assertEquals(LedgerOklch(0.70f, 0.155f, 28f), dark.lossSpec)
 
@@ -32,13 +37,26 @@ class ThemeContrastTest {
         assertEquals(Color(0xFFEDEBE4), light.panel)
         assertEquals(Color.White, light.panelRaised)
         assertEquals(Color(0xFF141715), light.foreground)
-        assertEquals(Color(0xFF141715).copy(alpha = 0.64f), light.foregroundSecondary)
-        assertEquals(Color(0xFF141715).copy(alpha = 0.62f), light.foregroundTertiary)
-        assertEquals(Color(0xFFC96A05), light.bitcoin)
+        assertEquals(Color(0xFF505452), light.foregroundSecondary)
+        assertEquals(Color(0xFF5C605D), light.foregroundTertiary)
+        assertEquals(Color(0xFF9E5104), light.bitcoin)
+        assertEquals(Color(0xFFF7931A), light.bitcoinFill)
+        assertEquals(Color(0xFF9E5104).copy(alpha = 0.10f), light.bitcoinSoft)
+        assertEquals(Color(0xFF9E5104), light.priceDecimals)
         assertEquals(LedgerOklch(0.52f, 0.13f, 158f), light.gainSpec)
         assertEquals(LedgerOklch(0.52f, 0.15f, 28f), light.lossSpec)
         assertEquals(ColorSpaces.Oklab, dark.gain.colorSpace)
         assertEquals(ColorSpaces.Oklab, light.loss.colorSpace)
+    }
+
+    @Test
+    fun `ink tiers are opaque so nothing composites at draw time`() {
+        listOf(LedgerPalettes.TerminalDark, LedgerPalettes.DaylightLight).forEach { palette ->
+            assertEquals(1f, palette.foregroundSecondary.alpha)
+            assertEquals(1f, palette.foregroundTertiary.alpha)
+            assertEquals(1f, palette.bitcoinFill.alpha)
+        }
+        assertEquals(1f, LedgerPalettes.DaylightLight.priceDecimals.alpha)
     }
 
     @Test
@@ -57,8 +75,34 @@ class ThemeContrastTest {
         assertEquals(29.sp, light.type.screenTitle.fontSize)
         assertEquals(13.5.sp, light.type.rowPrimary.fontSize)
         assertEquals(LedgerRuleStyle.DASHED, light.density.ruleStyle)
-        assertEquals(9.5.sp, dark.type.rowMeta.fontSize)
-        assertEquals(9.5.sp, light.type.rowMeta.fontSize)
+        assertEquals(11.sp, dark.type.rowMeta.fontSize)
+        assertEquals(11.sp, light.type.rowMeta.fontSize)
+    }
+
+    @Test
+    fun `type floor keeps every tier-ink role at 11sp and weight 500 or more`() {
+        LedgerTreatment.entries.forEach { treatment ->
+            val type = themeTokens(treatment).type
+            val tierRoles = mapOf(
+                "tabLabel" to type.tabLabel,
+                "kpiLabel" to type.kpiLabel,
+                "kpiSub" to type.kpiSub,
+                "rowMeta" to type.rowMeta,
+                "screenSubtitle" to type.screenSubtitle,
+                "sectionLabel" to type.sectionLabel,
+                "chip" to type.chip,
+            )
+            tierRoles.forEach { (name, style) ->
+                assertTrue(style.fontSize.isSp && style.fontSize.value >= 11f, "$treatment $name is under 11sp")
+                assertTrue(style.weight() >= FontWeight.Medium.weight, "$treatment $name is under weight 500")
+            }
+            // Body is running text at 12sp, where 400 reads; the 500 floor is for the 11sp labels.
+            assertEquals(12.sp, type.body.fontSize)
+            assertEquals(18.sp, type.body.lineHeight)
+            assertEquals(FontWeight.Normal, type.body.fontWeight)
+            assertEquals(11.sp, type.button.fontSize)
+            assertEquals(FontWeight.SemiBold, type.button.fontWeight)
+        }
     }
 
     @Test
@@ -82,22 +126,83 @@ class ThemeContrastTest {
     }
 
     @Test
-    fun `secondary and tertiary ink clear AA on every ledger surface`() {
+    fun `every ink clears AA on every ledger fill including bitcoinSoft composites`() {
         listOf(LedgerPalettes.TerminalDark, LedgerPalettes.DaylightLight).forEach { palette ->
-            listOf(palette.foregroundSecondary, palette.foregroundTertiary).forEach { ink ->
-                listOf(palette.background, palette.panel, palette.panelRaised).forEach { surface ->
-                    assertTrue(contrastRatio(ink, surface) >= 4.5)
+            // Gain and loss are unchanged by the 2026-09-05 audit; light gain on panel stays at 4.29.
+            val inks = mapOf(
+                "foreground" to palette.foreground,
+                "secondary" to palette.foregroundSecondary,
+                "tertiary" to palette.foregroundTertiary,
+            )
+            inks.forEach { (name, ink) ->
+                palette.fills().forEach { (fillName, fill) ->
+                    assertTrue(
+                        contrastRatio(ink, fill) >= 4.5,
+                        "$name on $fillName is ${contrastRatio(ink, fill)}",
+                    )
                 }
             }
         }
     }
 
     @Test
-    fun `dark ink clears AA on both Bitcoin primary fills`() {
+    fun `secondary and tertiary ink clear a 6 to 1 floor on the opaque ledger surfaces`() {
+        listOf(LedgerPalettes.TerminalDark, LedgerPalettes.DaylightLight).forEach { palette ->
+            palette.opaqueFills().forEach { (fillName, fill) ->
+                assertTrue(
+                    contrastRatio(palette.foregroundSecondary, fill) >= 6.0,
+                    "secondary on $fillName is ${contrastRatio(palette.foregroundSecondary, fill)}",
+                )
+            }
+        }
+        LedgerPalettes.TerminalDark.opaqueFills().forEach { (fillName, fill) ->
+            assertTrue(
+                contrastRatio(LedgerPalettes.TerminalDark.foregroundTertiary, fill) >= 6.0,
+                "dark tertiary on $fillName is ${contrastRatio(LedgerPalettes.TerminalDark.foregroundTertiary, fill)}",
+            )
+        }
+        // The audit's light tertiary #5C605D measures 5.75, 5.36, and 6.39; a 6.0 floor on panel
+        // needs #555754, which no longer reads as a second level against #505452.
+        LedgerPalettes.DaylightLight.opaqueFills().forEach { (fillName, fill) ->
+            assertTrue(
+                contrastRatio(LedgerPalettes.DaylightLight.foregroundTertiary, fill) >= 5.0,
+                "light tertiary on $fillName is ${contrastRatio(LedgerPalettes.DaylightLight.foregroundTertiary, fill)}",
+            )
+        }
+    }
+
+    @Test
+    fun `bitcoin text clears AA on panel and the decimals pair clears AA in both treatments`() {
+        listOf(LedgerPalettes.TerminalDark, LedgerPalettes.DaylightLight).forEach { palette ->
+            assertTrue(
+                contrastRatio(palette.bitcoin, palette.panel) >= 4.5,
+                "bitcoin text on panel is ${contrastRatio(palette.bitcoin, palette.panel)}",
+            )
+            assertTrue(
+                contrastRatio(palette.bitcoin, palette.background) >= 4.5,
+                "bitcoin text on background is ${contrastRatio(palette.bitcoin, palette.background)}",
+            )
+            // Accented Badge: bitcoin text over bitcoinSoft on the background.
+            val softOverBackground = palette.bitcoinSoft.compositeOver(palette.background)
+            assertTrue(
+                contrastRatio(palette.bitcoin, softOverBackground) >= 4.5,
+                "bitcoin text on bitcoinSoft over background is ${contrastRatio(palette.bitcoin, softOverBackground)}",
+            )
+            listOf("panel" to palette.panel, "background" to palette.background).forEach { (fillName, fill) ->
+                assertTrue(
+                    contrastRatio(palette.priceDecimals, fill) >= 4.5,
+                    "price decimals on $fillName is ${contrastRatio(palette.priceDecimals, fill)}",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `dark ink clears AA on the Bitcoin fill in both treatments`() {
         val onBitcoin = LedgerPalettes.TerminalDark.background
 
-        assertTrue(contrastRatio(onBitcoin, LedgerPalettes.TerminalDark.bitcoin) >= 4.5)
-        assertTrue(contrastRatio(onBitcoin, LedgerPalettes.DaylightLight.bitcoin) >= 4.5)
+        assertTrue(contrastRatio(onBitcoin, LedgerPalettes.TerminalDark.bitcoinFill) >= 4.5)
+        assertTrue(contrastRatio(onBitcoin, LedgerPalettes.DaylightLight.bitcoinFill) >= 4.5)
     }
 
     @Test
@@ -133,6 +238,19 @@ class ThemeContrastTest {
         }
     }
 }
+
+private fun TextStyle.weight(): Int = requireNotNull(fontWeight) { "role has no weight" }.weight
+
+private fun LedgerColors.opaqueFills(): List<Pair<String, Color>> = listOf(
+    "background" to background,
+    "panel" to panel,
+    "panelRaised" to panelRaised,
+)
+
+private fun LedgerColors.fills(): List<Pair<String, Color>> = opaqueFills() + listOf(
+    "bitcoinSoft over panel" to bitcoinSoft.compositeOver(panel),
+    "bitcoinSoft over background" to bitcoinSoft.compositeOver(background),
+)
 
 private fun contrastRatio(foreground: Color, background: Color): Double {
     val opaqueForeground = foreground.compositeOver(background)

@@ -30,7 +30,7 @@ internal fun VaultButton(
 internal fun vaultButtonColors(): ButtonColors {
     val colors = LocalLedgerTheme.current.colors
     return ButtonDefaults.buttonColors(
-        containerColor = colors.bitcoin,
+        containerColor = colors.bitcoinFill,
         contentColor = LedgerPalettes.TerminalDark.background,
     )
 }
