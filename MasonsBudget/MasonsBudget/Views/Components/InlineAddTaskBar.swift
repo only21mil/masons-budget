@@ -35,12 +35,12 @@ struct InlineAddTaskBar: View {
                         .foregroundStyle(theme.borderStrong)
                     TextField("New task", text: $draftText)
                         .textFieldStyle(.plain)
-                        .font(AppFont.bodyRegular)
+                        .ledgerType(.textInput)
                         .foregroundStyle(theme.text)
                         .focused($draftFocused)
                         .onSubmit(addTask)
                     Button("Add", action: addTask)
-                        .font(AppFont.labelStrong)
+                        .ledgerType(.button)
                         .foregroundStyle(theme.accent)
                         .buttonStyle(.plain)
                 }
@@ -56,7 +56,7 @@ struct InlineAddTaskBar: View {
                             .font(AppFont.iconMedium)
                             .foregroundStyle(theme.accent)
                         Text("New Task")
-                            .font(AppFont.bodyStrong)
+                            .ledgerType(.button)
                             .foregroundStyle(theme.accent)
                         Spacer()
                     }

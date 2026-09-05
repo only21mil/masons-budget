@@ -35,7 +35,7 @@ struct BTCBillPayView: View {
             VStack(spacing: 0) {
                 ScreenHeader(title: "Bill Pay", eyebrow: "Pay Bills in Bitcoin") {
                     Button("COMPOSE") { showCompose = true }
-                        .font(AppFont.monoMicroStrong)
+                        .ledgerType(.button)
                         .foregroundStyle(theme.accent)
                         .buttonStyle(.plain)
                 }
@@ -47,8 +47,7 @@ struct BTCBillPayView: View {
                 ForEach(grouped, id: \.0) { month, billPays in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(month.uppercased())
-                            .font(AppFont.sectionHeader)
-                            .tracking(AppFont.sectionTracking)
+                            .ledgerType(.sectionLabel)
                             .foregroundStyle(theme.textMuted)
                             .padding(.horizontal, 4)
 
@@ -87,18 +86,16 @@ struct BTCBillPayView: View {
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("BILLS PAID")
-                        .font(AppFont.sectionHeader)
-                        .tracking(AppFont.sectionTracking)
+                        .ledgerType(.sectionLabel)
                         .foregroundStyle(.white.opacity(0.7))
-                    AmountView(sats: totalSats, unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
+                    AmountView(sats: totalSats, unit: unit, role: .kpiValue, color: .white, btcPrice: btcPrice)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
                     Text("BTC SPENT")
-                        .font(AppFont.sectionHeader)
-                        .tracking(AppFont.sectionTracking)
+                        .ledgerType(.sectionLabel)
                         .foregroundStyle(.white.opacity(0.7))
-                    AmountView(sats: Decimal(ledger.totalSpentSats), unit: unit, size: 22, weight: .bold, color: .white, btcPrice: btcPrice)
+                    AmountView(sats: Decimal(ledger.totalSpentSats), unit: unit, role: .kpiValue, color: .white, btcPrice: btcPrice)
                 }
             }
             .padding(20)
@@ -129,19 +126,19 @@ struct BTCBillPayView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(bp.merchant)
-                    .font(AppFont.labelLarge)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 Text("\(bp.date.formatted(.dateTime.month(.abbreviated).day())) · \(bp.platform)")
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                AmountView(sats: btcPrice > 0 ? (bp.amountUSD / btcPrice) * 100_000_000 : 0, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
-                AmountView(sats: bp.btcSpent * 100_000_000, unit: unit, size: 11, weight: .regular, color: theme.textMuted, btcPrice: btcPrice)
+                AmountView(sats: btcPrice > 0 ? (bp.amountUSD / btcPrice) * 100_000_000 : 0, unit: unit, role: .rowFigure, btcPrice: btcPrice)
+                AmountView(sats: bp.btcSpent * 100_000_000, unit: unit, role: .rowFigure, color: theme.textMuted, btcPrice: btcPrice)
             }
         }
         .padding(14)
@@ -202,7 +199,7 @@ struct BTCBillPayComposeView: View {
                         Hairline()
                         HStack {
                             Text("BUDGET")
-                                .font(AppFont.monoMicroStrong)
+                                .ledgerType(.kpiLabel)
                                 .foregroundStyle(theme.textMuted)
                             Spacer()
                             Picker("Budget effect", selection: $effect) {
@@ -223,13 +220,13 @@ struct BTCBillPayComposeView: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("RIVER FEE HOLD")
-                            .font(AppFont.monoMicroStrong)
+                            .ledgerType(.sectionLabel)
                             .foregroundStyle(theme.warn)
                         Text(RiverBillPayFeePolicy.guidance)
-                            .font(AppFont.labelRegular)
+                            .ledgerType(.rowPrimary)
                             .foregroundStyle(theme.textMuted)
                         Text(exactFee.map { "MANUAL FEE · \(AppFormatter.formatCurrency($0))" } ?? "MANUAL FEE · NOT ENTERED")
-                            .font(AppFont.monoSmallStrong)
+                            .ledgerType(.rowMeta)
                             .foregroundStyle(exactFee == nil ? theme.warn : theme.text)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -238,10 +235,10 @@ struct BTCBillPayComposeView: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text("WRITEBACK HOLD")
-                            .font(AppFont.monoMicroStrong)
+                            .ledgerType(.sectionLabel)
                             .foregroundStyle(theme.warn)
                         Text("The Apple client has no bill-pay create route yet. This form does not submit or create a transaction row in its place.")
-                            .font(AppFont.labelRegular)
+                            .ledgerType(.rowPrimary)
                             .foregroundStyle(theme.textMuted)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -263,10 +260,10 @@ struct BTCBillPayComposeView: View {
     private func composeField(_ label: String, prompt: String, text: Binding<String>) -> some View {
         HStack {
             Text(label)
-                .font(AppFont.monoMicroStrong)
+                .ledgerType(.kpiLabel)
                 .foregroundStyle(theme.textMuted)
             TextField(prompt, text: text)
-                .font(AppFont.monoCaptionStrong)
+                .ledgerType(.rowFigure)
                 .multilineTextAlignment(.trailing)
         }
         .padding(14)

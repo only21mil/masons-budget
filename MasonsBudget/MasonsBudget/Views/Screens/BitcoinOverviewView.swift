@@ -24,7 +24,7 @@ struct BitcoinOverviewView: View {
             VStack(spacing: 0) {
                 ScreenHeader(title: "Bitcoin", eyebrow: "Overview") {
                     Button("+ ADD ACCOUNT") { compose = .account }
-                        .font(AppFont.monoMicroStrong)
+                        .ledgerType(.button)
                         .foregroundStyle(theme.accent)
                         .buttonStyle(.plain)
                         .accessibilityLabel("Add Bitcoin account")
@@ -76,8 +76,7 @@ struct BitcoinOverviewView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("TOTAL STACK")
-                    .font(AppFont.sectionHeader)
-                    .tracking(AppFont.sectionTracking)
+                    .ledgerType(.sectionLabel)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
                 NavigationLink {
@@ -88,7 +87,7 @@ struct BitcoinOverviewView: View {
                             .fill(BTCPriceService.storedPrice == nil ? theme.warn : theme.success)
                             .frame(width: 6, height: 6)
                         Text(AppFormatter.formatCurrency(btcPrice))
-                            .font(AppFont.monoSmallStrong)
+                            .ledgerType(.rowFigure)
                             .foregroundStyle(theme.text)
                     }
                 }
@@ -99,18 +98,17 @@ struct BitcoinOverviewView: View {
             AmountView(
                 sats: Decimal(balance.totalSats),
                 unit: unit,
-                size: 36,
-                weight: .bold,
+                role: .heroNumeral,
                 btcPrice: btcPrice,
             )
 
             HStack {
                 Text("AS OF \(balance.asOf.uppercased())")
-                    .font(AppFont.monoMicro)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textFaint)
                 Spacer()
                 Text("\(balance.accounts.count) ACCOUNTS")
-                    .font(AppFont.monoMicroStrong)
+                    .ledgerType(.kpiSub)
                     .foregroundStyle(theme.accent)
             }
         }
@@ -143,9 +141,9 @@ struct BitcoinOverviewView: View {
                     .font(AppFont.iconSmall)
                     .foregroundStyle(theme.accent)
                 Text(label)
-                    .font(AppFont.monoMicroStrong)
+                    .ledgerType(.kpiLabel)
                     .foregroundStyle(theme.textMuted)
-                AmountView(sats: Decimal(sats), unit: unit, size: 15, weight: .bold, btcPrice: btcPrice)
+                AmountView(sats: Decimal(sats), unit: unit, role: .rowFigure, btcPrice: btcPrice)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassCard(padding: 14, radius: AppLayout.radiusMedium)
@@ -156,8 +154,7 @@ struct BitcoinOverviewView: View {
     private func accountsCard(_ balance: CanonicalBTCBalance) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("ACCOUNT LEDGER")
-                .font(AppFont.sectionHeader)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(14)
 
@@ -175,14 +172,14 @@ struct BitcoinOverviewView: View {
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(account.label)
-                                .font(AppFont.bodyStrong)
+                                .ledgerType(.rowPrimary)
                                 .foregroundStyle(theme.text)
                             Text(account.custody == .selfCustody ? "Self-custody" : "Exchange")
-                                .font(AppFont.smallRegular)
+                                .ledgerType(.rowMeta)
                                 .foregroundStyle(theme.textMuted)
                         }
                         Spacer()
-                        AmountView(sats: Decimal(account.sats), unit: unit, size: 13, weight: .bold, btcPrice: btcPrice)
+                        AmountView(sats: Decimal(account.sats), unit: unit, role: .rowFigure, btcPrice: btcPrice)
                     }
                     .padding(14)
                 }
@@ -215,7 +212,7 @@ struct BitcoinOverviewView: View {
                 Image(systemName: icon)
                     .font(AppFont.iconTiny)
                 Text(label)
-                    .font(AppFont.monoMicroStrong)
+                    .ledgerType(.tabLabel)
             }
             .foregroundStyle(theme.accent)
             .frame(maxWidth: .infinity)
@@ -264,7 +261,7 @@ struct BitcoinPriceView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text(storedPrice > 0 ? "LIVE QUOTE" : "FALLBACK QUOTE")
-                            .font(AppFont.monoMicroStrong)
+                            .ledgerType(.chip)
                             .foregroundStyle(storedPrice > 0 ? theme.success : theme.warn)
                         Spacer()
                         Image(systemName: "bitcoinsign.circle.fill")
@@ -275,7 +272,7 @@ struct BitcoinPriceView: View {
                     LedgerSettlingNumeral(value: displayPriceValue) {
                         AppFormatter.formatCurrency(Decimal($0))
                     }
-                    .font(AppFont.heroNumberMono)
+                    .ledgerType(.priceHero)
                     .foregroundStyle(theme.text)
                     .minimumScaleFactor(0.7)
                     .ledgerGlow(radius: glowRadius)
@@ -290,7 +287,7 @@ struct BitcoinPriceView: View {
 
                     if storedPrice > 0 {
                         Text("\(change24h >= 0 ? "+" : "")\(change24h, specifier: "%.2f")% · 24H")
-                            .font(AppFont.monoCaptionStrong)
+                            .ledgerType(.rowFigure)
                             .foregroundStyle(change24h >= 0 ? theme.success : theme.danger)
                     }
                 }
@@ -313,7 +310,7 @@ struct BitcoinPriceView: View {
                             ProgressView().controlSize(.small)
                         }
                         Text(isRefreshing ? "REFRESHING" : "REFRESH PRICE")
-                            .font(AppFont.monoCaptionStrong)
+                            .ledgerType(.rowFigure)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
@@ -340,11 +337,11 @@ struct BitcoinPriceView: View {
     private func priceRow(_ label: String, value: String) -> some View {
         HStack {
             Text(label)
-                .font(AppFont.monoMicroStrong)
+                .ledgerType(.kpiLabel)
                 .foregroundStyle(theme.textMuted)
             Spacer()
             Text(value)
-                .font(AppFont.monoCaption)
+                .ledgerType(.rowFigure)
                 .foregroundStyle(theme.text)
         }
         .padding(14)
@@ -383,10 +380,10 @@ struct BitcoinTransferView: View {
                     Hairline()
                     HStack {
                         Text("SATS")
-                            .font(AppFont.monoMicroStrong)
+                            .ledgerType(.kpiLabel)
                             .foregroundStyle(theme.textMuted)
                         TextField("0", text: $amount)
-                            .font(AppFont.monoBodyStrong)
+                            .ledgerType(.rowFigure)
                             .multilineTextAlignment(.trailing)
                         #if os(iOS)
                             .keyboardType(.numberPad)
@@ -416,7 +413,7 @@ struct BitcoinTransferView: View {
     private func accountPicker(_ label: String, selection: Binding<String>) -> some View {
         HStack {
             Text(label)
-                .font(AppFont.monoMicroStrong)
+                .ledgerType(.kpiLabel)
                 .foregroundStyle(theme.textMuted)
             Spacer()
             Picker(label, selection: selection) {
@@ -433,10 +430,10 @@ struct BitcoinTransferView: View {
     private func holdCard(title: String, message: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(AppFont.monoMicroStrong)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.warn)
             Text(message)
-                .font(AppFont.labelRegular)
+                .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.textMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -455,10 +452,10 @@ struct AddBitcoinAccountView: View {
                 ScreenHeader(title: "Add account", eyebrow: "Canonical Bitcoin ledger")
                 VStack(alignment: .leading, spacing: 8) {
                     Text("ACCOUNT WRITEBACK HOLD")
-                        .font(AppFont.monoMicroStrong)
+                        .ledgerType(.sectionLabel)
                         .foregroundStyle(theme.warn)
                     Text("Bitcoin accounts come from the canonical balance document. This client will not create a local account that disappears on the next sync.")
-                        .font(AppFont.labelRegular)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.textMuted)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -230,7 +230,7 @@ struct AddTransactionView: View {
                             ? "Saving…"
                             : (writeFeedback.isRetryPending ? "Retry pending" : "Save"),
                     ) { saveTransaction() }
-                        .font(AppFont.headline)
+                        .ledgerType(.button)
                         .foregroundStyle(theme.accent)
                         .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
                 }
@@ -259,7 +259,7 @@ struct AddTransactionView: View {
                     }
                 } label: {
                     Text(t.rawValue)
-                        .font(AppFont.label)
+                        .ledgerType(.chip)
                         .foregroundStyle(txType == t ? theme.text : theme.textMuted)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 9)
@@ -279,8 +279,7 @@ struct AddTransactionView: View {
     private var amountSection: some View {
         VStack(spacing: 8) {
             Text("AMOUNT")
-                .font(AppFont.sectionHeaderMedium)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.kpiLabel)
                 .foregroundStyle(theme.accent)
 
             unitSelector
@@ -288,15 +287,15 @@ struct AddTransactionView: View {
             HStack(spacing: 8) {
                 if txType == .spend {
                     Text("\u{2212}")
-                        .font(AppFont.heroNumberMono)
+                        .ledgerType(.amountInput)
                         .foregroundStyle(theme.textMuted)
                 }
                 Text("\(inputUnit.prefix)\(amount.isEmpty ? "0" : amount)")
-                    .font(AppFont.heroNumberMono)
+                    .ledgerType(.amountInput)
                     .foregroundStyle(theme.text)
                 if inputUnit != .usd {
                     Text(inputUnit.label)
-                        .font(AppFont.mediumNumberMono)
+                        .ledgerType(.kpiValue)
                         .foregroundStyle(theme.textMuted)
                 }
             }
@@ -305,7 +304,7 @@ struct AddTransactionView: View {
 
             if let inlineMessage {
                 Text(inlineMessage)
-                    .font(AppFont.labelSmall)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.danger)
             }
         }
@@ -317,8 +316,7 @@ struct AddTransactionView: View {
             ForEach(DisplayUnit.allCases) { u in
                 Button { switchUnit(to: u) } label: {
                     Text(u.label)
-                        .font(AppFont.sectionHeader)
-                        .tracking(AppFont.sectionTracking)
+                        .ledgerType(.sectionLabel)
                         .foregroundStyle(inputUnit == u ? .white : theme.textMuted)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
@@ -349,7 +347,7 @@ struct AddTransactionView: View {
                 Text("≈ \(AppFormatter.formatBtc(btc)) BTC · \(AppFormatter.formatCurrency(usd))")
             }
         }
-        .font(AppFont.labelRegular)
+        .ledgerType(.rowPrimary)
         .foregroundStyle(inlineMessage == nil ? theme.textMuted : theme.danger)
     }
 
@@ -371,7 +369,7 @@ struct AddTransactionView: View {
             if txType == .btcBuy {
                 fieldRow(label: "Price") {
                     TextField(AppFormatter.formatCurrency(btcPrice), text: $btcBuyPrice)
-                        .font(AppFont.monoCaptionStrong)
+                        .ledgerType(.rowFigure)
                         .foregroundStyle(theme.text)
                 }
 
@@ -379,7 +377,7 @@ struct AddTransactionView: View {
 
                 fieldRow(label: "Account") {
                     TextField("Strike, River...", text: $merchant)
-                        .font(AppFont.labelLarge)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.text)
                 }
             } else {
@@ -405,11 +403,11 @@ struct AddTransactionView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 5))
                             }
                             Text(selectedCategory.isEmpty ? "Select" : selectedCategory)
-                                .font(AppFont.labelLarge)
+                                .ledgerType(.rowPrimary)
                                 .foregroundStyle(selectedCategory.isEmpty ? theme.textMuted : theme.text)
                             Spacer()
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(AppFont.labelSmallRegular)
+                                .font(AppFont.icon(size: 12, weight: .regular))
                                 .foregroundStyle(theme.textMuted)
                         }
                     }
@@ -431,14 +429,14 @@ struct AddTransactionView: View {
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: PaymentMethod.icon(forWire: method))
-                                .font(AppFont.labelSmallRegular)
+                                .font(AppFont.icon(size: 12, weight: .regular))
                                 .foregroundStyle(theme.textMuted)
                             Text(selectedLabel)
-                                .font(AppFont.labelLarge)
+                                .ledgerType(.rowPrimary)
                                 .foregroundStyle(theme.text)
                             Spacer()
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(AppFont.labelSmallRegular)
+                                .font(AppFont.icon(size: 12, weight: .regular))
                                 .foregroundStyle(theme.textMuted)
                         }
                     }
@@ -462,14 +460,14 @@ struct AddTransactionView: View {
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "bitcoinsign.circle")
-                                    .font(AppFont.labelSmallRegular)
+                                    .font(AppFont.icon(size: 12, weight: .regular))
                                     .foregroundStyle(theme.textMuted)
                                 Text(bitcoinAccountLabel)
-                                    .font(AppFont.labelLarge)
+                                    .ledgerType(.rowPrimary)
                                     .foregroundStyle(bitcoinAccountKey == nil ? theme.textMuted : theme.text)
                                 Spacer()
                                 Image(systemName: "chevron.up.chevron.down")
-                                    .font(AppFont.labelSmallRegular)
+                                    .font(AppFont.icon(size: 12, weight: .regular))
                                     .foregroundStyle(theme.textMuted)
                             }
                         }
@@ -480,7 +478,7 @@ struct AddTransactionView: View {
 
                 fieldRow(label: "Merchant") {
                     TextField("Where?", text: $merchant)
-                        .font(AppFont.labelLarge)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.text)
                 }
             }
@@ -491,7 +489,7 @@ struct AddTransactionView: View {
     private func fieldRow(label: String, @ViewBuilder content: () -> some View) -> some View {
         HStack {
             Text(label)
-                .font(AppFont.labelRegular)
+                .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.textMuted)
                 .frame(width: 88, alignment: .leading)
             content()

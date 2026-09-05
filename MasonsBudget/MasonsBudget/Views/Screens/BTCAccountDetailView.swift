@@ -66,22 +66,22 @@ struct BTCAccountDetailView: View {
                 .frame(width: 38, height: 38)
                 .overlay(
                     Image(systemName: account.custody == .selfCustody ? AppIcon.vault : "building.columns.fill")
-                        .font(AppFont.subtitleStrong)
+                        .font(AppFont.icon(size: 17, weight: .semibold))
                         .foregroundStyle(theme.accent),
                 )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.label)
-                    .font(AppFont.labelLarge)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
                 Text(canonicalFinancials.btcBalance.value?.owner.displayName ?? "")
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
 
-            AmountView(sats: Decimal(account.sats), unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
+            AmountView(sats: Decimal(account.sats), unit: unit, role: .rowFigure, btcPrice: btcPrice)
         }
         .padding(14)
     }

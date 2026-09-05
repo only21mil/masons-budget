@@ -76,11 +76,11 @@ struct LedgerToggleTitle: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(AppFont.monoMicroStrong)
+                .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.text)
             if let detail {
                 Text(detail)
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textMuted)
             }
         }
@@ -111,7 +111,7 @@ struct LedgerCheckbox: View {
                     .scaleEffect(isOn ? 1 : 0.85)
                     .opacity(isOn ? 1 : 0)
                 Image(systemName: "checkmark")
-                    .font(.system(size: size * 0.55, weight: .bold))
+                    .font(AppFont.icon(size: size * 0.55, weight: .bold))
                     .foregroundStyle(theme.surface)
                     .opacity(isOn ? 1 : 0)
             }

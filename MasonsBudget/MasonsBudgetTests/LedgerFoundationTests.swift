@@ -111,6 +111,82 @@ final class LedgerFoundationTests: XCTestCase {
         XCTAssertEqual(LedgerTypeRole.rowPrimary.specification(metrics: .daylightLedger).size, 13.5)
     }
 
+    // MARK: - Role adoption
+
+    func testEveryRoleResolvesToItsFaceSizeAndWeight() throws {
+        let expected: [LedgerTypeRole: (CGFloat, LedgerFontWeight)] = [
+            .screenTitle: (26, .semibold), .drilldownTitle: (24, .semibold), .screenSubtitle: (11, .medium),
+            .heroNumeral: (28, .semibold), .priceHero: (38, .semibold), .priceHeroDecimals: (20, .semibold),
+            .kpiLabel: (11, .medium), .kpiValue: (20, .medium), .kpiSub: (11, .medium),
+            .sectionLabel: (11, .semibold), .rowPrimary: (12.5, .regular), .rowMeta: (11, .medium),
+            .rowFigure: (12.5, .medium), .chip: (11, .semibold), .tabLabel: (11, .semibold),
+            .body: (12, .regular), .button: (11, .semibold), .amountInput: (28, .medium), .textInput: (15, .regular),
+        ]
+        XCTAssertEqual(Set(expected.keys), Set(LedgerTypeRole.allCases))
+        for role in LedgerTypeRole.allCases {
+            let (size, weight) = try XCTUnwrap(expected[role])
+            let specification = spec(role)
+            XCTAssertEqual(specification.size, size, "\(role) size")
+            XCTAssertEqual(specification.weight, weight, "\(role) weight")
+            XCTAssertEqual(
+                specification.font,
+                Font.custom(weight.postScriptName, size: size, relativeTo: specification.relativeTo),
+                "\(role) face",
+            )
+        }
+    }
+
+    func testTierColouredRolesSitOnTheFloorAtMediumOrSemibold() {
+        let tierRoles: [LedgerTypeRole] = [.rowMeta, .kpiLabel, .kpiSub, .sectionLabel, .tabLabel, .chip, .screenSubtitle]
+        for role in tierRoles {
+            let specification = spec(role)
+            XCTAssertEqual(specification.size, 11, "\(role)")
+            XCTAssertTrue([.medium, .semibold].contains(specification.weight), "\(role) weight \(specification.weight)")
+        }
+    }
+
+    func testTabularRolesCarryMonospacedDigits() {
+        let tabular = Set(LedgerTypeRole.allCases.filter { spec($0).tabularFigures })
+        XCTAssertEqual(
+            tabular,
+            [.heroNumeral, .priceHero, .priceHeroDecimals, .kpiValue, .kpiSub, .rowMeta, .rowFigure, .chip, .amountInput],
+        )
+    }
+
+    /// Source-level guard: views draw only ledger roles and SF Symbol glyphs.
+    /// Runs when the test bundle sits next to the checkout; skips otherwise.
+    func testViewsDrawOnlyLedgerRolesAndIconGlyphs() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("MasonsBudget")
+        let viewsRoot = projectRoot.appendingPathComponent("Views")
+        guard let enumerator = FileManager.default.enumerator(at: viewsRoot, includingPropertiesForKeys: nil) else {
+            throw XCTSkip("Source tree not available at \(viewsRoot.path)")
+        }
+        var offenders: [String] = []
+        var roleSites = 0
+        for case let url as URL in enumerator where url.pathExtension == "swift" {
+            let source = try String(contentsOf: url, encoding: .utf8)
+            for (index, line) in source.components(separatedBy: "\n").enumerated() {
+                roleSites += line.components(separatedBy: ".ledgerType(").count - 1
+                let usesAppFont = line.contains("AppFont.") && !line.contains("AppFont.icon")
+                let usesRawFont = line.contains(".font(") && !line.contains(".font(AppFont.icon")
+                if usesAppFont || usesRawFont {
+                    offenders.append("\(url.lastPathComponent):\(index + 1): \(line.trimmingCharacters(in: .whitespaces))")
+                }
+            }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Text must draw through .ledgerType:\n" + offenders.joined(separator: "\n"))
+        XCTAssertGreaterThanOrEqual(roleSites, 280, "role call sites")
+
+        let theme = try String(contentsOf: projectRoot.appendingPathComponent("Theme/AppTheme.swift"), encoding: .utf8)
+        let appFont = theme.components(separatedBy: "enum AppFont {")[1].components(separatedBy: "\n}")[0]
+        for line in appFont.components(separatedBy: "\n") where line.contains("static ") {
+            XCTAssertTrue(line.contains("icon"), "AppFont keeps glyph sizes only: \(line.trimmingCharacters(in: .whitespaces))")
+        }
+    }
+
     func testStaticWeightsMapToBundledFaces() {
         XCTAssertEqual(LedgerFontWeight.allCases.map(\.rawValue), [300, 400, 500, 600, 700])
         XCTAssertEqual(LedgerFontWeight.medium.postScriptName, "SourceCodePro-Medium")

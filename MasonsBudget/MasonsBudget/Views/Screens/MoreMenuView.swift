@@ -48,7 +48,7 @@ struct MoreMenuView: View {
             VStack(spacing: 0) {
                 ScreenHeader(title: "More", eyebrow: "Explore") {
                     Text("\(AppleMoreScreen.allCases.count) ROUTES")
-                        .font(AppFont.monoMicroStrong)
+                        .ledgerType(.kpiSub)
                         .foregroundStyle(theme.accent)
                 }
 
@@ -90,8 +90,7 @@ struct MoreMenuView: View {
     private func menuSection(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(AppFont.sectionHeader)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
             VStack(spacing: 0) { content() }
@@ -112,14 +111,14 @@ struct MoreMenuView: View {
                     .frame(width: 28)
 
                 Text(label)
-                    .font(AppFont.bodyStrong)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
 
                 Spacer()
 
                 if let badge = MoreCountFormatter.badge(count) {
                     Text(badge)
-                        .font(AppFont.monoMicroStrong)
+                        .ledgerType(.chip)
                         .foregroundStyle(theme.accent)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
@@ -128,7 +127,7 @@ struct MoreMenuView: View {
                 }
 
                 Image(systemName: "chevron.right")
-                    .font(AppFont.labelSmall)
+                    .font(AppFont.icon(size: 12, weight: .semibold))
                     .foregroundStyle(theme.textMuted)
             }
             .padding(.horizontal, 14)
@@ -199,7 +198,7 @@ struct SyncSetupView: View {
                             .fill(hasDeviceToken ? theme.success : theme.warn)
                             .frame(width: 8, height: 8)
                         Text(deviceTokenStatusText)
-                            .font(AppFont.smallRegular)
+                            .ledgerType(.body)
                             .foregroundStyle(theme.textMuted)
                         Spacer(minLength: 0)
                     }
@@ -246,7 +245,7 @@ struct SyncSetupView: View {
 
                 if let statusMessage {
                     Text(statusMessage)
-                        .font(AppFont.smallRegular)
+                        .ledgerType(.body)
                         .foregroundStyle(theme.textMuted)
                         .padding(.horizontal, AppLayout.sectionPadding)
                 }
@@ -311,12 +310,12 @@ struct SyncSetupView: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Convex Read Token")
-                    .font(AppFont.headline)
+                    .ledgerType(.sectionLabel)
                     .foregroundStyle(theme.text)
                 // The deployment host, never the token. The host is already public in the
                 // repo; showing it is how you tell which deployment the token is for.
                 Text(ConvexConfig.deploymentURL.host ?? "no deployment host")
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textFaint)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -326,7 +325,7 @@ struct SyncSetupView: View {
                     .fill(hasReadToken ? theme.success : theme.warn)
                     .frame(width: 8, height: 8)
                 Text(readTokenStatusText)
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textMuted)
                 Spacer(minLength: 0)
             }
@@ -360,7 +359,7 @@ struct SyncSetupView: View {
 
             if let readTokenMessage {
                 Text(readTokenMessage)
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textMuted)
             }
         }
@@ -401,11 +400,11 @@ struct SyncSetupView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(AppFont.labelSmallStrong)
+                .ledgerType(.kpiLabel)
                 .foregroundStyle(theme.textMuted)
             TextField(title, text: text)
                 .autocorrectionDisabled()
-                .font(AppFont.body)
+                .ledgerType(.textInput)
                 .foregroundStyle(theme.text)
                 .textFieldStyle(.roundedBorder)
         }
@@ -414,11 +413,11 @@ struct SyncSetupView: View {
     private func secureField(_ title: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(AppFont.labelSmallStrong)
+                .ledgerType(.kpiLabel)
                 .foregroundStyle(theme.textMuted)
             SecureField(title, text: text)
                 .autocorrectionDisabled()
-                .font(AppFont.body)
+                .ledgerType(.textInput)
                 .foregroundStyle(theme.text)
                 .textFieldStyle(.roundedBorder)
         }
@@ -448,10 +447,10 @@ struct ConvexSyncTokenCard: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Convex Sync Token")
-                    .font(AppFont.headline)
+                    .ledgerType(.sectionLabel)
                     .foregroundStyle(theme.text)
                 Text(ConvexConfig.deploymentURL.host ?? "no deployment host")
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textFaint)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -461,7 +460,7 @@ struct ConvexSyncTokenCard: View {
                     .fill(hasToken ? theme.success : theme.warn)
                     .frame(width: 8, height: 8)
                 Text(statusText)
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textMuted)
                 Spacer(minLength: 0)
             }
@@ -469,11 +468,11 @@ struct ConvexSyncTokenCard: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Paste sync token")
-                    .font(AppFont.labelSmallStrong)
+                    .ledgerType(.kpiLabel)
                     .foregroundStyle(theme.textMuted)
                 SecureField("Paste sync token", text: $tokenEntry)
                     .autocorrectionDisabled()
-                    .font(AppFont.body)
+                    .ledgerType(.textInput)
                     .foregroundStyle(theme.text)
                     .textFieldStyle(.roundedBorder)
             }
@@ -502,7 +501,7 @@ struct ConvexSyncTokenCard: View {
 
             if let message {
                 Text(message)
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textMuted)
             }
         }

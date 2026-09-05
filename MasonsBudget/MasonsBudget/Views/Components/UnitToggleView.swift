@@ -10,13 +10,6 @@ enum UnitToggleSize {
         }
     }
 
-    var fontSize: CGFloat {
-        switch self {
-        case .sm: 10.5
-        case .lg: 12
-        }
-    }
-
     var horizontalPadding: CGFloat {
         switch self {
         case .sm: 8
@@ -24,11 +17,9 @@ enum UnitToggleSize {
         }
     }
 
-    var font: Font {
-        switch self {
-        case .sm: AppFont.microStrong
-        case .lg: AppFont.labelSmallStrong
-        }
+    /// Both sizes draw the chip role; the large control only gains height and padding.
+    var role: LedgerTypeRole {
+        .chip
     }
 }
 
@@ -45,7 +36,7 @@ struct UnitToggleView: View {
                     unit = u
                 } label: {
                     Text(u.label)
-                        .font(size.font)
+                        .ledgerType(size.role)
                         .foregroundStyle(unit == u ? .white : theme.textMuted)
                         .frame(height: size.height)
                         .padding(.horizontal, size.horizontalPadding)

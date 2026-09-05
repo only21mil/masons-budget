@@ -18,15 +18,15 @@ struct TaskUndoBanner: View {
         {
             HStack(spacing: 10) {
                 Image(systemName: "trash")
-                    .font(AppFont.labelLargeStrong)
+                    .font(AppFont.icon(size: 14, weight: .bold))
                     .foregroundStyle(theme.danger)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Task deleted")
-                        .font(AppFont.labelStrong)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.text)
                     Text(todo.title)
-                        .font(AppFont.smallRegular)
+                        .ledgerType(.body)
                         .foregroundStyle(theme.textMuted)
                         .lineLimit(1)
                 }
@@ -36,7 +36,7 @@ struct TaskUndoBanner: View {
                 Button("Undo") {
                     undoStore.restore(in: modelContext)
                 }
-                .font(AppFont.labelSmallStrong)
+                .ledgerType(.button)
                 .foregroundStyle(theme.accent)
                 .buttonStyle(.plain)
 
@@ -44,7 +44,7 @@ struct TaskUndoBanner: View {
                     undoStore.dismiss()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(AppFont.sectionHeader)
+                        .font(AppFont.icon(size: 11, weight: .bold))
                         .foregroundStyle(theme.textMuted)
                 }
                 .buttonStyle(.plain)

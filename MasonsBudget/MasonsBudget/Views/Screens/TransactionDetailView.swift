@@ -62,10 +62,10 @@ struct TransactionDetailView: View {
                         } label: {
                             HStack {
                                 Text(category.isEmpty ? "Select" : category)
-                                    .font(AppFont.labelLarge)
+                                    .ledgerType(.rowPrimary)
                                     .foregroundStyle(category.isEmpty ? theme.textMuted : theme.text)
                                 Image(systemName: "chevron.up.chevron.down")
-                                    .font(AppFont.smallRegular)
+                                    .font(AppFont.icon(size: 11, weight: .regular))
                                     .foregroundStyle(theme.textMuted)
                             }
                         }
@@ -97,18 +97,18 @@ struct TransactionDetailView: View {
                         } label: {
                             HStack {
                                 Text(methodLabel)
-                                    .font(AppFont.labelLarge)
+                                    .ledgerType(.rowPrimary)
                                     .foregroundStyle(method == nil ? theme.textMuted : theme.text)
                                 Spacer()
                                 Image(systemName: "chevron.up.chevron.down")
-                                    .font(AppFont.smallRegular)
+                                    .font(AppFont.icon(size: 11, weight: .regular))
                                     .foregroundStyle(theme.textMuted)
                             }
                         }
                     }
                     Hairline()
                     DatePicker("Date", selection: $date, displayedComponents: .date)
-                        .font(AppFont.labelLarge)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.text)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 12)
@@ -124,7 +124,7 @@ struct TransactionDetailView: View {
                     showingDeleteConfirmation = true
                 } label: {
                     Text("Delete Transaction")
-                        .font(AppFont.labelLargeStrong)
+                        .ledgerType(.button)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
                 }
@@ -144,7 +144,7 @@ struct TransactionDetailView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .font(AppFont.bodyBold)
+                        .ledgerType(.button)
                         .foregroundStyle(theme.accent)
                 }
             }
@@ -193,11 +193,11 @@ struct TransactionDetailView: View {
     private func editRow(_ label: String, @ViewBuilder content: () -> some View) -> some View {
         HStack(spacing: 12) {
             Text(label)
-                .font(AppFont.labelRegular)
+                .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.textMuted)
                 .frame(width: 78, alignment: .leading)
             content()
-                .font(AppFont.labelLarge)
+                .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.text)
         }
         .padding(.horizontal, 14)

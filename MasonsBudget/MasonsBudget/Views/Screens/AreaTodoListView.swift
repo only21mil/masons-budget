@@ -50,7 +50,7 @@ struct AreaTodoListView: View {
 
                 if pending.isEmpty, done.isEmpty {
                     Text("No tasks in this area")
-                        .font(AppFont.labelRegular)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.textMuted)
                         .frame(maxWidth: .infinity)
                         .padding(20)

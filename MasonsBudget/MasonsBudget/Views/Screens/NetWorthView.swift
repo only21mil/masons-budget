@@ -116,22 +116,22 @@ struct NetWorthView: View {
     private var totalCard: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Total")
-                .font(AppFont.caption)
+                .ledgerType(.kpiLabel)
                 .foregroundStyle(theme.textMuted)
 
-            AmountView(sats: totalSats, unit: unit, size: 32, weight: .bold, btcPrice: btcPrice)
+            AmountView(sats: totalSats, unit: unit, role: .heroNumeral, btcPrice: btcPrice)
 
             HStack(spacing: 8) {
                 let change = yearlyStackUsdChange
                 let positive = change >= 0
                 Image(systemName: positive ? AppIcon.arrowUp : "arrow.down.right")
-                    .font(AppFont.sectionHeaderMedium)
+                    .font(AppFont.icon(size: 11, weight: .semibold))
                     .foregroundStyle(positive ? theme.success : theme.danger)
                 Text("\(positive ? "+" : "")\(AppFormatter.formatCurrency(change))")
-                    .font(AppFont.captionStrong)
+                    .ledgerType(.rowFigure)
                     .foregroundStyle(positive ? theme.success : theme.danger)
                 Text("past year")
-                    .font(AppFont.caption)
+                    .ledgerType(.kpiSub)
                     .foregroundStyle(theme.textMuted)
             }
             .padding(.top, 2)
@@ -195,7 +195,7 @@ struct NetWorthView: View {
                     .overlay(alignment: .top) {
                         if isLast {
                             Text(String(format: "%.2f", val))
-                                .font(AppFont.microStrong)
+                                .ledgerType(.rowMeta)
                                 .foregroundStyle(theme.accent)
                                 .offset(y: -18)
                         }
@@ -217,7 +217,7 @@ struct NetWorthView: View {
         return HStack(spacing: 4) {
             ForEach(Array(labels.enumerated()), id: \.offset) { idx, label in
                 Text(idx % 2 == 1 ? label : "")
-                    .font(AppFont.microMedium)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
                     .frame(maxWidth: .infinity)
             }
@@ -254,8 +254,7 @@ struct NetWorthView: View {
     private var timelineSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("TIMELINE")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -326,7 +325,7 @@ struct NetWorthView: View {
                 let pct = (change / first.total) * 100
                 let positive = change >= 0
                 Text("\(positive ? "+" : "")\(NSDecimalNumber(decimal: pct).intValue)% 12mo")
-                    .font(AppFont.monoSmallStrong)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(positive ? theme.success : theme.danger)
             }
         }
@@ -338,7 +337,7 @@ struct NetWorthView: View {
                 .fill(color)
                 .frame(width: 12, height: 3)
             Text(label)
-                .font(AppFont.smallRegular)
+                .ledgerType(.rowMeta)
                 .foregroundStyle(theme.textMuted)
         }
     }
@@ -348,8 +347,7 @@ struct NetWorthView: View {
     private var holdingsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("BITCOIN")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -381,16 +379,16 @@ struct NetWorthView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(AppFont.labelLarge)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
                 Text(subtitle)
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
 
-            AmountView(sats: btc * 100_000_000, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
+            AmountView(sats: btc * 100_000_000, unit: unit, role: .rowFigure, btcPrice: btcPrice)
         }
         .padding(14)
     }
@@ -400,8 +398,7 @@ struct NetWorthView: View {
     private var retirementSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("RETIREMENT")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -428,16 +425,16 @@ struct NetWorthView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.name.uppercased())
-                    .font(AppFont.labelLarge)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
                 Text(account.provider)
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
 
-            AmountView(sats: sats, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
+            AmountView(sats: sats, unit: unit, role: .rowFigure, btcPrice: btcPrice)
         }
         .padding(14)
     }

@@ -23,15 +23,15 @@ struct FamilyView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("ACTIVE PROFILE")
-                                .font(AppFont.monoMicroStrong)
+                                .ledgerType(.kpiLabel)
                                 .foregroundStyle(theme.textMuted)
                             Text(activeMember.displayName)
-                                .font(AppFont.title)
+                                .ledgerType(.screenTitle)
                                 .foregroundStyle(theme.text)
                         }
                         Spacer()
                         Button("SWITCH") { showProfileSwitcher = true }
-                            .font(AppFont.monoMicroStrong)
+                            .ledgerType(.button)
                             .foregroundStyle(theme.accent)
                             .buttonStyle(.plain)
                     }
@@ -39,7 +39,7 @@ struct FamilyView: View {
                     Hairline()
 
                     Text(activeScopeMessage)
-                        .font(AppFont.labelRegular)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.textMuted)
                 }
                 .glassCard(padding: 16, radius: AppLayout.radiusMedium)
@@ -68,10 +68,10 @@ struct FamilyView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("HOUSEHOLD SCOPING")
-                        .font(AppFont.monoMicroStrong)
+                        .ledgerType(.sectionLabel)
                         .foregroundStyle(theme.accent)
                     Text("Victor and Rachel share one adult financial ledger. Adults can view kid data, but kid balances never roll into adult net worth. Mason and Maddox see only their own records.")
-                        .font(AppFont.labelRegular)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.textMuted)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -99,11 +99,11 @@ struct FamilyView: View {
     private func scopeRow(_ label: String, value: String) -> some View {
         HStack(spacing: 12) {
             Text(label)
-                .font(AppFont.monoMicroStrong)
+                .ledgerType(.kpiLabel)
                 .foregroundStyle(theme.textMuted)
             Spacer()
             Text(value)
-                .font(AppFont.smallRegular)
+                .ledgerType(.rowMeta)
                 .foregroundStyle(theme.text)
                 .multilineTextAlignment(.trailing)
         }
@@ -117,21 +117,21 @@ struct FamilyView: View {
                 .frame(width: 38, height: 38)
                 .overlay(
                     Text(String(member.displayName.prefix(1)))
-                        .font(AppFont.labelStrong)
+                        .ledgerType(.rowFigure)
                         .foregroundStyle(member == activeMember ? theme.accent : theme.textMuted),
                 )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(member.displayName)
-                    .font(AppFont.bodyStrong)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
                 Text(member.isAdult ? "Shared adult household" : "Isolated kid profile")
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
             }
             Spacer()
             Text(member == activeMember ? "ACTIVE" : (activeMember.canSee(dataOwnedBy: member) ? "VISIBLE" : "PRIVATE"))
-                .font(AppFont.monoMicroStrong)
+                .ledgerType(.chip)
                 .foregroundStyle(member == activeMember ? theme.accent : theme.textFaint)
         }
         .padding(14)
@@ -187,7 +187,7 @@ struct SettingsView: View {
                                 .foregroundStyle(theme.accent)
                                 .frame(width: 28)
                             Text("REPLAY ONBOARDING")
-                                .font(AppFont.monoCaptionStrong)
+                                .ledgerType(.rowFigure)
                                 .foregroundStyle(theme.text)
                             Spacer()
                         }
@@ -211,7 +211,7 @@ struct SettingsView: View {
                 .padding(.horizontal, AppLayout.sectionPadding)
 
                 Text("Export keeps its existing format and behavior. Settings do not widen profile visibility or task-write authority.")
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textFaint)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, AppLayout.sectionPadding + 4)
@@ -249,7 +249,7 @@ struct SettingsView: View {
     ) -> some View {
         HStack {
             Text(label)
-                .font(AppFont.monoMicroStrong)
+                .ledgerType(.kpiLabel)
                 .foregroundStyle(theme.textMuted)
             Spacer()
             Picker(label, selection: selection, content: content)
@@ -267,11 +267,11 @@ struct SettingsView: View {
                     .foregroundStyle(theme.accent)
                     .frame(width: 28)
                 Text(label)
-                    .font(AppFont.monoCaptionStrong)
+                    .ledgerType(.rowFigure)
                     .foregroundStyle(theme.text)
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .font(AppFont.microStrong)
+                    .font(AppFont.icon(size: 10, weight: .bold))
                     .foregroundStyle(theme.textMuted)
             }
             .padding(14)
@@ -320,7 +320,7 @@ struct AwardsView: View {
             VStack(spacing: AppLayout.cardSpacing) {
                 ScreenHeader(title: "Awards", eyebrow: "Ledger progress") {
                     Text("\(awards.filter(\.earned).count)/\(awards.count)")
-                        .font(AppFont.monoCaptionStrong)
+                        .ledgerType(.rowFigure)
                         .foregroundStyle(theme.accent)
                 }
 
@@ -356,15 +356,15 @@ struct AwardsView: View {
                 )
             VStack(alignment: .leading, spacing: 2) {
                 Text(award.title)
-                    .font(AppFont.bodyStrong)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
                 Text(award.detail)
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textMuted)
             }
             Spacer()
             Text(award.earned ? "EARNED" : "LOCKED")
-                .font(AppFont.monoMicroStrong)
+                .ledgerType(.chip)
                 .foregroundStyle(award.earned ? theme.success : theme.textFaint)
         }
         .padding(14)

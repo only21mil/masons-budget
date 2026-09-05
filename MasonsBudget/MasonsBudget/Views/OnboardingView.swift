@@ -16,7 +16,7 @@ struct OnboardingView: View {
             VStack(spacing: 24) {
                 VStack(spacing: 8) {
                     Text(OnboardingStep.progressLabel(for: stepIndex).uppercased())
-                        .font(AppFont.monoMicroStrong)
+                        .ledgerType(.screenSubtitle)
                         .foregroundStyle(theme.textMuted)
 
                     HStack(spacing: 6) {
@@ -42,14 +42,14 @@ struct OnboardingView: View {
 
                     VStack(spacing: 10) {
                         Text(step.eyebrow)
-                            .font(AppFont.monoMicroStrong)
+                            .ledgerType(.screenSubtitle)
                             .foregroundStyle(theme.accent)
                         Text(step.title)
-                            .font(AppFont.largeNumber)
+                            .ledgerType(.screenTitle)
                             .foregroundStyle(theme.text)
                             .multilineTextAlignment(.center)
                         Text(step.message)
-                            .font(AppFont.bodyRegular)
+                            .ledgerType(.body)
                             .foregroundStyle(theme.textMuted)
                             .multilineTextAlignment(.center)
                             .frame(maxWidth: 420)
@@ -63,7 +63,7 @@ struct OnboardingView: View {
                     advance()
                 } label: {
                     Text(stepIndex == OnboardingStep.all.count - 1 ? "Open Vogel Vault" : "Continue")
-                        .font(AppFont.bodyStrong)
+                        .ledgerType(.button)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
@@ -74,7 +74,7 @@ struct OnboardingView: View {
 
                 if stepIndex > 0 {
                     Button("Back") { stepIndex -= 1 }
-                        .font(AppFont.labelLarge)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.textMuted)
                         .buttonStyle(.plain)
                 }

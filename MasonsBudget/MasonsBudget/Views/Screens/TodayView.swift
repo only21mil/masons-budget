@@ -128,28 +128,28 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("MONEY OUT TODAY")
-                    .font(AppFont.monoMicroStrong)
+                    .ledgerType(.kpiLabel)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
                 Image(systemName: "arrow.up.right")
-                    .font(AppFont.labelSmall)
+                    .font(AppFont.icon(size: 12, weight: .semibold))
                     .foregroundStyle(theme.danger)
             }
 
             switch moneyOutToday {
             case let .success(cents):
                 Text(AppFormatter.formatCurrency(decimalMinorUnits(cents, scale: 2)))
-                    .font(AppFont.largeNumberMono)
+                    .ledgerType(.kpiValue)
                     .foregroundStyle(theme.text)
                 Text("Transactions plus eligible bill-pay principal and exact manual fees")
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textMuted)
             case .failure:
                 Text("UNAVAILABLE")
-                    .font(AppFont.largeNumberMono)
+                    .ledgerType(.kpiValue)
                     .foregroundStyle(theme.warn)
                 Text("An exact-cent input could not be verified.")
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textMuted)
             }
         }
@@ -162,12 +162,11 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("TODAY")
-                    .font(AppFont.labelSmallStrong)
-                    .tracking(AppFont.sectionTracking)
+                    .ledgerType(.sectionLabel)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
                 Text("\(todayTodos.count) remaining")
-                    .font(AppFont.labelSmallRegular)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
             }
             .padding(.horizontal, AppLayout.sectionPadding + 4)
@@ -179,7 +178,7 @@ struct TodayView: View {
                             .font(AppFont.iconSmall)
                             .foregroundStyle(theme.success)
                         Text("All clear for today")
-                            .font(AppFont.labelLarge)
+                            .ledgerType(.rowPrimary)
                             .foregroundStyle(theme.textMuted)
                         Spacer()
                     }
@@ -206,8 +205,7 @@ struct TodayView: View {
     private var shortTermSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("THIS WEEK")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -228,12 +226,11 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("COMPLETED TODAY")
-                    .font(AppFont.labelSmallStrong)
-                    .tracking(AppFont.sectionTracking)
+                    .ledgerType(.sectionLabel)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
                 Text("\(completedToday.count) done")
-                    .font(AppFont.labelSmallRegular)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.success)
             }
             .padding(.horizontal, AppLayout.sectionPadding + 4)
@@ -256,8 +253,7 @@ struct TodayView: View {
     private var longTermSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("LONG TERM")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
