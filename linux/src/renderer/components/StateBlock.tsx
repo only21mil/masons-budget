@@ -70,13 +70,21 @@ export function StateBlock({ state, title, detail, onRetry, className }: StateBl
   )
 }
 
-/** Skeleton rows for a table or list that is still loading. */
-export function LoadingBlock({ rows = 5, className }: { rows?: number; className?: string }) {
+/**
+ * Ghost rows for a list that is still loading: a primary bar, a meta bar under
+ * it, and a figure bar hard right, in the row's own geometry. The whole block
+ * breathes together (see .vv-loading in components.css); no shimmer sweep.
+ */
+export function LoadingBlock({ rows = 3, className }: { rows?: number; className?: string }) {
   return (
     <div className={cx("vv-loading", className)} aria-busy="true" aria-live="polite">
       <span className="vv-sr-only">Loading</span>
       {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="vv-loading__row" style={{ animationDelay: `${index * 60}ms` }} />
+        <div key={index} className="vv-loading__row" aria-hidden="true">
+          <span className="vv-loading__primary" />
+          <span className="vv-loading__meta" />
+          <span className="vv-loading__figure" />
+        </div>
       ))}
     </div>
   )

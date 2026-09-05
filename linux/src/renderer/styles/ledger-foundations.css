@@ -103,11 +103,21 @@
   --vv-ledger-toggle-width: 42px;
   --vv-ledger-toggle-height: 24px;
 
+  /*
+   * Motion vocabulary (motion package 2026-09-05, first wave). Every
+   * transition and keyframe reads one of these; the reduced-motion blocks at
+   * the end of this file zero them all.
+   */
   --vv-ledger-motion-chip: 160ms ease;
   --vv-ledger-motion-control: 180ms ease;
   --vv-ledger-motion-toggle: 200ms ease;
   --vv-ledger-motion-progress: 300ms ease;
+  --vv-ledger-motion-settle: 300ms;
   --vv-ledger-motion-theme: 300ms ease;
+  --vv-ledger-motion-pulse: 600ms ease;
+  --vv-ledger-motion-breathe: 1.1s ease-in-out;
+  --vv-ledger-motion-reveal: 160ms ease;
+  --vv-ledger-motion-reveal-step: 20ms;
   --vv-ledger-motion-cursor: 1.1s step-end;
 }
 
@@ -203,6 +213,12 @@
   );
 }
 
+/*
+ * Two gates, one outcome. The system query and the app's Reduce motion
+ * setting (data-vv-motion="off" on the ledger root) each zero the tokens and
+ * switch the keyframe effects off. Components that need a static fallback
+ * (the breathing skeleton) declare it under both selectors in components.css.
+ */
 @media (prefers-reduced-motion: reduce) {
   :root,
   [data-vv-theme] {
@@ -210,9 +226,28 @@
     --vv-ledger-motion-control: 0ms;
     --vv-ledger-motion-toggle: 0ms;
     --vv-ledger-motion-progress: 0ms;
+    --vv-ledger-motion-settle: 0ms;
     --vv-ledger-motion-theme: 0ms;
+    --vv-ledger-motion-pulse: 0ms;
+    --vv-ledger-motion-breathe: 0ms;
+    --vv-ledger-motion-reveal: 0ms;
+    --vv-ledger-motion-reveal-step: 0ms;
     --vv-ledger-motion-cursor: 0ms;
   }
+}
+
+[data-vv-motion="off"] {
+  --vv-ledger-motion-chip: 0ms;
+  --vv-ledger-motion-control: 0ms;
+  --vv-ledger-motion-toggle: 0ms;
+  --vv-ledger-motion-progress: 0ms;
+  --vv-ledger-motion-settle: 0ms;
+  --vv-ledger-motion-theme: 0ms;
+  --vv-ledger-motion-pulse: 0ms;
+  --vv-ledger-motion-breathe: 0ms;
+  --vv-ledger-motion-reveal: 0ms;
+  --vv-ledger-motion-reveal-step: 0ms;
+  --vv-ledger-motion-cursor: 0ms;
 }
 
 @media (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce) {

@@ -40,6 +40,7 @@ export function AppShell({ sections, activeId, onNavigate, topBar, children }: A
   const theme = preferences?.ledgerTheme ?? "dark"
   const scanlines = preferences?.scanlinesEnabled ?? false
   const phosphor = preferences?.phosphorEnabled ?? true
+  const reduceMotion = preferences?.reduceMotionEnabled ?? false
   const terminalEffectsEnabled = theme === "dark"
 
   return (
@@ -48,6 +49,7 @@ export function AppShell({ sections, activeId, onNavigate, topBar, children }: A
       data-vv-theme={theme}
       data-vv-route={activeId}
       data-vv-phosphor={terminalEffectsEnabled && phosphor ? "on" : "off"}
+      data-vv-motion={reduceMotion ? "off" : "on"}
     >
       <LedgerScanlines enabled={terminalEffectsEnabled && scanlines} />
       <nav className="vv-sidebar" aria-label="Primary">

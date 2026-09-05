@@ -54,6 +54,7 @@ const DISPLAY_UNIT_STORAGE_KEY = "vogel-vault.display-unit"
 const LEDGER_THEME_STORAGE_KEY = "vogel-vault.ledger-theme"
 const SCANLINES_STORAGE_KEY = "vogel-vault.scanlines"
 const PHOSPHOR_STORAGE_KEY = "vogel-vault.phosphor"
+const REDUCE_MOTION_STORAGE_KEY = "vogel-vault.reduce-motion"
 const BUDGET_ALERTS_STORAGE_KEY = "vogel-vault.budget-alerts"
 const LEGACY_BIOMETRIC_STORAGE_KEY = "vogel-vault.biometric-unlock"
 
@@ -83,6 +84,9 @@ interface AppStateValue {
   readonly setScanlinesEnabled: (enabled: boolean) => void
   readonly phosphorEnabled: boolean
   readonly setPhosphorEnabled: (enabled: boolean) => void
+  /** App-level reduce motion; the system prefers-reduced-motion query is honoured on top. */
+  readonly reduceMotionEnabled: boolean
+  readonly setReduceMotionEnabled: (enabled: boolean) => void
   readonly budgetAlertsEnabled: boolean
   readonly setBudgetAlertsEnabled: (enabled: boolean) => void
   readonly data: FixtureEnvelope
@@ -174,6 +178,9 @@ export function AppStateProvider({
   const [phosphorEnabled, setStoredPhosphorEnabled] = useState(
     () => readBooleanPreference(PHOSPHOR_STORAGE_KEY, true),
   )
+  const [reduceMotionEnabled, setStoredReduceMotionEnabled] = useState(
+    () => readBooleanPreference(REDUCE_MOTION_STORAGE_KEY, false),
+  )
   const [budgetAlertsEnabled, setStoredBudgetAlertsEnabled] = useState(
     () => readBooleanPreference(BUDGET_ALERTS_STORAGE_KEY, true),
   )
@@ -264,6 +271,10 @@ export function AppStateProvider({
   const setPhosphorEnabled = useCallback((enabled: boolean) => {
     setStoredPhosphorEnabled(enabled)
     writePreference(PHOSPHOR_STORAGE_KEY, String(enabled))
+  }, [])
+  const setReduceMotionEnabled = useCallback((enabled: boolean) => {
+    setStoredReduceMotionEnabled(enabled)
+    writePreference(REDUCE_MOTION_STORAGE_KEY, String(enabled))
   }, [])
   const setBudgetAlertsEnabled = useCallback((enabled: boolean) => {
     setStoredBudgetAlertsEnabled(enabled)
@@ -612,6 +623,8 @@ export function AppStateProvider({
       setScanlinesEnabled,
       phosphorEnabled,
       setPhosphorEnabled,
+      reduceMotionEnabled,
+      setReduceMotionEnabled,
       budgetAlertsEnabled,
       setBudgetAlertsEnabled,
       data,
@@ -644,6 +657,8 @@ export function AppStateProvider({
       setScanlinesEnabled,
       phosphorEnabled,
       setPhosphorEnabled,
+      reduceMotionEnabled,
+      setReduceMotionEnabled,
       budgetAlertsEnabled,
       setBudgetAlertsEnabled,
       data,

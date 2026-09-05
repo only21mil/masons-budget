@@ -9,6 +9,8 @@ import {
 } from "@vogel-vault/domain/money"
 import { type CSSProperties, useState } from "react"
 
+import { cx } from "../../../components/cx.ts"
+import { usePulseOnChange, useSettledNumber } from "../../../components/motion.ts"
 import type { DisplayUnit } from "../../../data/bitcoinDisplay.ts"
 
 import "./price.css"
@@ -254,9 +256,19 @@ export function PricePage({
   onBack,
 }: PricePageProps) {
   const priceCents = operationalPrice(quote)
-  const price = priceCents === null ? null : usdPriceParts(priceCents)
+  // The hero settles onto a new quote over 300ms and breathes once through
+  // its phosphor glow; both are inert under reduce motion.
+  const settledCents = useSettledNumber(priceCents)
+  const pulse = usePulseOnChange(priceCents)
+  const price = settledCents === null ? null : usdPriceParts(settledCents)
   const delta = basisPointDelta(change24hBasisPoints)
   const fetched = utcTime(quote?.fetchedAt ?? null)
+  const heroClass = cx(
+    "vv-price-hero__value",
+    "vv-ledger-num",
+    price === null && "vv-price-hero__value--unavailable",
+    pulse.pulsing && "vv-price-hero__value--pulse",
+  )
 
   return (
     <article className="vv-price-page">
@@ -265,7 +277,7 @@ export function PricePage({
           ‹ BITCOIN
         </button>
         <p className="vv-price-kicker">BTC / USD · VOGEL VAULT</p>
-        <h1 className={price === null ? "vv-price-hero__value vv-price-hero__value--unavailable" : "vv-price-hero__value"}>
+        <h1 className={heroClass} onAnimationEnd={pulse.endPulse}>
           {price === null ? "PRICE UNAVAILABLE" : (
             <>
               <span className="vv-sr-only">$</span>{price.whole}

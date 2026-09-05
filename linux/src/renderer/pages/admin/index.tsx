@@ -663,11 +663,13 @@ function SettingsPage() {
     ledgerTheme,
     navigate,
     phosphorEnabled,
+    reduceMotionEnabled,
     scanlinesEnabled,
     setBudgetAlertsEnabled,
     setDisplayUnit,
     setLedgerTheme,
     setPhosphorEnabled,
+    setReduceMotionEnabled,
     setScanlinesEnabled,
     stateOverride,
     setStateOverride,
@@ -746,6 +748,12 @@ function SettingsPage() {
               enabled={terminalEffectsAvailable && scanlinesEnabled}
               disabled={!terminalEffectsAvailable}
               onChange={setScanlinesEnabled}
+            />
+            <SettingsToggle
+              label="Reduce motion"
+              hint="Land figures, fills, and row reveals instantly. The system reduce-motion preference is honoured either way."
+              enabled={reduceMotionEnabled}
+              onChange={setReduceMotionEnabled}
             />
             <SettingsToggle
               label="Biometric unlock"

@@ -148,10 +148,11 @@ test("Family, Settings, onboarding, Awards, Tasks, and More close the packet gap
     "Budget alerts",
     "Phosphor glow",
     "Scanlines",
+    "Reduce motion",
     "Biometric unlock",
     "Replay onboarding",
   ]) assert.match(settings, new RegExp(copy, "i"))
-  assert.equal((settings.match(/role="switch"/g) ?? []).length, 4)
+  assert.equal((settings.match(/role="switch"/g) ?? []).length, 5)
   assert.match(
     settings,
     /Biometric unlock[\s\S]*Unavailable on Linux\.[\s\S]*aria-checked="false"[\s\S]*disabled=""/,

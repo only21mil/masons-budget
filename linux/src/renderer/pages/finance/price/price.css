@@ -231,11 +231,38 @@
   letter-spacing: var(--vv-ledger-tracking-button);
 }
 
+/*
+ * One breath per quote: the glow widens from 18px to 32px and settles back
+ * over 600ms. The class is added when the operational price changes and
+ * removed on animationend, so it never runs on a timer. Dark theme with the
+ * glow on is the only place the shadow exists, so the pulse inherits that gate.
+ */
+.vv-ledger-root[data-vv-theme="dark"][data-vv-phosphor="on"]
+  .vv-price-hero__value--pulse:not(.vv-price-hero__value--unavailable) {
+  animation: vv-phosphor-pulse var(--vv-ledger-motion-pulse) 1;
+}
+
+@keyframes vv-phosphor-pulse {
+  0% { text-shadow: 0 0 18px rgba(247,147,26,.30); }
+  33% { text-shadow: 0 0 32px rgba(247,147,26,.30); }
+  100% { text-shadow: 0 0 18px rgba(247,147,26,.30); }
+}
+
 @media (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce) {
   .vv-ledger-root[data-vv-theme="dark"][data-vv-phosphor="on"]
     .vv-price-hero__value:not(.vv-price-hero__value--unavailable) {
     text-shadow: none;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-price-hero__value--pulse {
+    animation: none;
+  }
+}
+
+.vv-ledger-root[data-vv-motion="off"] .vv-price-hero__value--pulse {
+  animation: none;
 }
 
 @media (max-width: 560px) {

@@ -4,7 +4,7 @@
 // non-normal state to StateBlock so a half-loaded table can never read as a
 // complete one.
 
-import type { ReactNode } from "react"
+import type { CSSProperties, ReactNode } from "react"
 
 import { LoadingBlock, StateBlock } from "./StateBlock.tsx"
 import { cx } from "./cx.ts"
@@ -39,6 +39,13 @@ export interface DataTableProps<Row> {
   className?: string
 }
 
+/** Rows reveal 20ms apart; the eighth and later rows land with the seventh. */
+export const ROW_REVEAL_CAP = 7
+
+export function rowRevealStyle(index: number): CSSProperties {
+  return { "--vv-row-index": Math.min(index, ROW_REVEAL_CAP) } as CSSProperties
+}
+
 export function DataTable<Row>({
   columns,
   rows,
@@ -51,7 +58,7 @@ export function DataTable<Row>({
   footer,
   className,
 }: DataTableProps<Row>) {
-  if (state === "loading") return <LoadingBlock rows={6} />
+  if (state === "loading") return <LoadingBlock rows={3} />
   if (state === "error") return <StateBlock state="error" onRetry={onRetry} />
   if (rows.length === 0) {
     return <StateBlock state="empty" title={emptyTitle} detail={emptyDetail} />
@@ -80,7 +87,7 @@ export function DataTable<Row>({
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={rowKey(row, index)}>
+            <tr key={rowKey(row, index)} style={rowRevealStyle(index)}>
               {columns.map((column) => (
                 <td
                   key={column.key}
