@@ -242,12 +242,26 @@ private fun SectionHeading(
                     heading()
                 },
             )
-            if (source != null) {
-                Text(source.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
+            userFacingSource(source)?.let {
+                Text(it.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
             }
         }
         trailing?.invoke()
     }
+}
+
+/**
+ * A slice source as the household sees it: "Convex rows · transactions" reads
+ * as "transactions". Backend nouns stay in Settings, where they are diagnostics.
+ * Returns null when nothing user-facing is left.
+ */
+internal fun userFacingSource(source: String?): String? {
+    if (source == null) return null
+    val stripped = source
+        .replace(Regex("^Convex finance document(\\s*·\\s*)?"), "")
+        .replace(Regex("^Convex rows(\\s*·\\s*)?"), "")
+        .trim()
+    return stripped.takeIf { it.isNotEmpty() }
 }
 
 /** Suppress a figure when the slice it came from did not load. */
@@ -311,14 +325,11 @@ private fun Kpi.spoken(): String = buildString {
     }
 }
 
-internal fun kpiFigureWraps(value: String): Boolean = value == Money.PRICE_UNAVAILABLE
-
 @Composable
 private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
     val tokens = LocalLedgerTheme.current
     val effects = LocalLedgerEffects.current
     val unavailable = item.value.isUnavailableFigure()
-    val wrapsUnavailablePrice = kpiFigureWraps(item.value)
     val spoken = item.spoken()
     val figureColor = when {
         unavailable -> tokens.colors.foregroundTertiary
@@ -340,8 +351,7 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(2.dp))
         Text(
             item.value,
-            maxLines = if (wrapsUnavailablePrice) 2 else 1,
-            softWrap = wrapsUnavailablePrice,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = tokens.type.kpiValue.withLedgerPhosphorGlow(
                 enabled = effects.showPhosphorGlow && figureColor == tokens.colors.bitcoin,

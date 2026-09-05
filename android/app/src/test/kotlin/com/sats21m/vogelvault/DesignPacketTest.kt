@@ -11,6 +11,7 @@ import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.Destination
 import com.sats21m.vogelvault.ui.LedgerAppearance
 import com.sats21m.vogelvault.ui.LedgerUiSettings
@@ -94,12 +95,12 @@ private fun captureStatusAndUnavailableTokens(
             ) {
                 KpiStrip(
                     listOf(
-                        Kpi("Unavailable gain", "Price unavailable", tone = VaultPositive),
-                        Kpi("Unavailable loss", "Price unavailable", tone = VaultNegative),
+                        Kpi("Unavailable gain", Money.PRICE_UNAVAILABLE, tone = VaultPositive),
+                        Kpi("Unavailable loss", Money.PRICE_UNAVAILABLE, tone = VaultNegative),
                         Kpi("Odd final KPI", "Spans the row"),
                     ),
                 )
-                LedgerRow("Unavailable ledger figure", figure = "Price unavailable", figureColor = VaultNegative)
+                LedgerRow("Unavailable ledger figure", figure = Money.PRICE_UNAVAILABLE, figureColor = VaultNegative)
                 StatusBanner("Positive status", tone = VaultPositive)
                 StatusBanner("Error status", tone = VaultNegative)
                 StatusBanner("Warning status", tone = VaultWarning)

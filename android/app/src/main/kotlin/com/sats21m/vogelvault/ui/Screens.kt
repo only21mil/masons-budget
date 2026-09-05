@@ -661,7 +661,7 @@ internal fun BitcoinConversionNotice(state: VaultUiState) {
     if (quote != null) {
         StatusBanner(
             text = if (quote.status == MarketQuoteStatus.STALE) "BTC conversion · stale quote" else "BTC conversion",
-            detail = "Uses ${quote.quoteHint(state.now)}.",
+            detail = quote.quoteHint(state.now),
             tone = if (quote.status == MarketQuoteStatus.STALE) {
                 LocalLedgerTheme.current.colors.loss
             } else {

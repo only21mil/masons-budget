@@ -127,11 +127,11 @@ class AndroidFinanceRegressionTest {
 
         show(Destination.BITCOIN, state, DisplayUnit.USD)
 
-        compose.onNodeWithContentDescription("Total stack, Price unavailable")
+        compose.onNodeWithContentDescription("Total stack, unavailable")
             .fetchSemanticsNode()
         contentList().performScrollToNode(hasContentDescription("Multisig", substring = true))
         compose.onNodeWithContentDescription(
-            "Multisig, Victor, Self custody, Price unavailable",
+            "Multisig, Victor, Self custody, unavailable",
         ).fetchSemanticsNode()
     }
 

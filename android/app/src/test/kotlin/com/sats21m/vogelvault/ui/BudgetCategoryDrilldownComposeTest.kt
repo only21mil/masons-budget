@@ -250,7 +250,8 @@ class BudgetCategoryDrilldownComposeTest {
         }
         settle()
 
-        compose.onNodeWithText("Convex row data unavailable").fetchSemanticsNode()
+        compose.onNodeWithText(activityController.get().getString(R.string.convex_read_error_title))
+            .fetchSemanticsNode()
         assertEquals(0, nodesWithText("Neighborhood Market"))
     }
 
