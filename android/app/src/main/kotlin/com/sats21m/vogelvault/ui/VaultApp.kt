@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
@@ -122,6 +123,15 @@ enum class Destination(
  */
 const val UNFOLDED_MIN_WIDTH_DP = 600
 
+/**
+ * The unfolded content cap.
+ *
+ * Beside the rail, a screen without a sidebar keeps its column at this width and
+ * leaves the rest as ground. A ledger row stretched across 1500px puts the figure
+ * too far from its label to read as one line.
+ */
+const val UNFOLDED_CONTENT_MAX_WIDTH_DP = 560
+
 /** The handoff rail: 130dp, seven destinations, a 2dp edge marker on the active one. */
 const val RAIL_WIDTH_DP = 130
 internal const val RAIL_ITEM_COUNT = 7
@@ -130,6 +140,7 @@ private const val FOLDED_MAX_ITEMS = 5
 private const val FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW = FOLDED_MAX_ITEMS - 1
 internal const val VAULT_RAIL_TEST_TAG = "vault-navigation-rail"
 internal const val VAULT_RAIL_MORE_TEST_TAG = "vault-navigation-rail-more"
+internal const val VAULT_SCREEN_CONTENT_TEST_TAG = "vault-screen-content"
 
 private val BAR_INDICATOR_WIDTH = 64.dp
 private val NAVIGATION_INDICATOR_HEIGHT = 32.dp
@@ -230,20 +241,27 @@ fun VaultApp(
                             onSwitchProfile(state.activeProfile)
                         }
                         HorizontalHairline()
-                        VaultScreenContent(
-                            state = state,
-                            refusal = refusal,
-                            current = current,
-                            onEnableRemoteRows = onEnableRemoteRows,
-                            onRemoteRowsConnected = onRemoteRowsConnected,
-                            onWriteSucceeded = onWriteSucceeded,
-                            onStartRiverBillPay = onStartRiverBillPay,
-                            displayUnit = displayUnit,
-                            onDisplayUnitChange = onDisplayUnitChange,
-                            ledgerSettings = ledgerSettings,
-                            onLedgerSettingsChange = onLedgerSettingsChange,
-                            modifier = Modifier.weight(1f),
-                        )
+                        Row(Modifier.weight(1f)) {
+                            VaultScreenContent(
+                                state = state,
+                                refusal = refusal,
+                                current = current,
+                                onEnableRemoteRows = onEnableRemoteRows,
+                                onRemoteRowsConnected = onRemoteRowsConnected,
+                                onWriteSucceeded = onWriteSucceeded,
+                                onStartRiverBillPay = onStartRiverBillPay,
+                                displayUnit = displayUnit,
+                                onDisplayUnitChange = onDisplayUnitChange,
+                                ledgerSettings = ledgerSettings,
+                                onLedgerSettingsChange = onLedgerSettingsChange,
+                                contentMaxWidth = UNFOLDED_CONTENT_MAX_WIDTH_DP.dp,
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                            )
+                            if (showsLedgerSidebar(current, unfolded)) {
+                                VerticalHairline(Modifier.fillMaxHeight())
+                                LedgerSidebar(state = state, displayUnit = displayUnit)
+                            }
+                        }
                     }
                 }
             } else {
@@ -293,6 +311,8 @@ private fun VaultScreenContent(
     ledgerSettings: LedgerUiSettings,
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit,
     modifier: Modifier = Modifier,
+    /** Null lets the screen fill its column; folded screens do. */
+    contentMaxWidth: Dp? = null,
 ) {
     Box(modifier) {
         Column(Modifier.fillMaxSize()) {
@@ -300,19 +320,26 @@ private fun VaultScreenContent(
             AuthorizationNotice(state)
             RowReadFailureNotice(state)
             RefreshFailureNotice(state)
-            ScreenHost(
-                destination = current,
-                state = state,
-                onEnableRemoteRows = onEnableRemoteRows,
-                onRemoteRowsConnected = onRemoteRowsConnected,
-                onWriteSucceeded = onWriteSucceeded,
-                onStartRiverBillPay = onStartRiverBillPay,
-                displayUnit = displayUnit,
-                onDisplayUnitChange = onDisplayUnitChange,
-                ledgerSettings = ledgerSettings,
-                onLedgerSettingsChange = onLedgerSettingsChange,
-                modifier = Modifier.weight(1f),
-            )
+            // The cap goes on the screen, not the notices: a warning banner spans
+            // the column, the ledger column does not.
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                ScreenHost(
+                    destination = current,
+                    state = state,
+                    onEnableRemoteRows = onEnableRemoteRows,
+                    onRemoteRowsConnected = onRemoteRowsConnected,
+                    onWriteSucceeded = onWriteSucceeded,
+                    onStartRiverBillPay = onStartRiverBillPay,
+                    displayUnit = displayUnit,
+                    onDisplayUnitChange = onDisplayUnitChange,
+                    ledgerSettings = ledgerSettings,
+                    onLedgerSettingsChange = onLedgerSettingsChange,
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .then(if (contentMaxWidth != null) Modifier.widthIn(max = contentMaxWidth) else Modifier)
+                        .testTag(VAULT_SCREEN_CONTENT_TEST_TAG),
+                )
+            }
         }
         LedgerAtmosphere()
     }

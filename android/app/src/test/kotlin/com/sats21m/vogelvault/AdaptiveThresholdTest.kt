@@ -13,6 +13,7 @@ import com.sats21m.vogelvault.ui.RAIL_ITEM_COUNT
 import com.sats21m.vogelvault.ui.RAIL_PRIMARY_ORDER
 import com.sats21m.vogelvault.ui.railOverflowDestinations
 import com.sats21m.vogelvault.ui.railPrimaryDestinations
+import com.sats21m.vogelvault.ui.showsLedgerSidebar
 import com.sats21m.vogelvault.ui.theme.VaultBitcoin
 import com.sats21m.vogelvault.ui.theme.VaultCream
 import com.sats21m.vogelvault.ui.theme.VaultInfo
@@ -165,6 +166,17 @@ class DestinationVisibilityTest {
         )
         assertEquals(destinations.toSet(), (primary + overflow).toSet())
         assertEquals(destinations.size, (primary + overflow).distinct().size)
+    }
+
+    @Test
+    fun `sidebar destinations are exactly Dashboard and Budget, unfolded only`() {
+        Destination.entries.forEach { destination ->
+            assertEquals(
+                destination == Destination.DASHBOARD || destination == Destination.BUDGET,
+                showsLedgerSidebar(destination, unfolded = true),
+            )
+            assertFalse(showsLedgerSidebar(destination, unfolded = false))
+        }
     }
 
     @Test
