@@ -17,22 +17,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.HourglassEmpty
-import androidx.compose.material.icons.filled.Inbox
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.WarningAmber
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -525,7 +517,30 @@ fun FreshnessTag(status: Freshness, updatedAt: Long?, now: Long) {
         Freshness.STALE -> "Stale, updated $age"
         else -> label
     }
-    Badge(label, tone = tone, spoken = spoken)
+    val tokens = LocalLedgerTheme.current
+    Row(
+        Modifier.semantics(mergeDescendants = true) { contentDescription = spoken },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LedgerStatusDot(ledgerColor(tone))
+        Spacer(Modifier.width(LedgerSpacing.small))
+        Text(label.uppercase(), style = tokens.type.chip, color = tokens.colors.foregroundSecondary, maxLines = 1)
+    }
+}
+
+/**
+ * A 6dp status dot in the tone it reports. It is the only place a status tone
+ * is drawn as a shape; the text beside it carries the meaning for a reader
+ * who cannot see the colour.
+ */
+@Composable
+fun LedgerStatusDot(tone: Color, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(6.dp)
+            .clearAndSetSemantics { }
+            .background(tone, CircleShape),
+    )
 }
 
 private fun relativeTime(updatedAt: Long?, now: Long): String {
@@ -550,41 +565,35 @@ fun StateBlock(
     detail: String? = null,
 ) {
     val tokens = LocalLedgerTheme.current
-    val icon: ImageVector
     val fallbackTitle: String
     val fallbackDetail: String
-    val tint: Color
+    val tone: Color
 
     when (status) {
         Freshness.DEMO -> {
-            icon = Icons.Filled.WarningAmber
             fallbackTitle = "Demo data"
             fallbackDetail = "These are sample figures for preview only. They have never been synced."
-            tint = VaultInfo
+            tone = tokens.colors.foregroundSecondary
         }
         Freshness.ERROR -> {
-            icon = Icons.Filled.ErrorOutline
             fallbackTitle = stringResource(R.string.convex_read_error_title)
             fallbackDetail = stringResource(R.string.convex_read_error_detail)
-            tint = VaultNegative
+            tone = tokens.colors.loss
         }
         Freshness.STALE -> {
-            icon = Icons.Filled.WarningAmber
             fallbackTitle = stringResource(R.string.convex_read_stale_title)
             fallbackDetail = stringResource(R.string.convex_read_stale_detail)
-            tint = VaultWarning
+            tone = tokens.colors.loss
         }
         Freshness.LOADING -> {
-            icon = Icons.Filled.HourglassEmpty
             fallbackTitle = stringResource(R.string.convex_read_loading_title)
             fallbackDetail = stringResource(R.string.convex_read_loading_detail)
-            tint = VaultTextDim
+            tone = tokens.colors.foregroundTertiary
         }
         else -> {
-            icon = Icons.Filled.Inbox
             fallbackTitle = stringResource(R.string.convex_read_empty_title)
             fallbackDetail = stringResource(R.string.convex_read_empty_detail)
-            tint = VaultTextDim
+            tone = tokens.colors.foregroundTertiary
         }
     }
 
@@ -594,11 +603,11 @@ fun StateBlock(
             // A screen swapping to "could not load" is a state change a sighted user
             // sees instantly; announce it rather than leaving it to be discovered.
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }
-            .padding(vertical = VaultSpace.xxl, horizontal = VaultSpace.lg),
+            .padding(vertical = VaultSpace.xl, horizontal = VaultSpace.lg),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(VaultSpace.xs),
     ) {
-        Icon(icon, contentDescription = null, tint = ledgerColor(tint))
+        LedgerStatusDot(tone, Modifier.padding(bottom = VaultSpace.xs))
         Text(
             title ?: fallbackTitle,
             style = tokens.type.rowPrimary,
@@ -617,7 +626,11 @@ fun StateBlock(
 @Composable
 fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) {
     val tokens = LocalLedgerTheme.current
-    val resolvedTone = ledgerColor(tone)
+    val dotTone = when (statusBannerMark(tone)) {
+        LedgerStatusMark.GAIN -> tokens.colors.gain
+        LedgerStatusMark.LOSS -> tokens.colors.loss
+        LedgerStatusMark.NEUTRAL -> tokens.colors.foregroundTertiary
+    }
     Row(
         Modifier
             .fillMaxWidth()
@@ -625,10 +638,11 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
             .border(1.dp, tokens.colors.line, RoundedCornerShape(LedgerRadii.card))
             .background(tokens.colors.panel, RoundedCornerShape(LedgerRadii.card))
             .padding(tokens.density.cardPadding),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
-        Icon(statusBannerIcon(tone), contentDescription = null, tint = resolvedTone)
-        Spacer(Modifier.width(VaultSpace.sm))
+        // Optically centred on the first line of the title.
+        LedgerStatusDot(dotTone, Modifier.padding(top = 6.dp))
+        Spacer(Modifier.width(LedgerSpacing.medium))
         Column {
             Text(text, style = tokens.type.rowPrimary, color = tokens.colors.foreground)
             if (detail != null) {
@@ -638,17 +652,20 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
     }
 }
 
-internal fun statusBannerIcon(tone: Color): ImageVector = when (tone) {
+/** What a banner's dot reports. Warning collapses into loss, as [ledgerColor] already does. */
+enum class LedgerStatusMark { GAIN, LOSS, NEUTRAL }
+
+internal fun statusBannerMark(tone: Color): LedgerStatusMark = when (tone) {
     VaultPositive,
     LedgerPalettes.TerminalDark.gain,
     LedgerPalettes.DaylightLight.gain,
-    -> Icons.Filled.CheckCircle
+    -> LedgerStatusMark.GAIN
     VaultNegative,
+    VaultWarning,
     LedgerPalettes.TerminalDark.loss,
     LedgerPalettes.DaylightLight.loss,
-    -> Icons.Filled.ErrorOutline
-    VaultWarning -> Icons.Filled.WarningAmber
-    else -> Icons.Filled.Info
+    -> LedgerStatusMark.LOSS
+    else -> LedgerStatusMark.NEUTRAL
 }
 
 @Composable
