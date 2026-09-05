@@ -3,6 +3,7 @@ package com.sats21m.vogelvault.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,8 +47,10 @@ import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
 import com.sats21m.vogelvault.ui.components.StateBlock
+import com.sats21m.vogelvault.ui.components.ledgerRowReveal
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
+import com.sats21m.vogelvault.ui.theme.rememberLedgerHaptics
 import java.time.Instant
 import java.time.ZoneId
 
@@ -114,6 +117,7 @@ private fun ProfileTaskListsScreen(
         mutableStateOf(application?.hasTodoWriteCredential(state.activeProfile) == true)
     }
     val snackbar = remember { SnackbarHostState() }
+    val haptics = rememberLedgerHaptics()
     val writes = rememberTodoWriteState(
         gateway = gateway,
         activeProfile = state.activeProfile,
@@ -150,9 +154,11 @@ private fun ProfileTaskListsScreen(
     val actions = TaskRowActions(
         enabled = { credentialStored && it.id !in writes.busyIds },
         deletePending = writes.deletePending,
+        revealKey = slice.updatedAt,
         onToggleDone = { todo ->
             writes.upsert(todo.withCompletion(!todo.done, Instant.now()), todo.updatedAtMs) { changed ->
                 localTodos = localTodos.replaceTodo(changed)
+                haptics.toggle(changed.done)
             }
         },
         onToggleFlag = { todo ->
@@ -199,6 +205,7 @@ private fun ProfileTaskListsScreen(
             onSave = { changed ->
                 writes.upsert(changed, todo.updatedAtMs) { accepted ->
                     localTodos = localTodos.replaceTodo(accepted)
+                    haptics.confirm()
                     editing = null
                 }
             },
@@ -288,6 +295,8 @@ private fun ProfileTaskListsScreen(
 private data class TaskRowActions(
     val enabled: (TodoItem) -> Boolean,
     val deletePending: Boolean,
+    /** Slice revision the rows came from; rows reveal when it changes. */
+    val revealKey: Any?,
     val onToggleDone: (TodoItem) -> Unit,
     val onToggleFlag: (TodoItem) -> Unit,
     val onEdit: (TodoItem) -> Unit,
@@ -384,7 +393,9 @@ private fun TaskSection(
     TaskPanel(title) {
         tasks.forEachIndexed { index, task ->
             if (index > 0) HorizontalHairline()
-            TaskEditableRow(task, viewer, actions)
+            Box(Modifier.ledgerRowReveal(index, actions.revealKey?.let { "tasks-$title:$it" })) {
+                TaskEditableRow(task, viewer, actions)
+            }
         }
     }
 }
@@ -480,7 +491,9 @@ private fun TaskDetailList(
         } else {
             tasks.forEachIndexed { index, task ->
                 if (index > 0) HorizontalHairline()
-                TaskEditableRow(task, viewer, actions)
+                Box(Modifier.ledgerRowReveal(index, actions.revealKey?.let { "tasks-$title:$it" })) {
+                    TaskEditableRow(task, viewer, actions)
+                }
             }
         }
     }

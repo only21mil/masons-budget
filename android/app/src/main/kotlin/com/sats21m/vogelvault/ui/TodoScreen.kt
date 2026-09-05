@@ -2,6 +2,7 @@ package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,7 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
@@ -40,6 +41,7 @@ import com.sats21m.vogelvault.ui.components.Kpi
 import com.sats21m.vogelvault.ui.components.KpiStrip
 import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.components.ledgerColor
+import com.sats21m.vogelvault.ui.components.ledgerRowReveal
 import com.sats21m.vogelvault.ui.theme.VaultAccent
 import com.sats21m.vogelvault.ui.theme.VaultBlack
 import com.sats21m.vogelvault.ui.theme.VaultCream
@@ -47,6 +49,7 @@ import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.VaultSurface
 import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
+import com.sats21m.vogelvault.ui.theme.rememberLedgerHaptics
 import java.time.Instant
 import java.time.ZoneId
 
@@ -127,13 +130,16 @@ internal fun TodoScreen(
         localTodos = todosForToday(writes.filterIncoming(todos), viewer, today)
     }
 
+    val haptics = rememberLedgerHaptics()
     fun mutate(
         todo: TodoItem,
         action: TodoWriteAction,
         baseUpdatedAtMs: Long?,
+        onAccepted: () -> Unit = {},
     ) {
         writes.upsert(todo, baseUpdatedAtMs, action) {
             localTodos = (localTodos.filterNot { it.id == todo.id } + todo).sortedWith(TODO_ORDER)
+            onAccepted()
         }
     }
 
@@ -209,7 +215,7 @@ internal fun TodoScreen(
                                 now = Instant.now(),
                             )
                             draft = ""
-                            mutate(todo, TodoWriteAction.ADD, null)
+                            mutate(todo, TodoWriteAction.ADD, null) { haptics.confirm() }
                         },
                     ) {
                         Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.todo_add))
@@ -219,7 +225,12 @@ internal fun TodoScreen(
 
             // Demo, stale, loading and failed reads all say so, exactly as the
             // read-only surfaces do. EMPTY is left to the emptiness message below.
-            if (slice.status != Freshness.LIVE && slice.status != Freshness.EMPTY) {
+            // LOADING is left to the suppressed branch below so the skeleton shows once.
+            if (
+                slice.status != Freshness.LIVE &&
+                slice.status != Freshness.EMPTY &&
+                slice.status != Freshness.LOADING
+            ) {
                 item { StateBlock(slice.status) }
             }
 
@@ -237,50 +248,51 @@ internal fun TodoScreen(
                     )
                 }
             } else {
-                items(localTodos, key = TodoItem::id) { todo ->
-                    TodoRow(
-                        todo = todo,
-                        viewer = viewer,
-                        enabled = credentialStored && todo.id !in writes.busyIds,
-                        deleteEnabled = credentialStored &&
-                            todo.id !in writes.busyIds &&
-                            !writes.deletePending,
-                        deleteDisabledReason = if (writes.deletePending) {
-                            stringResource(R.string.todo_delete_pending_named, todo.title)
-                        } else {
-                            null
-                        },
-                        onToggleDone = {
-                            mutate(
-                                todo.withCompletion(!todo.done, Instant.now()),
-                                TodoWriteAction.UPDATE,
-                                todo.updatedAtMs,
-                            )
-                        },
-                        onToggleFlag = {
-                            mutate(
-                                todo.withFlag(!todo.flagged, Instant.now()),
-                                TodoWriteAction.UPDATE,
-                                todo.updatedAtMs,
-                            )
-                        },
-                        onEdit = {
-                            editing = todo
-                        },
-                        onDelete = {
-                            writes.delete(
-                                todo = todo,
-                                onRemoved = { removed ->
-                                    localTodos = localTodos.filterNot { it.id == removed.id }
-                                },
-                                onRestored = { restored ->
-                                    localTodos = (localTodos + restored)
-                                        .distinctBy(TodoItem::id)
-                                        .sortedWith(TODO_ORDER)
-                                },
-                            )
-                        },
-                    )
+                itemsIndexed(localTodos, key = { _, todo -> todo.id }) { index, todo ->
+                    Box(Modifier.ledgerRowReveal(index, slice.updatedAt?.let { "today:$it" })) {
+                        TodoRow(
+                            todo = todo,
+                            viewer = viewer,
+                            enabled = credentialStored && todo.id !in writes.busyIds,
+                            deleteEnabled = credentialStored &&
+                                todo.id !in writes.busyIds &&
+                                !writes.deletePending,
+                            deleteDisabledReason = if (writes.deletePending) {
+                                stringResource(R.string.todo_delete_pending_named, todo.title)
+                            } else {
+                                null
+                            },
+                            onToggleDone = {
+                                val changed = todo.withCompletion(!todo.done, Instant.now())
+                                mutate(changed, TodoWriteAction.UPDATE, todo.updatedAtMs) {
+                                    haptics.toggle(changed.done)
+                                }
+                            },
+                            onToggleFlag = {
+                                mutate(
+                                    todo.withFlag(!todo.flagged, Instant.now()),
+                                    TodoWriteAction.UPDATE,
+                                    todo.updatedAtMs,
+                                )
+                            },
+                            onEdit = {
+                                editing = todo
+                            },
+                            onDelete = {
+                                writes.delete(
+                                    todo = todo,
+                                    onRemoved = { removed ->
+                                        localTodos = localTodos.filterNot { it.id == removed.id }
+                                    },
+                                    onRestored = { restored ->
+                                        localTodos = (localTodos + restored)
+                                            .distinctBy(TodoItem::id)
+                                            .sortedWith(TODO_ORDER)
+                                    },
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -296,6 +308,7 @@ internal fun TodoScreen(
                 writes.upsert(changed, todo.updatedAtMs, TodoWriteAction.UPDATE) { accepted ->
                     localTodos = (localTodos.filterNot { it.id == accepted.id } + accepted)
                         .sortedWith(TODO_ORDER)
+                    haptics.confirm()
                     editing = null
                 }
             },

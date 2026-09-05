@@ -78,9 +78,12 @@ import com.sats21m.vogelvault.ui.components.StatusBanner
 import com.sats21m.vogelvault.ui.components.VaultLazyListScope
 import com.sats21m.vogelvault.ui.components.figure
 import com.sats21m.vogelvault.ui.components.vaultContent
+import com.sats21m.vogelvault.ui.theme.LedgerTreatment
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.LocalLedgerEffects
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
+import com.sats21m.vogelvault.ui.theme.rememberPhosphorPulseBlur
+import com.sats21m.vogelvault.ui.theme.rememberSettledCents
 import com.sats21m.vogelvault.ui.theme.withLedgerPhosphorGlow
 
 private data class ScreenCollections(
@@ -725,6 +728,7 @@ private fun VaultLazyListScope.dashboard(
             source = state.data.transactions.source,
             rows = projection.activity,
             rowKey = Transaction::id,
+            revealKey = state.data.transactions.updatedAt,
             rowContent = { TransactionRow(it, displayUnit, quote) },
         )
     }
@@ -880,6 +884,7 @@ private fun VaultLazyListScope.activity(
         },
         rows = transactions,
         rowKey = Transaction::selectionKey,
+        revealKey = state.data.transactions.updatedAt,
         rowContent = {
             Box(
                 Modifier
@@ -1045,6 +1050,7 @@ private fun VaultLazyListScope.budget(
             source = "${slice.source} · ${derived.month} transactions",
             rows = derived.categories,
             rowKey = { it.name },
+            revealKey = state.data.transactions.updatedAt,
         ) { category ->
             EditableBudgetCategoryRow(
                 category = category,
@@ -1384,7 +1390,14 @@ private fun VaultLazyListScope.bitcoin(
 internal fun BitcoinPriceHero(quote: MarketQuote?, nowMillis: Long? = null) {
     val tokens = LocalLedgerTheme.current
     val effects = LocalLedgerEffects.current
-    val formatted = formatOperationalBitcoinPrice(quote)
+    // The figure settles from the last reading instead of jumping; the glow
+    // takes one breath per new price and otherwise rests at the resting blur.
+    val settledCents = rememberSettledCents(quote?.priceCents)
+    val formatted = settledCents?.let(Money::formatUsd) ?: Money.PRICE_UNAVAILABLE
+    val glowBlur = rememberPhosphorPulseBlur(
+        trigger = quote?.priceCents,
+        enabled = effects.showPhosphorGlow && tokens.treatment == LedgerTreatment.TERMINAL_DARK,
+    )
     val decimalStart = formatted.lastIndexOf('.').takeIf { it > 0 }
     Panel {
         Column(Modifier.padding(tokens.density.cardPadding)) {
@@ -1399,12 +1412,12 @@ internal fun BitcoinPriceHero(quote: MarketQuote?, nowMillis: Long? = null) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
                         formatted.substring(0, decimalStart),
-                        style = tokens.type.priceHero.withLedgerPhosphorGlow(effects.showPhosphorGlow),
+                        style = tokens.type.priceHero.withLedgerPhosphorGlow(effects.showPhosphorGlow, glowBlur),
                         color = tokens.colors.bitcoin,
                     )
                     Text(
                         formatted.substring(decimalStart),
-                        style = tokens.type.priceHeroDecimals.withLedgerPhosphorGlow(effects.showPhosphorGlow),
+                        style = tokens.type.priceHeroDecimals.withLedgerPhosphorGlow(effects.showPhosphorGlow, glowBlur),
                         color = tokens.colors.priceDecimals,
                     )
                 }
