@@ -5,15 +5,15 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -28,16 +28,15 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * The Pixel Fold inner display is 2076x2152 at density 390, or about 852x883dp.
  *
- * The shell below retains that real unfolded width and constrains the usable
- * height to 720dp. That covers the reproduced clipped rail as well as system UI,
- * larger display/font settings, and split-window use. The test first proves the
- * rail genuinely overflows, then drives the production scroll action so a
- * non-scrolling destination list cannot ship again.
+ * The shell below keeps that real unfolded width and constrains the usable
+ * height to 720dp, covering system UI, larger display/font settings, and
+ * split-window use. Every one of the seven rail items must be reachable in that
+ * viewport without scrolling, and every destination under More must open from
+ * the rail; a destination the rail cannot reach cannot ship.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -64,28 +63,38 @@ class VaultRailReachabilityTest {
     }
 
     @Test
-    fun `every unfolded destination can be scrolled into the Fold viewport`() {
+    fun `every primary destination is displayed and navigates from the Fold viewport`() {
         var navigatedTo: Destination? = null
         render(Destination.DASHBOARD, onNavigate = { navigatedTo = it })
 
-        val scrollRange = compose.onNodeWithTag(VAULT_RAIL_TEST_TAG)
-            .fetchSemanticsNode()
-            .config[SemanticsProperties.VerticalScrollAxisRange]
-        assertTrue(scrollRange.maxValue() > 0f, "The regression viewport did not overflow.")
-
-        Destination.entries.forEachIndexed { index, destination ->
-            compose.onNodeWithTag(VAULT_RAIL_TEST_TAG).performScrollToIndex(index)
-            compose.waitForIdle()
+        val primary = railPrimaryDestinations(Destination.entries.toList())
+        assertEquals(RAIL_PRIMARY_ORDER, primary)
+        primary.forEach { destination ->
             railDestination(destination).assertIsDisplayed().performClick()
             assertEquals(destination, navigatedTo)
         }
     }
 
     @Test
-    fun `an initially selected destination below the fold is brought into view`() {
+    fun `every overflow destination opens through More`() {
+        val overflow = railOverflowDestinations(Destination.entries.toList())
+        assertEquals(Destination.entries.size - RAIL_PRIMARY_ORDER.size, overflow.size)
+
+        overflow.forEach { destination ->
+            var navigatedTo: Destination? = null
+            render(Destination.DASHBOARD, onNavigate = { navigatedTo = it })
+
+            compose.onNodeWithTag(VAULT_RAIL_MORE_TEST_TAG).assertIsDisplayed().performClick()
+            compose.onNodeWithText(destination.label).assertIsDisplayed().performClick()
+            assertEquals(destination, navigatedTo)
+        }
+    }
+
+    @Test
+    fun `an initially selected overflow destination lights More`() {
         render(Destination.SETTINGS)
 
-        railDestination(Destination.SETTINGS).assertIsDisplayed()
+        compose.onNodeWithTag(VAULT_RAIL_MORE_TEST_TAG).assertIsDisplayed().assertIsSelected()
     }
 
     private fun render(
@@ -110,7 +119,7 @@ class VaultRailReachabilityTest {
 
     private fun railDestination(destination: Destination) =
         compose.onNode(
-            hasText(destination.label) and
+            hasText(destination.label, ignoreCase = true) and
                 hasAnyAncestor(hasTestTag(VAULT_RAIL_TEST_TAG)),
         )
 }

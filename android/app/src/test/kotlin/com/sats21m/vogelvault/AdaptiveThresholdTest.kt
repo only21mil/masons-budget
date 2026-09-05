@@ -9,6 +9,10 @@ import com.sats21m.vogelvault.ui.VaultUiState
 import com.sats21m.vogelvault.ui.VaultViewModel
 import com.sats21m.vogelvault.ui.foldedOverflowDestinations
 import com.sats21m.vogelvault.ui.foldedPrimaryDestinations
+import com.sats21m.vogelvault.ui.RAIL_ITEM_COUNT
+import com.sats21m.vogelvault.ui.RAIL_PRIMARY_ORDER
+import com.sats21m.vogelvault.ui.railOverflowDestinations
+import com.sats21m.vogelvault.ui.railPrimaryDestinations
 import com.sats21m.vogelvault.ui.theme.VaultBitcoin
 import com.sats21m.vogelvault.ui.theme.VaultCream
 import com.sats21m.vogelvault.ui.theme.VaultInfo
@@ -137,6 +141,30 @@ class DestinationVisibilityTest {
         assertEquals(destinations, primary + overflow)
         assertEquals(destinations.size, (primary + overflow).distinct().size)
         assertTrue(Destination.SETTINGS in overflow)
+    }
+
+    @Test
+    fun `unfolded rail shows six primary destinations and sends the rest under More`() {
+        val destinations = Destination.entries.toList()
+        val primary = railPrimaryDestinations(destinations)
+        val overflow = railOverflowDestinations(destinations)
+
+        assertEquals(RAIL_PRIMARY_ORDER, primary)
+        assertEquals(RAIL_ITEM_COUNT, primary.size + 1)
+        assertEquals(
+            listOf(
+                Destination.BTC_BUYS,
+                Destination.BTC_BILL_PAYS,
+                Destination.NET_WORTH,
+                Destination.RETIREMENT,
+                Destination.EXPORT,
+                Destination.FAMILY,
+                Destination.SETTINGS,
+            ),
+            overflow,
+        )
+        assertEquals(destinations.toSet(), (primary + overflow).toSet())
+        assertEquals(destinations.size, (primary + overflow).distinct().size)
     }
 
     @Test

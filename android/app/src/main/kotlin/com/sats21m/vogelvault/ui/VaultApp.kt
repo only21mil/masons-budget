@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
@@ -42,9 +44,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -59,6 +58,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
@@ -69,6 +70,7 @@ import com.sats21m.vogelvault.ui.components.Badge
 import com.sats21m.vogelvault.ui.components.FreshnessTag
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
 import com.sats21m.vogelvault.ui.components.StatusBanner
+import com.sats21m.vogelvault.ui.components.VerticalHairline
 import com.sats21m.vogelvault.ui.theme.LocalIsUnfolded
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.LedgerColors
@@ -120,13 +122,41 @@ enum class Destination(
  */
 const val UNFOLDED_MIN_WIDTH_DP = 600
 
+/** The handoff rail: 130dp, seven destinations, a 2dp edge marker on the active one. */
+const val RAIL_WIDTH_DP = 130
+internal const val RAIL_ITEM_COUNT = 7
+
 private const val FOLDED_MAX_ITEMS = 5
 private const val FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW = FOLDED_MAX_ITEMS - 1
 internal const val VAULT_RAIL_TEST_TAG = "vault-navigation-rail"
+internal const val VAULT_RAIL_MORE_TEST_TAG = "vault-navigation-rail-more"
 
-private val RAIL_INDICATOR_WIDTH = 56.dp
 private val BAR_INDICATOR_WIDTH = 64.dp
 private val NAVIGATION_INDICATOR_HEIGHT = 32.dp
+private val RAIL_EDGE_MARKER_WIDTH = 2.dp
+private val RAIL_GLYPH_SIZE = 24.dp
+private val RAIL_ITEM_HEIGHT = 48.dp
+private val RAIL_GLYPH_INSET = 14.dp
+private val RAIL_LABEL_GAP = 10.dp
+
+/**
+ * The six destinations the rail shows directly, in handoff order. Everything
+ * else lives under More, which is the seventh item.
+ */
+internal val RAIL_PRIMARY_ORDER: List<Destination> = listOf(
+    Destination.DASHBOARD,
+    Destination.ACTIVITY,
+    Destination.BUDGET,
+    Destination.BITCOIN,
+    Destination.TODAY,
+    Destination.TASKS,
+)
+
+internal fun railPrimaryDestinations(destinations: List<Destination>): List<Destination> =
+    RAIL_PRIMARY_ORDER.filter { it in destinations }
+
+internal fun railOverflowDestinations(destinations: List<Destination>): List<Destination> =
+    destinations.filterNot { it in RAIL_PRIMARY_ORDER }
 
 internal fun foldedPrimaryDestinations(destinations: List<Destination>): List<Destination> =
     if (destinations.size <= FOLDED_MAX_ITEMS) {
@@ -194,6 +224,7 @@ fun VaultApp(
             if (unfolded) {
                 Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                     VaultRail(destinations, current, onNavigate)
+                    VerticalHairline(Modifier.fillMaxHeight())
                     Column(Modifier.weight(1f)) {
                         VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile) {
                             onSwitchProfile(state.activeProfile)
@@ -388,6 +419,15 @@ private fun MoreNavigationIcon(selected: Boolean, overflowCount: Int) {
     }
 }
 
+/**
+ * The unfolded rail.
+ *
+ * 130dp, the six primary destinations plus More, glyph and uppercase label side
+ * by side. The active item is bitcoin ink with a 2dp bitcoin edge marker on the
+ * left and the soft bitcoin fill behind it; inactive items are tertiary ink. No
+ * pill: nothing in this system is fully rounded except the toggle track and the
+ * status dots. The list still scrolls so a large-font setting cannot hide More.
+ */
 @Composable
 private fun VaultRail(
     destinations: List<Destination>,
@@ -395,9 +435,11 @@ private fun VaultRail(
     onNavigate: (Destination) -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
-    val unselectedTint = ledgerNavigationUnselectedTint(tokens.colors)
-    val currentIndex = destinations.indexOf(current).coerceAtLeast(0)
+    val primary = railPrimaryDestinations(destinations)
+    val overflow = railOverflowDestinations(destinations)
+    val currentIndex = primary.indexOf(current).let { if (it >= 0) it else primary.size }
     val railState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex)
+    var overflowExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(currentIndex) {
         if (railState.layoutInfo.visibleItemsInfo.none { it.index == currentIndex }) {
@@ -405,46 +447,115 @@ private fun VaultRail(
         }
     }
 
-    NavigationRail(
-        containerColor = tokens.colors.panel,
-        header = {
-            Spacer(Modifier.height(VaultSpace.md))
-            Icon(Icons.Filled.AccountBalance, contentDescription = null, tint = tokens.colors.bitcoin)
-        },
+    Column(
+        Modifier
+            .fillMaxHeight()
+            .width(RAIL_WIDTH_DP.dp)
+            .background(tokens.colors.panel),
     ) {
+        Spacer(Modifier.height(VaultSpace.lg))
+        Icon(
+            Icons.Filled.AccountBalance,
+            contentDescription = null,
+            tint = tokens.colors.bitcoin,
+            modifier = Modifier
+                .padding(start = RAIL_EDGE_MARKER_WIDTH + RAIL_GLYPH_INSET)
+                .size(RAIL_GLYPH_SIZE),
+        )
+        Spacer(Modifier.height(VaultSpace.lg))
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
                 .testTag(VAULT_RAIL_TEST_TAG),
             state = railState,
-            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             items(
-                count = destinations.size,
-                key = { index -> destinations[index].name },
+                count = primary.size,
+                key = { index -> primary[index].name },
             ) { index ->
-                val destination = destinations[index]
-                NavigationRailItem(
+                val destination = primary[index]
+                RailItem(
+                    icon = destination.icon,
+                    label = destination.label,
                     selected = destination == current,
                     onClick = { onNavigate(destination) },
-                    icon = {
-                        NavigationDestinationIcon(
-                            destination = destination,
-                            selected = destination == current,
-                            indicatorWidth = RAIL_INDICATOR_WIDTH,
-                        )
-                    },
-                    label = { Text(destination.label, style = MaterialTheme.typography.labelSmall) },
-                    colors = NavigationRailItemDefaults.colors(
-                        selectedIconColor = ledgerNavigationSelectedTint(destination, tokens.colors),
-                        selectedTextColor = tokens.colors.foreground,
-                        indicatorColor = tokens.colors.bitcoinSoft,
-                        unselectedIconColor = unselectedTint,
-                        unselectedTextColor = unselectedTint,
-                    ),
                 )
             }
+            if (overflow.isNotEmpty()) {
+                item(key = "more") {
+                    Box {
+                        RailItem(
+                            icon = Icons.Filled.MoreHoriz,
+                            label = moreNavigationLabel(overflow.size),
+                            selected = current in overflow,
+                            onClick = { overflowExpanded = true },
+                            modifier = Modifier.testTag(VAULT_RAIL_MORE_TEST_TAG),
+                        )
+                        DropdownMenu(
+                            expanded = overflowExpanded,
+                            onDismissRequest = { overflowExpanded = false },
+                            containerColor = tokens.colors.panel,
+                        ) {
+                            overflow.forEach { destination ->
+                                val ink = if (destination == current) {
+                                    tokens.colors.bitcoin
+                                } else {
+                                    tokens.colors.foregroundSecondary
+                                }
+                                DropdownMenuItem(
+                                    text = { Text(destination.label, color = ink) },
+                                    onClick = {
+                                        overflowExpanded = false
+                                        onNavigate(destination)
+                                    },
+                                    leadingIcon = {
+                                        Icon(destination.icon, contentDescription = null, tint = ink)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun RailItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens = LocalLedgerTheme.current
+    val ink = if (selected) tokens.colors.bitcoin else tokens.colors.foregroundTertiary
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(RAIL_ITEM_HEIGHT)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .background(if (selected) tokens.colors.bitcoinSoft else Color.Transparent),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .width(RAIL_EDGE_MARKER_WIDTH)
+                .fillMaxHeight()
+                .background(if (selected) tokens.colors.bitcoin else Color.Transparent),
+        )
+        Spacer(Modifier.width(RAIL_GLYPH_INSET))
+        Icon(icon, contentDescription = label, tint = ink, modifier = Modifier.size(RAIL_GLYPH_SIZE))
+        Spacer(Modifier.width(RAIL_LABEL_GAP))
+        Text(
+            label.uppercase(),
+            style = tokens.type.tabLabel,
+            color = ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(end = VaultSpace.sm),
+        )
     }
 }
 
