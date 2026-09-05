@@ -176,6 +176,9 @@ extension View {
 
 // MARK: - Typography
 
+/// SF Symbol glyph sizes. Text never uses these; every text call site draws a
+/// `LedgerTypeRole` through `.ledgerType(_:)`, which owns face, size, weight,
+/// tracking, leading, case, and tabular figures.
 enum AppFont {
     static let iconHero = Font.system(size: 64)
     static let iconDisplay = Font.system(size: 56)
@@ -184,59 +187,9 @@ enum AppFont {
     static let iconMedium = Font.system(size: 20)
     static let iconSmall = Font.system(size: 18)
     static let iconTiny = Font.system(size: 16)
-    static let heroNumber = Font.system(size: 48, weight: .bold)
-    static let heroNumberMono = Font.system(size: 56, weight: .bold, design: .monospaced)
-    static let largeNumber = Font.system(size: 30, weight: .bold)
-    static let titleNumberMono = Font.system(size: 22, weight: .bold, design: .monospaced)
-    static let largeNumberMono = Font.system(size: 20, weight: .bold, design: .monospaced)
-    static let mediumNumberMono = Font.system(size: 18, weight: .semibold, design: .monospaced)
-    static let title = Font.system(size: 22, weight: .bold)
-    static let subtitle = Font.system(size: 18, weight: .bold)
-    static let subtitleStrong = Font.system(size: 17, weight: .semibold)
-    static let headline = Font.system(size: 16, weight: .bold)
-    static let headlineMedium = Font.system(size: 16, weight: .medium)
-    static let monoData = Font.system(size: 17, weight: .semibold, design: .monospaced)
-    static let monoBodyStrong = Font.system(size: 15, weight: .bold, design: .monospaced)
-    static let monoCaption = Font.system(size: 13, weight: .regular, design: .monospaced)
-    static let monoCaptionStrong = Font.system(size: 13, weight: .bold, design: .monospaced)
-    static let monoSmall = Font.system(size: 11, weight: .regular, design: .monospaced)
-    static let monoSmallStrong = Font.system(size: 11, weight: .bold, design: .monospaced)
-    static let monoMicro = Font.system(size: 10, weight: .medium, design: .monospaced)
-    static let monoMicroStrong = Font.system(size: 10, weight: .bold, design: .monospaced)
-    static let monoNanoStrong = Font.system(size: 9, weight: .bold, design: .monospaced)
-    static let labelLarge = Font.system(size: 14, weight: .semibold)
-    static let labelLargeStrong = Font.system(size: 14, weight: .bold)
-    static let label = Font.system(size: 13, weight: .semibold)
-    static let labelStrong = Font.system(size: 13, weight: .bold)
-    static let labelMedium = Font.system(size: 13, weight: .medium)
-    static let labelRegular = Font.system(size: 13, weight: .regular)
-    static let labelSmall = Font.system(size: 12, weight: .semibold)
-    static let labelSmallStrong = Font.system(size: 12, weight: .bold)
-    static let labelSmallRegular = Font.system(size: 12, weight: .regular)
-    static let micro = Font.system(size: 10, weight: .regular)
-    static let microMedium = Font.system(size: 10, weight: .medium)
-    static let microStrong = Font.system(size: 10, weight: .bold)
-    static let sectionHeader = Font.system(size: 11, weight: .bold)
-    static let sectionHeaderMedium = Font.system(size: 11, weight: .semibold)
-    static let body = Font.system(size: 15, weight: .medium)
-    static let bodyStrong = Font.system(size: 15, weight: .semibold)
-    static let bodyBold = Font.system(size: 15, weight: .bold)
-    static let bodyRegular = Font.system(size: 15, weight: .regular)
-    static let caption = Font.system(size: 13, weight: .medium)
-    static let captionStrong = Font.system(size: 13, weight: .semibold)
-    static let small = Font.system(size: 11, weight: .medium)
-    static let smallRegular = Font.system(size: 11, weight: .regular)
-
-    static let heroTracking: CGFloat = 0
-    static let largeTracking: CGFloat = 0
-    static let sectionTracking: CGFloat = 0
 
     static func icon(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         Font.system(size: size, weight: weight)
-    }
-
-    static func mono(size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        Font.system(size: size, weight: weight, design: .monospaced)
     }
 }
 

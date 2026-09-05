@@ -232,9 +232,7 @@ struct ContentView: View {
                         }
                     } header: {
                         Text("Money")
-                            .font(AppFont.sectionHeader)
-                            .tracking(AppFont.sectionTracking)
-                            .textCase(.uppercase)
+                            .ledgerType(.sectionLabel)
                             .foregroundStyle(theme.textMuted)
                     }
 
@@ -244,9 +242,7 @@ struct ContentView: View {
                         }
                     } header: {
                         Text("Tasks")
-                            .font(AppFont.sectionHeader)
-                            .tracking(AppFont.sectionTracking)
-                            .textCase(.uppercase)
+                            .ledgerType(.sectionLabel)
                             .foregroundStyle(theme.textMuted)
                     }
 
@@ -256,9 +252,7 @@ struct ContentView: View {
                         }
                     } header: {
                         Text("Tools")
-                            .font(AppFont.sectionHeader)
-                            .tracking(AppFont.sectionTracking)
-                            .textCase(.uppercase)
+                            .ledgerType(.sectionLabel)
                             .foregroundStyle(theme.textMuted)
                     }
                 }
@@ -311,7 +305,7 @@ struct ContentView: View {
                     appearanceModeRaw = AppearanceMode.light.rawValue
                 } label: {
                     Image(systemName: "sun.max.fill")
-                        .font(AppFont.sectionHeaderMedium)
+                        .font(AppFont.icon(size: 11, weight: .semibold))
                         .foregroundStyle(appearanceMode == .light ? .white : theme.textMuted)
                         .frame(width: 28, height: 24)
                         .background(appearanceMode == .light ? theme.accent : Color.clear)
@@ -324,7 +318,7 @@ struct ContentView: View {
                     appearanceModeRaw = AppearanceMode.dark.rawValue
                 } label: {
                     Image(systemName: "moon.fill")
-                        .font(AppFont.sectionHeaderMedium)
+                        .font(AppFont.icon(size: 11, weight: .semibold))
                         .foregroundStyle(appearanceMode == .dark ? .white : theme.textMuted)
                         .frame(width: 28, height: 24)
                         .background(appearanceMode == .dark ? theme.accent : Color.clear)
@@ -349,22 +343,22 @@ struct ContentView: View {
                         .frame(width: 22, height: 22)
                         .overlay(
                             Text(String(activeMember.displayName.prefix(1)))
-                                .font(AppFont.sectionHeader)
+                                .ledgerType(.chip)
                                 .foregroundStyle(.white),
                         )
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(activeMember.displayName)
-                            .font(AppFont.labelSmall)
+                            .ledgerType(.rowPrimary)
                             .foregroundStyle(theme.text)
                         Text("Vogel Vault")
-                            .font(AppFont.micro)
+                            .ledgerType(.rowMeta)
                             .foregroundStyle(theme.textMuted)
                     }
 
                     Spacer()
                     Image(systemName: "chevron.down")
-                        .font(AppFont.micro)
+                        .font(AppFont.icon(size: 10, weight: .regular))
                         .foregroundStyle(theme.textMuted)
                 }
             }
@@ -385,12 +379,12 @@ struct ContentView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "plus")
-                        .font(AppFont.label)
+                        .font(AppFont.icon(size: 13, weight: .semibold))
                     Text("New transaction")
-                        .font(AppFont.labelSmall)
+                        .ledgerType(.rowPrimary)
                     Spacer()
                     Text("\u{2318}N")
-                        .font(AppFont.monoMicro)
+                        .ledgerType(.rowMeta)
                         .foregroundStyle(.white.opacity(0.85))
                 }
                 .foregroundStyle(.white)
@@ -426,13 +420,12 @@ struct ContentView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("NET WORTH")
-                        .font(AppFont.sectionHeader)
-                        .tracking(AppFont.sectionTracking)
+                        .ledgerType(.sectionLabel)
                         .foregroundStyle(theme.textMuted)
                         .padding(.horizontal, 6)
 
                     Text(sidebarNetWorth)
-                        .font(AppFont.mediumNumberMono)
+                        .ledgerType(.kpiValue)
                         .foregroundStyle(theme.text)
                         .padding(.horizontal, 6)
                 }
@@ -459,7 +452,7 @@ struct ContentView: View {
                 .frame(width: 32, height: 32)
                 .overlay(
                     Text(String(activeMember.displayName.prefix(1)))
-                        .font(AppFont.labelStrong)
+                        .ledgerType(.rowFigure)
                         .foregroundStyle(.white),
                 )
                 .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
@@ -473,7 +466,7 @@ struct ContentView: View {
             showAddTransaction = true
         } label: {
             Image(systemName: "plus")
-                .font(AppFont.labelLarge)
+                .font(AppFont.icon(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 32, height: 32)
                 .background(theme.accent)
@@ -503,7 +496,7 @@ struct ContentView: View {
 
     private var syncStatusGlyphImage: some View {
         Image(systemName: syncStatusIcon)
-            .font(AppFont.labelStrong)
+            .font(AppFont.icon(size: 13, weight: .bold))
             .foregroundStyle(syncStatus.phase == .failed ? theme.danger : theme.accent)
             .frame(width: 32, height: 32)
             .background(syncStatus.phase == .failed ? theme.dangerSoft : theme.accentSoft)
@@ -511,7 +504,7 @@ struct ContentView: View {
             .overlay(alignment: .topTrailing) {
                 if syncStatus.pendingCount > 1 {
                     Text("\(syncStatus.pendingCount)")
-                        .font(AppFont.monoNanoStrong)
+                        .ledgerType(.chip)
                         .foregroundStyle(.white)
                         .frame(minWidth: 14, minHeight: 14)
                         .background(theme.accent)
@@ -542,17 +535,17 @@ struct ContentView: View {
         if syncStatus.phase == .failed, let message = syncStatus.lastError {
             HStack(spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(AppFont.labelLargeStrong)
+                    .font(AppFont.icon(size: 14, weight: .bold))
                     .foregroundStyle(theme.danger)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(message)
-                        .font(AppFont.labelStrong)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.text)
                     Text(syncStatus.canRetry
                         ? "Saved locally. Retry sync when ready."
                         : "Saved on this device only.")
-                        .font(AppFont.smallRegular)
+                        .ledgerType(.body)
                         .foregroundStyle(theme.textMuted)
                 }
 
@@ -564,7 +557,7 @@ struct ContentView: View {
                     Button("Retry") {
                         syncStatus.retry()
                     }
-                    .font(AppFont.labelSmallStrong)
+                    .ledgerType(.button)
                     .foregroundStyle(theme.accent)
                     .buttonStyle(.plain)
                 }
@@ -573,7 +566,7 @@ struct ContentView: View {
                     syncStatus.dismissFailure()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(AppFont.sectionHeader)
+                        .font(AppFont.icon(size: 11, weight: .bold))
                         .foregroundStyle(theme.textMuted)
                 }
                 .buttonStyle(.plain)

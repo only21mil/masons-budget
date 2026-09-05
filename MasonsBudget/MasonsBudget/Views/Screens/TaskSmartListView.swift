@@ -148,7 +148,7 @@ struct TaskRowView: View {
                 Image(systemName: icon)
                     .font(AppFont.iconSmall)
                 Text(label)
-                    .font(AppFont.micro)
+                    .ledgerType(.tabLabel)
             }
             .foregroundStyle(.white)
             .frame(width: Self.swipeActionWidth)
@@ -177,9 +177,9 @@ struct TaskRowView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(todo.title)
-                    .font(AppFont.body)
-                    .foregroundStyle(theme.text)
                     .strikethrough(todo.isDone, color: theme.textFaint)
+                    .ledgerType(.rowPrimary)
+                    .foregroundStyle(theme.text)
 
                 if let project = todo.project {
                     HStack(spacing: 6) {
@@ -187,7 +187,7 @@ struct TaskRowView: View {
                             .fill(theme.accent.opacity(0.5))
                             .frame(width: 6, height: 6)
                         Text(project)
-                            .font(AppFont.smallRegular)
+                            .ledgerType(.rowMeta)
                             .foregroundStyle(theme.textMuted)
                     }
                 }
@@ -197,13 +197,13 @@ struct TaskRowView: View {
 
             if let due = todo.dueDate {
                 Text(Self.relativeDue(due))
-                    .font(AppFont.sectionHeaderMedium)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(Self.isOverdue(due) ? theme.danger : theme.accent)
             }
 
             if todo.isFlagged {
                 Image(systemName: AppIcon.flagFilled)
-                    .font(AppFont.labelRegular)
+                    .font(AppFont.icon(size: 13, weight: .regular))
                     .foregroundStyle(theme.accent)
             }
         }
@@ -346,10 +346,10 @@ struct TaskSmartListView: View {
                         .foregroundStyle(theme.accent),
                 )
             Text("Nothing in \(filter.title)")
-                .font(AppFont.bodyStrong)
+                .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.text)
             Text("You're all caught up here.")
-                .font(AppFont.labelRegular)
+                .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.textMuted)
         }
         .frame(maxWidth: .infinity)

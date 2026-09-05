@@ -72,11 +72,11 @@ struct CategoryDetailView: View {
                 VStack(spacing: 0) {
                     HStack {
                         Text("Monthly limit")
-                            .font(AppFont.labelRegular)
+                            .ledgerType(.rowPrimary)
                             .foregroundStyle(theme.textMuted)
                         Spacer()
                         TextField("Limit", text: $monthlyBudget)
-                            .font(AppFont.monoBodyStrong)
+                            .ledgerType(.rowFigure)
                             .foregroundStyle(theme.text)
                             .multilineTextAlignment(.trailing)
                             .frame(maxWidth: 140)
@@ -86,7 +86,7 @@ struct CategoryDetailView: View {
                     if let message = writeFeedback.message {
                         HStack {
                             Text(message)
-                                .font(AppFont.labelSmall)
+                                .ledgerType(.body)
                                 .foregroundStyle(theme.danger)
                             Spacer()
                         }
@@ -98,11 +98,11 @@ struct CategoryDetailView: View {
 
                     HStack {
                         Text("Transactions")
-                            .font(AppFont.labelRegular)
+                            .ledgerType(.rowPrimary)
                             .foregroundStyle(theme.textMuted)
                         Spacer()
                         Text("\(categoryTransactions.count)")
-                            .font(AppFont.monoBodyStrong)
+                            .ledgerType(.rowFigure)
                             .foregroundStyle(theme.text)
                     }
                     .padding(14)
@@ -118,18 +118,17 @@ struct CategoryDetailView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(tx.merchant)
-                                        .font(AppFont.labelLarge)
+                                        .ledgerType(.rowPrimary)
                                         .foregroundStyle(theme.text)
                                     Text(formatDate(tx.date))
-                                        .font(AppFont.smallRegular)
+                                        .ledgerType(.rowMeta)
                                         .foregroundStyle(theme.textMuted)
                                 }
                                 Spacer()
                                 AmountView(
                                     sats: tx.displaySatsValue(btcPrice: btcPrice),
                                     unit: unit,
-                                    size: 13,
-                                    weight: .bold,
+                                    role: .rowFigure,
                                     showSign: true,
                                     accent: tx.isIncome,
                                     btcPrice: btcPrice,
@@ -151,7 +150,7 @@ struct CategoryDetailView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         if let message = deletion.message {
                             Text(message)
-                                .font(AppFont.labelSmall)
+                                .ledgerType(.body)
                                 .foregroundStyle(theme.danger)
                         }
                         Button(role: .destructive) {
@@ -160,7 +159,7 @@ struct CategoryDetailView: View {
                             HStack {
                                 Image(systemName: "trash")
                                 Text(deletion.isDeleting ? "DELETING" : "DELETE CATEGORY")
-                                    .font(AppFont.monoCaptionStrong)
+                                    .ledgerType(.rowFigure)
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -181,7 +180,7 @@ struct CategoryDetailView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(writeFeedback.isSaving ? "Saving…" : "Save") { save() }
-                        .font(AppFont.bodyBold)
+                        .ledgerType(.button)
                         .foregroundStyle(theme.accent)
                         .disabled(writeFeedback.isSaving)
                 }

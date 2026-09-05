@@ -147,17 +147,15 @@ struct BudgetView: View {
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(label) '\(String(year).suffix(2))\(offset == 0 ? " · now" : "")")
-                    .font(AppFont.microStrong)
-                    .tracking(AppFont.sectionTracking)
-                    .textCase(.uppercase)
+                    .ledgerType(.chip)
                     .opacity(isSelected ? 0.85 : 0.55)
 
                 if let rate {
                     Text("\(rate)%")
-                        .font(AppFont.monoCaptionStrong)
+                        .ledgerType(.rowFigure)
                 } else {
                     Text("--")
-                        .font(AppFont.monoCaptionStrong)
+                        .ledgerType(.rowFigure)
                 }
             }
             .foregroundStyle(isSelected ? .white : theme.text)
@@ -186,17 +184,17 @@ struct BudgetView: View {
                 // The denominator is the sum of category budgets, never
                 // income — label it as the limit it actually is.
                 Text("Spent / Limit")
-                    .font(AppFont.labelSmall)
+                    .ledgerType(.kpiLabel)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     LedgerSettlingNumeral(value: NSDecimalNumber(decimal: monthSpent).doubleValue) {
                         AppFormatter.formatCurrency(Decimal($0))
                     }
-                    .font(AppFont.largeNumberMono)
+                    .ledgerType(.kpiValue)
                     .foregroundStyle(theme.text)
                     Text("/ \(AppFormatter.formatCurrency(limit))")
-                        .font(AppFont.monoCaption)
+                        .ledgerType(.rowFigure)
                         .foregroundStyle(theme.textMuted)
                 }
             }
@@ -205,12 +203,12 @@ struct BudgetView: View {
 
             HStack {
                 Text("\(Int(pct * 100))% of budget spent")
-                    .font(AppFont.labelSmallRegular)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
                 let saved = limit - monthSpent
                 Text("\(AppFormatter.formatCurrency(max(saved, 0))) saved")
-                    .font(AppFont.labelSmall)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.success)
             }
         }
@@ -222,8 +220,7 @@ struct BudgetView: View {
     private var budgetVsActualSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("BUDGET vs ACTUAL")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -248,12 +245,12 @@ struct BudgetView: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(cat.name)
-                    .font(AppFont.sectionHeaderMedium)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 Spacer()
                 Text("\(AppFormatter.formatCurrency(spent)) / \(AppFormatter.formatCurrency(budget))")
-                    .font(AppFont.monoMicro)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(over ? theme.danger : theme.textMuted)
             }
             LedgerProgressBar(
@@ -273,8 +270,7 @@ struct BudgetView: View {
     private var categoriesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("CATEGORIES")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -315,11 +311,10 @@ struct BudgetView: View {
                 HStack {
                     HStack(spacing: 8) {
                         Text(cat.name)
-                            .font(AppFont.bodyStrong)
+                            .ledgerType(.rowPrimary)
                             .foregroundStyle(theme.text)
                         Text(statusLabel)
-                            .font(AppFont.monoNanoStrong)
-                            .tracking(AppFont.sectionTracking)
+                            .ledgerType(.chip)
                             .foregroundStyle(statusColor)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -328,7 +323,7 @@ struct BudgetView: View {
                     }
                     Spacer()
                     Text(AppFormatter.formatCurrency(spent))
-                        .font(AppFont.monoCaptionStrong)
+                        .ledgerType(.rowFigure)
                         .foregroundStyle(theme.text)
                 }
 
@@ -336,7 +331,7 @@ struct BudgetView: View {
                     LedgerProgressBar(fraction: pct, height: 6, fill: statusColor, track: theme.surface2)
 
                     Text(over ? "+\(Int((pct - 1) * 100))% over" : "\(remainingPct)% left")
-                        .font(AppFont.monoSmallStrong)
+                        .ledgerType(.rowMeta)
                         .foregroundStyle(statusColor)
                         .frame(minWidth: 76, alignment: .trailing)
                 }

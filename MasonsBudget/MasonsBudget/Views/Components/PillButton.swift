@@ -11,7 +11,7 @@ struct PillButton: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(AppFont.captionStrong)
+                .ledgerType(.button)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .foregroundStyle(foregroundColor)

@@ -250,7 +250,7 @@ enum LedgerFontWeight: Int, CaseIterable, Sendable {
     }
 }
 
-enum LedgerTypeRole: Sendable {
+enum LedgerTypeRole: CaseIterable, Sendable {
     case screenTitle
     case drilldownTitle
     case screenSubtitle
@@ -448,6 +448,10 @@ extension View {
         modifier(LedgerFoundationsModifier())
     }
 
+    /// Draws text with a ledger type role: Source Code Pro at the role's size,
+    /// weight, tracking, and leading, uppercase where the role is, and tabular
+    /// figures where the role is. Every text call site in the app uses this;
+    /// `AppFont` keeps only SF Symbol glyph sizes.
     func ledgerType(_ role: LedgerTypeRole) -> some View {
         modifier(LedgerTypeModifier(role: role))
     }

@@ -14,10 +14,10 @@ struct LockScreenView: View {
                     .font(AppFont.iconXL)
                     .foregroundStyle(theme.accent)
                 Text("Vogel Vault")
-                    .font(AppFont.title)
+                    .ledgerType(.screenTitle)
                     .foregroundStyle(theme.text)
                 Button("Unlock") { authenticate() }
-                    .font(AppFont.bodyStrong)
+                    .ledgerType(.button)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 32)
                     .padding(.vertical, 12)
@@ -26,7 +26,7 @@ struct LockScreenView: View {
 
                 if let authError {
                     Text(authError)
-                        .font(AppFont.caption)
+                        .ledgerType(.body)
                         .foregroundStyle(theme.danger)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, AppLayout.sectionPadding)

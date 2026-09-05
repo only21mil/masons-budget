@@ -17,16 +17,13 @@ struct ScreenHeader<Accessory: View>: View {
         VStack(alignment: .leading, spacing: 4) {
             if let eyebrow {
                 Text(eyebrow)
-                    .font(AppFont.sectionHeader)
-                    .tracking(AppFont.sectionTracking)
-                    .textCase(.uppercase)
+                    .ledgerType(.screenSubtitle)
                     .foregroundStyle(theme.accent)
             }
 
             HStack(alignment: .bottom) {
                 Text(title)
-                    .font(AppFont.largeNumber)
-                    .tracking(AppFont.largeTracking)
+                    .ledgerType(.screenTitle)
                     .foregroundStyle(theme.text)
 
                 Spacer()

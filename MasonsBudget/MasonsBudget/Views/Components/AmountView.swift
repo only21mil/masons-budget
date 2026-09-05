@@ -3,8 +3,7 @@ import SwiftUI
 struct AmountView: View {
     let sats: Decimal
     let unit: DisplayUnit
-    var size: CGFloat = 17
-    var weight: Font.Weight = .semibold
+    var role: LedgerTypeRole = .rowFigure
     var color: Color?
     var showSign: Bool = false
     var accent: Bool = false
@@ -40,19 +39,28 @@ struct AmountView: View {
         unit == .usd ? "" : unit.label
     }
 
+    /// The unit label sits one tier below the figure: hero decimals under the
+    /// price hero, KPI sub under hero and KPI figures, row meta under row figures.
+    private var suffixRole: LedgerTypeRole {
+        switch role {
+        case .priceHero: .priceHeroDecimals
+        case .heroNumeral, .amountInput, .kpiValue: .kpiSub
+        default: .rowMeta
+        }
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text("\(signPrefix)\(unit.prefix)\(formattedValue)")
-                .font(AppFont.mono(size: size, weight: weight))
+                .ledgerType(role)
                 .foregroundStyle(displayColor)
 
             if !unitSuffix.isEmpty {
                 Text(" \(unitSuffix)")
-                    .font(AppFont.mono(size: size * 0.62, weight: .medium))
+                    .ledgerType(suffixRole)
                     .foregroundStyle(displayColor.opacity(0.55))
             }
         }
-        .monospacedDigit()
     }
 }
 
@@ -64,15 +72,14 @@ struct RequiredFinancialSourceView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
-                .font(AppFont.sectionHeaderMedium)
-                .tracking(AppFont.sectionTracking)
+            Text(title)
+                .ledgerType(.kpiLabel)
                 .foregroundStyle(theme.textMuted)
             Text("Unavailable")
-                .font(AppFont.mediumNumberMono)
+                .ledgerType(.kpiValue)
                 .foregroundStyle(theme.text)
             Text(message)
-                .font(AppFont.smallRegular)
+                .ledgerType(.body)
                 .foregroundStyle(theme.textMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

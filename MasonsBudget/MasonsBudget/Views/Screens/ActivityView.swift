@@ -135,7 +135,7 @@ struct ActivityView: View {
         LazyVStack(spacing: AppLayout.cardSpacing) {
             if grouped.isEmpty {
                 Text(isSearching ? "No matching transactions" : "No transactions yet")
-                    .font(AppFont.labelRegular)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.textMuted)
                     .frame(maxWidth: .infinity)
                     .padding(20)
@@ -144,8 +144,7 @@ struct ActivityView: View {
                 ForEach(grouped, id: \.0) { day, txs in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(day.uppercased())
-                            .font(AppFont.sectionHeader)
-                            .tracking(AppFont.sectionTracking)
+                            .ledgerType(.sectionLabel)
                             .foregroundStyle(theme.textMuted)
                             .padding(.horizontal, 4)
 
@@ -186,23 +185,23 @@ struct ActivityView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(tx.merchant)
-                        .font(AppFont.labelLarge)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.text)
                         .lineLimit(1)
                     HStack(spacing: 5) {
                         if let rail = PaymentRailPresentation.forCard(tx.card) {
                             Image(systemName: rail.icon)
-                                .font(AppFont.micro)
+                                .font(AppFont.icon(size: 10, weight: .regular))
                                 .foregroundStyle(theme.accent)
                             Text(rail.rawValue)
-                                .font(AppFont.monoMicroStrong)
+                                .ledgerType(.chip)
                                 .foregroundStyle(theme.textMuted)
                         } else {
                             Image(systemName: PaymentMethod.icon(forWire: tx.card))
-                                .font(AppFont.micro)
+                                .font(AppFont.icon(size: 10, weight: .regular))
                                 .foregroundStyle(theme.textMuted)
                             Text(PaymentMethod.label(forWire: tx.card))
-                                .font(AppFont.smallRegular)
+                                .ledgerType(.rowMeta)
                                 .foregroundStyle(theme.textMuted)
                         }
                     }
@@ -210,7 +209,7 @@ struct ActivityView: View {
 
                 Spacer()
 
-                AmountView(sats: tx.displaySatsValue(btcPrice: btcPrice), unit: unit, size: 14, weight: .bold, showSign: true, accent: isIncome, btcPrice: btcPrice)
+                AmountView(sats: tx.displaySatsValue(btcPrice: btcPrice), unit: unit, role: .rowFigure, showSign: true, accent: isIncome, btcPrice: btcPrice)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)

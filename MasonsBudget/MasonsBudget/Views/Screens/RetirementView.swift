@@ -142,8 +142,7 @@ struct RetirementView: View {
     private var goalsCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("2026 GOALS")
-                .font(AppFont.sectionHeader)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(.white.opacity(0.85))
 
             goalRow(
@@ -175,21 +174,21 @@ struct RetirementView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(AppFont.labelLargeStrong)
+                    .font(AppFont.icon(size: 14, weight: .bold))
                     .foregroundStyle(.white.opacity(0.9))
                 Text(label)
-                    .font(AppFont.bodyBold)
+                    .ledgerType(.rowFigure)
                     .foregroundStyle(.white)
                 Spacer()
                 Text("\(Int(pct))%")
-                    .font(AppFont.monoCaptionStrong)
+                    .ledgerType(.rowFigure)
                     .foregroundStyle(.white.opacity(0.9))
             }
 
             LedgerProgressBar(fraction: pct / 100, height: 5, fill: .white, track: .white.opacity(0.25))
 
             Text(detail)
-                .font(AppFont.monoSmallStrong)
+                .ledgerType(.rowMeta)
                 .foregroundStyle(.white.opacity(0.7))
         }
     }
@@ -199,8 +198,7 @@ struct RetirementView: View {
     private var storageSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("STORAGE")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -247,16 +245,16 @@ struct RetirementView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(AppFont.labelLarge)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
                 Text(subtitle)
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
 
-            AmountView(sats: btc * 100_000_000, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
+            AmountView(sats: btc * 100_000_000, unit: unit, role: .rowFigure, btcPrice: btcPrice)
         }
         .padding(14)
     }
@@ -271,11 +269,10 @@ struct RetirementView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("RETIREMENT ACCOUNTS")
-                    .font(AppFont.labelSmallStrong)
-                    .tracking(AppFont.sectionTracking)
+                    .ledgerType(.sectionLabel)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
-                AmountView(sats: totalHoldingsSats, unit: unit, size: 12, weight: .bold, accent: true, btcPrice: btcPrice)
+                AmountView(sats: totalHoldingsSats, unit: unit, role: .rowFigure, accent: true, btcPrice: btcPrice)
             }
             .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -305,22 +302,22 @@ struct RetirementView: View {
                     .frame(width: 38, height: 38)
                     .overlay(
                         Image(systemName: "chart.line.uptrend.xyaxis")
-                            .font(AppFont.subtitleStrong)
+                            .font(AppFont.icon(size: 17, weight: .semibold))
                             .foregroundStyle(theme.accent),
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(account.provider)
-                        .font(AppFont.labelLarge)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.text)
                     Text(holdingAccountSubtitle(account))
-                        .font(AppFont.small)
+                        .ledgerType(.rowMeta)
                         .foregroundStyle(theme.textMuted)
                 }
 
                 Spacer()
 
-                AmountView(sats: sats, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
+                AmountView(sats: sats, unit: unit, role: .rowFigure, btcPrice: btcPrice)
             }
             .padding(14)
 
@@ -359,22 +356,22 @@ struct RetirementView: View {
 
         return HStack(spacing: 8) {
             Text(holding.ticker ?? "—")
-                .font(AppFont.monoSmallStrong)
+                .ledgerType(.chip)
                 .foregroundStyle(theme.accent)
                 .frame(width: 40, alignment: .leading)
 
             Text(holding.name)
-                .font(AppFont.labelSmallRegular)
+                .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.text)
                 .lineLimit(1)
 
             Spacer()
 
-            AmountView(sats: sats, unit: unit, size: 12, weight: .semibold, btcPrice: btcPrice)
+            AmountView(sats: sats, unit: unit, role: .rowFigure, btcPrice: btcPrice)
 
             let positive = gainPct >= 0
             Text("\(positive ? "+" : "")\(NSDecimalNumber(decimal: gainPct).intValue)%")
-                .font(AppFont.monoMicroStrong)
+                .ledgerType(.rowMeta)
                 .foregroundStyle(positive ? theme.success : theme.danger)
                 .frame(width: 44, alignment: .trailing)
         }
@@ -507,8 +504,7 @@ struct RetirementView: View {
     private var projectionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("PROJECTIONS")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -533,7 +529,7 @@ struct RetirementView: View {
                     projectionHorizon = yr
                 } label: {
                     Text("\(yr)yr")
-                        .font(AppFont.labelSmallStrong)
+                        .ledgerType(.chip)
                         .foregroundStyle(projectionHorizon == yr ? .white : theme.textMuted)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 7)
@@ -557,12 +553,11 @@ struct RetirementView: View {
 
         return VStack(alignment: .leading, spacing: 4) {
             Text("TOTAL AT \(projectionHorizon) YEARS")
-                .font(AppFont.microStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.kpiLabel)
                 .foregroundStyle(theme.textMuted)
-            AmountView(sats: totalSats, unit: unit, size: 28, weight: .bold, btcPrice: btcPrice)
+            AmountView(sats: totalSats, unit: unit, role: .heroNumeral, btcPrice: btcPrice)
             Text("with 15% BTC/IBIT · 10% VOO growth")
-                .font(AppFont.smallRegular)
+                .ledgerType(.body)
                 .foregroundStyle(theme.textMuted)
         }
     }
@@ -601,16 +596,16 @@ struct RetirementView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(label)
-                    .font(AppFont.captionStrong)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
                 Text(subtitle)
-                    .font(AppFont.smallRegular)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
 
-            AmountView(sats: sats, unit: unit, size: 14, weight: .bold, btcPrice: btcPrice)
+            AmountView(sats: sats, unit: unit, role: .rowFigure, btcPrice: btcPrice)
         }
         .padding(12)
     }
@@ -642,12 +637,12 @@ struct RetirementView: View {
     private var projectionAssumptions: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Assumptions")
-                .font(AppFont.sectionHeader)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
 
             ForEach(assumptionLines, id: \.self) { line in
                 Text("• \(line)")
-                    .font(AppFont.micro)
+                    .ledgerType(.body)
                     .foregroundStyle(theme.textMuted)
             }
         }
@@ -661,15 +656,14 @@ struct RetirementView: View {
     private var lotsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("LOTS")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
             VStack(spacing: 0) {
                 if visibleLots.isEmpty {
                     Text("No cost basis lots tracked yet")
-                        .font(AppFont.labelRegular)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.textMuted)
                         .padding(16)
                 } else {
@@ -701,23 +695,23 @@ struct RetirementView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
                     Text(lot.lotId)
-                        .font(AppFont.monoCaptionStrong)
+                        .ledgerType(.rowFigure)
                         .foregroundStyle(theme.text)
                     Text(lot.label)
-                        .font(AppFont.labelSmallRegular)
+                        .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.text)
                 }
                 Text("\(lot.date) · \(AppFormatter.formatBtc(lot.btcAmount)) BTC · cost \(AppFormatter.formatCurrency(lot.basisUsd))")
-                    .font(AppFont.monoSmall)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
             }
 
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                AmountView(sats: lotSats, unit: unit, size: 13, weight: .bold, btcPrice: btcPrice)
+                AmountView(sats: lotSats, unit: unit, role: .rowFigure, btcPrice: btcPrice)
                 Text("\(positive ? "+" : "")\(NSDecimalNumber(decimal: returnPct).intValue)%")
-                    .font(AppFont.monoMicroStrong)
+                    .ledgerType(.rowMeta)
                     .foregroundStyle(positive ? theme.success : theme.danger)
             }
         }

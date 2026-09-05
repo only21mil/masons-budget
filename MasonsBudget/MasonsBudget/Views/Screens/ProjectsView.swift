@@ -196,11 +196,11 @@ struct ProjectsView: View {
                         )
 
                     Text(item.label)
-                        .font(AppFont.labelMedium)
+                        .ledgerType(.kpiLabel)
                         .foregroundStyle(theme.textMuted)
 
                     Text("\(item.count)")
-                        .font(AppFont.title)
+                        .ledgerType(.screenTitle)
                         .foregroundStyle(theme.text)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -214,8 +214,7 @@ struct ProjectsView: View {
     private var projectsList: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("PROJECTS")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -265,11 +264,11 @@ struct ProjectsView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(project.name)
-                    .font(AppFont.body)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
                 if project.owner != activeMember {
                     Text(project.owner.displayName)
-                        .font(AppFont.labelSmallRegular)
+                        .ledgerType(.rowMeta)
                         .foregroundStyle(theme.textMuted)
                 }
             }
@@ -277,12 +276,11 @@ struct ProjectsView: View {
             Spacer()
 
             Text("\(project.openCount)")
-                .font(AppFont.monoCaption)
+                .ledgerType(.rowFigure)
                 .foregroundStyle(theme.textMuted)
-                .monospacedDigit()
 
             Image(systemName: AppIcon.arrowRight)
-                .font(AppFont.labelSmallRegular)
+                .font(AppFont.icon(size: 12, weight: .regular))
                 .foregroundStyle(theme.textMuted)
         }
         .padding(.horizontal, 14)
@@ -301,11 +299,11 @@ struct ProjectsView: View {
                 )
 
             Text(headline)
-                .font(AppFont.labelLarge)
+                .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.text)
 
             Text(message)
-                .font(AppFont.labelSmallRegular)
+                .ledgerType(.body)
                 .foregroundStyle(theme.textMuted)
                 .multilineTextAlignment(.center)
         }
@@ -321,14 +319,13 @@ struct ProjectsView: View {
     private var taskSearchResults: some View {
         LazyVStack(alignment: .leading, spacing: AppLayout.cardSpacing) {
             Text("TASKS")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
             if searchableTodos.isEmpty {
                 Text("No matching tasks")
-                    .font(AppFont.labelRegular)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.textMuted)
                     .frame(maxWidth: .infinity)
                     .padding(20)
@@ -354,8 +351,7 @@ struct ProjectsView: View {
     private var areasList: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("AREAS")
-                .font(AppFont.labelSmallStrong)
-                .tracking(AppFont.sectionTracking)
+                .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
@@ -404,11 +400,11 @@ struct ProjectsView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(area.name)
-                    .font(AppFont.body)
+                    .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.text)
                 if area.owner != activeMember {
                     Text(area.owner.displayName)
-                        .font(AppFont.labelSmallRegular)
+                        .ledgerType(.rowMeta)
                         .foregroundStyle(theme.textMuted)
                 }
             }
@@ -416,12 +412,11 @@ struct ProjectsView: View {
             Spacer()
 
             Text("\(area.openCount)")
-                .font(AppFont.monoCaption)
+                .ledgerType(.rowFigure)
                 .foregroundStyle(theme.textMuted)
-                .monospacedDigit()
 
             Image(systemName: AppIcon.arrowRight)
-                .font(AppFont.labelSmallRegular)
+                .font(AppFont.icon(size: 12, weight: .regular))
                 .foregroundStyle(theme.textMuted)
         }
         .padding(.horizontal, 14)
