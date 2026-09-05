@@ -16,7 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -511,10 +511,11 @@ internal fun BudgetCategoryEditorSheet(
         ) {
             Text(stringResource(R.string.budget_category_editor_title, seed.category.name))
             Text(stringResource(R.string.budget_category_editor_month, seed.budgetDocumentMonth))
-            OutlinedTextField(
+            LedgerTextField(
                 value = dollars,
                 onValueChange = { dollars = it },
-                label = { Text(stringResource(R.string.budget_category_amount_label)) },
+                label = stringResource(R.string.budget_category_amount_label),
+                prefix = "$",
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -894,10 +895,10 @@ private fun EditorField(
     labelRes: Int,
     keyboardType: KeyboardType = KeyboardType.Text,
 ) {
-    OutlinedTextField(
+    LedgerTextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(stringResource(labelRes)) },
+        label = stringResource(labelRes),
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),

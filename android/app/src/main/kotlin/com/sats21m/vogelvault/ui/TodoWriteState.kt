@@ -16,7 +16,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -322,12 +322,12 @@ internal fun TodoEditDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(stringResource(R.string.todo_edit)) },
         text = {
-            OutlinedTextField(
+            LedgerTextField(
                 value = title,
                 onValueChange = { title = it },
                 enabled = !busy,
                 singleLine = true,
-                label = { Text(stringResource(R.string.todo_title)) },
+                label = stringResource(R.string.todo_title),
             )
         },
         confirmButton = {

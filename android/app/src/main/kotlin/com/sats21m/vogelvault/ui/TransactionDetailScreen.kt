@@ -12,7 +12,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -208,31 +208,29 @@ fun TransactionDetailScreen(
                     )
                 }
                 item {
-                    OutlinedTextField(
+                    LedgerTextField(
                         value = merchant,
                         onValueChange = { merchant = it },
-                        label = { Text(stringResource(R.string.transaction_merchant)) },
+                        label = stringResource(R.string.transaction_merchant),
                         enabled = !working,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 item {
-                    OutlinedTextField(
+                    LedgerTextField(
                         value = category,
                         onValueChange = { category = it },
-                        label = { Text(stringResource(R.string.transaction_category)) },
+                        label = stringResource(R.string.transaction_category),
                         enabled = !working,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 item {
-                    OutlinedTextField(
+                    LedgerTextField(
                         value = amount,
                         onValueChange = { amount = it },
-                        label = { Text(stringResource(R.string.transaction_amount)) },
-                        supportingText = {
-                            Text(stringResource(R.string.transaction_amount_sign_help))
-                        },
+                        label = stringResource(R.string.transaction_amount),
+                        supporting = stringResource(R.string.transaction_amount_sign_help),
                         enabled = !working,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -249,21 +247,22 @@ fun TransactionDetailScreen(
                     )
                 }
                 item {
-                    OutlinedTextField(
+                    LedgerTextField(
                         value = date,
                         onValueChange = { date = it },
-                        label = { Text(stringResource(R.string.transaction_date)) },
-                        supportingText = { Text(stringResource(R.string.transaction_date_help)) },
+                        label = stringResource(R.string.transaction_date),
+                        supporting = stringResource(R.string.transaction_date_help),
                         enabled = !working,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 item {
-                    OutlinedTextField(
+                    LedgerTextField(
                         value = note,
                         onValueChange = { note = it },
-                        label = { Text(stringResource(R.string.transaction_note)) },
+                        label = stringResource(R.string.transaction_note),
                         enabled = !working,
+                        singleLine = false,
                         minLines = 3,
                         modifier = Modifier.fillMaxWidth(),
                     )

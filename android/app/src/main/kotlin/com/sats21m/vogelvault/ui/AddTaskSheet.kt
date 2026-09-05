@@ -12,7 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
+import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -171,35 +171,35 @@ internal fun AddTaskSheet(
             verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
         ) {
             Text(stringResource(R.string.tasks_add_title))
-            OutlinedTextField(
+            LedgerTextField(
                 value = title,
                 onValueChange = {
                     title = it
                     message = null
                 },
-                label = { Text(stringResource(R.string.tasks_task_title)) },
+                label = stringResource(R.string.tasks_task_title),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
+            LedgerTextField(
                 value = project,
                 onValueChange = { project = it },
-                label = { Text(stringResource(R.string.tasks_project)) },
+                label = stringResource(R.string.tasks_project),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
+            LedgerTextField(
                 value = area,
                 onValueChange = { area = it },
-                label = { Text(stringResource(R.string.tasks_area)) },
+                label = stringResource(R.string.tasks_area),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
+            LedgerTextField(
                 value = due,
                 onValueChange = { due = it },
-                label = { Text(stringResource(R.string.tasks_due_date)) },
-                supportingText = { Text(stringResource(R.string.tasks_due_date_hint)) },
+                label = stringResource(R.string.tasks_due_date),
+                supporting = stringResource(R.string.tasks_due_date_hint),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )

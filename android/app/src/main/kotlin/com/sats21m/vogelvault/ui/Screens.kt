@@ -15,7 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -1747,13 +1747,13 @@ internal fun SyncTokenConfiguration() {
                 color = LocalLedgerTheme.current.colors.foregroundSecondary,
                 style = MaterialTheme.typography.bodySmall,
             )
-            OutlinedTextField(
+            LedgerTextField(
                 value = token,
                 onValueChange = {
                     token = it
                     saveFailure = null
                 },
-                label = { Text(stringResource(R.string.write_credential_label)) },
+                label = stringResource(R.string.write_credential_label),
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
             )

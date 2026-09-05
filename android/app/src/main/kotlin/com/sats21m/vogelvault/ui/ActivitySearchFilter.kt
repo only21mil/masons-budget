@@ -7,8 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
+import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -177,13 +176,12 @@ internal fun rememberActivitySearchProjection(
 @Composable
 internal fun ActivitySearchControls(projection: ActivitySearchProjection) {
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
-        OutlinedTextField(
+        LedgerTextField(
             value = projection.query,
             onValueChange = projection.onQueryChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Search activity") },
-            placeholder = { Text("Merchant, note, amount, category, or card") },
-            singleLine = true,
+            placeholder = "Search activity",
+            prefix = "/",
         )
         Row(
             modifier = Modifier
