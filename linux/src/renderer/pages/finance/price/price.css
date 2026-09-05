@@ -19,7 +19,7 @@
   color: var(--vv-ledger-ink-secondary);
   cursor: pointer;
   font: var(--vv-ledger-weight-medium) var(--vv-ledger-text-chip) var(--vv-ledger-font);
-  letter-spacing: 0.14em;
+  letter-spacing: var(--vv-ledger-tracking-chip);
 }
 
 .vv-price-back:hover,
@@ -40,7 +40,7 @@
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-meta);
   font-weight: var(--vv-ledger-weight-medium);
-  letter-spacing: 0.18em;
+  letter-spacing: var(--vv-ledger-tracking-label);
   line-height: 1.4;
 }
 
@@ -65,7 +65,7 @@
 }
 
 .vv-price-hero__decimals {
-  opacity: 0.55;
+  color: var(--vv-ledger-bitcoin-decimals);
   font-size: var(--vv-ledger-text-kpi);
 }
 
@@ -76,7 +76,7 @@
   margin-top: 9px;
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-chip);
-  font-weight: var(--vv-ledger-weight-regular);
+  font-weight: var(--vv-ledger-weight-medium);
   letter-spacing: var(--vv-ledger-tracking-meta);
 }
 
@@ -109,7 +109,7 @@
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-kpi-label);
   font-weight: var(--vv-ledger-weight-medium);
-  letter-spacing: 0.16em;
+  letter-spacing: var(--vv-ledger-tracking-kpi-label);
 }
 
 .vv-price-sparkline {
@@ -135,8 +135,8 @@
 .vv-price-chart__ticks {
   margin-top: 9px;
   font-size: var(--vv-ledger-text-tab);
-  font-weight: var(--vv-ledger-weight-regular);
-  letter-spacing: 0.12em;
+  font-weight: var(--vv-ledger-weight-medium);
+  letter-spacing: var(--vv-ledger-tracking-tab);
 }
 
 .vv-price-convert {
@@ -153,7 +153,7 @@
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-kpi-label);
   font-weight: var(--vv-ledger-weight-medium);
-  letter-spacing: 0.16em;
+  letter-spacing: var(--vv-ledger-tracking-kpi-label);
 }
 
 .vv-price-convert__input-row {
@@ -183,6 +183,7 @@
   margin: 7px 0 0;
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-tab);
+  font-weight: var(--vv-ledger-weight-medium);
   letter-spacing: var(--vv-ledger-tracking-meta);
   text-transform: uppercase;
 }
@@ -203,7 +204,7 @@
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-kpi-label);
   font-weight: var(--vv-ledger-weight-medium);
-  letter-spacing: 0.16em;
+  letter-spacing: var(--vv-ledger-tracking-kpi-label);
 }
 
 .vv-price-convert__outputs strong {
@@ -226,8 +227,25 @@
   padding: 24px 0 14px;
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-kpi-label);
-  font-weight: var(--vv-ledger-weight-regular);
+  font-weight: var(--vv-ledger-weight-medium);
   letter-spacing: var(--vv-ledger-tracking-button);
+}
+
+/*
+ * One breath per quote: the glow widens from 18px to 32px and settles back
+ * over 600ms. The class is added when the operational price changes and
+ * removed on animationend, so it never runs on a timer. Dark theme with the
+ * glow on is the only place the shadow exists, so the pulse inherits that gate.
+ */
+.vv-ledger-root[data-vv-theme="dark"][data-vv-phosphor="on"]
+  .vv-price-hero__value--pulse:not(.vv-price-hero__value--unavailable) {
+  animation: vv-phosphor-pulse var(--vv-ledger-motion-pulse) 1;
+}
+
+@keyframes vv-phosphor-pulse {
+  0% { text-shadow: 0 0 18px rgba(247,147,26,.30); }
+  33% { text-shadow: 0 0 32px rgba(247,147,26,.30); }
+  100% { text-shadow: 0 0 18px rgba(247,147,26,.30); }
 }
 
 @media (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce) {
@@ -235,6 +253,16 @@
     .vv-price-hero__value:not(.vv-price-hero__value--unavailable) {
     text-shadow: none;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-price-hero__value--pulse {
+    animation: none;
+  }
+}
+
+.vv-ledger-root[data-vv-motion="off"] .vv-price-hero__value--pulse {
+  animation: none;
 }
 
 @media (max-width: 560px) {

@@ -14,6 +14,7 @@ const STORAGE_KEYS = {
   theme: "vogel-vault.ledger-theme",
   scanlines: "vogel-vault.scanlines",
   phosphor: "vogel-vault.phosphor",
+  reduceMotion: "vogel-vault.reduce-motion",
 } as const
 
 const mountedRoots = new Set<Root>()
@@ -22,9 +23,11 @@ function AppearanceProbe() {
   const {
     ledgerTheme,
     phosphorEnabled,
+    reduceMotionEnabled,
     scanlinesEnabled,
     setLedgerTheme,
     setPhosphorEnabled,
+    setReduceMotionEnabled,
     setScanlinesEnabled,
   } = useAppState()
 
@@ -34,9 +37,11 @@ function AppearanceProbe() {
     createElement("output", { "aria-label": "Ledger theme" }, ledgerTheme),
     createElement("output", { "aria-label": "Scanlines enabled" }, String(scanlinesEnabled)),
     createElement("output", { "aria-label": "Phosphor enabled" }, String(phosphorEnabled)),
+    createElement("output", { "aria-label": "Reduce motion enabled" }, String(reduceMotionEnabled)),
     createElement("button", { type: "button", onClick: () => setLedgerTheme("dark") }, "Use dark"),
     createElement("button", { type: "button", onClick: () => setScanlinesEnabled(true) }, "Enable scanlines"),
     createElement("button", { type: "button", onClick: () => setPhosphorEnabled(true) }, "Enable phosphor"),
+    createElement("button", { type: "button", onClick: () => setReduceMotionEnabled(true) }, "Reduce motion"),
   )
 }
 
@@ -70,6 +75,7 @@ function readAppearance(container: HTMLDivElement) {
     theme: value("Ledger theme"),
     scanlines: value("Scanlines enabled"),
     phosphor: value("Phosphor enabled"),
+    reduceMotion: value("Reduce motion enabled"),
   }
 }
 
@@ -100,22 +106,26 @@ describe("Linux appearance preference persistence", () => {
       theme: "light",
       scanlines: "false",
       phosphor: "false",
+      reduceMotion: "false",
     })
 
     await act(async () => {
       click(firstMount.container, "Use dark")
       click(firstMount.container, "Enable scanlines")
       click(firstMount.container, "Enable phosphor")
+      click(firstMount.container, "Reduce motion")
     })
 
     expect(readAppearance(firstMount.container)).toEqual({
       theme: "dark",
       scanlines: "true",
       phosphor: "true",
+      reduceMotion: "true",
     })
     expect(window.localStorage.getItem(STORAGE_KEYS.theme)).toBe("dark")
     expect(window.localStorage.getItem(STORAGE_KEYS.scanlines)).toBe("true")
     expect(window.localStorage.getItem(STORAGE_KEYS.phosphor)).toBe("true")
+    expect(window.localStorage.getItem(STORAGE_KEYS.reduceMotion)).toBe("true")
 
     await unmountAppearanceProbe(firstMount.root, firstMount.container)
     const secondMount = await mountAppearanceProbe()
@@ -124,7 +134,19 @@ describe("Linux appearance preference persistence", () => {
       theme: "dark",
       scanlines: "true",
       phosphor: "true",
+      reduceMotion: "true",
     })
+  })
+
+  it("defaults scanlines off for a new profile without overriding a saved choice", async () => {
+    const fresh = await mountAppearanceProbe()
+    expect(readAppearance(fresh.container).scanlines).toBe("false")
+    expect(window.localStorage.getItem(STORAGE_KEYS.scanlines)).toBeNull()
+    await unmountAppearanceProbe(fresh.root, fresh.container)
+
+    window.localStorage.setItem(STORAGE_KEYS.scanlines, "true")
+    const saved = await mountAppearanceProbe()
+    expect(readAppearance(saved.container).scanlines).toBe("true")
   })
 
   it.each([

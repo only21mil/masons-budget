@@ -61,11 +61,11 @@ describe("ledger design foundations", () => {
       "--vv-ledger-row-padding-block: 12px",
       "--vv-ledger-screen-title-size: 26px",
       "--vv-ledger-row-text-size: 12.5px",
-      "--vv-ledger-meta-text-size: 9.5px",
+      "--vv-ledger-meta-text-size: 11px",
       "--vv-ledger-bg: #f4f3ee",
       "--vv-ledger-panel: #edebe4",
       "--vv-ledger-panel-raised: #ffffff",
-      "--vv-ledger-bitcoin: #c96a05",
+      "--vv-ledger-bitcoin: #9e5104",
       "--vv-ledger-gain: oklch(0.52 0.13 158)",
       "--vv-ledger-loss: oklch(0.52 0.15 28)",
       "--vv-ledger-rule-style: dashed",
@@ -76,6 +76,71 @@ describe("ledger design foundations", () => {
     ]) {
       expect(foundations).toContain(token)
     }
+  })
+
+  it("keeps the ink tiers opaque and the Bitcoin text and fill split", () => {
+    const [dark, light] = foundations.split('[data-vv-theme="light"]')
+    for (const token of [
+      "--vv-ledger-ink-secondary: #a3aba6",
+      "--vv-ledger-ink-meta: #8f9792",
+      "--vv-ledger-bitcoin: #f7931a",
+      "--vv-ledger-bitcoin-fill: #f7931a",
+      "--vv-ledger-bitcoin-decimals: rgba(247, 147, 26, 0.75)",
+    ]) {
+      expect(dark).toContain(token)
+    }
+    for (const token of [
+      "--vv-ledger-ink-secondary: #505452",
+      "--vv-ledger-ink-meta: #5c605d",
+      "--vv-ledger-bitcoin: #9e5104",
+      "--vv-ledger-bitcoin-fill: #f7931a",
+      "--vv-ledger-bitcoin-decimals: #9e5104",
+    ]) {
+      expect(light).toContain(token)
+    }
+    expect(foundations).not.toMatch(/--vv-ledger-ink-(secondary|meta): rgba/)
+    expect(priceStyles).toMatch(
+      /\.vv-price-hero__decimals\s*\{[^}]*color: var\(--vv-ledger-bitcoin-decimals\);/,
+    )
+    expect(priceStyles).not.toMatch(/\.vv-price-hero__decimals\s*\{[^}]*opacity/)
+  })
+
+  it("holds the type floor at 11px and caps uppercase tracking at 0.10em", () => {
+    for (const token of [
+      "--vv-ledger-text-tab: 11px",
+      "--vv-ledger-text-kpi-label: 11px",
+      "--vv-ledger-text-meta: 11px",
+      "--vv-ledger-text-chip: 11px",
+      "--vv-ledger-text-body: 12px",
+      "--vv-ledger-leading-body: 18px",
+      "--vv-ledger-tracking-tab: 0.06em",
+      "--vv-ledger-tracking-chip: 0.06em",
+      "--vv-ledger-tracking-meta: 0.03em",
+      "--vv-ledger-tracking-kpi-label: 0.1em",
+      "--vv-ledger-tracking-label: 0.1em",
+    ]) {
+      expect(foundations).toContain(token)
+    }
+    // The SOVEREIGN / BUDGET APP wordmark is a brand lockup, not a type role.
+    const tracking = `${componentStyles}${priceStyles}`
+      .split("}")
+      .filter((rule) => !rule.includes("wordmark"))
+      .flatMap((rule) => [...rule.matchAll(/letter-spacing:\s*(-?[\d.]+)em/g)])
+      .map((m) => Number(m[1]))
+    expect(tracking.length).toBeGreaterThan(0)
+    expect(Math.max(...tracking)).toBeLessThanOrEqual(0.1)
+    // Only the brand lockups sit under 11px; every type role is on a token.
+    const ledgerScope = componentStyles.slice(componentStyles.indexOf("Sovereign full-screen adoption"))
+    const small = ledgerScope
+      .split("}")
+      .filter((rule) => !rule.includes("wordmark"))
+      .flatMap((rule) => [...rule.matchAll(/font-size:\s*([\d.]+)px/g)])
+      .map((m) => Number(m[1]))
+      .filter((size) => size < 11)
+    expect(small).toEqual([])
+    expect(componentStyles).toMatch(/\.vv-kpi__label\s*\{[^}]*white-space: nowrap;/)
+    expect(componentStyles).toMatch(/\.vv-navitem\s*\{[^}]*font-size: var\(--vv-ledger-text-tab\);/)
+    expect(componentStyles).toMatch(/\.vv-page__subtitle,\s*\.vv-panel__source\s*\{[^}]*font-weight: 500;/)
   })
 
   it("bundles the official font locally for all required weights", () => {

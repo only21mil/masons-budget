@@ -620,6 +620,10 @@
   height: 100%;
   border-radius: inherit;
   background: var(--vv-positive);
+  /* The bar is the count: the fill eases to its new width, no shimmer. */
+  transition:
+    width var(--vv-ledger-motion-progress, 300ms ease),
+    background-color var(--vv-ledger-motion-progress, 300ms ease);
 }
 
 .vv-budget-progress--close .vv-budget-progress__labels {
@@ -690,37 +694,83 @@
   color: var(--vv-text-muted);
 }
 
+/*
+ * Ghost rows in the row's own geometry. The whole block breathes between
+ * .45 and .8 (a display waiting on a line), never a left-to-right sweep.
+ * Under either reduce-motion gate it holds still at .6.
+ */
 .vv-loading {
   display: flex;
   flex-direction: column;
   gap: var(--vv-space-2);
   padding: var(--vv-space-4);
+  animation: vv-breathe var(--vv-ledger-motion-breathe, 1.1s ease-in-out) infinite alternate;
 }
 
 .vv-loading__row {
-  height: 14px;
-  border-radius: var(--vv-radius-sm);
-  background: linear-gradient(
-    90deg,
-    var(--vv-surface-raised) 0%,
-    var(--vv-line) 50%,
-    var(--vv-surface-raised) 100%
-  );
-  background-size: 200% 100%;
-  animation: vv-shimmer 1.4s ease-in-out infinite;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: var(--vv-space-4);
+  row-gap: 5px;
+  padding: var(--vv-space-2) 0;
 }
 
-@keyframes vv-shimmer {
+.vv-loading__primary,
+.vv-loading__meta,
+.vv-loading__figure {
+  display: block;
+  border-radius: 1px;
+  background: var(--vv-line-strong);
+}
+
+.vv-loading__primary {
+  width: 45%;
+  height: 12px;
+}
+
+.vv-loading__meta {
+  width: 25%;
+  height: 9px;
+  background: var(--vv-line);
+}
+
+.vv-loading__figure {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  width: 72px;
+  height: 12px;
+}
+
+@keyframes vv-breathe {
+  from {
+    opacity: 0.45;
+  }
+
   to {
-    background-position: -200% 0;
+    opacity: 0.8;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .vv-state__icon--spin,
-  .vv-loading__row {
+  .vv-loading {
     animation: none;
   }
+
+  .vv-loading {
+    opacity: 0.6;
+  }
+}
+
+.vv-ledger-root[data-vv-motion="off"] .vv-state__icon--spin,
+.vv-ledger-root[data-vv-motion="off"] .vv-loading {
+  animation: none;
+}
+
+.vv-ledger-root[data-vv-motion="off"] .vv-loading {
+  opacity: 0.6;
 }
 
 /* ── Form ──────────────────────────────────────────────────────────────── */
@@ -1035,8 +1085,8 @@
 .vv-navgroup__label {
   padding: 0 8px;
   color: var(--vv-ledger-ink-meta);
-  font-size: 8.5px;
-  letter-spacing: 0.16em;
+  font-size: var(--vv-ledger-text-tab);
+  letter-spacing: var(--vv-ledger-tracking-label);
 }
 
 .vv-navitem {
@@ -1044,9 +1094,9 @@
   padding: 9px 10px;
   border-radius: 3px;
   color: var(--vv-ledger-ink-secondary);
-  font-size: 9.5px;
+  font-size: var(--vv-ledger-text-tab);
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--vv-ledger-tracking-tab);
   text-transform: uppercase;
 }
 
@@ -1054,6 +1104,133 @@
   color: var(--vv-ledger-bitcoin);
   background: var(--vv-ledger-bitcoin-soft);
   box-shadow: inset 2px 0 0 var(--vv-ledger-bitcoin);
+}
+
+/* Orange on the soft fill is 4.36:1 in Daylight; the active label reads in ink. */
+[data-vv-theme="light"] .vv-navitem--active {
+  color: var(--vv-ledger-ink);
+}
+
+/*
+ * State settles (motion package item 1). Colour moves, geometry does not:
+ * chips and navigation at 160ms, toggle track and checkbox at 180ms, and the
+ * toggle knob alone travels, at 200ms.
+ */
+.vv-navitem,
+.vv-filter-chips .vv-button,
+.vv-unit-toggle__option {
+  transition:
+    color var(--vv-ledger-motion-chip),
+    background-color var(--vv-ledger-motion-chip),
+    border-color var(--vv-ledger-motion-chip),
+    box-shadow var(--vv-ledger-motion-chip);
+}
+
+.vv-toggle {
+  transition:
+    border-color var(--vv-ledger-motion-control),
+    background-color var(--vv-ledger-motion-control);
+}
+
+.vv-ledger-root input[type="checkbox"] {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  margin: 0 6px 0 0;
+  place-content: center;
+  vertical-align: -3px;
+  appearance: none;
+  border: 1px solid var(--vv-ledger-rule);
+  border-radius: var(--vv-ledger-radius-control);
+  background: var(--vv-ledger-panel);
+  cursor: pointer;
+  transition:
+    border-color var(--vv-ledger-motion-control),
+    background-color var(--vv-ledger-motion-control);
+}
+
+.vv-ledger-root input[type="checkbox"]::after {
+  content: "";
+  width: 4px;
+  height: 8px;
+  margin-top: -2px;
+  border: solid var(--vv-ledger-on-bitcoin);
+  border-width: 0 2px 2px 0;
+  opacity: 0;
+  transform: rotate(45deg) scale(0.85);
+  transition:
+    opacity var(--vv-ledger-motion-control),
+    transform var(--vv-ledger-motion-control);
+}
+
+.vv-ledger-root input[type="checkbox"]:checked {
+  border-color: var(--vv-ledger-bitcoin-fill);
+  background: var(--vv-ledger-bitcoin-fill);
+}
+
+.vv-ledger-root input[type="checkbox"]:checked::after {
+  opacity: 1;
+  transform: rotate(45deg) scale(1);
+}
+
+.vv-ledger-root input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--vv-ledger-bitcoin);
+  outline-offset: 2px;
+}
+
+/*
+ * Row reveal (item 4): each row fades in over 160ms, 20ms after the one
+ * above, capped at index 7 by DataTable so a long list lands under 400ms.
+ * `both` keeps a delayed row invisible until its turn; with the animation
+ * off under reduce motion the rows are simply there.
+ */
+.vv-ledger-root .vv-table tbody tr {
+  animation: vv-row-reveal var(--vv-ledger-motion-reveal) both;
+  animation-delay: calc(var(--vv-row-index, 0) * var(--vv-ledger-motion-reveal-step));
+}
+
+@keyframes vv-row-reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vv-ledger-root .vv-table tbody tr,
+  .vv-ledger-root .vv-onboarding__cursor {
+    animation: none;
+  }
+
+  .vv-ledger-root .vv-navitem,
+  .vv-ledger-root .vv-button,
+  .vv-ledger-root .vv-unit-toggle__option,
+  .vv-ledger-root .vv-toggle,
+  .vv-ledger-root .vv-toggle span,
+  .vv-ledger-root input[type="checkbox"],
+  .vv-ledger-root input[type="checkbox"]::after,
+  .vv-ledger-root .vv-budget-progress__fill {
+    transition: none;
+  }
+}
+
+.vv-ledger-root[data-vv-motion="off"] .vv-table tbody tr,
+.vv-ledger-root[data-vv-motion="off"] .vv-onboarding__cursor {
+  animation: none;
+}
+
+.vv-ledger-root[data-vv-motion="off"] .vv-navitem,
+.vv-ledger-root[data-vv-motion="off"] .vv-button,
+.vv-ledger-root[data-vv-motion="off"] .vv-unit-toggle__option,
+.vv-ledger-root[data-vv-motion="off"] .vv-toggle,
+.vv-ledger-root[data-vv-motion="off"] .vv-toggle span,
+.vv-ledger-root[data-vv-motion="off"] input[type="checkbox"],
+.vv-ledger-root[data-vv-motion="off"] input[type="checkbox"]::after,
+.vv-ledger-root[data-vv-motion="off"] .vv-budget-progress__fill {
+  transition: none;
 }
 
 .vv-main,
@@ -1084,9 +1261,22 @@
 .vv-panel__source {
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-meta);
-  font-weight: 400;
+  font-weight: 500;
   letter-spacing: var(--vv-ledger-tracking-label);
   text-transform: uppercase;
+}
+
+/* Tier-coloured text never sits under weight 500 (contrast audit type floor). */
+.vv-kpi__hint,
+.vv-field__hint,
+.vv-table__footer,
+.vv-state__detail,
+.vv-banner__detail,
+.vv-dialog__description,
+.vv-lock__detail,
+.vv-muted,
+.vv-dim {
+  font-weight: var(--vv-ledger-weight-medium);
 }
 
 .vv-panel {
@@ -1135,8 +1325,10 @@
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-kpi-label);
   font-weight: 500;
-  letter-spacing: 0.16em;
+  letter-spacing: var(--vv-ledger-tracking-kpi-label);
   text-transform: uppercase;
+  /* PLANNED and ACTUAL share a strip; the pair never wraps. */
+  white-space: nowrap;
 }
 
 .vv-kpi__value {
@@ -1147,9 +1339,9 @@
 
 .vv-table th {
   color: var(--vv-ledger-ink-meta);
-  font-size: 9px;
+  font-size: var(--vv-ledger-text-kpi-label);
   font-weight: 500;
-  letter-spacing: 0.16em;
+  letter-spacing: var(--vv-ledger-tracking-kpi-label);
   text-transform: uppercase;
 }
 
@@ -1332,9 +1524,9 @@
   display: block;
   margin-bottom: 8px;
   color: var(--vv-ledger-ink-secondary);
-  font-size: 9.5px;
+  font-size: var(--vv-ledger-text-meta);
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: var(--vv-ledger-tracking-label);
   text-transform: uppercase;
 }
 
@@ -1365,7 +1557,9 @@
 
 .vv-setting-toggle span {
   color: var(--vv-ledger-ink-meta);
-  font-size: 9.5px;
+  font-size: var(--vv-ledger-text-meta);
+  font-weight: 500;
+  letter-spacing: var(--vv-ledger-tracking-meta);
 }
 
 .vv-toggle {
@@ -1447,6 +1641,8 @@
   margin-top: 3px;
   color: var(--vv-ledger-ink-meta);
   font-size: var(--vv-ledger-text-meta);
+  font-weight: 500;
+  letter-spacing: var(--vv-ledger-tracking-meta);
 }
 
 .vv-more-list {
@@ -1499,8 +1695,9 @@
 
 .vv-onboarding__step {
   color: var(--vv-ledger-bitcoin);
-  font-size: 9.5px;
-  letter-spacing: 0.18em;
+  font-size: var(--vv-ledger-text-meta);
+  font-weight: 500;
+  letter-spacing: var(--vv-ledger-tracking-label);
 }
 
 .vv-onboarding__content h1 {
@@ -1530,8 +1727,9 @@
 
 .vv-onboarding__card span {
   color: var(--vv-ledger-ink-meta);
-  font-size: 9px;
-  letter-spacing: 0.16em;
+  font-size: var(--vv-ledger-text-kpi-label);
+  font-weight: 500;
+  letter-spacing: var(--vv-ledger-tracking-kpi-label);
   text-transform: uppercase;
 }
 
