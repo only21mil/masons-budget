@@ -1,0 +1,151 @@
+name: Apple signing assets (manual, mints certificates and profiles)
+
+# Manual only. Victor generates two key pairs on his own machine and pastes only
+# the certificate signing requests here, base64-encoded. Apple signs the public
+# halves through the App Store Connect API, and the job uploads the DER
+# certificates, the two App Store profiles, and a manifest as a one-day
+# artifact. No private key is ever sent to, created on, or written by this job.
+#
+# Shares the `apple-certificates` concurrency group with the inspect/revoke
+# workflow so the two can never race each other on the certificate cap.
+on:
+  workflow_dispatch:
+    inputs:
+      dist_csr_b64:
+        description: "base64 of the PEM CSR for the Apple Distribution certificate"
+        required: true
+        type: string
+      installer_csr_b64:
+        description: "base64 of the PEM CSR for the Mac Installer Distribution certificate"
+        required: true
+        type: string
+      label:
+        description: "Suffix for the profile names (Vogel Vault <platform> App Store <label>)"
+        required: false
+        default: manual
+        type: string
+      revoke_oldest_if_capped:
+        description: "If Apple refuses a certificate for being at the cap, revoke the one expiring soonest and retry once"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: apple-certificates
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mint:
+    name: Mint certificates and App Store profiles from local CSRs
+    # ubuntu, not macOS: this is a handful of REST calls. macOS runners bill at
+    # 10x and the account has hit its Actions spending limit twice in one day.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the JWT dependencies
+        # Exact pins: this job handles the App Store Connect signing credential,
+        # so the JWT library surface must not move underneath it (audit
+        # 2026-09-02 finding 7). Refresh deliberately, with review.
+        run: pip install --quiet pyjwt==2.13.0 cryptography==50.0.1
+
+      - name: Materialise the API key
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ASC_API_KEY_P8:-}" ]; then
+            echo "::error::ASC_API_KEY_P8 is not configured" >&2
+            exit 1
+          fi
+          # Written outside the workspace so a later step cannot commit or
+          # upload it by accident, and mode 600 so nothing else on the runner
+          # can read it.
+          KEY_PATH="$RUNNER_TEMP/asc_key.p8"
+          umask 177
+          printf '%s' "$ASC_API_KEY_P8" > "$KEY_PATH"
+          # A base64-wrapped secret is a common shape; accept either without
+          # ever printing the contents.
+          if ! grep -q 'BEGIN PRIVATE KEY' "$KEY_PATH"; then
+            if base64 -d < "$KEY_PATH" 2>/dev/null | grep -q 'BEGIN PRIVATE KEY'; then
+              base64 -d < "$KEY_PATH" > "$KEY_PATH.decoded"
+              mv "$KEY_PATH.decoded" "$KEY_PATH"
+              chmod 600 "$KEY_PATH"
+            else
+              echo "::error::ASC_API_KEY_P8 is neither a PEM private key nor base64 of one" >&2
+              exit 1
+            fi
+          fi
+          echo "ASC_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Decode and check the CSRs
+        # Inputs reach the shell through env, never spliced into the script.
+        # A CSR is public material, but the check that it parses as a CSR and
+        # carries no private key is what keeps this job honest about that.
+        env:
+          DIST_CSR_B64: ${{ inputs.dist_csr_b64 }}
+          INSTALLER_CSR_B64: ${{ inputs.installer_csr_b64 }}
+        run: |
+          set -euo pipefail
+          decode() {
+            local name="$1" value="$2" path="$3"
+            if [ -z "${value//[[:space:]]/}" ]; then
+              echo "::error::$name is empty" >&2
+              exit 1
+            fi
+            if ! printf '%s' "$value" | tr -d '[:space:]' | base64 -d > "$path" 2>/dev/null; then
+              echo "::error::$name is not valid base64" >&2
+              exit 1
+            fi
+            if grep -q 'PRIVATE KEY' "$path"; then
+              echo "::error::$name contains a private key; send only the CSR" >&2
+              exit 1
+            fi
+            if ! openssl req -noout -in "$path" 2>/dev/null; then
+              echo "::error::$name does not decode to a PEM certificate signing request" >&2
+              exit 1
+            fi
+            echo "$name: CSR parses, subject $(openssl req -noout -subject -in "$path")"
+          }
+          decode dist_csr_b64 "$DIST_CSR_B64" "$RUNNER_TEMP/dist.csr"
+          decode installer_csr_b64 "$INSTALLER_CSR_B64" "$RUNNER_TEMP/installer.csr"
+
+      - name: Mint certificates and profiles
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          LABEL: ${{ inputs.label }}
+          REVOKE_OLDEST_IF_CAPPED: ${{ inputs.revoke_oldest_if_capped }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$REVOKE_OLDEST_IF_CAPPED" = "true" ]; then
+            args+=(--revoke-oldest-if-capped)
+          fi
+          python3 .github/workflows/scripts/apple_signing_assets.py mint \
+            --dist-csr "$RUNNER_TEMP/dist.csr" \
+            --installer-csr "$RUNNER_TEMP/installer.csr" \
+            --bundle-id com.sats21m.masonsbudget \
+            --label "$LABEL" \
+            --out "$RUNNER_TEMP/apple-signing-assets" \
+            "${args[@]}"
+
+      - name: Upload certificates, profiles, and manifest
+        # One day is enough to download and set the repository secrets; the
+        # certificates are useless without the private keys that stayed local.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: apple-signing-assets-${{ github.run_number }}
+          path: ${{ runner.temp }}/apple-signing-assets
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Remove the key
+        if: always()
+        run: rm -f "${ASC_KEY_PATH:-$RUNNER_TEMP/asc_key.p8}"
