@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.notifications.BudgetNotificationController
+import com.sats21m.vogelvault.ui.components.LedgerToggle
 import com.sats21m.vogelvault.ui.components.Panel
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
@@ -59,7 +59,7 @@ internal fun BudgetNotificationSettings(state: VaultUiState) {
 
     Panel(stringResource(R.string.budget_notifications_setting_title)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(VaultSpace.md),
+            modifier = Modifier.fillMaxWidth().padding(vertical = VaultSpace.md),
             horizontalArrangement = Arrangement.spacedBy(VaultSpace.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -79,8 +79,9 @@ internal fun BudgetNotificationSettings(state: VaultUiState) {
                     Text(message, color = colors.loss)
                 }
             }
-            Switch(
+            LedgerToggle(
                 checked = enabled,
+                contentDescription = stringResource(R.string.budget_notifications_setting_title),
                 onCheckedChange = { next ->
                     when {
                         !next -> setEnabled(false)
