@@ -6,18 +6,46 @@ name: Apple signing assets (manual, mints certificates and profiles)
 # certificates, the two App Store profiles, and a manifest as a one-day
 # artifact. No private key is ever sent to, created on, or written by this job.
 #
+# Re-running after a partial failure never mints twice: pass the certificate
+# ids from the earlier run's log as `reuse_*_certificate_id`, or leave them
+# blank and the script reuses any live certificate whose name matches the CSR
+# subject CN. A CSR input can be left empty when that certificate is reused
+# by id, or when `platforms` does not need it. The upload runs on failure too,
+# so whatever Apple did issue is saved.
+#
 # Shares the `apple-certificates` concurrency group with the inspect/revoke
 # workflow so the two can never race each other on the certificate cap.
 on:
   workflow_dispatch:
     inputs:
       dist_csr_b64:
-        description: "base64 of the PEM CSR for the Apple Distribution certificate"
-        required: true
+        description: "base64 of the PEM CSR for the Apple Distribution certificate (leave empty when reusing by id)"
+        required: false
+        default: ""
         type: string
       installer_csr_b64:
-        description: "base64 of the PEM CSR for the Mac Installer Distribution certificate"
-        required: true
+        description: "base64 of the PEM CSR for the Mac Installer Distribution certificate (leave empty when reusing by id or for platforms=ios)"
+        required: false
+        default: ""
+        type: string
+      platforms:
+        description: "Which platforms to produce: ios (distribution certificate and iOS profile only), macos, or both"
+        required: false
+        default: both
+        type: choice
+        options:
+          - ios
+          - macos
+          - both
+      reuse_distribution_certificate_id:
+        description: "Existing DISTRIBUTION certificate id to use instead of minting one"
+        required: false
+        default: ""
+        type: string
+      reuse_installer_certificate_id:
+        description: "Existing MAC_INSTALLER_DISTRIBUTION certificate id to use instead of minting one"
+        required: false
+        default: ""
         type: string
       label:
         description: "Suffix for the profile names (Vogel Vault <platform> App Store <label>)"
@@ -88,6 +116,8 @@ jobs:
         # Inputs reach the shell through env, never spliced into the script.
         # A CSR is public material, but the check that it parses as a CSR and
         # carries no private key is what keeps this job honest about that.
+        # An empty input writes no file; the script decides whether it needed
+        # one and fails before any API call if so.
         env:
           DIST_CSR_B64: ${{ inputs.dist_csr_b64 }}
           INSTALLER_CSR_B64: ${{ inputs.installer_csr_b64 }}
@@ -96,8 +126,8 @@ jobs:
           decode() {
             local name="$1" value="$2" path="$3"
             if [ -z "${value//[[:space:]]/}" ]; then
-              echo "::error::$name is empty" >&2
-              exit 1
+              echo "$name: empty, no CSR file written"
+              return 0
             fi
             if ! printf '%s' "$value" | tr -d '[:space:]' | base64 -d > "$path" 2>/dev/null; then
               echo "::error::$name is not valid base64" >&2
@@ -121,16 +151,29 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           LABEL: ${{ inputs.label }}
+          PLATFORMS: ${{ inputs.platforms }}
+          REUSE_DISTRIBUTION_CERTIFICATE_ID: ${{ inputs.reuse_distribution_certificate_id }}
+          REUSE_INSTALLER_CERTIFICATE_ID: ${{ inputs.reuse_installer_certificate_id }}
           REVOKE_OLDEST_IF_CAPPED: ${{ inputs.revoke_oldest_if_capped }}
         run: |
           set -euo pipefail
-          args=()
+          args=(--platforms "${PLATFORMS:-both}")
           if [ "$REVOKE_OLDEST_IF_CAPPED" = "true" ]; then
             args+=(--revoke-oldest-if-capped)
           fi
+          if [ -f "$RUNNER_TEMP/dist.csr" ]; then
+            args+=(--dist-csr "$RUNNER_TEMP/dist.csr")
+          fi
+          if [ -f "$RUNNER_TEMP/installer.csr" ]; then
+            args+=(--installer-csr "$RUNNER_TEMP/installer.csr")
+          fi
+          if [ -n "${REUSE_DISTRIBUTION_CERTIFICATE_ID//[[:space:]]/}" ]; then
+            args+=(--reuse-distribution-certificate-id "$REUSE_DISTRIBUTION_CERTIFICATE_ID")
+          fi
+          if [ -n "${REUSE_INSTALLER_CERTIFICATE_ID//[[:space:]]/}" ]; then
+            args+=(--reuse-installer-certificate-id "$REUSE_INSTALLER_CERTIFICATE_ID")
+          fi
           python3 .github/workflows/scripts/apple_signing_assets.py mint \
-            --dist-csr "$RUNNER_TEMP/dist.csr" \
-            --installer-csr "$RUNNER_TEMP/installer.csr" \
             --bundle-id com.sats21m.masonsbudget \
             --label "$LABEL" \
             --out "$RUNNER_TEMP/apple-signing-assets" \
@@ -139,12 +182,15 @@ jobs:
       - name: Upload certificates, profiles, and manifest
         # One day is enough to download and set the repository secrets; the
         # certificates are useless without the private keys that stayed local.
+        # Runs on failure too: the script writes whatever Apple issued before
+        # it exits, and losing a minted certificate is how the cap gets hit.
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: apple-signing-assets-${{ github.run_number }}
           path: ${{ runner.temp }}/apple-signing-assets
           retention-days: 1
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Remove the key
         if: always()
