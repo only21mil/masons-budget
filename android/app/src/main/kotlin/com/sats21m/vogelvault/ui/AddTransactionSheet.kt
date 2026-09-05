@@ -53,6 +53,7 @@ import com.sats21m.vogelvault.domain.IncomeEntry
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
+import com.sats21m.vogelvault.ui.theme.rememberLedgerHaptics
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -517,6 +518,11 @@ internal fun AddTransactionSheet(
     // and safely retries instead.
     var saving by remember { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    val haptics = rememberLedgerHaptics()
+    fun refuse(reason: String) {
+        errorMessage = reason
+        haptics.reject()
+    }
     val type = AddTransactionType.valueOf(typeName)
     val paymentSourceOptions = paymentSourcesForAddTransaction(type)
     val paymentSource = paymentSourceForAddTransaction(
@@ -790,7 +796,7 @@ internal fun AddTransactionSheet(
                 VaultButton(
                     onClick = {
                         val selectedDate = runCatching { LocalDate.parse(dateIso) }.getOrElse {
-                            errorMessage = "Enter a valid date"
+                            refuse("Enter a valid date")
                             return@VaultButton
                         }
                         val draft = AddTransactionDraft(
@@ -809,7 +815,7 @@ internal fun AddTransactionSheet(
 
                         if (paymentSource.route == PaymentSourceRoute.BILL_PAY) {
                             val handoff = prepareBillPayHandoff(draft).getOrElse {
-                                errorMessage = it.message ?: "Bill-pay details are invalid"
+                                refuse(it.message ?: "Bill-pay details are invalid")
                                 return@VaultButton
                             }
                             onStartRiverBillPay(handoff)
@@ -823,17 +829,17 @@ internal fun AddTransactionSheet(
                             id = draftTransactionId,
                             bitcoinAccounts = state.data.btcAccounts.value,
                         ).getOrElse {
-                            errorMessage = it.message ?: "Transaction is invalid"
+                            refuse(it.message ?: "Transaction is invalid")
                             return@VaultButton
                         }
                         val gateway = transactionGateway
                         if (gateway == null) {
-                            errorMessage = "Transaction writing is not configured"
+                            refuse("Transaction writing is not configured")
                             return@VaultButton
                         }
                         val scope = saveScope
                         if (scope == null) {
-                            errorMessage = "Transaction writing is not configured"
+                            refuse("Transaction writing is not configured")
                             return@VaultButton
                         }
                         saving = true
@@ -850,9 +856,10 @@ internal fun AddTransactionSheet(
                             saving = false
                             val failure = transactionWriteFailureMessage(result)
                             if (failure == null) {
+                                haptics.confirm()
                                 onDismiss()
                             } else {
-                                errorMessage = failure
+                                refuse(failure)
                             }
                         }
                     },

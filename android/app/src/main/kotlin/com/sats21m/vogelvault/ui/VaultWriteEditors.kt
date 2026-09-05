@@ -65,6 +65,7 @@ import com.sats21m.vogelvault.ui.components.Badge
 import com.sats21m.vogelvault.ui.theme.LedgerNumeral
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
+import com.sats21m.vogelvault.ui.theme.rememberLedgerHaptics
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
 import java.util.UUID
@@ -505,6 +506,7 @@ internal fun BudgetCategoryEditorSheet(
     var submitting by remember(seed) { mutableStateOf(false) }
     var confirmingDelete by remember(seed) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val haptics = rememberLedgerHaptics()
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -552,22 +554,27 @@ internal fun BudgetCategoryEditorSheet(
                                     baseUpdatedAtMs = seed.budget.updatedAtMs,
                                 )
                                 submitting = false
-                                when (result) {
+                                val deleteFailure = when (result) {
                                     is BudgetCategoryDeleteResult.Rejected -> {
                                         confirmingDelete = false
-                                        message = "Category not deleted: ${result.reason.name.lowercase().replace('_', ' ')}."
+                                        "Category not deleted: ${result.reason.name.lowercase().replace('_', ' ')}."
                                     }
                                     is BudgetCategoryDeleteResult.Submitted -> when (val submitted = result.result) {
-                                        is ConvexResult.Ok -> {
-                                            onWriteSucceeded()
-                                            onDismiss()
-                                        }
-                                        ConvexResult.Unauthorized -> message = "Category not deleted: this device is not authorized."
-                                        ConvexResult.NotConfigured -> message = "Category not deleted: Convex is not configured."
-                                        ConvexResult.Disabled -> message = "Category not deleted: authenticated writes are disabled."
-                                        ConvexResult.Missing -> message = "Category not deleted: Convex returned no result."
-                                        is ConvexResult.Failed -> message = "Category not deleted: ${submitted.reason}."
+                                        is ConvexResult.Ok -> null
+                                        ConvexResult.Unauthorized -> "Category not deleted: this device is not authorized."
+                                        ConvexResult.NotConfigured -> "Category not deleted: Convex is not configured."
+                                        ConvexResult.Disabled -> "Category not deleted: authenticated writes are disabled."
+                                        ConvexResult.Missing -> "Category not deleted: Convex returned no result."
+                                        is ConvexResult.Failed -> "Category not deleted: ${submitted.reason}."
                                     }
+                                }
+                                if (deleteFailure == null) {
+                                    haptics.confirm()
+                                    onWriteSucceeded()
+                                    onDismiss()
+                                } else {
+                                    message = deleteFailure
+                                    haptics.reject()
                                 }
                             }
                         },
@@ -582,11 +589,15 @@ internal fun BudgetCategoryEditorSheet(
                     enabled = !submitting,
                     onClick = {
                         when (val draft = budgetCategoryWriteRequest(seed, dollars)) {
-                            is WriteDraftResult.Invalid -> message = draft.reason
+                            is WriteDraftResult.Invalid -> {
+                                message = draft.reason
+                                haptics.reject()
+                            }
                             is WriteDraftResult.Valid -> {
                                 val client = mutationClient
                                 if (client == null) {
                                     message = "Budget not saved: the app write client is unavailable."
+                                    haptics.reject()
                                     return@VaultButton
                                 }
                                 submitting = true
@@ -608,10 +619,12 @@ internal fun BudgetCategoryEditorSheet(
                                     submitting = false
                                     val budgetFailure = convexWriteFailureMessage("Budget not saved", result)
                                     if (budgetFailure == null) {
+                                        haptics.confirm()
                                         onWriteSucceeded()
                                         onDismiss()
                                     } else {
                                         message = budgetFailure
+                                        haptics.reject()
                                     }
                                 }
                             }
@@ -697,6 +710,7 @@ internal fun BtcBuyEntrySheet(
     var message by remember { mutableStateOf<String?>(null) }
     var submitting by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val haptics = rememberLedgerHaptics()
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -761,6 +775,7 @@ internal fun BtcBuyEntrySheet(
                                     submitting = false
                                     when (outcome) {
                                         BtcBuySaveOutcome.Accepted -> {
+                                            haptics.confirm()
                                             onWriteSucceeded()
                                             onDismiss()
                                         }
@@ -770,6 +785,7 @@ internal fun BtcBuyEntrySheet(
                                             check(outcome.result !is ConvexResult.Ok) {
                                                 "Accepted result cannot be rejected"
                                             }
+                                            haptics.reject()
                                             message = convexWriteFailureMessage(
                                                 "Bitcoin buy not saved",
                                                 outcome.result,
@@ -807,6 +823,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
     var buyNote by rememberSaveable(income.id) { mutableStateOf("") }
     var message by rememberSaveable(income.id) { mutableStateOf<String?>(null) }
     var submitting by remember(income.id) { mutableStateOf(false) }
+    val haptics = rememberLedgerHaptics()
 
     ModalBottomSheet(onDismissRequest = { if (!submitting) onDismiss() }) {
         Column(
@@ -861,6 +878,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
                                     submitting = false
                                     when (outcome) {
                                         BtcBuySaveOutcome.Accepted -> {
+                                            haptics.confirm()
                                             onWriteSucceeded()
                                             onDismiss()
                                         }
@@ -870,6 +888,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
                                             check(outcome.result !is ConvexResult.Ok) {
                                                 "Accepted result cannot be rejected"
                                             }
+                                            haptics.reject()
                                             message = convexWriteFailureMessage(
                                                 "Income and Bitcoin buy not saved",
                                                 outcome.result,

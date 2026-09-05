@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.WarningAmber
@@ -161,6 +160,8 @@ class VaultLazyListScope internal constructor(
         source: String? = null,
         rows: List<T>,
         rowKey: (T) -> String,
+        /** The slice revision the rows came from; a change reveals them. Null prints cold. */
+        revealKey: Any? = null,
         rowContent: @Composable (T) -> Unit,
     ) {
         separateFromPreviousSection()
@@ -175,7 +176,10 @@ class VaultLazyListScope internal constructor(
             key = { _, row -> "$sectionKey:row:${rowKey(row)}" },
             contentType = { _, _ -> "vault-panel-row:$sectionKey" },
         ) { index, row ->
-            LazyPanelRow(isLast = index == rows.lastIndex) {
+            LazyPanelRow(
+                isLast = index == rows.lastIndex,
+                modifier = Modifier.ledgerRowReveal(index, revealKey?.let { "$sectionKey:$it" }),
+            ) {
                 rowContent(row)
             }
         }
@@ -230,6 +234,7 @@ private fun LazyPanelHeader(title: String, source: String?) {
 @Composable
 private fun LazyPanelRow(
     isLast: Boolean,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
@@ -239,7 +244,7 @@ private fun LazyPanelRow(
         RoundedCornerShape(0.dp)
     }
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
             .border(1.dp, tokens.colors.line, shape)
             .background(tokens.colors.panel, shape),
@@ -549,6 +554,12 @@ fun StateBlock(
     title: String? = null,
     detail: String? = null,
 ) {
+    if (status == Freshness.LOADING) {
+        // Ghost rows breathe in the section's own geometry; a static hourglass
+        // does nothing for loading anxiety. The top bar keeps its progress ring.
+        LedgerSkeletonRows()
+        return
+    }
     val tokens = LocalLedgerTheme.current
     val icon: ImageVector
     val fallbackTitle: String
@@ -573,12 +584,6 @@ fun StateBlock(
             fallbackTitle = stringResource(R.string.convex_read_stale_title)
             fallbackDetail = stringResource(R.string.convex_read_stale_detail)
             tint = VaultWarning
-        }
-        Freshness.LOADING -> {
-            icon = Icons.Filled.HourglassEmpty
-            fallbackTitle = stringResource(R.string.convex_read_loading_title)
-            fallbackDetail = stringResource(R.string.convex_read_loading_detail)
-            tint = VaultTextDim
         }
         else -> {
             icon = Icons.Filled.Inbox
