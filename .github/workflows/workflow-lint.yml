@@ -117,6 +117,9 @@ jobs:
       - name: Apple simulator selection tests
         run: python3 .github/workflows/scripts/tests/test_ensure_ios_simulator.py
 
+      - name: Apple signing asset minting tests
+        run: python3 .github/workflows/scripts/tests/test_apple_signing_assets.py
+
       - name: Manual Apple release signing contract
         run: |
           python3 .github/workflows/scripts/tests/test_manual_release_signing.py
