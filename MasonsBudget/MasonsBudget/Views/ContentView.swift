@@ -145,6 +145,7 @@ struct ContentView: View {
         .environment(canonicalFinancials)
         .environmentObject(syncStatus)
         .environmentObject(taskUndoStore)
+        .overlay { LedgerTextureOverlay() }
         .task(id: activeMember) {
             await canonicalFinancials.load(viewer: activeMember)
         }

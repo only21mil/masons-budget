@@ -60,6 +60,7 @@
 		2534056FCF15384BBCC22038 /* BTCBuy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 471D5A1DCF4CD1B4C10217A1 /* BTCBuy.swift */; };
 		25D761D3D754B167202F23A7 /* BudgetCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F123D957238EE653A6F6751 /* BudgetCategory.swift */; };
 		263192C847B3B58DC73DB2EB /* TransactionSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 570F3F5990719F8820C73D57 /* TransactionSource.swift */; };
+		2698CC3A4DE791992CC3FBB6 /* LedgerFoundationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD9232F3449CD8905F765E3 /* LedgerFoundationTests.swift */; };
 		26A9F98B72A257BB65FC0437 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083F88D8EB4768C9BEDF39F9 /* OnboardingView.swift */; };
 		273AFA44D285CDA9CB398FD8 /* SourceCodePro-Semibold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2EFC238E2DEC69CA90D81D29 /* SourceCodePro-Semibold.ttf */; };
 		28522D16CD33E5E733BC4662 /* AppleScreenAdoptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C99959F828240EDC6CE7CB4 /* AppleScreenAdoptionTests.swift */; };
@@ -402,6 +403,7 @@
 		E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchMatcher.swift; sourceTree = "<group>"; };
 		E4DF0247EF288DCF8C3F9782 /* ConvexDataReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexDataReader.swift; sourceTree = "<group>"; };
 		E9C16AAB01C5D56B81A0DAA4 /* listTransactions.convex_encoded_json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listTransactions.convex_encoded_json.json; sourceTree = "<group>"; };
+		EAD9232F3449CD8905F765E3 /* LedgerFoundationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerFoundationTests.swift; sourceTree = "<group>"; };
 		EB6E2601A51CDBDF03F80E6E /* BitcoinOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinOverviewView.swift; sourceTree = "<group>"; };
 		EB8660E933700241699D6450 /* AddTransactionIntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTransactionIntentTests.swift; sourceTree = "<group>"; };
 		EC957E91914A99EF29371CA6 /* NetWorthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetWorthView.swift; sourceTree = "<group>"; };
@@ -499,6 +501,7 @@
 				8442D5C22B6167F76BFFBE9E /* ConvexSyncServiceTests.swift */,
 				2AC58C7449FBDB08006CFC23 /* FamilyVisibilityTests.swift */,
 				D761EFAED478A3508622C89B /* LedgerAdoptionTests.swift */,
+				EAD9232F3449CD8905F765E3 /* LedgerFoundationTests.swift */,
 				196CEA0279F5A6BEA5F39E8F /* LegacyBlobCompatibilityTests.swift */,
 				EF5C5935A12805ECA579168B /* MasonsBudgetTests.swift */,
 				974E8027F86EF14E53108D7C /* OptimisticSaveFlowTests.swift */,
@@ -1059,6 +1062,7 @@
 				012AAE1E5EF54E82BA42EB70 /* InlineAddTaskBar.swift in Sources */,
 				015AAF7950925FA801DA92EC /* LedgerAdoptionTests.swift in Sources */,
 				71D218811D3DBCEDDF2833BF /* LedgerDesignSystem.swift in Sources */,
+				2698CC3A4DE791992CC3FBB6 /* LedgerFoundationTests.swift in Sources */,
 				7A23F98EAE7CC04F98559625 /* LedgerMapper.swift in Sources */,
 				9A9E95488C6473659AC40BF2 /* LegacyBlobCompatibilityTests.swift in Sources */,
 				DE2E2A91C446B557794A2592 /* LegacyBlobDTOs.swift in Sources */,
