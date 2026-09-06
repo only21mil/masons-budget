@@ -398,7 +398,7 @@
 
 .vv-button--danger {
   background: var(--vv-negative-dim);
-  border-color: rgba(248, 113, 113, 0.4);
+  border-color: var(--vv-negative-line);
 }
 
 .vv-button--icon {

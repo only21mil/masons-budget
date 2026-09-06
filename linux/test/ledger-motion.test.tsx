@@ -145,7 +145,7 @@ describe("ledger motion tokens", () => {
       /\[data-vv-theme="dark"\]\[data-vv-phosphor="on"\]\s*\.vv-price-hero__value--pulse:not\(\.vv-price-hero__value--unavailable\)\s*\{\s*animation: vv-phosphor-pulse var\(--vv-ledger-motion-pulse\) 1;/,
     )
     expect(priceStyles).toMatch(
-      /@keyframes vv-phosphor-pulse\s*\{\s*0% \{ text-shadow: 0 0 18px rgba\(247,147,26,\.30\); \}\s*33% \{ text-shadow: 0 0 32px rgba\(247,147,26,\.30\); \}\s*100% \{ text-shadow: 0 0 18px rgba\(247,147,26,\.30\); \}/,
+      /@keyframes vv-phosphor-pulse\s*\{\s*0% \{ text-shadow: 0 0 18px var\(--vv-ledger-phosphor\); \}\s*33% \{ text-shadow: 0 0 32px var\(--vv-ledger-phosphor\); \}\s*100% \{ text-shadow: 0 0 18px var\(--vv-ledger-phosphor\); \}/,
     )
     expect(priceStyles).toMatch(
       /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.vv-price-hero__value--pulse\s*\{\s*animation: none;/,
