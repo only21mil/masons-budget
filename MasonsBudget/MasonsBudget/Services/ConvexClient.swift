@@ -901,6 +901,54 @@ final class AppWritebackClient: Sendable {
         return removed
     }
 
+    func copyBudgetPlanForward(
+        _ intent: BudgetPlanCarryIntent,
+        activeProfile: FamilyMember,
+    ) async throws {
+        guard BudgetPlanCarry.canonicalIdentity(for: activeProfile)?.owner == intent.owner else {
+            throw AppWritebackError.remote(.ownerMismatch)
+        }
+        let device = try await taskSession(activeProfile: activeProfile)
+        let value = try await convexMutation(
+            baseURL: device.baseURL,
+            path: BudgetPlanCarry.mutationPath,
+            args: Self.budgetPlanCarryArguments(intent, deviceID: device.deviceID, deviceToken: device.deviceToken),
+        )
+        try Self.validateBudgetPlanCarryResponse(value, intent: intent)
+    }
+
+    static func budgetPlanCarryArguments(
+        _ intent: BudgetPlanCarryIntent,
+        deviceID: String,
+        deviceToken: String,
+    ) -> [String: Any] {
+        [
+            "deviceId": deviceID,
+            "deviceToken": deviceToken,
+            "owner": intent.owner.rawValue,
+            "sourceFile": intent.sourceFile,
+            "fromMonth": intent.fromMonth,
+            "toMonth": intent.toMonth,
+            "baseUpdatedAtMs": intent.baseUpdatedAtMs,
+        ]
+    }
+
+    static func validateBudgetPlanCarryResponse(_ value: Any?, intent: BudgetPlanCarryIntent) throws {
+        guard let object = value as? [String: Any],
+              object["ok"] as? Bool == true,
+              let outcome = object["outcome"] as? String,
+              ["copied", "already-copied"].contains(outcome),
+              object["sourceFile"] as? String == intent.sourceFile,
+              object["fromMonth"] as? String == intent.fromMonth,
+              object["toMonth"] as? String == intent.toMonth,
+              let count = object["categoryCount"] as? Double,
+              count.isFinite, count >= 0, count.rounded(.towardZero) == count,
+              let revision = object["updatedAtMs"] as? Double,
+              BudgetPlanCarry.isExactRevision(revision),
+              revision > Double(intent.baseUpdatedAtMs)
+        else { throw AppWritebackError.unexpectedResponse }
+    }
+
     static func budgetCategoryDeletionArguments(
         _ intent: BudgetCategoryDeletionIntent,
         deviceID: String,
