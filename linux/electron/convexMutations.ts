@@ -10,6 +10,7 @@ import {
   buildTransactionWriteRequest,
   encodeConvexInt64,
   isFamilyMember,
+  nextBudgetMonth,
 } from "@vogel-vault/domain"
 
 import type {
@@ -40,6 +41,7 @@ export const PAIRED_DEVICE_PATHS = {
   "todo.restore": "tables:restoreTodoFromDevice",
   "budgetCategory.upsert": "tables:upsertBudgetCategoryFromDevice",
   "budgetCategory.delete": "tables:deleteBudgetCategoryFromDevice",
+  "budgetPlan.copyForward": "tables:copyBudgetPlanForwardFromDevice",
   "btcBuy.upsert": "tables:upsertBtcBuyFromDevice",
   "btcBuy.delete": "tables:deleteBtcBuyFromDevice",
   "btcBillPay.upsert": "tables:upsertBtcBillPayFromDevice",
@@ -207,6 +209,7 @@ const MUTATION_KINDS = [
   "todo.restore",
   "budgetCategory.upsert",
   "budgetCategory.delete",
+  "budgetPlan.copyForward",
   "btcBuy.upsert",
   "btcBuy.delete",
   "btcBillPay.upsert",
@@ -691,6 +694,24 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           baseUpdatedAtMs,
         }
       }
+      case "budgetPlan.copyForward": {
+        const record = withCommon(
+          input,
+          kind,
+          ["owner", "fromMonth", "toMonth", "baseUpdatedAtMs"],
+        )
+        const { requestId, actor } = common(record)
+        const owner = canonicalFinancialOwner(member(record["owner"]))
+        budgetSource(owner)
+        const fromMonth = exactMonth(record["fromMonth"])
+        const toMonth = exactMonth(record["toMonth"])
+        // One month at a time. The server accepts a gap only with an explicit
+        // allowGap, which this device never sends.
+        if (toMonth !== nextBudgetMonth(fromMonth)) throw new InvalidRequest()
+        const baseUpdatedAtMs = revision(record["baseUpdatedAtMs"])
+        if (baseUpdatedAtMs === 0) throw new InvalidRequest()
+        return { kind, requestId, actor, owner, fromMonth, toMonth, baseUpdatedAtMs }
+      }
       case "btcBuy.upsert": {
         const record = withCommon(
           input,
@@ -1056,6 +1077,16 @@ function mutationArgs(
         baseUpdatedAtMs: request.baseUpdatedAtMs,
       }
     }
+    case "budgetPlan.copyForward": {
+      const budget = budgetSource(request.owner)
+      return {
+        ...auth,
+        ...budget,
+        fromMonth: request.fromMonth,
+        toMonth: request.toMonth,
+        baseUpdatedAtMs: request.baseUpdatedAtMs,
+      }
+    }
     case "btcBuy.upsert":
       return {
         ...auth,
@@ -1238,6 +1269,7 @@ type RemoteErrorCode =
   | "PAIRING_EXPIRED"
   | "PAIRING_NOT_FOUND"
   | "PAIRING_PROOF_INVALID"
+  | "PLAN_EXISTS"
   | "PROFILE_BINDING_REQUIRED"
   | "REVISION_REQUIRED"
   | "VALIDATION_FAILED"
@@ -1255,6 +1287,7 @@ const REMOTE_ERROR_CODES: ReadonlySet<string> = new Set<RemoteErrorCode>([
   "PAIRING_EXPIRED",
   "PAIRING_NOT_FOUND",
   "PAIRING_PROOF_INVALID",
+  "PLAN_EXISTS",
   "PROFILE_BINDING_REQUIRED",
   "REVISION_REQUIRED",
   "VALIDATION_FAILED",
@@ -1311,7 +1344,7 @@ function structuredRemoteError(response: JsonPostResponse): RemoteErrorCode | nu
 function remoteClassification(
   response: JsonPostResponse,
 ): "unauthorized" | "missing" | "conflict" | "rejected" | "profile-binding-required" |
-  "revision-required" | "expired" | "already-claimed" | null {
+  "revision-required" | "plan-exists" | "expired" | "already-claimed" | null {
   if (response.httpStatus === 401 || response.httpStatus === 403) return "unauthorized"
   const code = structuredRemoteError(response)
   if (code === "DEVICE_UNAUTHORIZED") return "unauthorized"
@@ -1321,6 +1354,7 @@ function remoteClassification(
   if (code === "PAIRING_EXPIRED" || code === "PAIRING_NOT_FOUND") return "expired"
   if (code === "PROFILE_BINDING_REQUIRED") return "profile-binding-required"
   if (code === "REVISION_REQUIRED") return "revision-required"
+  if (code === "PLAN_EXISTS") return "plan-exists"
   if (code === "ENTITY_NOT_FOUND" || code === "ENTITY_DELETED") return "missing"
   if (code === "ENTITY_CONFLICT") return "conflict"
   if (code === "OWNER_MISMATCH" || code === "OWNER_SOURCE_MISMATCH" || code === "VALIDATION_FAILED") {
@@ -1332,7 +1366,7 @@ function remoteClassification(
 const RESOURCE_CAPABILITIES = {
   "todos:write": ["todo.upsert", "todo.delete", "todo.restore"],
   "transactions:write": ["transaction.upsert", "transaction.delete"],
-  "budget:write": ["budgetCategory.upsert", "budgetCategory.delete"],
+  "budget:write": ["budgetCategory.upsert", "budgetCategory.delete", "budgetPlan.copyForward"],
   "bitcoin:write": [
     "btcBuy.upsert",
     "btcBuy.delete",
@@ -1386,18 +1420,29 @@ function storedCapabilities(value: unknown): readonly VogelVaultMutationKind[] {
     "btcAccount.upsert",
     "btcAccount.delete",
   ] as const satisfies readonly VogelVaultMutationKind[]
-  if (
+  const withTransfers =
     legacyBitcoinGrant.every((kind) => withTaskRestore.includes(kind)) &&
     !withTaskRestore.includes("btcTransfer.upsert") &&
     !withTaskRestore.includes("btcTransfer.delete")
+      // Stored grants are the expanded renderer vocabulary, while Convex keeps
+      // the durable coarse `bitcoin:write` capability. Preserve that original
+      // grant across this vocabulary addition so existing paired desktops do
+      // not need to re-pair merely to use the new Bitcoin transfer endpoint.
+      ? [...withTaskRestore, "btcTransfer.upsert" as const, "btcTransfer.delete" as const]
+      : withTaskRestore
+  const budgetGrant = [
+    "budgetCategory.upsert",
+    "budgetCategory.delete",
+  ] as const satisfies readonly VogelVaultMutationKind[]
+  if (
+    budgetGrant.every((kind) => withTransfers.includes(kind)) &&
+    !withTransfers.includes("budgetPlan.copyForward")
   ) {
-    // Stored grants are the expanded renderer vocabulary, while Convex keeps
-    // the durable coarse `bitcoin:write` capability. Preserve that original
-    // grant across this vocabulary addition so existing paired desktops do
-    // not need to re-pair merely to use the new Bitcoin transfer endpoint.
-    return [...withTaskRestore, "btcTransfer.upsert", "btcTransfer.delete"]
+    // Same rule for `budget:write`: a desktop paired before the plan copy
+    // existed already holds the grant that covers it.
+    return [...withTransfers, "budgetPlan.copyForward" as const]
   }
-  return withTaskRestore
+  return withTransfers
 }
 
 function pairValue(
@@ -1426,6 +1471,46 @@ function mutationValue(
   request: VogelVaultMutationRequest,
 ): VogelVaultMutationResult {
   if (!isRecord(value) || value["ok"] !== true) throw new InvalidResponse()
+  if (request.kind === "budgetPlan.copyForward") {
+    if (
+      !exactKeys(value, [
+        "ok",
+        "outcome",
+        "sourceFile",
+        "fromMonth",
+        "toMonth",
+        "categoryCount",
+        "updatedAtMs",
+      ])
+    ) {
+      throw new InvalidResponse()
+    }
+    const outcome = value["outcome"]
+    const categoryCount = value["categoryCount"]
+    const updatedAtMs = value["updatedAtMs"]
+    if (
+      (outcome !== "copied" && outcome !== "already-copied") ||
+      value["sourceFile"] !== budgetSource(request.owner).sourceFile ||
+      value["fromMonth"] !== request.fromMonth ||
+      value["toMonth"] !== request.toMonth ||
+      typeof categoryCount !== "number" ||
+      !Number.isSafeInteger(categoryCount) ||
+      categoryCount < 0 ||
+      typeof updatedAtMs !== "number" ||
+      !Number.isSafeInteger(updatedAtMs) ||
+      updatedAtMs <= 0
+    ) {
+      throw new InvalidResponse()
+    }
+    return {
+      status: "ok",
+      requestId: request.requestId,
+      kind: request.kind,
+      outcome,
+      entityId: request.toMonth,
+      updatedAtMs,
+    }
+  }
   if (request.kind === "todo.restore") {
     if (!exactKeys(value, ["ok", "entityId", "updatedAtMs"])) {
       throw new InvalidResponse()
@@ -1797,6 +1882,9 @@ export function createPairedDeviceController(
           }
           if (classified === "revision-required") {
             return { ...identity, status: "failed", code: "REVISION_REQUIRED" }
+          }
+          if (classified === "plan-exists") {
+            return { ...identity, status: "failed", code: "PLAN_EXISTS" }
           }
           if (classified === "conflict") {
             return { ...identity, status: "failed", code: "conflict" }

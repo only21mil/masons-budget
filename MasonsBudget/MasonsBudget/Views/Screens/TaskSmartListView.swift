@@ -122,13 +122,15 @@ struct TaskRowView: View {
             swipeActionButton(
                 label: todo.isFlagged ? "Unflag" : "Flag",
                 icon: AppIcon.flagFilled,
-                tint: .orange,
+                tint: theme.accentFill,
+                ink: theme.onAccent,
                 action: toggleFlag,
             )
             swipeActionButton(
                 label: "Delete",
                 icon: "trash",
                 tint: theme.danger,
+                ink: theme.bg,
                 action: deleteSelf,
             )
         }
@@ -138,6 +140,7 @@ struct TaskRowView: View {
         label: String,
         icon: String,
         tint: Color,
+        ink: Color,
         action: @escaping () -> Void,
     ) -> some View {
         Button {
@@ -150,7 +153,7 @@ struct TaskRowView: View {
                 Text(label)
                     .ledgerType(.tabLabel)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(ink)
             .frame(width: Self.swipeActionWidth)
             .frame(maxHeight: .infinity)
             .background(tint)

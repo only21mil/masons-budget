@@ -17,27 +17,36 @@
 
 :root,
 [data-vv-theme="dark"] {
-  /* Terminal Ledger, exact handoff colours. */
-  --vv-ledger-bg: #0a0d0c;
-  --vv-ledger-panel: #0c100e;
-  --vv-ledger-panel-raised: #111614;
-  --vv-ledger-rule: rgba(214, 238, 224, 0.1);
-  --vv-ledger-rule-subtle: rgba(214, 238, 224, 0.06);
-  --vv-ledger-ink: #e8efe9;
-  /* Opaque tiers: #E8EFE9 at 0.70 and 0.61 over the background, pre-blended
-     so nothing composites at draw time (contrast audit 2026-09-05). */
-  --vv-ledger-ink-secondary: #a3aba6;
-  --vv-ledger-ink-meta: #8f9792;
+  /* Terminal Ledger, Sats black treatment approved 2026-09-05. */
+  --vv-ledger-bg: #050505;
+  --vv-ledger-panel: #0e0e0e;
+  --vv-ledger-panel-raised: #161616;
+  --vv-ledger-rule: rgba(245, 242, 234, 0.1);
+  --vv-ledger-rule-subtle: rgba(245, 242, 234, 0.06);
+  --vv-ledger-ink: #f5f2ea;
+  /* Opaque warm grey tiers for the Sats black treatment. */
+  --vv-ledger-ink-secondary: #aba8a1;
+  --vv-ledger-ink-meta: #95928c;
   --vv-ledger-bitcoin: #f7931a;
   --vv-ledger-bitcoin-fill: #f7931a;
   /* Price hero decimals: bitcoin at 0.75 on dark, opaque on light. */
   --vv-ledger-bitcoin-decimals: rgba(247, 147, 26, 0.75);
-  --vv-ledger-on-bitcoin: #0a0d0c;
+  --vv-ledger-on-bitcoin: #050505;
   --vv-ledger-bitcoin-soft: rgba(247, 147, 26, 0.12);
   --vv-ledger-gain: oklch(0.74 0.155 158);
   --vv-ledger-loss: oklch(0.7 0.155 28);
+  /* Semantic fills are the matching tone at this alpha over the panel; the
+     bridge in global.css mixes gain, loss, and info with it. Bitcoin soft
+     above is the same alpha, written out because the tests pin it. */
+  --vv-ledger-soft-alpha: 12%;
+  /* Phosphor glow: bitcoin at 0.30, dark treatment only (price.css). */
+  --vv-ledger-phosphor: rgba(247, 147, 26, 0.3);
+  /* Horizon mark lockup: the tile stays Terminal black with the fill orange in
+     both treatments, like the wordmark. Not a text colour. */
+  --vv-ledger-mark-tile: #0a0d0c;
+  --vv-ledger-mark-stroke: #f7931a;
   --vv-ledger-scanline: rgba(255, 255, 255, 0.022);
-  --vv-ledger-toggle-knob: #e8efe9;
+  --vv-ledger-toggle-knob: #f5f2ea;
 
   /* Dark and light are separate treatments, not a palette swap. */
   --vv-ledger-rule-style: solid;
@@ -138,10 +147,13 @@
   --vv-ledger-bitcoin: #9e5104;
   --vv-ledger-bitcoin-fill: #f7931a;
   --vv-ledger-bitcoin-decimals: #9e5104;
-  --vv-ledger-on-bitcoin: #0a0d0c;
-  --vv-ledger-bitcoin-soft: rgba(201, 106, 5, 0.1);
+  --vv-ledger-on-bitcoin: #050505;
+  /* Soft fill is the light bitcoin text tone (#9e5104) at 0.10, as in
+     Design/FOUNDATIONS.md and the Android LedgerFoundation. */
+  --vv-ledger-bitcoin-soft: rgba(158, 81, 4, 0.1);
   --vv-ledger-gain: oklch(0.52 0.13 158);
   --vv-ledger-loss: oklch(0.52 0.15 28);
+  --vv-ledger-soft-alpha: 10%;
   --vv-ledger-scanline: rgba(0, 0, 0, 0.012);
   --vv-ledger-toggle-knob: #ffffff;
 

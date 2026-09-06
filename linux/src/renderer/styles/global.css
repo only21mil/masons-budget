@@ -27,6 +27,20 @@
 
   --vv-positive: var(--vv-ledger-gain);
   --vv-negative: var(--vv-ledger-loss);
+  /*
+   * Graphite status colours mapped onto ledger tones (colour audit
+   * 2026-09-05). Warning and stale are the bitcoin text tone, info is the
+   * secondary ink tier, danger is the loss tone. Each dim fill is its own
+   * tone at --vv-ledger-soft-alpha (0.12 dark, 0.10 light) over the panel.
+   */
+  --vv-warning: var(--vv-ledger-bitcoin);
+  --vv-info: var(--vv-ledger-ink-secondary);
+  --vv-stale: var(--vv-ledger-bitcoin);
+  --vv-positive-dim: color-mix(in srgb, var(--vv-ledger-gain) var(--vv-ledger-soft-alpha), transparent);
+  --vv-negative-dim: color-mix(in srgb, var(--vv-ledger-loss) var(--vv-ledger-soft-alpha), transparent);
+  --vv-warning-dim: var(--vv-ledger-bitcoin-soft);
+  --vv-info-dim: color-mix(in srgb, var(--vv-ledger-ink-secondary) var(--vv-ledger-soft-alpha), transparent);
+  --vv-negative-line: color-mix(in srgb, var(--vv-ledger-loss) 42%, transparent);
   --vv-font-ui: var(--vv-ledger-font);
   --vv-font-mono: var(--vv-ledger-font);
 }
@@ -45,8 +59,11 @@ body,
 }
 
 body {
-  background: var(--vv-bg);
-  color: var(--vv-text);
+  /* No canvas of its own. The Electron window paints the persisted treatment's
+     ledger background until the shell mounts (electron/main.ts), so a light
+     launch never flashes a dark frame first. */
+  background: transparent;
+  color: var(--vv-ledger-ink);
   font-family: var(--vv-font-ui);
   font-size: var(--vv-text-base);
   line-height: 1.45;

@@ -30,6 +30,13 @@ struct AmountView: View {
         color ?? (accent ? theme.accent : theme.text)
     }
 
+    /// The unit label is opaque: an explicit colour stays as given, accent
+    /// amounts keep the accent, and everything else drops to the secondary
+    /// tier. No alpha on text (contrast audit 2026-09-05).
+    private var suffixColor: Color {
+        color ?? (accent ? theme.accent : theme.textMuted)
+    }
+
     private var formattedValue: String {
         let absSats = sats.magnitude
         return AppFormatter.formatAmount(sats: absSats, unit: unit, btcPrice: btcPrice)
@@ -58,7 +65,7 @@ struct AmountView: View {
             if !unitSuffix.isEmpty {
                 Text(" \(unitSuffix)")
                     .ledgerType(suffixRole)
-                    .foregroundStyle(displayColor.opacity(0.55))
+                    .foregroundStyle(suffixColor)
             }
         }
     }

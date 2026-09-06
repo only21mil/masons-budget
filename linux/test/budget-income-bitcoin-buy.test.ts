@@ -99,7 +99,7 @@ const adapter: RendererMutationAdapter = {
     requestId: request.requestId,
     kind: request.kind,
     outcome: "inserted",
-    entityId: "id" in request ? request.id : "key" in request ? request.key : request.name,
+    entityId: "id" in request ? request.id : "key" in request ? request.key : "name" in request ? request.name : request.toMonth,
   }),
   unpairDevice: async () => ({ status: "ok", revoked: true }),
 }

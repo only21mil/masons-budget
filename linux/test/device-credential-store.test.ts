@@ -121,6 +121,15 @@ describe("paired-device credential storage", () => {
     await expect(store.load()).resolves.toEqual(saved)
   })
 
+  it("round-trips the expanded budget copy grant in protected storage", async () => {
+    const store = createDeviceCredentialStore({
+      appReady: () => true, platform: "linux", safeStorage: protectedStorage(),
+      userDataPath: await temporaryRoot(),
+    })
+    const saved = await store.save({ ...fixture(), capabilities: ["budgetPlan.copyForward"] })
+    await expect(store.load()).resolves.toEqual(saved)
+  })
+
   it("reads schema-1 credentials as explicitly unbound while new saves retain the profile", async () => {
     const root = await temporaryRoot()
     const store = createDeviceCredentialStore({

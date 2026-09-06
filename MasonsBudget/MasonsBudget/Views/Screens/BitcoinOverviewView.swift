@@ -269,11 +269,20 @@ struct BitcoinPriceView: View {
                             .foregroundStyle(theme.accent)
                     }
 
-                    LedgerSettlingNumeral(value: displayPriceValue) {
-                        AppFormatter.formatCurrency(Decimal($0))
+                    // Whole dollars in the primary ink, cents in the decimals token.
+                    // The glow wraps both runs so the pulse stays one bloom.
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        LedgerSettlingNumeral(value: displayPriceValue) {
+                            AppFormatter.priceHeroParts(Decimal($0)).integer
+                        }
+                        .ledgerType(.priceHero)
+                        .foregroundStyle(theme.text)
+                        LedgerSettlingNumeral(value: displayPriceValue) {
+                            AppFormatter.priceHeroParts(Decimal($0)).decimals
+                        }
+                        .ledgerType(.priceHeroDecimals)
+                        .foregroundStyle(tokens.colors.priceHeroDecimals)
                     }
-                    .ledgerType(.priceHero)
-                    .foregroundStyle(theme.text)
                     .minimumScaleFactor(0.7)
                     .ledgerGlow(radius: glowRadius)
                     .onChange(of: storedPrice) { _, _ in

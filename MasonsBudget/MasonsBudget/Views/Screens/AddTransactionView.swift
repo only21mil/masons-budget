@@ -317,10 +317,10 @@ struct AddTransactionView: View {
                 Button { switchUnit(to: u) } label: {
                     Text(u.label)
                         .ledgerType(.sectionLabel)
-                        .foregroundStyle(inputUnit == u ? .white : theme.textMuted)
+                        .foregroundStyle(inputUnit == u ? theme.onAccent : theme.textMuted)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
-                        .background(inputUnit == u ? theme.accent : Color.clear)
+                        .background(inputUnit == u ? theme.accentFill : Color.clear)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -397,9 +397,9 @@ struct AddTransactionView: View {
                         HStack(spacing: 8) {
                             if !selectedCategory.isEmpty {
                                 let cat = scopedCategories.first(where: { $0.name == selectedCategory })
-                                CatGlyphView(kind: cat?.icon ?? "wrench", size: 11, color: .white)
+                                CatGlyphView(kind: cat?.icon ?? "wrench", size: 11, color: theme.onAccent)
                                     .frame(width: 18, height: 18)
-                                    .background(theme.accent)
+                                    .background(theme.accentFill)
                                     .clipShape(RoundedRectangle(cornerRadius: 5))
                             }
                             Text(selectedCategory.isEmpty ? "Select" : selectedCategory)
@@ -554,7 +554,7 @@ struct AddTransactionView: View {
                             handleKey(key)
                         } label: {
                             Text(key)
-                                .font(AppFont.iconLarge)
+                                .ledgerType(.amountInput)
                                 .foregroundStyle(theme.text)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 56)

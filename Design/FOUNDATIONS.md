@@ -87,32 +87,34 @@ also non-production.
 ## Color
 
 Bitcoin orange stays `#F7931A` for filled controls in both treatments; the ink
-on a fill is always `#0A0D0C`. The light theme uses `#9E5104` for orange text
+on a fill is always `#050505`. The light theme uses `#9E5104` for orange text
 and line art, the lightest orange of that hue that clears 4.5:1 on `panel`.
-`fg2` and `fg3` are opaque. They are the `fg` ink blended over each
-treatment's `bg`, so the dark grey stays cool and the light grey stays warm.
+`fg2` and `fg3` are opaque. The dark treatment uses Sats black with warm grey
+ink tiers, approved on 2026-09-05. The accepted dark tertiary measures 5.83:1
+on the raised panel, so its contrast floor is 5.8:1. Secondary ink still clears
+6:1. Light ink tiers retain their existing values.
 
 | Token | Dark | Light |
 | --- | --- | --- |
-| `bg` | `#0A0D0C` | `#F4F3EE` |
-| `panel` | `#0C100E` | `#EDEBE4` |
-| `panel2` | `#111614` | `#FFFFFF` |
-| `line` | `rgba(214,238,224,0.10)` | `rgba(20,23,21,0.14)` |
-| `line2` | `rgba(214,238,224,0.06)` | `rgba(20,23,21,0.08)` |
-| `fg` | `#E8EFE9` | `#141715` |
-| `fg2` | `#A3ABA6` | `#505452` |
-| `fg3` | `#8F9792` | `#5C605D` |
+| `bg` | `#050505` | `#F4F3EE` |
+| `panel` | `#0E0E0E` | `#EDEBE4` |
+| `panel2` | `#161616` | `#FFFFFF` |
+| `line` | `rgba(245,242,234,0.10)` | `rgba(20,23,21,0.14)` |
+| `line2` | `rgba(245,242,234,0.06)` | `rgba(20,23,21,0.08)` |
+| `fg` | `#F5F2EA` | `#141715` |
+| `fg2` | `#ABA8A1` | `#505452` |
+| `fg3` | `#95928C` | `#5C605D` |
 | `btc` (text and icons) | `#F7931A` | `#9E5104` |
-| `btcFill` (filled controls, ink `#0A0D0C`) | `#F7931A` | `#F7931A` |
+| `btcFill` (filled controls, ink `#050505`) | `#F7931A` | `#F7931A` |
 | `btcSoft` | `rgba(247,147,26,0.12)` | `rgba(158,81,4,0.10)` |
 | `btcDecimals` (price hero decimals) | `rgba(247,147,26,0.75)` | `#9E5104` |
 | `gain` | `oklch(0.74 0.155 158)` | `oklch(0.52 0.13 158)` |
 | `loss` | `oklch(0.70 0.155 28)` | `oklch(0.52 0.15 28)` |
 | `scan` | `rgba(255,255,255,0.022)` | `rgba(0,0,0,0.012)` |
-| `knob` | `#E8EFE9` | `#FFFFFF` |
+| `knob` | `#F5F2EA` | `#FFFFFF` |
 
 Do not use the options document's `#14100A` chrome as brand ink. Wordmarks use
-`#E8EFE9` on dark, `#141715` on light, and the matching `btc` token for
+`#F5F2EA` on dark, `#141715` on light, and the matching `btc` token for
 `BUDGET APP`.
 
 ## Typography
@@ -205,8 +207,8 @@ geometry stays inside the 72dp visible viewport, radius 8. The three rules are
 the exception. They terminate at the canvas edge so launcher masks crop them
 into different horizon chords. Never inset them.
 
-Android uses a flat `#0A0D0C` background layer, the foreground template, and a
-monochrome layer with the rule opacity ramp removed. iOS and macOS use an
+The launcher artwork remains unchanged. Android uses a flat `#0A0D0C`
+background layer, the foreground template, and a monochrome layer with the rule opacity ramp removed. iOS and macOS use an
 opaque 1024 by 1024 source with no pre-rounded corners or alpha channel. The
 system applies the mask. Do not shrink the color artwork for notification use;
 use the flat monochrome geometry.

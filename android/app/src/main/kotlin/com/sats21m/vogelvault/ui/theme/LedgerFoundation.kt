@@ -77,14 +77,14 @@ data class LedgerColors(
 
 object LedgerPalettes {
     val TerminalDark = LedgerColors(
-        background = Color(0xFF0A0D0C),
-        panel = Color(0xFF0C100E),
-        panelRaised = Color(0xFF111614),
-        line = Color(0xFFD6EEE0).copy(alpha = 0.10f),
-        lineSubtle = Color(0xFFD6EEE0).copy(alpha = 0.06f),
-        foreground = Color(0xFFE8EFE9),
-        foregroundSecondary = Color(0xFFA3ABA6),
-        foregroundTertiary = Color(0xFF8F9792),
+        background = Color(0xFF050505),
+        panel = Color(0xFF0E0E0E),
+        panelRaised = Color(0xFF161616),
+        line = Color(0xFFF5F2EA).copy(alpha = 0.10f),
+        lineSubtle = Color(0xFFF5F2EA).copy(alpha = 0.06f),
+        foreground = Color(0xFFF5F2EA),
+        foregroundSecondary = Color(0xFFABA8A1),
+        foregroundTertiary = Color(0xFF95928C),
         bitcoin = Color(0xFFF7931A),
         bitcoinFill = Color(0xFFF7931A),
         bitcoinSoft = Color(0xFFF7931A).copy(alpha = 0.12f),
@@ -92,7 +92,7 @@ object LedgerPalettes {
         gainSpec = LedgerOklch(0.74f, 0.155f, 158f),
         lossSpec = LedgerOklch(0.70f, 0.155f, 28f),
         scanline = Color.White.copy(alpha = 0.022f),
-        knob = Color(0xFFE8EFE9),
+        knob = Color(0xFFF5F2EA),
     )
 
     val DaylightLight = LedgerColors(

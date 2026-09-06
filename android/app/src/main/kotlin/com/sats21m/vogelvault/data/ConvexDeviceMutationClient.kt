@@ -54,6 +54,7 @@ internal const val DEVICE_PROFILE_MISMATCH_REASON =
     "OWNER_MISMATCH: reprovision a credential bound to the selected profile"
 internal const val DEVICE_REVISION_REQUIRED_REASON =
     "REVISION_REQUIRED: refresh tasks before retrying"
+internal val DEVICE_PLAN_EXISTS_REASON = ConvexServerRejection.PLAN_EXISTS.safeReason
 
 /**
  * Mutation transport for the capability-scoped device endpoints.
@@ -136,6 +137,7 @@ internal class ConvexDeviceMutationClient(
             "ENTITY_CONFLICT" -> ConvexResult.Failed("task changed on another device")
             "ENTITY_DELETED" -> ConvexResult.Failed(DEVICE_ENTITY_DELETED_REASON)
             "ENTITY_NOT_FOUND" -> ConvexResult.Failed(DEVICE_ENTITY_NOT_FOUND_REASON)
+            "PLAN_EXISTS" -> ConvexResult.Failed(DEVICE_PLAN_EXISTS_REASON)
             "OWNER_MISMATCH", "OWNER_SOURCE_MISMATCH" -> ConvexResult.Failed("task owner was rejected")
             "VALIDATION_FAILED" -> ConvexResult.Failed("task was rejected as invalid")
             else -> ConvexResult.Failed("convex rejection")

@@ -105,14 +105,14 @@ struct LedgerCheckbox: View {
         } label: {
             ZStack {
                 Circle()
-                    .stroke(isOn ? theme.accent : theme.borderStrong, lineWidth: 1.5)
+                    .stroke(isOn ? theme.accentFill : theme.borderStrong, lineWidth: 1.5)
                 Circle()
-                    .fill(theme.accent)
+                    .fill(theme.accentFill)
                     .scaleEffect(isOn ? 1 : 0.85)
                     .opacity(isOn ? 1 : 0)
                 Image(systemName: "checkmark")
                     .font(AppFont.icon(size: size * 0.55, weight: .bold))
-                    .foregroundStyle(theme.surface)
+                    .foregroundStyle(theme.onAccent)
                     .opacity(isOn ? 1 : 0)
             }
             .frame(width: size, height: size)

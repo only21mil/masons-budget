@@ -190,6 +190,13 @@
     <string name="budget_category_editor_title">Edit %1$s budget</string>
     <string name="budget_category_editor_month">Budget document month: %1$s</string>
     <string name="budget_category_amount_label">Monthly budget (USD)</string>
+    <string name="budget_plan_copy_label">Plan</string>
+    <string name="budget_plan_copy_title">%1$s has no budget plan yet</string>
+    <string name="budget_plan_copy_detail">Copy the %1$s plan forward: %2$d categories, %3$s planned. Transactions and income stay where they were recorded.</string>
+    <string name="budget_plan_copy_action">Copy %1$s plan to %2$s</string>
+    <string name="budget_plan_copy_confirm">Confirm copy to %1$s</string>
+    <string name="budget_plan_copy_cancel">Keep %1$s</string>
+    <string name="budget_plan_copy_failed">Plan not copied</string>
     <string name="budget_income_add_as_bitcoin_buy">Add as Bitcoin buy</string>
     <string name="budget_income_add_as_bitcoin_buy_detail">Record this income and buy Bitcoin in one atomic write. The income amount is locked to the Bitcoin purchase amount.</string>
     <string name="btc_buy_add_action">Add Bitcoin buy</string>

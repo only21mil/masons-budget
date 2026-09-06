@@ -4,8 +4,9 @@
 // Navigation is persistent by design — this is a command center, not a mobile
 // app, and Victor should never lose his place in the ledger to a drill-down.
 
-import type { ReactNode } from "react"
+import { type ReactNode, useEffect } from "react"
 
+import { LEDGER_WINDOW_BACKGROUND } from "../../../shared/ledgerWindow.ts"
 import { useOptionalAppState } from "../app/AppState.tsx"
 import { IconGlyph, type IconName } from "./IconGlyph.tsx"
 import { HorizonMark, LedgerScanlines } from "./LedgerFoundations.tsx"
@@ -42,6 +43,20 @@ export function AppShell({ sections, activeId, onNavigate, topBar, children }: A
   const phosphor = preferences?.phosphorEnabled ?? true
   const reduceMotion = preferences?.reduceMotionEnabled ?? false
   const terminalEffectsEnabled = theme === "dark"
+
+  // Publish the treatment's ledger background as the document theme colour.
+  // The main process listens for the change and repaints the window frame to
+  // match, then remembers it for the next launch (electron/main.ts).
+  useEffect(() => {
+    if (typeof document === "undefined") return
+    let meta = document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    if (!meta) {
+      meta = document.createElement("meta")
+      meta.name = "theme-color"
+      document.head.append(meta)
+    }
+    meta.content = LEDGER_WINDOW_BACKGROUND[theme]
+  }, [theme])
 
   return (
     <div

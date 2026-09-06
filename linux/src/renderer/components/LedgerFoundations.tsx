@@ -38,11 +38,11 @@ export type LedgerVectorProps = Omit<VectorFrameProps, "children">
 export function HorizonMark(props: LedgerVectorProps) {
   return (
     <VectorFrame {...props}>
-      <rect width="24" height="24" fill="#0A0D0C" />
+      <rect width="24" height="24" fill="var(--vv-ledger-mark-tile)" />
       <g
         transform="translate(12 9.4) scale(0.435) translate(-13 -12.7)"
         fill="none"
-        stroke="#F7931A"
+        stroke="var(--vv-ledger-mark-stroke)"
         strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -51,7 +51,7 @@ export function HorizonMark(props: LedgerVectorProps) {
         <path d="M9.4 11.4h4.6" />
         <path d="M11 3.2v2.8M11 19.4v2.8M13.6 3.2v2.8M13.6 19.4v2.8" />
       </g>
-      <g fill="#F7931A">
+      <g fill="var(--vv-ledger-mark-stroke)">
         <rect x="0" y="15.1" width="24" height="1.6" fillOpacity=".5" />
         <rect x="0" y="17.6" width="24" height="1.25" fillOpacity=".3" />
         <rect x="0" y="19.75" width="24" height=".95" fillOpacity=".17" />

@@ -569,6 +569,12 @@ export function AppStateProvider({
       updateController(settled)
       if (result.status === "ok") {
         const refreshed = await loadRemote(activeProfile, generationAtStart)
+        if (
+          request.kind === "budgetPlan.copyForward" &&
+          generationRef.current === generationAtStart
+        ) {
+          setSelectedMonth(request.toMonth)
+        }
         updateController(
           finishRefresh(
             controllerRef.current,
@@ -741,6 +747,7 @@ function mutationFreshness(data: FixtureEnvelope, kind: RendererMutationKind): s
   if (kind.startsWith("transaction.")) return data.transactions.status
   if (kind.startsWith("todo.")) return data.todos.status
   if (kind.startsWith("budgetCategory.")) return data.budget.status
+  if (kind.startsWith("budgetPlan.")) return data.budget.status
   if (kind.startsWith("btcBuy.")) return data.btcBuys.status
   if (kind.startsWith("btcBillPay.")) return data.billPays.status
   if (kind.startsWith("btcTransfer.")) return data.btcBalanceDocument.status

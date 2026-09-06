@@ -485,6 +485,171 @@ struct BudgetCategoryDeletionIntent: Equatable, Sendable {
     }
 }
 
+// MARK: - Budget plan carry-forward (shared/domain/src/budgetPlanCarry.ts)
+
+/// Why the copy-forward action is not offered. Raw values are the shared
+/// contract's rejection reasons, pinned by budget-plan-carry-cases.json.
+enum BudgetPlanCarryRejection: String, Equatable, Sendable {
+    case invalidCurrentMonth = "invalid-current-month"
+    case invalidSelectedMonth = "invalid-selected-month"
+    case unsupportedProfile = "unsupported-profile"
+    case ownerMismatch = "owner-mismatch"
+    case invalidPlanMonth = "invalid-plan-month"
+    case planIsCurrent = "plan-is-current"
+    case invalidRevision = "invalid-revision"
+    case revisionMismatch = "revision-mismatch"
+}
+
+/// What the device sends to `tables:copyBudgetPlanForwardFromDevice`. The
+/// server repeats every check before it advances the plan's month in place.
+struct BudgetPlanCarryIntent: Equatable, Sendable {
+    let owner: FamilyMember
+    let sourceFile: String
+    let fromMonth: String
+    let toMonth: String
+    let baseUpdatedAtMs: Int64
+}
+
+enum BudgetPlanCarryEligibility: Equatable, Sendable {
+    case eligible(BudgetPlanCarryIntent)
+    case ineligible(BudgetPlanCarryRejection)
+
+    var intent: BudgetPlanCarryIntent? {
+        if case let .eligible(intent) = self {
+            return intent
+        }
+        return nil
+    }
+
+    var rejection: BudgetPlanCarryRejection? {
+        if case let .ineligible(reason) = self {
+            return reason
+        }
+        return nil
+    }
+}
+
+/// Decides, on the device, whether the Budget screen offers "Copy <month>
+/// plan to <next month>". The plan moves exactly one month per copy, so a
+/// plan two months stale is copied in two visible steps.
+enum BudgetPlanCarry {
+    static let mutationPath = "tables:copyBudgetPlanForwardFromDevice"
+    static let maximumExactJSONRevision: Int64 = 9_007_199_254_740_991
+
+    private static let monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ]
+
+    /// The row API retains legacy English month labels. Normalize at the read
+    /// boundary; eligibility itself still accepts only canonical month keys.
+    static func canonicalStoredMonth(_ stored: String) -> String? {
+        if monthIndex(stored) != nil {
+            return stored
+        }
+        let parts = stored.split(separator: " ", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let index = monthNames.firstIndex(of: String(parts[0]))
+        else { return nil }
+        let month = index + 1
+        let key = "\(parts[1])-\(month < 10 ? "0" : "")\(month)"
+        return monthIndex(key) == nil ? nil : key
+    }
+
+    static func monthLabel(_ key: String) -> String {
+        guard let index = monthIndex(key) else { return key }
+        return "\(monthNames[index % 12]) \(key.prefix(4))"
+    }
+
+    /// `2026-12` becomes `2027-01`. Nil for anything that is not yyyy-MM.
+    static func nextBudgetMonth(_ month: String) -> String? {
+        guard let index = monthIndex(month) else { return nil }
+        let next = index + 1
+        let year = next / 12
+        let monthOfYear = next % 12 + 1
+        let paddedYear = String(repeating: "0", count: max(0, 4 - String(year).count)) + String(year)
+        let paddedMonth = monthOfYear < 10 ? "0\(monthOfYear)" : "\(monthOfYear)"
+        return "\(paddedYear)-\(paddedMonth)"
+    }
+
+    /// Months since year zero, or nil for a non-canonical key.
+    static func monthIndex(_ month: String) -> Int? {
+        guard Phase1DateContract.isValidMonth(month),
+              let year = Int(month.prefix(4)),
+              let monthOfYear = Int(month.suffix(2))
+        else { return nil }
+        return year * 12 + (monthOfYear - 1)
+    }
+
+    static func canonicalIdentity(for activeProfile: FamilyMember) -> (owner: FamilyMember, sourceFile: String)? {
+        if activeProfile.isAdult {
+            return (.victor, BudgetCategoryDeletionIntent.canonicalSource)
+        }
+        if activeProfile == .mason {
+            return (.mason, BudgetCategoryDeletionIntent.canonicalMasonSource)
+        }
+        return nil
+    }
+
+    static func isExactRevision(_ value: Double) -> Bool {
+        value.isFinite &&
+            value > 0 &&
+            value <= Double(maximumExactJSONRevision) &&
+            value.rounded(.towardZero) == value
+    }
+
+    /// Performs no mutation. Order of checks matches the shared contract.
+    static func eligibility(
+        activeProfile: FamilyMember,
+        currentMonth: String,
+        selectedMonth: String?,
+        budgetOwner: FamilyMember,
+        budgetMonth: String,
+        budgetUpdatedAtMs: Double?,
+        baseUpdatedAtMs: Double,
+    ) -> BudgetPlanCarryEligibility {
+        guard let currentIndex = monthIndex(currentMonth) else {
+            return .ineligible(.invalidCurrentMonth)
+        }
+        var viewedIndex = currentIndex
+        if let selectedMonth {
+            guard let selectedIndex = monthIndex(selectedMonth) else {
+                return .ineligible(.invalidSelectedMonth)
+            }
+            viewedIndex = max(viewedIndex, selectedIndex)
+        }
+        guard let identity = canonicalIdentity(for: activeProfile) else {
+            return .ineligible(.unsupportedProfile)
+        }
+        guard budgetOwner.ledgerOwner == identity.owner else {
+            return .ineligible(.ownerMismatch)
+        }
+        guard let planIndex = monthIndex(budgetMonth),
+              let toMonth = nextBudgetMonth(budgetMonth)
+        else {
+            return .ineligible(.invalidPlanMonth)
+        }
+        guard viewedIndex > planIndex else {
+            return .ineligible(.planIsCurrent)
+        }
+        guard isExactRevision(baseUpdatedAtMs),
+              let exactRevision = Int64(exactly: baseUpdatedAtMs)
+        else {
+            return .ineligible(.invalidRevision)
+        }
+        guard baseUpdatedAtMs == budgetUpdatedAtMs else {
+            return .ineligible(.revisionMismatch)
+        }
+        return .eligible(BudgetPlanCarryIntent(
+            owner: identity.owner,
+            sourceFile: identity.sourceFile,
+            fromMonth: budgetMonth,
+            toMonth: toMonth,
+            baseUpdatedAtMs: exactRevision,
+        ))
+    }
+}
+
 private enum Phase1DateContract {
     static func isValidDay(_ value: String) -> Bool {
         guard value.count == 10,

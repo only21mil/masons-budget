@@ -273,6 +273,7 @@
 		EFBB7BB8E76452640F44EF64 /* SearchMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2283F2AE36B94EF55B4AAD6 /* SearchMatcher.swift */; };
 		F12B99F5E2C30602F5A71F05 /* MasonsBudgetApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8388ECD356E3E00B77790681 /* MasonsBudgetApp.swift */; };
 		F56EC18C9DF0CB4349162063 /* TodoArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBEF1482C8EFC171A27117F7 /* TodoArea.swift */; };
+		F631BCE526FD6E5BF30887C8 /* budget-plan-carry-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = D0C1DD7D55F5B50BCE904194 /* budget-plan-carry-cases.json */; };
 		F6D96FA476DB31DD5516CB0C /* budget-category-deletion-cases.json in Resources */ = {isa = PBXBuildFile; fileRef = E0B7DF8FCA7F7468FBA58251 /* budget-category-deletion-cases.json */; };
 		F7BC632EB189C29BFBD81043 /* BTCAccountDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB39E4E9476D6B0B76703693 /* BTCAccountDetailView.swift */; };
 		F8512C01C795496D2CC7EA3A /* StockPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F721A6FC17530024B35A0C6 /* StockPriceService.swift */; };
@@ -403,6 +404,7 @@
 		CC3F0B2B051C5F7F233C1DCA /* listBtcBuys.convex_encoded_json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listBtcBuys.convex_encoded_json.json; sourceTree = "<group>"; };
 		CD36C9FAE3B0F9A09581EC60 /* listTransactions.json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listTransactions.json.json; sourceTree = "<group>"; };
 		CF60F6C9AFB730F4A27C9A10 /* BitcoinIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinIcons.swift; sourceTree = "<group>"; };
+		D0C1DD7D55F5B50BCE904194 /* budget-plan-carry-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "budget-plan-carry-cases.json"; sourceTree = "<group>"; };
 		D6A79423DEDC497A0F44FE23 /* LICENSE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = LICENSE.md; sourceTree = "<group>"; };
 		D73554169E81ED9939029F22 /* todo-visibility-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "todo-visibility-cases.json"; sourceTree = "<group>"; };
 		D761EFAED478A3508622C89B /* LedgerAdoptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LedgerAdoptionTests.swift; sourceTree = "<group>"; };
@@ -561,6 +563,7 @@
 			children = (
 				25CE52C2D21FE78FC3334E5D /* btc-fiat-availability-cases.json */,
 				E0B7DF8FCA7F7468FBA58251 /* budget-category-deletion-cases.json */,
+				D0C1DD7D55F5B50BCE904194 /* budget-plan-carry-cases.json */,
 				EF30B8FE8B7986AB2D87D572 /* convex-int64-wire-cases.json */,
 				F3B18B925AF533486B8311C0 /* finance-market-cases.json */,
 				C56884C1E938AB8A70C8FDB7 /* income-buy-write-cases.json */,
@@ -809,6 +812,7 @@
 				A9879A70BEBAAD08D3FA3628 /* README.md in Resources */,
 				9F25069AA8D8C74899777A13 /* btc-fiat-availability-cases.json in Resources */,
 				F6D96FA476DB31DD5516CB0C /* budget-category-deletion-cases.json in Resources */,
+				F631BCE526FD6E5BF30887C8 /* budget-plan-carry-cases.json in Resources */,
 				6132ABC2B1A85E41529AC2D6 /* convex-int64-wire-cases.json in Resources */,
 				D735B252616C9B242950D664 /* finance-market-cases.json in Resources */,
 				17976960E05ECF3D6C23827A /* getBudgetDocument.convex_encoded_json.json in Resources */,
