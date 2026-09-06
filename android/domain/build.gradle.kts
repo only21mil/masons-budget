@@ -32,6 +32,7 @@ val sharedDomainFixtureNames =
         "money-out-today-cases.json",
         "month-cases.json",
         "budget-category-deletion-cases.json",
+        "budget-plan-carry-cases.json",
         "todo-cases.json",
         "visibility-cases.json",
     )

@@ -13,6 +13,7 @@ import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexReadBootstrapRepository
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.BudgetCategoryDeletionGateway
+import com.sats21m.vogelvault.data.BudgetPlanCarryGateway
 import com.sats21m.vogelvault.data.FinanceQueryRepositories
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RecoveringFinanceReadSource
@@ -399,6 +400,19 @@ open class VaultApplication : Application() {
             ),
             // UI month pickers cannot supply or override this value. Convex
             // repeats the current-month check against its own clock.
+            trustedCurrentMonth = { YearMonth.now(ZoneOffset.UTC).toString() },
+        )
+    }
+
+    /** Copying the budget plan forward stays behind the same budget capability. */
+    internal open val budgetPlanCarryGateway: BudgetPlanCarryGateway by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        BudgetPlanCarryGateway(
+            client = ConvexDeviceMutationClient(
+                configSource = MutableConvexConfigSource(writeConvexConfig()),
+                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+            ),
             trustedCurrentMonth = { YearMonth.now(ZoneOffset.UTC).toString() },
         )
     }

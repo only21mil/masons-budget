@@ -78,6 +78,7 @@ enum class ConvexServerRejection(internal val safeReason: String) {
     REVISION_REQUIRED("REVISION_REQUIRED: refresh tasks before retrying"),
     OWNER_REJECTED("task owner was rejected"),
     VALIDATION_REJECTED("task was rejected as invalid"),
+    PLAN_EXISTS("PLAN_EXISTS: that month already has a budget plan"),
     ;
 
     companion object {
@@ -90,6 +91,7 @@ enum class ConvexServerRejection(internal val safeReason: String) {
             REVISION_REQUIRED.safeReason -> REVISION_REQUIRED
             OWNER_REJECTED.safeReason -> OWNER_REJECTED
             VALIDATION_REJECTED.safeReason -> VALIDATION_REJECTED
+            PLAN_EXISTS.safeReason -> PLAN_EXISTS
             else -> GENERIC_ERROR
         }
     }

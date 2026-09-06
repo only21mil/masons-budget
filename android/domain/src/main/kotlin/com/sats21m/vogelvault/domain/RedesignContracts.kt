@@ -169,6 +169,98 @@ fun validateCurrentMonthCategoryDelete(
     )
 }
 
+// ── Budget plan carry-forward ───────────────────────────────────────────────
+//
+// Kotlin mirror of shared/domain/src/budgetPlanCarry.ts, pinned by
+// shared/domain/fixtures/budget-plan-carry-cases.json. Convex stores one plan
+// per budget source, so copying it forward advances that document's month in
+// place; the device offers the action only when the plan lags the viewed month
+// and always moves it exactly one month.
+
+data class BudgetPlanCarryIntent(
+    val owner: FamilyMember,
+    val sourceFile: String,
+    val fromMonth: String,
+    val toMonth: String,
+    val baseUpdatedAtMs: Long,
+)
+
+enum class BudgetPlanCarryRejection {
+    INVALID_CURRENT_MONTH,
+    INVALID_SELECTED_MONTH,
+    UNSUPPORTED_PROFILE,
+    OWNER_MISMATCH,
+    INVALID_PLAN_MONTH,
+    PLAN_IS_CURRENT,
+    INVALID_REVISION,
+    REVISION_MISMATCH,
+}
+
+data class BudgetPlanCarryEligibility(
+    val intent: BudgetPlanCarryIntent? = null,
+    val rejection: BudgetPlanCarryRejection?,
+) {
+    val eligible: Boolean get() = rejection == null
+}
+
+/** `2026-12` becomes `2027-01`. The input must already be canonical yyyy-MM. */
+fun nextBudgetMonth(month: String): String = YearMonth.parse(month).plusMonths(1).toString()
+
+/**
+ * Decide whether the Budget screen offers "copy the plan forward" and what the
+ * device would send. Performs no mutation.
+ *
+ * [currentMonth] comes from application authority, never from a picker.
+ * [selectedMonth] is the month the screen is scoped to, if any.
+ */
+fun validateBudgetPlanCarry(
+    activeProfile: FamilyMember,
+    currentMonth: String,
+    selectedMonth: String?,
+    budget: Budget,
+    baseUpdatedAtMs: Long,
+): BudgetPlanCarryEligibility {
+    if (!currentMonth.isCanonicalIsoMonth()) {
+        return BudgetPlanCarryEligibility(rejection = BudgetPlanCarryRejection.INVALID_CURRENT_MONTH)
+    }
+    if (selectedMonth != null && !selectedMonth.isCanonicalIsoMonth()) {
+        return BudgetPlanCarryEligibility(rejection = BudgetPlanCarryRejection.INVALID_SELECTED_MONTH)
+    }
+    val canonicalSource = when {
+        activeProfile.isAdult -> "budget"
+        activeProfile == FamilyMember.MASON -> "mason-budget"
+        else -> return BudgetPlanCarryEligibility(rejection = BudgetPlanCarryRejection.UNSUPPORTED_PROFILE)
+    }
+    val canonicalOwner = activeProfile.ledgerOwner
+    if (budget.owner.ledgerOwner != canonicalOwner) {
+        return BudgetPlanCarryEligibility(rejection = BudgetPlanCarryRejection.OWNER_MISMATCH)
+    }
+    if (!budget.month.isCanonicalIsoMonth()) {
+        return BudgetPlanCarryEligibility(rejection = BudgetPlanCarryRejection.INVALID_PLAN_MONTH)
+    }
+    val planMonth = YearMonth.parse(budget.month)
+    val viewed = listOfNotNull(currentMonth, selectedMonth).maxOf(YearMonth::parse)
+    if (viewed <= planMonth) {
+        return BudgetPlanCarryEligibility(rejection = BudgetPlanCarryRejection.PLAN_IS_CURRENT)
+    }
+    if (baseUpdatedAtMs <= 0L || baseUpdatedAtMs > MAX_SAFE_INTEGER) {
+        return BudgetPlanCarryEligibility(rejection = BudgetPlanCarryRejection.INVALID_REVISION)
+    }
+    if (baseUpdatedAtMs != budget.updatedAtMs) {
+        return BudgetPlanCarryEligibility(rejection = BudgetPlanCarryRejection.REVISION_MISMATCH)
+    }
+    return BudgetPlanCarryEligibility(
+        intent = BudgetPlanCarryIntent(
+            owner = canonicalOwner,
+            sourceFile = canonicalSource,
+            fromMonth = budget.month,
+            toMonth = nextBudgetMonth(budget.month),
+            baseUpdatedAtMs = baseUpdatedAtMs,
+        ),
+        rejection = null,
+    )
+}
+
 private fun String.foldedCategoryName(): String = trim().lowercase(Locale.US)
 
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
