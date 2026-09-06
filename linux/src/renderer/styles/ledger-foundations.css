@@ -36,6 +36,16 @@
   --vv-ledger-bitcoin-soft: rgba(247, 147, 26, 0.12);
   --vv-ledger-gain: oklch(0.74 0.155 158);
   --vv-ledger-loss: oklch(0.7 0.155 28);
+  /* Semantic fills are the matching tone at this alpha over the panel; the
+     bridge in global.css mixes gain, loss, and info with it. Bitcoin soft
+     above is the same alpha, written out because the tests pin it. */
+  --vv-ledger-soft-alpha: 12%;
+  /* Phosphor glow: bitcoin at 0.30, dark treatment only (price.css). */
+  --vv-ledger-phosphor: rgba(247, 147, 26, 0.3);
+  /* Horizon mark lockup: the tile stays Terminal black with the fill orange in
+     both treatments, like the wordmark. Not a text colour. */
+  --vv-ledger-mark-tile: #0a0d0c;
+  --vv-ledger-mark-stroke: #f7931a;
   --vv-ledger-scanline: rgba(255, 255, 255, 0.022);
   --vv-ledger-toggle-knob: #e8efe9;
 
@@ -139,9 +149,12 @@
   --vv-ledger-bitcoin-fill: #f7931a;
   --vv-ledger-bitcoin-decimals: #9e5104;
   --vv-ledger-on-bitcoin: #0a0d0c;
-  --vv-ledger-bitcoin-soft: rgba(201, 106, 5, 0.1);
+  /* Soft fill is the light bitcoin text tone (#9e5104) at 0.10, as in
+     Design/FOUNDATIONS.md and the Android LedgerFoundation. */
+  --vv-ledger-bitcoin-soft: rgba(158, 81, 4, 0.1);
   --vv-ledger-gain: oklch(0.52 0.13 158);
   --vv-ledger-loss: oklch(0.52 0.15 28);
+  --vv-ledger-soft-alpha: 10%;
   --vv-ledger-scanline: rgba(0, 0, 0, 0.012);
   --vv-ledger-toggle-knob: #ffffff;
 

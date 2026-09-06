@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { act } from "react"
+import { createRoot } from "react-dom/client"
 import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -17,7 +19,11 @@ import {
   PawGlyph,
 } from "../src/renderer/components/LedgerFoundations.tsx"
 import { AppShell } from "../src/renderer/components/AppShell.tsx"
+import { LEDGER_WINDOW_BACKGROUND } from "../shared/ledgerWindow.ts"
 import { renderRoute } from "./support/renderRoute.ts"
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
+  .IS_REACT_ACT_ENVIRONMENT = true
 
 const here = dirname(fileURLToPath(import.meta.url))
 const renderer = join(here, "..", "src", "renderer")
@@ -25,6 +31,10 @@ const foundations = readFileSync(join(renderer, "styles", "ledger-foundations.cs
 const globalStyles = readFileSync(join(renderer, "styles", "global.css"), "utf8")
 const componentStyles = readFileSync(join(renderer, "styles", "components.css"), "utf8")
 const priceStyles = readFileSync(join(renderer, "pages", "finance", "price", "price.css"), "utf8")
+const foundationComponents = readFileSync(
+  join(renderer, "components", "LedgerFoundations.tsx"),
+  "utf8",
+)
 const fontPath = join(
   renderer,
   "assets",
@@ -86,6 +96,9 @@ describe("ledger design foundations", () => {
       "--vv-ledger-bitcoin: #f7931a",
       "--vv-ledger-bitcoin-fill: #f7931a",
       "--vv-ledger-bitcoin-decimals: rgba(247, 147, 26, 0.75)",
+      "--vv-ledger-bitcoin-soft: rgba(247, 147, 26, 0.12)",
+      "--vv-ledger-soft-alpha: 12%",
+      "--vv-ledger-phosphor: rgba(247, 147, 26, 0.3)",
     ]) {
       expect(dark).toContain(token)
     }
@@ -95,14 +108,88 @@ describe("ledger design foundations", () => {
       "--vv-ledger-bitcoin: #9e5104",
       "--vv-ledger-bitcoin-fill: #f7931a",
       "--vv-ledger-bitcoin-decimals: #9e5104",
+      // The light soft fill is the light bitcoin text tone at 0.10 (FOUNDATIONS).
+      "--vv-ledger-bitcoin-soft: rgba(158, 81, 4, 0.1)",
+      "--vv-ledger-soft-alpha: 10%",
     ]) {
       expect(light).toContain(token)
     }
+    expect(light).not.toContain("rgba(201, 106, 5")
     expect(foundations).not.toMatch(/--vv-ledger-ink-(secondary|meta): rgba/)
     expect(priceStyles).toMatch(
       /\.vv-price-hero__decimals\s*\{[^}]*color: var\(--vv-ledger-bitcoin-decimals\);/,
     )
     expect(priceStyles).not.toMatch(/\.vv-price-hero__decimals\s*\{[^}]*opacity/)
+  })
+
+  it("maps every Graphite status colour onto a ledger tone in both treatments", () => {
+    const bridge = globalStyles.slice(
+      globalStyles.indexOf(".vv-ledger-root {"),
+      globalStyles.indexOf("*,\n*::before"),
+    )
+    for (const alias of [
+      "--vv-warning: var(--vv-ledger-bitcoin)",
+      "--vv-stale: var(--vv-ledger-bitcoin)",
+      "--vv-info: var(--vv-ledger-ink-secondary)",
+      "--vv-negative: var(--vv-ledger-loss)",
+      "--vv-positive-dim: color-mix(in srgb, var(--vv-ledger-gain) var(--vv-ledger-soft-alpha), transparent)",
+      "--vv-negative-dim: color-mix(in srgb, var(--vv-ledger-loss) var(--vv-ledger-soft-alpha), transparent)",
+      "--vv-warning-dim: var(--vv-ledger-bitcoin-soft)",
+      "--vv-info-dim: color-mix(in srgb, var(--vv-ledger-ink-secondary) var(--vv-ledger-soft-alpha), transparent)",
+      "--vv-negative-line: color-mix(in srgb, var(--vv-ledger-loss) 42%, transparent)",
+    ]) {
+      expect(bridge).toContain(alias)
+    }
+    // Every consumer of a status colour reads the remapped name, never a literal.
+    expect(componentStyles).toMatch(/\.vv-button--danger\s*\{[^}]*border-color: var\(--vv-negative-line\);/)
+    expect(componentStyles).toMatch(/\.vv-badge--warning\s*\{[^}]*color: var\(--vv-warning\);/)
+    expect(componentStyles).toMatch(/\.vv-badge--info\s*\{[^}]*color: var\(--vv-info\);/)
+    expect(globalStyles).toMatch(/\.vv-stale\s*\{[^}]*color: var\(--vv-stale\);/)
+    const literal = /#[0-9a-f]{3,8}\b|rgba?\(|oklch\(/i
+    expect(componentStyles).not.toMatch(literal)
+    expect(priceStyles).not.toMatch(literal)
+    expect(globalStyles).not.toMatch(literal)
+    expect(foundationComponents).not.toMatch(literal)
+    expect(foundationComponents).toContain('fill="var(--vv-ledger-mark-tile)"')
+    expect(foundationComponents).toContain('stroke="var(--vv-ledger-mark-stroke)"')
+    // The body paints nothing; the window carries the treatment until the shell mounts.
+    expect(globalStyles).toMatch(/body\s*\{[^}]*background: transparent;/)
+  })
+
+  it("publishes the treatment's ledger background as the document theme colour", async () => {
+    const readThemeColor = () =>
+      document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content ?? null
+    const mount = async () => {
+      const container = document.createElement("div")
+      document.body.append(container)
+      const root = createRoot(container)
+      await act(async () => {
+        root.render(
+          <AppStateProvider>
+            <AppShell sections={[]} activeId="dashboard" onNavigate={() => {}} topBar={null}>
+              Ledger content
+            </AppShell>
+          </AppStateProvider>,
+        )
+      })
+      return async () => {
+        await act(async () => root.unmount())
+        container.remove()
+      }
+    }
+
+    document.head.querySelector('meta[name="theme-color"]')?.remove()
+    window.localStorage.setItem("vogel-vault.ledger-theme", "light")
+    let unmount = await mount()
+    expect(readThemeColor()).toBe(LEDGER_WINDOW_BACKGROUND.light)
+    expect(readThemeColor()).toBe("#f4f3ee")
+    await unmount()
+
+    window.localStorage.setItem("vogel-vault.ledger-theme", "dark")
+    unmount = await mount()
+    expect(readThemeColor()).toBe("#0a0d0c")
+    await unmount()
+    document.head.querySelector('meta[name="theme-color"]')?.remove()
   })
 
   it("holds the type floor at 11px and caps uppercase tracking at 0.10em", () => {
@@ -219,7 +306,7 @@ describe("ledger design foundations", () => {
     expect(componentStyles).not.toMatch(/data-vv-phosphor[^}]+vv-ledger-semantic/s)
     expect(foundations).not.toContain(".vv-ledger-glow")
     expect(priceStyles).toMatch(
-      /\[data-vv-theme="dark"\]\[data-vv-phosphor="on"\][^{]+\.vv-price-hero__value:not\(\.vv-price-hero__value--unavailable\)[^{]+\{\s*text-shadow: 0 0 18px rgba\(247,147,26,\.30\);/,
+      /\[data-vv-theme="dark"\]\[data-vv-phosphor="on"\][^{]+\.vv-price-hero__value:not\(\.vv-price-hero__value--unavailable\)[^{]+\{\s*text-shadow: 0 0 18px var\(--vv-ledger-phosphor\);/,
     )
   })
 

@@ -1,3 +1,10 @@
+// HISTORICAL. This is the older Bitcoin Standard prototype palette. It is not
+// the accepted token set and no client reads it; the Linux, Android, and Swift
+// clients draw the Terminal and Daylight ledger tokens recorded in
+// Design/FOUNDATIONS.md. Only the Design/Bitcoin Standard.html prototype still
+// loads this file. Kept for reference, not for new work (colour audit
+// 2026-09-05).
+//
 // Design tokens — Bitcoin Standard app
 // Bitcoin orange is a generic public-domain color, not a copyrighted brand element.
 

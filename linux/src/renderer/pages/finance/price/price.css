@@ -55,7 +55,7 @@
 
 .vv-ledger-root[data-vv-theme="dark"][data-vv-phosphor="on"]
   .vv-price-hero__value:not(.vv-price-hero__value--unavailable) {
-  text-shadow: 0 0 18px rgba(247,147,26,.30);
+  text-shadow: 0 0 18px var(--vv-ledger-phosphor);
 }
 
 .vv-price-hero__value--unavailable {
@@ -243,9 +243,9 @@
 }
 
 @keyframes vv-phosphor-pulse {
-  0% { text-shadow: 0 0 18px rgba(247,147,26,.30); }
-  33% { text-shadow: 0 0 32px rgba(247,147,26,.30); }
-  100% { text-shadow: 0 0 18px rgba(247,147,26,.30); }
+  0% { text-shadow: 0 0 18px var(--vv-ledger-phosphor); }
+  33% { text-shadow: 0 0 32px var(--vv-ledger-phosphor); }
+  100% { text-shadow: 0 0 18px var(--vv-ledger-phosphor); }
 }
 
 @media (prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce) {
