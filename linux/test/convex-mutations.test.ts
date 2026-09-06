@@ -401,6 +401,7 @@ describe("paired-device main controller", () => {
         "transaction.delete",
         "budgetCategory.upsert",
         "budgetCategory.delete",
+        "budgetPlan.copyForward",
       ],
     })
     expect(JSON.stringify(result)).not.toContain(body.args.deviceToken)
@@ -1681,5 +1682,92 @@ describe("form-built payloads through the main-process validator", () => {
       ...submission,
       baseUpdatedAtMs: 7,
     })).toMatchObject({ ...submission, baseUpdatedAtMs: 7 })
+  })
+})
+
+describe("budget plan copy transport", () => {
+  const request = {
+    kind: "budgetPlan.copyForward" as const,
+    requestId: "request-copy-01",
+    actor: "rachel" as const,
+    owner: "victor" as const,
+    fromMonth: "2026-12",
+    toMonth: "2027-01",
+    baseUpdatedAtMs: 100,
+  }
+  const receipt = {
+    ok: true,
+    outcome: "copied",
+    sourceFile: "budget",
+    fromMonth: request.fromMonth,
+    toMonth: request.toMonth,
+    categoryCount: 3,
+    updatedAtMs: 101,
+  }
+  function setup(response = success(receipt), capabilities: DeviceCredentialSnapshot["capabilities"] = ["budgetCategory.upsert", "budgetCategory.delete"]) {
+    const post = vi.fn<Parameters<typeof createPairedDeviceController>[0]["post"]>(async () => response)
+    const controller = createPairedDeviceController({
+      store: store({ ...snapshot, profile: "rachel", capabilities }),
+      writesEnabled: () => true,
+      approvedDeploymentOrigin: () => snapshot.deploymentOrigin,
+      post,
+    })
+    return { controller, post }
+  }
+
+  it("upgrades an existing budget grant and sends the exact revision-fenced household request", async () => {
+    const { controller, post } = setup()
+    expect(await controller.status()).toMatchObject({ capabilities: expect.arrayContaining([request.kind]) })
+    expect(await controller.mutate(request, "rachel")).toEqual({
+      status: "ok", requestId: request.requestId, kind: request.kind,
+      outcome: "copied", entityId: "2027-01", updatedAtMs: 101,
+    })
+    const body = JSON.parse(post.mock.calls[0]![1] as string)
+    expect(body.path).toBe("tables:copyBudgetPlanForwardFromDevice")
+    expect(body.args).toEqual({
+      deviceId: snapshot.deviceId, deviceToken: snapshot.deviceCredential,
+      owner: "victor", sourceFile: "budget", fromMonth: "2026-12",
+      toMonth: "2027-01", baseUpdatedAtMs: 100,
+    })
+  })
+
+  it("accepts an idempotent replay receipt", async () => {
+    const { controller } = setup(success({ ...receipt, outcome: "already-copied" }))
+    expect(await controller.mutate(request, "rachel")).toMatchObject({ status: "ok", outcome: "already-copied" })
+  })
+
+  it.each([
+    { fromMonth: "2026-13" }, { toMonth: "2027-02" }, { toMonth: "2026-11" },
+    { fromMonth: "2026-1" }, { baseUpdatedAtMs: 0 }, { baseUpdatedAtMs: 1.5 },
+    { owner: "maddox" }, { allowGap: true }, { sourceFile: "mason-budget" },
+  ])("rejects malformed or expanded renderer input %j", (delta) => {
+    expect(validateMutationRequest({ ...request, ...delta })).toBeNull()
+  })
+
+  it.each([
+    { outcome: "updated" }, { sourceFile: "mason-budget" }, { fromMonth: "2026-11" },
+    { toMonth: "2027-02" }, { categoryCount: -1 }, { categoryCount: 0.5 },
+    { updatedAtMs: 0 }, { updatedAtMs: 1.5 }, { unexpected: true },
+  ])("rejects an invalid receipt %j", async (delta) => {
+    const { controller } = setup(success({ ...receipt, ...delta }))
+    expect(await controller.mutate(request, "rachel")).toMatchObject({ status: "failed" })
+  })
+
+  it.each([
+    ["PLAN_EXISTS", "PLAN_EXISTS"], ["ENTITY_CONFLICT", "conflict"],
+    ["REVISION_REQUIRED", "REVISION_REQUIRED"], ["VALIDATION_FAILED", "rejected"],
+  ])("classifies %s without exposing server text", async (remote, local) => {
+    const { controller } = setup(failure(remote))
+    expect(await controller.mutate(request, "rachel")).toMatchObject({ status: "failed", code: local })
+  })
+
+  it("requires a full old budget grant and rejects actor spoofing and child crossover before posting", async () => {
+    const missingGrant = setup(success(receipt), ["budgetCategory.upsert"])
+    expect(await missingGrant.controller.mutate(request, "rachel")).toMatchObject({ status: "unauthorized" })
+    expect(missingGrant.post).not.toHaveBeenCalled()
+    const { controller, post } = setup()
+    expect(await controller.mutate(request, "mason")).toMatchObject({ status: "unauthorized" })
+    expect(await controller.mutate({ ...request, actor: "mason" }, "mason")).toMatchObject({ status: "unauthorized" })
+    expect(post).not.toHaveBeenCalled()
   })
 })

@@ -66,6 +66,9 @@ export function mutationResultMessage(result: RendererMutationResult): string {
   if (result.code === "conflict") {
     return "This item changed on another device. Refresh before trying again. Nothing was saved."
   }
+  if (result.code === "PLAN_EXISTS") {
+    return "A plan for that month already exists. Refresh to see it. Nothing was copied."
+  }
   return MUTATION_MESSAGES.failed
 }
 
@@ -338,6 +341,8 @@ export function entityKey(request: RendererMutationRequest): string {
       return `budgetCategory:${request.month}:${request.originalName ?? request.name}`
     case "budgetCategory.delete":
       return `budgetCategory:${request.month}:${request.name}`
+    case "budgetPlan.copyForward":
+      return `budgetPlan:${request.owner}:${request.fromMonth}`
     case "btcAccount.upsert":
     case "btcAccount.delete":
       return `btcAccount:${request.owner}:${request.key}`
@@ -496,6 +501,8 @@ export function isEntityPending(
 ): boolean {
   const key = kind.startsWith("budgetCategory.")
     ? `budgetCategory:${month ?? ""}:${id}`
+    : kind.startsWith("budgetPlan.")
+      ? `budgetPlan:${owner}:${id}`
     : kind.startsWith("btcAccount.")
       ? `btcAccount:${owner}:${id}`
       : `${kind.split(".")[0]}:${owner}:${id}`
@@ -527,6 +534,8 @@ function mutationSnapshot(
               : request.name
           ),
       )
+    case "budgetPlan.copyForward":
+      return data.budget.value
     case "btcBuy.upsert":
     case "btcBuy.delete":
       return data.btcBuys.value.find((row) => row.id === request.id)
@@ -664,6 +673,10 @@ export function applyOptimisticMutation(
         },
       }
     }
+    case "budgetPlan.copyForward":
+      // Keep the source plan visible until the authoritative refresh. Advancing
+      // it optimistically could offer another copy with the old revision.
+      return data
     case "btcBuy.upsert": {
       const existing = data.btcBuys.value.find((item) => item.id === request.id)
       const row: BTCBuy = {
