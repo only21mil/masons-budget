@@ -342,6 +342,14 @@
   color: var(--vv-warning);
 }
 
+/* Daylight badge fills reduce contrast below the plain-panel measurement.
+   Use opaque secondary ink for small labels; keep the semantic tint. */
+[data-vv-theme="light"] .vv-badge--warning,
+[data-vv-theme="light"] .vv-badge--positive,
+[data-vv-theme="light"] .vv-badge--negative {
+  color: var(--vv-ledger-ink-secondary);
+}
+
 .vv-badge--info {
   background: var(--vv-info-dim);
   color: var(--vv-info);
