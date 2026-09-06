@@ -120,6 +120,12 @@ jobs:
       - name: Apple signing asset minting tests
         run: python3 .github/workflows/scripts/tests/test_apple_signing_assets.py
 
+      - name: Buzz signing bootstrap tests
+        run: |
+          python3 -m venv "$RUNNER_TEMP/buzz-bootstrap-tests"
+          "$RUNNER_TEMP/buzz-bootstrap-tests/bin/python" -m pip install 'cryptography==50.0.1'
+          "$RUNNER_TEMP/buzz-bootstrap-tests/bin/python" .github/workflows/scripts/tests/test_buzz_signing_bootstrap.py
+
       - name: Manual Apple release signing contract
         run: |
           python3 .github/workflows/scripts/tests/test_manual_release_signing.py
