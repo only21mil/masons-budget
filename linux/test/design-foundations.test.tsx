@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { act } from "react"
+import { createRoot } from "react-dom/client"
 import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -17,7 +19,11 @@ import {
   PawGlyph,
 } from "../src/renderer/components/LedgerFoundations.tsx"
 import { AppShell } from "../src/renderer/components/AppShell.tsx"
+import { LEDGER_WINDOW_BACKGROUND } from "../shared/ledgerWindow.ts"
 import { renderRoute } from "./support/renderRoute.ts"
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
+  .IS_REACT_ACT_ENVIRONMENT = true
 
 const here = dirname(fileURLToPath(import.meta.url))
 const renderer = join(here, "..", "src", "renderer")
@@ -146,6 +152,44 @@ describe("ledger design foundations", () => {
     expect(foundationComponents).not.toMatch(literal)
     expect(foundationComponents).toContain('fill="var(--vv-ledger-mark-tile)"')
     expect(foundationComponents).toContain('stroke="var(--vv-ledger-mark-stroke)"')
+    // The body paints nothing; the window carries the treatment until the shell mounts.
+    expect(globalStyles).toMatch(/body\s*\{[^}]*background: transparent;/)
+  })
+
+  it("publishes the treatment's ledger background as the document theme colour", async () => {
+    const readThemeColor = () =>
+      document.head.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content ?? null
+    const mount = async () => {
+      const container = document.createElement("div")
+      document.body.append(container)
+      const root = createRoot(container)
+      await act(async () => {
+        root.render(
+          <AppStateProvider>
+            <AppShell sections={[]} activeId="dashboard" onNavigate={() => {}} topBar={null}>
+              Ledger content
+            </AppShell>
+          </AppStateProvider>,
+        )
+      })
+      return async () => {
+        await act(async () => root.unmount())
+        container.remove()
+      }
+    }
+
+    document.head.querySelector('meta[name="theme-color"]')?.remove()
+    window.localStorage.setItem("vogel-vault.ledger-theme", "light")
+    let unmount = await mount()
+    expect(readThemeColor()).toBe(LEDGER_WINDOW_BACKGROUND.light)
+    expect(readThemeColor()).toBe("#f4f3ee")
+    await unmount()
+
+    window.localStorage.setItem("vogel-vault.ledger-theme", "dark")
+    unmount = await mount()
+    expect(readThemeColor()).toBe("#0a0d0c")
+    await unmount()
+    document.head.querySelector('meta[name="theme-color"]')?.remove()
   })
 
   it("holds the type floor at 11px and caps uppercase tracking at 0.10em", () => {

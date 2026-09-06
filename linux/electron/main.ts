@@ -58,6 +58,8 @@ import type {
   VogelVaultRowResult,
   VogelVaultUnpairResult,
 } from "../shared/ipc.ts"
+import { createLedgerThemeStore } from "./ledgerThemeStore.ts"
+import { LEDGER_WINDOW_BACKGROUND, ledgerThemeForBackground } from "../shared/ledgerWindow.ts"
 
 const dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -446,13 +448,18 @@ function registerPairedDeviceWrites(): void {
 }
 
 function createWindow(): BrowserWindow {
+  // The treatment the shell last published, so the window is created in the
+  // right ledger colour before any HTML loads (electron/ledgerThemeStore.ts).
+  const ledgerTheme = createLedgerThemeStore(app.getPath("userData"))
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 1100,
     minHeight: 700,
     show: false,
-    backgroundColor: "#050505",
+    // The ledger background of the persisted treatment (#0a0d0c dark, #f4f3ee
+    // light), never the retired Graphite black.
+    backgroundColor: LEDGER_WINDOW_BACKGROUND[ledgerTheme.read()],
     autoHideMenuBar: true,
     title: "The Vogel Vault",
     webPreferences: {
@@ -470,8 +477,17 @@ function createWindow(): BrowserWindow {
     },
   })
 
-  // A dark first paint — never flash white into a true-black UI.
+  // First paint is the ledger canvas of the saved treatment; never a white flash.
   window.once("ready-to-show", () => window.show())
+
+  // The shell publishes its treatment through the theme-color meta. Only the
+  // two ledger backgrounds are accepted; anything else leaves the window alone.
+  window.webContents.on("did-change-theme-color", (_event, color) => {
+    const theme = ledgerThemeForBackground(color)
+    if (!theme) return
+    window.setBackgroundColor(LEDGER_WINDOW_BACKGROUND[theme])
+    void ledgerTheme.write(theme)
+  })
 
   // Block navigation away from the app shell entirely.
   window.webContents.on("will-navigate", (event, target) => {

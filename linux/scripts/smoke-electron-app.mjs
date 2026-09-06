@@ -35,8 +35,10 @@ const budgetMs = Number(process.env.VV_SMOKE_BUDGET_MS ?? 60_000)
 const EXPECTED = {
   width: 1440,
   height: 900,
-  backgroundColor: "#050505",
-  bodyBackground: "rgb(5, 5, 5)",
+  // The ledger canvas of the saved treatment; a fresh profile is dark.
+  backgroundColor: "#0a0d0c",
+  // The body paints nothing so the window colour shows until the shell mounts.
+  bodyBackground: "rgba(0, 0, 0, 0)",
   sidebarWide: 130,
   sidebarCompact: 130,
   // The stylesheet's compact pass is `max-width: 1365px`, so 1365 must switch to icon-only
@@ -167,11 +169,11 @@ async function setViewport(window, width, height) {
 }
 
 /**
- * Is the captured frame actually the true-black canvas?
+ * Is the captured frame actually the dark ledger canvas?
  *
  * getBackgroundColor() only reports what the window was configured with; it says
  * nothing about what was drawn. A white flash, a failed stylesheet, or a blank
- * renderer all produce a window that still claims #050505. Counting dark pixels
+ * renderer all produce a window that still claims #0a0d0c. Counting dark pixels
  * in the real frame is the only version of this check that can fail.
  *
  * The threshold is a fraction, not "no light pixels": cream text and the orange
@@ -213,7 +215,7 @@ async function inspect(window) {
 
   const background = window.getBackgroundColor().toLowerCase()
   record(
-    "window background is true black",
+    "window background is the Terminal ledger canvas",
     background === EXPECTED.backgroundColor,
     `${background}, expected ${EXPECTED.backgroundColor}`,
   )
@@ -252,7 +254,7 @@ async function inspect(window) {
   const painted = await waitFor(contents, "the app shell to paint", MEASURE, (m) => m.navItems > 0)
   record("renderer painted the app shell", painted.navItems > 0, `${painted.navItems} nav items, ${painted.rootChildren} root children`)
   record(
-    "body paints the true-black canvas",
+    "body leaves the canvas to the window",
     painted.bodyBackground === EXPECTED.bodyBackground,
     `${painted.bodyBackground}, expected ${EXPECTED.bodyBackground}`,
   )

@@ -59,8 +59,11 @@ body,
 }
 
 body {
-  background: var(--vv-bg);
-  color: var(--vv-text);
+  /* No canvas of its own. The Electron window paints the persisted treatment's
+     ledger background until the shell mounts (electron/main.ts), so a light
+     launch never flashes a dark frame first. */
+  background: transparent;
+  color: var(--vv-ledger-ink);
   font-family: var(--vv-font-ui);
   font-size: var(--vv-text-base);
   line-height: 1.45;
