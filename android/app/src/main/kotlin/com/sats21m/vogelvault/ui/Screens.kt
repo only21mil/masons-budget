@@ -392,6 +392,10 @@ fun ScreenHost(
                                 budgetDrilldownMonth = scope.month
                                 budgetDrilldownCategory = scope.category
                             },
+                            onPlanCopied = { month ->
+                                picked = month
+                                onWriteSucceeded()
+                            },
                         )
                     } else {
                         // Editing lives on the drilldown. Only the current budget
@@ -981,6 +985,8 @@ private fun VaultLazyListScope.budget(
     spend: BudgetSpend?,
     onSelectMonth: (String) -> Unit,
     onOpenCategory: (BudgetCategoryDrilldownScope) -> Unit,
+    /** The month the plan now names, after Convex accepted the copy. */
+    onPlanCopied: (String) -> Unit = {},
 ) {
     val slice = state.data.budget
     val budget = slice.value
@@ -1024,6 +1030,19 @@ private fun VaultLazyListScope.budget(
     val pickable = months.size > 1 && !actualsUnavailable
     if (pickable) {
         item { MonthPicker(months, derived.month, onSelectMonth) }
+    }
+    // A new month with no plan yet is the first thing to fix, so the offer sits
+    // above the figures. Only a live read carries the revision the copy fences on;
+    // the contract withholds the action otherwise.
+    if (slice.status == Freshness.LIVE) {
+        item {
+            BudgetPlanCarryAction(
+                activeProfile = state.activeProfile,
+                budget = budget,
+                selectedMonth = derived.month,
+                onCopied = onPlanCopied,
+            )
+        }
     }
 
     item {

@@ -299,6 +299,24 @@ export default defineSchema({
     .index("by_batch_id", ["batchId"])
     .index("by_manifest_digest", ["manifestDigest"]),
 
+  // Audit receipts for device-initiated budget plan carries. One row binds a
+  // canonical (source, fromMonth, toMonth) transition to the revision it read
+  // and the revision it wrote, so a replayed request can be answered as a
+  // no-op instead of advancing the plan a second time. Months are canonical
+  // yyyy-MM regardless of the document's stored spelling. No amounts, category
+  // names, or credential material are retained.
+  budgetPlanCarries: defineTable({
+    sourceFile: v.union(v.literal("budget"), v.literal("mason-budget")),
+    owner: familyMemberValidator,
+    fromMonth: v.string(),
+    toMonth: v.string(),
+    categoryCount: v.float64(),
+    fromUpdatedAtMs: v.float64(),
+    appliedUpdatedAtMs: v.float64(),
+    deviceId: v.string(),
+    appliedAtMs: v.float64(),
+  }).index("by_source_months", ["sourceFile", "fromMonth", "toMonth"]),
+
   // Short-lived bootstrap for installing the deployment's current read
   // credential on Android. Existing/omitted capabilities remain read-only;
   // only an explicitly minted exact todos:write grant may atomically register

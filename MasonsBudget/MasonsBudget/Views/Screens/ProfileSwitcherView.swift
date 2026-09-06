@@ -79,14 +79,14 @@ struct ProfileSwitcherView: View {
                             Text(mode.label)
                                 .ledgerType(.chip)
                         }
-                        .foregroundStyle(isSelected ? .white : theme.text)
+                        .foregroundStyle(isSelected ? theme.onAccent : theme.text)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(isSelected ? theme.accent : theme.surface)
+                        .background(isSelected ? theme.accentFill : theme.surface)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1),
+                                .stroke(isSelected ? theme.accentFill : theme.border, lineWidth: 1),
                         )
                     }
                     .buttonStyle(.plain)

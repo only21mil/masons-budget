@@ -45,6 +45,8 @@ import {
 } from "@vogel-vault/domain/readModel"
 import { useId, useMemo, useState } from "react"
 
+import { BudgetPlanCarryAction } from "./BudgetPlanCarryAction.tsx"
+
 import { useAppState } from "../../app/AppState.tsx"
 import {
   type DisplayUnit,
@@ -1255,6 +1257,12 @@ function BudgetPage() {
           detail="The current budget projection carries one planned month at a time, so the actuals below are this month's while the planned column is not. Compare with that in mind."
         />
       )}
+      <BudgetPlanCarryAction
+        key={`${activeProfile}:${budget.month}:${budget.updatedAtMs}`}
+        budget={budget}
+        status={data.budget.status}
+        selectedMonth={scope.month}
+      />
       {/* The budget operations strip: planned / actual / remaining / over-budget. */}
       <KPIStrip
         items={[

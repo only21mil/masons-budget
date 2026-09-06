@@ -20,12 +20,15 @@ class ThemeContrastTest {
         val dark = LedgerPalettes.TerminalDark
         val light = LedgerPalettes.DaylightLight
 
-        assertEquals(Color(0xFF0A0D0C), dark.background)
-        assertEquals(Color(0xFF0C100E), dark.panel)
-        assertEquals(Color(0xFF111614), dark.panelRaised)
-        assertEquals(Color(0xFFE8EFE9), LedgerPalettes.TerminalDark.foreground)
-        assertEquals(Color(0xFFA3ABA6), dark.foregroundSecondary)
-        assertEquals(Color(0xFF8F9792), dark.foregroundTertiary)
+        assertEquals(Color(0xFF050505), dark.background)
+        assertEquals(Color(0xFF0E0E0E), dark.panel)
+        assertEquals(Color(0xFF161616), dark.panelRaised)
+        assertEquals(Color(0xFFF5F2EA).copy(alpha = 0.10f), dark.line)
+        assertEquals(Color(0xFFF5F2EA).copy(alpha = 0.06f), dark.lineSubtle)
+        assertEquals(Color(0xFFF5F2EA), dark.knob)
+        assertEquals(Color(0xFFF5F2EA), LedgerPalettes.TerminalDark.foreground)
+        assertEquals(Color(0xFFABA8A1), dark.foregroundSecondary)
+        assertEquals(Color(0xFF95928C), dark.foregroundTertiary)
         assertEquals(Color(0xFFF7931A), dark.bitcoin)
         assertEquals(Color(0xFFF7931A), dark.bitcoinFill)
         assertEquals(Color(0xFFF7931A).copy(alpha = 0.12f), dark.bitcoinSoft)
@@ -146,7 +149,7 @@ class ThemeContrastTest {
     }
 
     @Test
-    fun `secondary and tertiary ink clear a 6 to 1 floor on the opaque ledger surfaces`() {
+    fun `secondary and tertiary ink clear the accepted contrast floors on opaque ledger surfaces`() {
         listOf(LedgerPalettes.TerminalDark, LedgerPalettes.DaylightLight).forEach { palette ->
             palette.opaqueFills().forEach { (fillName, fill) ->
                 assertTrue(
@@ -155,9 +158,10 @@ class ThemeContrastTest {
                 )
             }
         }
+        // Approved Sats black tertiary measures 5.83:1 on the raised panel.
         LedgerPalettes.TerminalDark.opaqueFills().forEach { (fillName, fill) ->
             assertTrue(
-                contrastRatio(LedgerPalettes.TerminalDark.foregroundTertiary, fill) >= 6.0,
+                contrastRatio(LedgerPalettes.TerminalDark.foregroundTertiary, fill) >= 5.8,
                 "dark tertiary on $fillName is ${contrastRatio(LedgerPalettes.TerminalDark.foregroundTertiary, fill)}",
             )
         }

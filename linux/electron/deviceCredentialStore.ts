@@ -33,6 +33,7 @@ const MUTATION_KINDS = [
   "todo.restore",
   "budgetCategory.upsert",
   "budgetCategory.delete",
+  "budgetPlan.copyForward",
   "btcBuy.upsert",
   "btcBuy.delete",
   "btcBillPay.upsert",

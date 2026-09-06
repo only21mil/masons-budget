@@ -29,6 +29,12 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .more: "ellipsis.circle"
         }
     }
+
+    /// The tab bar renders its own strings, so the tab label role's uppercase
+    /// is applied here rather than through `.ledgerType`.
+    var tabTitle: String {
+        label.uppercased()
+    }
 }
 
 // MARK: - macOS Sidebar Navigation
@@ -193,7 +199,7 @@ struct ContentView: View {
                     }
                     .tabItem {
                         Image(systemName: tab.icon)
-                        Text(tab.label)
+                        Text(tab.tabTitle)
                     }
                     .badge(tab == .more ? AppleMoreScreen.allCases.count : 0)
                     .tag(tab)
@@ -225,43 +231,61 @@ struct ContentView: View {
                     .padding(.horizontal, 8)
                     .padding(.bottom, 12)
 
-                List(selection: $macNav) {
-                    Section {
-                        ForEach(MacNav.moneyItems) { item in
-                            Label(item.label, systemImage: item.icon).tag(item)
-                        }
-                    } header: {
-                        Text("Money")
-                            .ledgerType(.sectionLabel)
-                            .foregroundStyle(theme.textMuted)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        macSidebarSection("Money", items: MacNav.moneyItems)
+                        macSidebarSection("Tasks", items: MacNav.taskItems)
+                        macSidebarSection("Tools", items: MacNav.toolItems)
                     }
-
-                    Section {
-                        ForEach(MacNav.taskItems) { item in
-                            Label(item.label, systemImage: item.icon).tag(item)
-                        }
-                    } header: {
-                        Text("Tasks")
-                            .ledgerType(.sectionLabel)
-                            .foregroundStyle(theme.textMuted)
-                    }
-
-                    Section {
-                        ForEach(MacNav.toolItems) { item in
-                            Label(item.label, systemImage: item.icon).tag(item)
-                        }
-                    } header: {
-                        Text("Tools")
-                            .ledgerType(.sectionLabel)
-                            .foregroundStyle(theme.textMuted)
-                    }
+                    .padding(.horizontal, 8)
                 }
-                .listStyle(.sidebar)
-
-                Spacer()
 
                 macSidebarFooter
             }
+            .background(theme.bg)
+        }
+
+        /// Sidebar rows drawn with ledger roles and tokens instead of the
+        /// system sidebar list: tier ink at rest, accent glyph on a soft fill
+        /// when selected.
+        private func macSidebarSection(_ title: String, items: [MacNav]) -> some View {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .ledgerType(.sectionLabel)
+                    .foregroundStyle(theme.textMuted)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 4)
+                ForEach(items) { item in
+                    macSidebarRow(item)
+                }
+            }
+        }
+
+        private func macSidebarRow(_ item: MacNav) -> some View {
+            let isSelected = (macNav ?? .dashboard) == item
+            return Button {
+                macNav = item
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: item.icon)
+                        .font(AppFont.icon(size: 13, weight: .medium))
+                        .foregroundStyle(isSelected ? theme.accent : theme.textMuted)
+                        .frame(width: 18)
+                    Text(item.label)
+                        .ledgerType(.rowPrimary)
+                        .foregroundStyle(isSelected ? theme.text : theme.textMuted)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(isSelected ? theme.accentSoft : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+            .ledgerAnimation(.chipAndNavigation, value: isSelected)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
         }
 
         private var macDetail: some View {
@@ -306,9 +330,9 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "sun.max.fill")
                         .font(AppFont.icon(size: 11, weight: .semibold))
-                        .foregroundStyle(appearanceMode == .light ? .white : theme.textMuted)
+                        .foregroundStyle(appearanceMode == .light ? theme.onAccent : theme.textMuted)
                         .frame(width: 28, height: 24)
-                        .background(appearanceMode == .light ? theme.accent : Color.clear)
+                        .background(appearanceMode == .light ? theme.accentFill : Color.clear)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -319,9 +343,9 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "moon.fill")
                         .font(AppFont.icon(size: 11, weight: .semibold))
-                        .foregroundStyle(appearanceMode == .dark ? .white : theme.textMuted)
+                        .foregroundStyle(appearanceMode == .dark ? theme.onAccent : theme.textMuted)
                         .frame(width: 28, height: 24)
-                        .background(appearanceMode == .dark ? theme.accent : Color.clear)
+                        .background(appearanceMode == .dark ? theme.accentFill : Color.clear)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -339,12 +363,12 @@ struct ContentView: View {
             } label: {
                 HStack(spacing: 8) {
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(LinearGradient(colors: [theme.accent, theme.accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .fill(theme.accentFill)
                         .frame(width: 22, height: 22)
                         .overlay(
                             Text(String(activeMember.displayName.prefix(1)))
                                 .ledgerType(.chip)
-                                .foregroundStyle(.white),
+                                .foregroundStyle(theme.onAccent),
                         )
 
                     VStack(alignment: .leading, spacing: 1) {
@@ -385,12 +409,11 @@ struct ContentView: View {
                     Spacer()
                     Text("\u{2318}N")
                         .ledgerType(.rowMeta)
-                        .foregroundStyle(.white.opacity(0.85))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(theme.onAccent)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(theme.accent)
+                .background(theme.accentFill)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
@@ -415,8 +438,7 @@ struct ContentView: View {
 
         private var macSidebarFooter: some View {
             VStack(alignment: .leading, spacing: 10) {
-                Divider()
-                    .background(theme.border)
+                Hairline()
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("NET WORTH")
@@ -448,12 +470,12 @@ struct ContentView: View {
             showProfileSwitcher = true
         } label: {
             RoundedRectangle(cornerRadius: 10)
-                .fill(LinearGradient(colors: [theme.accent, theme.accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .fill(theme.accentFill)
                 .frame(width: 32, height: 32)
                 .overlay(
                     Text(String(activeMember.displayName.prefix(1)))
                         .ledgerType(.rowFigure)
-                        .foregroundStyle(.white),
+                        .foregroundStyle(theme.onAccent),
                 )
                 .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
         }
@@ -467,9 +489,9 @@ struct ContentView: View {
         } label: {
             Image(systemName: "plus")
                 .font(AppFont.icon(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(theme.onAccent)
                 .frame(width: 32, height: 32)
-                .background(theme.accent)
+                .background(theme.accentFill)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
         }
@@ -505,9 +527,9 @@ struct ContentView: View {
                 if syncStatus.pendingCount > 1 {
                     Text("\(syncStatus.pendingCount)")
                         .ledgerType(.chip)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(theme.onAccent)
                         .frame(minWidth: 14, minHeight: 14)
-                        .background(theme.accent)
+                        .background(theme.accentFill)
                         .clipShape(Circle())
                         .offset(x: 4, y: -4)
                 }

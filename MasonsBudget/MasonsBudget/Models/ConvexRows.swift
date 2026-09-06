@@ -373,6 +373,22 @@ struct ConvexBudgetDocumentRow: Decodable {
     let monthlyHistory: [MonthlyHistory]
     let updatedAtMs: Double?
 
+    func planCarryEligibility(viewer: FamilyMember, currentMonth: String, selectedMonth: String?) -> BudgetPlanCarryEligibility {
+        BudgetPlanCarry.eligibility(
+            activeProfile: viewer,
+            currentMonth: currentMonth,
+            selectedMonth: selectedMonth,
+            budgetOwner: owner,
+            budgetMonth: BudgetPlanCarry.canonicalStoredMonth(month) ?? month,
+            budgetUpdatedAtMs: updatedAtMs,
+            baseUpdatedAtMs: updatedAtMs ?? 0,
+        )
+    }
+
+    var plannedCategoryTotal: Decimal {
+        categories.reduce(Decimal(0)) { $0 + decimalMinorUnits($1.budgetCents, scale: 2) }
+    }
+
     func categoryDeletionIntent(
         viewer: FamilyMember,
         trustedCurrentMonth: String,

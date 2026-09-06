@@ -80,6 +80,12 @@ struct MasonsBudgetApp: App {
         AppearanceMode(rawValue: appearanceModeRaw) ?? .system
     }
 
+    init() {
+        #if os(iOS)
+            LedgerChrome.install()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
             ZStack {

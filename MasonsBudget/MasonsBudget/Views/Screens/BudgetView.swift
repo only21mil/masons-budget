@@ -93,6 +93,18 @@ struct BudgetView: View {
                 monthStrip
                     .padding(.bottom, AppLayout.cardSpacing)
 
+                BudgetPlanCarryAction(viewer: activeMember, selectedMonth: selectedMonth) { targetMonth in
+                    let currentKey = CategoryDetailView.monthKey(for: Date(), calendar: Calendar(identifier: .gregorian))
+                    if let current = BudgetPlanCarry.monthIndex(currentKey),
+                       let target = BudgetPlanCarry.monthIndex(targetMonth)
+                    {
+                        selectedMonthOffset = current - target
+                    }
+                }
+                .id(activeMember)
+                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.bottom, AppLayout.cardSpacing)
+
                 spentCard
                     .padding(.horizontal, AppLayout.sectionPadding)
                     .padding(.bottom, AppLayout.cardSpacing)
@@ -148,7 +160,7 @@ struct BudgetView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(label) '\(String(year).suffix(2))\(offset == 0 ? " · now" : "")")
                     .ledgerType(.chip)
-                    .opacity(isSelected ? 0.85 : 0.55)
+                    .foregroundStyle(isSelected ? theme.onAccent : theme.textMuted)
 
                 if let rate {
                     Text("\(rate)%")
@@ -158,15 +170,15 @@ struct BudgetView: View {
                         .ledgerType(.rowFigure)
                 }
             }
-            .foregroundStyle(isSelected ? .white : theme.text)
+            .foregroundStyle(isSelected ? theme.onAccent : theme.text)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(minWidth: 64, alignment: .leading)
-            .background(isSelected ? theme.accent : theme.surface)
+            .background(isSelected ? theme.accentFill : theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1),
+                    .stroke(isSelected ? theme.accentFill : theme.border, lineWidth: 1),
             )
             .ledgerAnimation(.chipAndNavigation, value: isSelected)
         }
@@ -344,5 +356,169 @@ struct BudgetView: View {
         monthTransactions
             .filter { $0.category == name && $0.isSpend }
             .reduce(Decimal(0)) { $0 + $1.spendAmount }
+    }
+}
+
+/// Both Apple navigation roots use BudgetView and this plan-only action.
+private struct BudgetPlanCarryAction: View {
+    @Environment(\.theme) private var theme
+    @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
+    let viewer: FamilyMember
+    let selectedMonth: Date
+    let onCopied: (String) -> Void
+
+    @State private var document: ConvexBudgetDocumentRow?
+    @State private var confirming: BudgetPlanCarryIntent?
+    @State private var submitting = false
+    @State private var loading = false
+    @State private var message: String?
+    @State private var acceptedIntent: BudgetPlanCarryIntent?
+    @State private var generation = UUID()
+    @State private var visible = true
+
+    private var isActive: Bool {
+        visible && selectedMemberRaw == viewer.rawValue
+    }
+
+    private var currentMonthKey: String {
+        monthKey(Date())
+    }
+
+    private var selectedMonthKey: String {
+        monthKey(selectedMonth)
+    }
+
+    private var intent: BudgetPlanCarryIntent? {
+        guard acceptedIntent == nil else { return nil }
+        return document?.planCarryEligibility(
+            viewer: viewer, currentMonth: currentMonthKey, selectedMonth: selectedMonthKey,
+        ).intent
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let intent, let document {
+                Text("\(BudgetPlanCarry.monthLabel(intent.toMonth)) has no budget plan yet")
+                    .ledgerType(.rowPrimary)
+                Text("Copy \(document.categories.count) categories totaling \(AppFormatter.formatCurrency(document.plannedCategoryTotal)) from \(BudgetPlanCarry.monthLabel(intent.fromMonth)).")
+                    .ledgerType(.rowMeta)
+                Text("Copies planned amounts only. Transactions and monthly history stay unchanged.")
+                    .ledgerType(.rowMeta)
+                Button("Copy \(BudgetPlanCarry.monthLabel(intent.fromMonth)) plan to \(BudgetPlanCarry.monthLabel(intent.toMonth))") {
+                    confirming = intent
+                }
+                .disabled(submitting || loading)
+                .accessibilityIdentifier("budget.copyPlan")
+            }
+            if submitting || loading {
+                ProgressView()
+            }
+            if let message {
+                Text(message)
+                    .ledgerType(.rowMeta)
+                    .accessibilityIdentifier("budget.copyPlan.feedback")
+            }
+            if message != nil, !submitting, !loading {
+                Button("Refresh budget plan") { Task { await loadPlan() } }
+            }
+        }
+        .foregroundStyle(theme.text)
+        .onAppear { visible = true }
+        .onDisappear {
+            visible = false
+            generation = UUID()
+            confirming = nil
+            loading = false
+            submitting = false
+        }
+        .task { await loadPlan() }
+        .onChange(of: selectedMonthKey) { _, _ in confirming = nil }
+        .alert("Copy budget plan?", isPresented: Binding(
+            get: { confirming != nil },
+            set: {
+                if !$0 {
+                    confirming = nil
+                }
+            },
+        ), presenting: confirming) { pending in
+            Button("Cancel", role: .cancel) { confirming = nil }
+            Button("Copy plan") {
+                confirming = nil
+                Task { await copyPlan(pending) }
+            }
+        } message: { pending in
+            Text("Copy \(document?.categories.count ?? 0) category amounts to \(BudgetPlanCarry.monthLabel(pending.toMonth))? No transactions or historical months will be created.")
+        }
+    }
+
+    private func monthKey(_ date: Date) -> String {
+        CategoryDetailView.monthKey(for: date, calendar: Calendar(identifier: .gregorian))
+    }
+
+    @MainActor
+    private func loadPlan() async {
+        guard isActive, !loading, BudgetPlanCarry.canonicalIdentity(for: viewer) != nil else { return }
+        let requestGeneration = generation
+        loading = true
+        defer {
+            if generation == requestGeneration { loading = false }
+        }
+        do {
+            let reader = ConvexRowReader(client: ConvexClient(deploymentURL: ConvexConfig.deploymentURL))
+            let refreshed = try await reader.budget(viewer: viewer)
+            guard isActive, generation == requestGeneration, !Task.isCancelled else { return }
+            document = refreshed
+            if let acceptedIntent {
+                guard let month = BudgetPlanCarry.canonicalStoredMonth(refreshed.month),
+                      let revision = refreshed.updatedAtMs,
+                      month >= acceptedIntent.toMonth,
+                      revision > Double(acceptedIntent.baseUpdatedAtMs)
+                else {
+                    message = "The plan was copied. The refreshed plan is not available yet. Refresh before copying again."
+                    return
+                }
+                self.acceptedIntent = nil
+                onCopied(acceptedIntent.toMonth)
+                message = "Copied the plan to \(BudgetPlanCarry.monthLabel(acceptedIntent.toMonth))."
+            } else {
+                message = nil
+            }
+        } catch {
+            guard isActive, generation == requestGeneration, !Task.isCancelled else { return }
+            message = acceptedIntent == nil
+                ? "The budget plan could not be loaded. Refresh to try again."
+                : "The plan was copied, but refresh failed. Refresh before copying again."
+        }
+    }
+
+    @MainActor
+    private func copyPlan(_ pending: BudgetPlanCarryIntent) async {
+        guard isActive, !submitting, !loading, pending == intent else { return }
+        let requestGeneration = generation
+        submitting = true
+        defer {
+            if generation == requestGeneration { submitting = false }
+        }
+        if let blocked = AppWriteSyncService.writeBlocker(requiresSyncToken: false) {
+            message = blocked.userMessage(operation: "Copy budget plan")
+            return
+        }
+        do {
+            // Keep the preview's revision. The server rejects a changed plan;
+            // silently reading a newer revision here would bypass confirmation.
+            try await AppWritebackClient().copyBudgetPlanForward(pending, activeProfile: viewer)
+            guard isActive, generation == requestGeneration, !Task.isCancelled else { return }
+            acceptedIntent = pending
+            await loadPlan()
+        } catch {
+            guard isActive, generation == requestGeneration, !Task.isCancelled else { return }
+            let result = ConvexWriteResult.classify(error)
+            if result == .failed(.staleWrite) {
+                document = nil
+                message = "The budget plan changed on another device. Refresh and review it before copying."
+            } else {
+                message = result.userMessage(operation: "Copy budget plan")
+            }
+        }
     }
 }

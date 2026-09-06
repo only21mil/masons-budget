@@ -1,0 +1,26 @@
+{
+  "$comment": "Copy the one live budget plan forward by exactly one month. Offered only when the viewed month (trusted current month or a later selected month) is after the plan's month; identity and revision rules match budget category deletion. Server mutation: tables:copyBudgetPlanForwardFromDevice.",
+  "contractVersion": 1,
+  "mutation": "tables:copyBudgetPlanForwardFromDevice",
+  "accepted": [
+    { "name": "adult shared budget one month behind", "activeProfile": "rachel", "budgetOwner": "victor", "budgetMonth": "2026-08", "currentMonth": "2026-09", "baseUpdatedAtMs": 1787654321000, "expectedOwner": "victor", "expectedSourceFile": "budget", "expectedFromMonth": "2026-08", "expectedToMonth": "2026-09" },
+    { "name": "Mason budget one month behind", "activeProfile": "mason", "budgetOwner": "mason", "budgetMonth": "2026-08", "currentMonth": "2026-09", "baseUpdatedAtMs": 1787654321000, "expectedOwner": "mason", "expectedSourceFile": "mason-budget", "expectedFromMonth": "2026-08", "expectedToMonth": "2026-09" },
+    { "name": "year rollover", "activeProfile": "victor", "budgetOwner": "victor", "budgetMonth": "2026-12", "currentMonth": "2027-01", "baseUpdatedAtMs": 1787654321000, "expectedOwner": "victor", "expectedSourceFile": "budget", "expectedFromMonth": "2026-12", "expectedToMonth": "2027-01" },
+    { "name": "two months behind copies one month only", "activeProfile": "victor", "budgetOwner": "victor", "budgetMonth": "2026-07", "currentMonth": "2026-09", "baseUpdatedAtMs": 1787654321000, "expectedOwner": "victor", "expectedSourceFile": "budget", "expectedFromMonth": "2026-07", "expectedToMonth": "2026-08" },
+    { "name": "selected later month while the plan is current", "activeProfile": "victor", "budgetOwner": "victor", "budgetMonth": "2026-08", "currentMonth": "2026-08", "selectedMonth": "2026-09", "baseUpdatedAtMs": 1787654321000, "expectedOwner": "victor", "expectedSourceFile": "budget", "expectedFromMonth": "2026-08", "expectedToMonth": "2026-09" }
+  ],
+  "rejected": [
+    { "name": "invalid current month", "replace": { "currentMonth": "2026-9" }, "reason": "invalid-current-month" },
+    { "name": "invalid selected month", "replace": { "selectedMonth": "September" }, "reason": "invalid-selected-month" },
+    { "name": "unsupported Maddox budget", "replace": { "activeProfile": "maddox" }, "reason": "unsupported-profile" },
+    { "name": "owner mismatch", "budgetOwner": "mason", "reason": "owner-mismatch" },
+    { "name": "legacy plan month label", "budgetMonth": "August 2026", "reason": "invalid-plan-month" },
+    { "name": "plan already names the current month", "replace": { "currentMonth": "2026-08" }, "reason": "plan-is-current" },
+    { "name": "plan is ahead of the current month", "replace": { "currentMonth": "2026-07" }, "reason": "plan-is-current" },
+    { "name": "earlier selected month offers nothing", "replace": { "currentMonth": "2026-08", "selectedMonth": "2026-06" }, "reason": "plan-is-current" },
+    { "name": "invalid zero revision", "replace": { "baseUpdatedAtMs": 0 }, "reason": "invalid-revision" },
+    { "name": "fractional revision", "replace": { "baseUpdatedAtMs": 1.5 }, "reason": "invalid-revision" },
+    { "name": "unsafe revision", "replace": { "baseUpdatedAtMs": 9007199254740992 }, "reason": "invalid-revision" },
+    { "name": "stale revision", "replace": { "baseUpdatedAtMs": 1787654320999 }, "reason": "revision-mismatch" }
+  ]
+}

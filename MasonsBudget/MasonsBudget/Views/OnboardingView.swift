@@ -64,10 +64,10 @@ struct OnboardingView: View {
                 } label: {
                     Text(stepIndex == OnboardingStep.all.count - 1 ? "Open Vogel Vault" : "Continue")
                         .ledgerType(.button)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(theme.onAccent)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(theme.accent)
+                        .background(theme.accentFill)
                         .clipShape(RoundedRectangle(cornerRadius: AppLayout.radiusSmall))
                 }
                 .padding(.horizontal, AppLayout.sectionPadding)

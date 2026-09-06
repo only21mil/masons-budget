@@ -297,3 +297,73 @@ final class BudgetMonthScopingTests: XCTestCase {
         ]
     }
 }
+
+/// Copy-forward tests exercise the production decision and wire helpers.
+extension BudgetMonthScopingTests {
+    func testCopyPlanSharedFixtures() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("shared/domain/fixtures/budget-plan-carry-cases.json"))
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let accepted = try XCTUnwrap(fixture["accepted"] as? [[String: Any]])
+        for row in accepted {
+            let intent = try XCTUnwrap(carryEligibility(row).intent, row["name"] as? String ?? "")
+            XCTAssertEqual(intent.owner.rawValue, row["expectedOwner"] as? String)
+            XCTAssertEqual(intent.sourceFile, row["expectedSourceFile"] as? String)
+            XCTAssertEqual(intent.fromMonth, row["expectedFromMonth"] as? String)
+            XCTAssertEqual(intent.toMonth, row["expectedToMonth"] as? String)
+        }
+        for row in try XCTUnwrap(fixture["rejected"] as? [[String: Any]]) {
+            var input = try XCTUnwrap(accepted.first)
+            input.merge(row) { _, value in value }
+            input.merge(row["replace"] as? [String: Any] ?? [:]) { _, value in value }
+            XCTAssertEqual(carryEligibility(input).rejection?.rawValue, row["reason"] as? String)
+        }
+    }
+
+    private func carryEligibility(_ row: [String: Any]) -> BudgetPlanCarryEligibility {
+        BudgetPlanCarry.eligibility(
+            activeProfile: FamilyMember(rawValue: row["activeProfile"] as? String ?? "") ?? .maddox,
+            currentMonth: row["currentMonth"] as? String ?? "",
+            selectedMonth: row["selectedMonth"] as? String,
+            budgetOwner: FamilyMember(rawValue: row["budgetOwner"] as? String ?? "") ?? .maddox,
+            budgetMonth: row["budgetMonth"] as? String ?? "",
+            budgetUpdatedAtMs: 1_787_654_321_000,
+            baseUpdatedAtMs: row["baseUpdatedAtMs"] as? Double ?? 0,
+        )
+    }
+
+    func testCopyPlanNormalizesOnlySupportedStoredMonthLabels() {
+        XCTAssertEqual(BudgetPlanCarry.canonicalStoredMonth("August 2026"), "2026-08")
+        XCTAssertEqual(BudgetPlanCarry.canonicalStoredMonth("December 2026"), "2026-12")
+        XCTAssertEqual(BudgetPlanCarry.canonicalStoredMonth("2026-09"), "2026-09")
+        for invalid in ["Sep 2026", "September 26", "September  2026", "2026-9", "2026-13"] {
+            XCTAssertNil(BudgetPlanCarry.canonicalStoredMonth(invalid))
+        }
+    }
+
+    func testCopyPlanWireIsPlanOnlyAndRevisionFenced() throws {
+        let intent = BudgetPlanCarryIntent(owner: .victor, sourceFile: "budget", fromMonth: "2026-08", toMonth: "2026-09", baseUpdatedAtMs: 100)
+        let args = AppWritebackClient.budgetPlanCarryArguments(intent, deviceID: "test-device", deviceToken: "test-token")
+        XCTAssertEqual(Set(args.keys), Set(["deviceId", "deviceToken", "owner", "sourceFile", "fromMonth", "toMonth", "baseUpdatedAtMs"]))
+        XCTAssertEqual(args["baseUpdatedAtMs"] as? Int64, 100)
+        XCTAssertEqual(args["owner"] as? String, "victor")
+        XCTAssertEqual(args["sourceFile"] as? String, "budget")
+        XCTAssertEqual(BudgetPlanCarry.mutationPath, "tables:copyBudgetPlanForwardFromDevice")
+        var response: [String: Any] = [
+            "ok": true, "outcome": "copied", "sourceFile": "budget", "fromMonth": "2026-08", "toMonth": "2026-09",
+            "categoryCount": 4.0, "updatedAtMs": 101.0,
+        ]
+        XCTAssertNoThrow(try AppWritebackClient.validateBudgetPlanCarryResponse(response, intent: intent))
+        response["outcome"] = "already-copied"
+        XCTAssertNoThrow(try AppWritebackClient.validateBudgetPlanCarryResponse(response, intent: intent))
+        response["toMonth"] = "2026-10"
+        XCTAssertThrowsError(try AppWritebackClient.validateBudgetPlanCarryResponse(response, intent: intent))
+        response["toMonth"] = "2026-09"
+        response["updatedAtMs"] = 100.0
+        XCTAssertThrowsError(try AppWritebackClient.validateBudgetPlanCarryResponse(response, intent: intent))
+        response["updatedAtMs"] = 101.0
+        response["categoryCount"] = -1.0
+        XCTAssertThrowsError(try AppWritebackClient.validateBudgetPlanCarryResponse(response, intent: intent))
+    }
+}

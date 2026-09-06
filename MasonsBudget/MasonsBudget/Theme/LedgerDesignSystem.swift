@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+    import UIKit
+#endif
 
 // MARK: - Treatments and semantic color
 
@@ -55,27 +58,26 @@ struct LedgerPalette: Sendable {
 
 extension LedgerPalette {
     static let terminalLedger = LedgerPalette(
-        background: Color(hex: 0x0A0D0C),
-        panel: Color(hex: 0x0C100E),
-        raisedPanel: Color(hex: 0x111614),
-        primaryRule: Color(hex: 0xD6EEE0, opacity: 0.10),
-        rowRule: Color(hex: 0xD6EEE0, opacity: 0.06),
-        primaryForeground: Color(hex: 0xE8EFE9),
-        // Opaque tiers: E8EFE9 blended over the background at 0.70 and 0.61,
-        // so nothing composites at draw time (contrast audit 2026-09-05).
-        secondaryForeground: Color(hex: 0xA3ABA6),
-        tertiaryForeground: Color(hex: 0x8F9792),
+        background: Color(hex: 0x050505),
+        panel: Color(hex: 0x0E0E0E),
+        raisedPanel: Color(hex: 0x161616),
+        primaryRule: Color(hex: 0xF5F2EA, opacity: 0.10),
+        rowRule: Color(hex: 0xF5F2EA, opacity: 0.06),
+        primaryForeground: Color(hex: 0xF5F2EA),
+        // Opaque warm grey tiers for the Sats black treatment.
+        secondaryForeground: Color(hex: 0xABA8A1),
+        tertiaryForeground: Color(hex: 0x95928C),
         accentForeground: Color(hex: 0xF7931A),
         accentFill: Color(hex: 0xF7931A),
         accentSoft: Color(hex: 0xF7931A, opacity: 0.12),
         priceHeroDecimals: Color(hex: 0xF7931A, opacity: LedgerGlowToken.priceHeroDecimalOpacity),
-        foregroundOnAccentFill: Color(hex: 0x0A0D0C),
+        foregroundOnAccentFill: Color(hex: 0x050505),
         // Exact Display P3 encodings of oklch(0.74 0.155 158) and
         // oklch(0.70 0.155 28), preserving the handoff colors on Apple displays.
         gain: Color(.displayP3, red: 0.403_133_570, green: 0.771_433_512, blue: 0.540_537_773),
         loss: Color(.displayP3, red: 0.876_730_664, green: 0.480_479_274, blue: 0.422_105_613),
         scanline: Color.white.opacity(0.022),
-        toggleKnob: Color(hex: 0xE8EFE9),
+        toggleKnob: Color(hex: 0xF5F2EA),
     )
 
     static let daylightLedger = LedgerPalette(
@@ -92,9 +94,10 @@ extension LedgerPalette {
         // Filled controls keep F7931A with dark ink.
         accentForeground: Color(hex: 0x9E5104),
         accentFill: Color(hex: 0xF7931A),
-        accentSoft: Color(hex: 0xC96A05, opacity: 0.10),
+        // Same base as FOUNDATIONS and Android: the light text ink at 0.10.
+        accentSoft: Color(hex: 0x9E5104, opacity: 0.10),
         priceHeroDecimals: Color(hex: 0x9E5104),
-        foregroundOnAccentFill: Color(hex: 0x0A0D0C),
+        foregroundOnAccentFill: Color(hex: 0x050505),
         // Exact Display P3 encodings of oklch(0.52 0.13 158) and
         // oklch(0.52 0.15 28). Both are inside Display P3.
         gain: Color(.displayP3, red: 0.189_090_905, green: 0.487_614_912, blue: 0.310_875_612),
@@ -456,6 +459,99 @@ extension View {
         modifier(LedgerTypeModifier(role: role))
     }
 }
+
+// MARK: - System chrome
+
+/// Type for the bars the system draws. Tab labels and the More badge take
+/// their roles from the table; inline navigation titles and bar buttons have
+/// no role of their own, so their faces are pinned here on the same floor.
+enum LedgerChromeSpec {
+    static let tabLabel = LedgerTypeRole.tabLabel.specification(metrics: .terminalLedger)
+    static let badge = LedgerTypeRole.chip.specification(metrics: .terminalLedger)
+    static let largeTitle = LedgerTypeRole.drilldownTitle.specification(metrics: .terminalLedger)
+    static let inlineTitle = LedgerTypeSpecification(
+        size: 15, weight: .semibold, trackingEm: -0.01,
+        relativeTo: .headline, lineHeight: 1, uppercase: false, tabularFigures: false,
+    )
+    static let barButton = LedgerTypeSpecification(
+        size: 13, weight: .medium, trackingEm: 0,
+        relativeTo: .body, lineHeight: 1, uppercase: false, tabularFigures: false,
+    )
+}
+
+#if canImport(UIKit)
+    /// Installs the ledger palette and Source Code Pro on UIKit's tab bar and
+    /// navigation bar so the chrome matches the screens: panel bar over a rule
+    /// hairline, tier ink on unselected items, the accent on the selected one,
+    /// and the More badge as a Bitcoin fill under dark ink. Colours resolve per
+    /// interface style, so a forced appearance follows the window.
+    enum LedgerChrome {
+        static func color(_ token: KeyPath<LedgerPalette, Color>) -> UIColor {
+            UIColor { traits in
+                let palette: LedgerPalette = traits.userInterfaceStyle == .dark ? .terminalLedger : .daylightLedger
+                return UIColor(palette[keyPath: token])
+            }
+        }
+
+        static func font(_ specification: LedgerTypeSpecification, style: UIFont.TextStyle) -> UIFont {
+            let face = UIFont(name: specification.weight.postScriptName, size: specification.size)
+                ?? UIFont.systemFont(ofSize: specification.size)
+            return UIFontMetrics(forTextStyle: style).scaledFont(for: face)
+        }
+
+        static func attributes(
+            _ specification: LedgerTypeSpecification,
+            style: UIFont.TextStyle,
+            ink: KeyPath<LedgerPalette, Color>,
+        ) -> [NSAttributedString.Key: Any] {
+            [
+                .font: font(specification, style: style),
+                .kern: specification.tracking,
+                .foregroundColor: color(ink),
+            ]
+        }
+
+        @MainActor
+        static func install() {
+            let tabItem = UITabBarItemAppearance()
+            tabItem.normal.iconColor = color(\.tertiaryForeground)
+            tabItem.normal.titleTextAttributes = attributes(LedgerChromeSpec.tabLabel, style: .caption2, ink: \.tertiaryForeground)
+            tabItem.selected.iconColor = color(\.accentForeground)
+            tabItem.selected.titleTextAttributes = attributes(LedgerChromeSpec.tabLabel, style: .caption2, ink: \.accentForeground)
+            for state in [tabItem.normal, tabItem.selected] {
+                state.badgeBackgroundColor = color(\.accentFill)
+                state.badgeTextAttributes = attributes(LedgerChromeSpec.badge, style: .caption2, ink: \.foregroundOnAccentFill)
+            }
+
+            let tabBar = UITabBarAppearance()
+            tabBar.configureWithOpaqueBackground()
+            tabBar.backgroundColor = color(\.panel)
+            tabBar.shadowColor = color(\.primaryRule)
+            tabBar.stackedLayoutAppearance = tabItem
+            tabBar.inlineLayoutAppearance = tabItem
+            tabBar.compactInlineLayoutAppearance = tabItem
+            UITabBar.appearance().standardAppearance = tabBar
+            UITabBar.appearance().scrollEdgeAppearance = tabBar
+
+            let barButton = UIBarButtonItemAppearance(style: .plain)
+            barButton.normal.titleTextAttributes = attributes(LedgerChromeSpec.barButton, style: .body, ink: \.accentForeground)
+
+            let navigationBar = UINavigationBarAppearance()
+            navigationBar.configureWithOpaqueBackground()
+            navigationBar.backgroundColor = color(\.background)
+            navigationBar.shadowColor = color(\.rowRule)
+            navigationBar.titleTextAttributes = attributes(LedgerChromeSpec.inlineTitle, style: .headline, ink: \.primaryForeground)
+            navigationBar.largeTitleTextAttributes = attributes(LedgerChromeSpec.largeTitle, style: .largeTitle, ink: \.primaryForeground)
+            navigationBar.buttonAppearance = barButton
+            navigationBar.backButtonAppearance = barButton
+            navigationBar.doneButtonAppearance = barButton
+            UINavigationBar.appearance().standardAppearance = navigationBar
+            UINavigationBar.appearance().scrollEdgeAppearance = navigationBar
+            UINavigationBar.appearance().compactAppearance = navigationBar
+            UINavigationBar.appearance().tintColor = color(\.accentForeground)
+        }
+    }
+#endif
 
 // MARK: - Reusable non-screen foundations
 

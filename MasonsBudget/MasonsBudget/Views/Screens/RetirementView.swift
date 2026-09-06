@@ -143,7 +143,7 @@ struct RetirementView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("2026 GOALS")
                 .ledgerType(.sectionLabel)
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(theme.onAccent)
 
             goalRow(
                 icon: "bitcoinsign.circle.fill",
@@ -164,9 +164,7 @@ struct RetirementView: View {
             )
         }
         .padding(20)
-        .background(
-            LinearGradient(colors: [theme.accent, theme.accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
-        )
+        .background(theme.accentFill)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
@@ -175,21 +173,21 @@ struct RetirementView: View {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(AppFont.icon(size: 14, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(theme.onAccent)
                 Text(label)
                     .ledgerType(.rowFigure)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(theme.onAccent)
                 Spacer()
                 Text("\(Int(pct))%")
                     .ledgerType(.rowFigure)
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(theme.onAccent)
             }
 
-            LedgerProgressBar(fraction: pct / 100, height: 5, fill: .white, track: .white.opacity(0.25))
+            LedgerProgressBar(fraction: pct / 100, height: 5, fill: theme.onAccent, track: theme.onAccent.opacity(0.25))
 
             Text(detail)
                 .ledgerType(.rowMeta)
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(theme.onAccent)
         }
     }
 
@@ -530,10 +528,10 @@ struct RetirementView: View {
                 } label: {
                     Text("\(yr)yr")
                         .ledgerType(.chip)
-                        .foregroundStyle(projectionHorizon == yr ? .white : theme.textMuted)
+                        .foregroundStyle(projectionHorizon == yr ? theme.onAccent : theme.textMuted)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 7)
-                        .background(projectionHorizon == yr ? theme.accent : Color.clear)
+                        .background(projectionHorizon == yr ? theme.accentFill : Color.clear)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)

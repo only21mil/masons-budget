@@ -492,6 +492,7 @@ export type VogelVaultMutationKind =
   | "todo.restore"
   | "budgetCategory.upsert"
   | "budgetCategory.delete"
+  | "budgetPlan.copyForward"
   | "btcBuy.upsert"
   | "btcBuy.delete"
   | "btcBillPay.upsert"
@@ -587,6 +588,21 @@ export type VogelVaultMutationRequest =
       readonly owner: VogelVaultMember
       readonly month: string
       readonly name: string
+      /** Enclosing budget-document revision. */
+      readonly baseUpdatedAtMs: number
+    })
+  | (VogelVaultMutationBase & {
+      /**
+       * Copy the one live budget plan forward by exactly one month. Both
+       * months are always sent so a replay after a lost reply is answered as
+       * "already-copied" rather than advancing the plan twice.
+       */
+      readonly kind: "budgetPlan.copyForward"
+      readonly owner: VogelVaultMember
+      /** The month the plan names now; the server refuses any other value. */
+      readonly fromMonth: string
+      /** Always the month after fromMonth. */
+      readonly toMonth: string
       /** Enclosing budget-document revision. */
       readonly baseUpdatedAtMs: number
     })
@@ -696,6 +712,8 @@ export type VogelVaultMutationOutcome =
   | "deleted"
   | "restored"
   | "not-found"
+  | "copied"
+  | "already-copied"
 
 /** Locally classified failure detail; never backend-authored text. */
 export type VogelVaultMutationFailureCode =
@@ -707,6 +725,7 @@ export type VogelVaultMutationFailureCode =
   | "credential-storage"
   | "PROFILE_BINDING_REQUIRED"
   | "REVISION_REQUIRED"
+  | "PLAN_EXISTS"
 
 interface VogelVaultMutationReplyBase {
   readonly requestId: string
@@ -721,8 +740,12 @@ export type VogelVaultMutationResult =
   | (VogelVaultMutationReplyBase & {
       readonly status: "ok"
       readonly outcome: VogelVaultMutationOutcome
+      /** For budgetPlan.copyForward this is the month the plan now names. */
       readonly entityId: string
-      /** Authoritative restore receipt; present only for todo.restore. */
+      /**
+       * Authoritative revision receipt; present only for todo.restore and
+       * budgetPlan.copyForward.
+       */
       readonly updatedAtMs?: number
     })
   | (VogelVaultMutationReplyBase & { readonly status: "disabled" })

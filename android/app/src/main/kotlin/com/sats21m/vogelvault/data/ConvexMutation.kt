@@ -311,6 +311,44 @@ internal sealed class ConvexMutation(val path: String) {
             "baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs),
         )
     }
+    /**
+     * Copy the one live budget plan forward by exactly one month. The server
+     * defaults both months when omitted; Android always sends them so a replay
+     * after a lost response is answered as `already-copied` rather than
+     * advancing the plan twice.
+     */
+    data class CopyBudgetPlanForwardFromDevice(
+        val owner: FamilyMember,
+        val sourceFile: String,
+        val fromMonth: String,
+        val toMonth: String,
+        val baseUpdatedAtMs: Long,
+    ) : ConvexMutation("tables:copyBudgetPlanForwardFromDevice") {
+        init {
+            require(fromMonth.matches(BUDGET_MONTH_PATTERN) && toMonth.matches(BUDGET_MONTH_PATTERN)) {
+                "budget plan months must be canonical yyyy-MM"
+            }
+            require(baseUpdatedAtMs in 1L..MAX_SAFE_JSON_INTEGER) {
+                "budget plan revision must be a positive safe integer"
+            }
+            val expectedSource = when (owner) {
+                FamilyMember.VICTOR -> "budget"
+                FamilyMember.MASON -> "mason-budget"
+                else -> error("budget plan carry requires canonical Victor or Mason ownership")
+            }
+            require(sourceFile == expectedSource) {
+                "budget plan source file must match its canonical owner"
+            }
+        }
+
+        override fun arguments(): JsonObject = jsonObject(
+            "owner" to JsonPrimitive(owner.key),
+            "sourceFile" to JsonPrimitive(sourceFile),
+            "fromMonth" to JsonPrimitive(fromMonth),
+            "toMonth" to JsonPrimitive(toMonth),
+            "baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs),
+        )
+    }
 }
 
 internal enum class TransactionKind(val wireValue: String) {

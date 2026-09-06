@@ -97,6 +97,15 @@ const requests = [
     baseUpdatedAtMs: 100,
   },
   {
+    kind: "budgetPlan.copyForward",
+    requestId: "request-copy",
+    actor: "victor",
+    owner: "victor",
+    fromMonth: "2026-08",
+    toMonth: "2026-09",
+    baseUpdatedAtMs: 100,
+  },
+  {
     kind: "btcBuy.upsert",
     requestId: "request-07",
     actor: "victor",
@@ -238,7 +247,7 @@ describe("paired-device IPC contract", () => {
     ])
   })
 
-  it("has exactly fifteen closed mutation discriminators", () => {
+  it("has exactly sixteen closed mutation discriminators", () => {
     expect(requests.map((request) => request.kind)).toEqual([
       "transaction.upsert",
       "transaction.delete",
@@ -247,6 +256,7 @@ describe("paired-device IPC contract", () => {
       "todo.restore",
       "budgetCategory.upsert",
       "budgetCategory.delete",
+      "budgetPlan.copyForward",
       "btcBuy.upsert",
       "btcBuy.delete",
       "btcBillPay.upsert",
@@ -256,7 +266,7 @@ describe("paired-device IPC contract", () => {
       "btcTransfer.upsert",
       "btcTransfer.delete",
     ])
-    expect(new Set(requests.map((request) => request.requestId)).size).toBe(15)
+    expect(new Set(requests.map((request) => request.requestId)).size).toBe(16)
   })
 
   it("keeps mutation results to six text-free outer states", () => {

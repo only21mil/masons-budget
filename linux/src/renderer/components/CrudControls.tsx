@@ -119,6 +119,8 @@ export function localMutationError(result: RendererMutationResult): string | nul
         ? "This item changed while you were editing it. Review the latest values."
         : result.code === "rejected"
           ? "The ledger rejected this change. Review the values and try again."
+        : result.code === "PLAN_EXISTS"
+          ? "A plan for that month already exists. Refresh to see it."
         : "The ledger could not be reached. Your change was rolled back; try again."
   }
 }
