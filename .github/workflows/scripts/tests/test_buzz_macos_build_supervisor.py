@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Filesystem and privilege contract checks, runnable without a Mac or sudo."""
+import base64
+import contextlib
 import importlib.util
 import io
 import json
@@ -190,6 +192,21 @@ class ProcessTests(unittest.TestCase):
                 s.main()
             create.assert_not_called()
             export.assert_not_called()
+
+    def test_diagnostic_tail_is_bounded_and_cannot_inject_workflow_commands(self):
+        dangerous = b'::add-mask::value\n\x1b[31m'
+        tail = bytearray(b'a' * 65536)
+        with patch.object(s.os, 'read', side_effect=[dangerous, BlockingIOError()]):
+            s.drain_log(5, tail)
+        self.assertEqual(len(tail), 65536)
+        self.assertTrue(tail.endswith(dangerous))
+        output = io.StringIO()
+        with contextlib.redirect_stderr(output):
+            s.report_log(tail)
+        text = output.getvalue()
+        self.assertNotIn('::add-mask::', text)
+        self.assertEqual(text.count('\n'), 1)
+        self.assertEqual(base64.b64decode(text.split(': ', 1)[1]), tail)
 
     def test_child_drops_privileges_before_fixed_exec_and_scrubs_environment(self):
         events = []
