@@ -8,13 +8,24 @@ record.** Canonical typed rows are the current ledger authority. The surviving
 `dataFiles` JSON blobs are a load-bearing compatibility copy for shipped readers.
 Never describe MC2 as a live upstream or direct work toward a separate MC2 repo.
 
-## Tracking — GitHub only (2026-07-26)
+## Tracking — Buzz relay first (2026-09-05)
 
-**Do not use Linear for this repo.** Tracking, review, and history live on GitHub.
+**Do not use Linear for this repo.** The Buzz relay is authoritative for branches,
+issues, pull requests, review, and history. GitHub is the CI mirror. Follow the
+canonical rule in `only21mil/buzz:docs/delivery-lifecycle.md`.
 
-- Work happens on a branch, reviewed via a pull request. Never commit to `main`.
-- File a GitHub issue for a bug or follow-up rather than batching it silently into the current change.
-- Check open issues and PRs at the start of a task so lanes do not duplicate work.
+- Seed every feature branch on the Budget relay before GitHub. Open and update
+  its authoritative pull request through the maintained Buzz CLI. Never commit
+  to `main`, and never create a durable pull request from a GitHub-only push.
+- Before relying on the mirror, compare the full feature and current `main` refs
+  on both endpoints. Keep the authoritative pull request's full head, base, and
+  status current, then require a later complete no-op mirror cycle with equal ref
+  counts.
+- Preserve every other branch and its owner when reconciling refs. Never delete,
+  overwrite, or adopt another lane's branch.
+- File a Buzz issue for a bug or follow-up rather than batching it silently into
+  the current change. Check open issues and pull requests before starting so
+  lanes do not duplicate work.
 - Routine verification runs in GitHub Actions. Linux/Android work uses hosted
   Ubuntu; Apple work uses the registered MacBook Pro, with the Mac mini only as
   an explicitly selected fallback. The Framework laptop remains the primary

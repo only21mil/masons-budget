@@ -120,6 +120,12 @@ jobs:
       - name: Apple signing asset minting tests
         run: python3 .github/workflows/scripts/tests/test_apple_signing_assets.py
 
+      - name: Buzz Mac artifact boundary tests
+        run: |
+          python3 .github/workflows/scripts/tests/test_mac_release_workflow.py
+          python3 .github/workflows/scripts/tests/test_mac_build_portability.py
+          shellcheck .github/workflows/scripts/buzz_macos_build.sh .github/workflows/scripts/buzz-verify-macos-entitlements.sh
+
       - name: Manual Apple release signing contract
         run: |
           python3 .github/workflows/scripts/tests/test_manual_release_signing.py
