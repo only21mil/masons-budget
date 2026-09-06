@@ -222,6 +222,14 @@ final class LedgerFoundationTests: XCTestCase {
         return sources
     }
 
+    /// The unit suffix is opaque: the secondary tier, the accent, or the
+    /// caller's colour. Alpha text undercut the opaque tiers.
+    func testAmountSuffixDrawsOpaqueInk() throws {
+        let amount = try XCTUnwrap(viewSources().first { $0.file == "AmountView.swift" })
+        XCTAssertFalse(amount.lines.contains { $0.contains(".opacity(") }, "AmountView must not composite alpha text")
+        XCTAssertTrue(amount.lines.contains { $0.contains("accent ? theme.accent : theme.textMuted") })
+    }
+
     /// Source-level guard: views draw only ledger roles and SF Symbol glyphs.
     /// Runs when the test bundle sits next to the checkout; skips otherwise.
     func testViewsDrawOnlyLedgerRolesAndIconGlyphs() throws {
