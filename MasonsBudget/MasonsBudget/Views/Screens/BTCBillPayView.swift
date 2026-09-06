@@ -87,21 +87,21 @@ struct BTCBillPayView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("BILLS PAID")
                         .ledgerType(.sectionLabel)
-                        .foregroundStyle(.white.opacity(0.7))
-                    AmountView(sats: totalSats, unit: unit, role: .kpiValue, color: .white, btcPrice: btcPrice)
+                        .foregroundStyle(theme.bg)
+                    AmountView(sats: totalSats, unit: unit, role: .kpiValue, color: theme.bg, btcPrice: btcPrice)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
                     Text("BTC SPENT")
                         .ledgerType(.sectionLabel)
-                        .foregroundStyle(.white.opacity(0.7))
-                    AmountView(sats: Decimal(ledger.totalSpentSats), unit: unit, role: .kpiValue, color: .white, btcPrice: btcPrice)
+                        .foregroundStyle(theme.bg)
+                    AmountView(sats: Decimal(ledger.totalSpentSats), unit: unit, role: .kpiValue, color: theme.bg, btcPrice: btcPrice)
                 }
             }
             .padding(20)
-            .background(
-                LinearGradient(colors: [theme.plum, theme.plum.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),
-            )
+            // Plum card, page-colour ink: 0A0D0C on light plum is only 3.1:1,
+            // F4F3EE on the light plum clears 5.7:1 and 0A0D0C on the dark plum 8.9:1.
+            .background(theme.plum)
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         } else if case .loading = canonicalFinancials.btcBillPays {
             LedgerSkeletonRows(rows: 1)

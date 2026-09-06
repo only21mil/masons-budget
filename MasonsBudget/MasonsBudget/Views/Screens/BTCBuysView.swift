@@ -91,21 +91,19 @@ struct BTCBuysView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("TOTAL BOUGHT")
                     .ledgerType(.sectionLabel)
-                    .foregroundStyle(.white.opacity(0.7))
-                AmountView(sats: totalBtc * 100_000_000, unit: unit, role: .kpiValue, color: .white, btcPrice: btcPrice)
+                    .foregroundStyle(theme.onAccent)
+                AmountView(sats: totalBtc * 100_000_000, unit: unit, role: .kpiValue, color: theme.onAccent, btcPrice: btcPrice)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
                 Text("TOTAL INVESTED")
                     .ledgerType(.sectionLabel)
-                    .foregroundStyle(.white.opacity(0.7))
-                AmountView(sats: btcPrice > 0 ? (totalUsd / btcPrice) * 100_000_000 : 0, unit: unit, role: .kpiValue, color: .white, btcPrice: btcPrice)
+                    .foregroundStyle(theme.onAccent)
+                AmountView(sats: btcPrice > 0 ? (totalUsd / btcPrice) * 100_000_000 : 0, unit: unit, role: .kpiValue, color: theme.onAccent, btcPrice: btcPrice)
             }
         }
         .padding(20)
-        .background(
-            LinearGradient(colors: [theme.accent, theme.accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
-        )
+        .background(theme.accentFill)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 

@@ -81,10 +81,12 @@ final class LedgerFoundationTests: XCTestCase {
         }
     }
 
-    /// The swipe delete action draws the page colour on the loss fill.
-    func testPageInkClearsAAOnTheLossFill() {
+    /// The swipe delete action and the Bill Pay card draw the page colour on
+    /// the loss and plum fills.
+    func testPageInkClearsAAOnTheLossAndPlumFills() {
         for tokens in [ColorTokens.dark, ColorTokens.light] {
             XCTAssertGreaterThanOrEqual(contrast(tokens.bg, on: tokens.danger), 4.5)
+            XCTAssertGreaterThanOrEqual(contrast(tokens.bg, on: tokens.plum), 4.5)
         }
     }
 
@@ -253,6 +255,20 @@ final class LedgerFoundationTests: XCTestCase {
         XCTAssertTrue(price.lines.contains { $0.contains(".ledgerType(.priceHeroDecimals)") })
         XCTAssertTrue(price.lines.contains { $0.contains("tokens.colors.priceHeroDecimals") })
         XCTAssertTrue(price.lines.contains { $0.contains(".ledgerGlow(radius: glowRadius)") })
+    }
+
+    /// Source-level guard: no view paints `.white`. Ink on a fill comes from
+    /// the palette (`theme.onAccent`, or the page colour on loss and plum) so
+    /// both treatments clear 4.5:1 instead of white on orange at 2.3:1.
+    func testViewsNeverDrawWhiteInk() throws {
+        let white = try Regex(#"\.white\b"#)
+        var offenders: [String] = []
+        for source in try viewSources() {
+            for (index, line) in source.lines.enumerated() where line.contains(white) {
+                offenders.append("\(source.file):\(index + 1): \(line.trimmingCharacters(in: .whitespaces))")
+            }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Views must not paint .white:\n" + offenders.joined(separator: "\n"))
     }
 
     /// Source-level guard: views draw only ledger roles and SF Symbol glyphs.
