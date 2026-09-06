@@ -18,6 +18,17 @@ name: Apple signing assets (manual, mints certificates and profiles)
 on:
   workflow_dispatch:
     inputs:
+      purpose:
+        description: "Existing App Store assets, read-only Buzz Developer ID probe, or one Buzz Developer ID request"
+        required: false
+        default: app-store
+        type: choice
+        options: [app-store, buzz-developer-id-probe, buzz-developer-id-create]
+      developer_id_csr_b64:
+        description: "Public Buzz Developer ID PEM CSR, base64 encoded; required only for create"
+        required: false
+        default: ""
+        type: string
       dist_csr_b64:
         description: "base64 of the PEM CSR for the Apple Distribution certificate (leave empty when reusing by id)"
         required: false
@@ -67,6 +78,7 @@ permissions:
 
 jobs:
   mint:
+    if: inputs.purpose == 'app-store' || inputs.purpose == ''
     name: Mint certificates and App Store profiles from local CSRs
     # ubuntu, not macOS: this is a handful of REST calls. macOS runners bill at
     # 10x and the account has hit its Actions spending limit twice in one day.
@@ -195,3 +207,36 @@ jobs:
       - name: Remove the key
         if: always()
         run: rm -f "${ASC_KEY_PATH:-$RUNNER_TEMP/asc_key.p8}"
+
+  buzz-developer-id:
+    name: Buzz Developer ID capability or certificate
+    if: >-
+      github.repository == 'only21mil/masons-budget' &&
+      (inputs.purpose == 'buzz-developer-id-probe' || inputs.purpose == 'buzz-developer-id-create')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned JWT dependencies
+        run: pip install --quiet pyjwt==2.13.0 cryptography==50.0.1
+      - name: Inspect capability or issue one public certificate
+        # This job never checks out or runs Buzz, materializes ASC private key
+        # files, revokes certificates, or creates provisioning profiles.
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          BUZZ_CERTIFICATE_OPERATION: ${{ inputs.purpose }}
+          BUZZ_DEVELOPER_ID_CSR_B64: ${{ inputs.developer_id_csr_b64 }}
+          BUZZ_CERTIFICATE_OUT: ${{ runner.temp }}/buzz-developer-id
+        run: python3 .github/workflows/scripts/buzz_developer_id.py
+      - name: Retain public certificate and capability receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: buzz-developer-id-${{ github.run_number }}
+          path: ${{ runner.temp }}/buzz-developer-id
+          retention-days: 7
+          if-no-files-found: error
