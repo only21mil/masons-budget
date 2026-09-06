@@ -6,6 +6,7 @@
 
 export * from "./convexInt64.ts"
 export * from "./budgetCategoryDeletion.ts"
+export * from "./budgetPlanCarry.ts"
 export * from "./family.ts"
 export * from "./finance.ts"
 export * from "./incomeBuyWriteContract.ts"

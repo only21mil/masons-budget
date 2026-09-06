@@ -1973,14 +1973,19 @@ type DeviceErrorCode =
   | "ENTITY_NOT_FOUND"
   | "OWNER_MISMATCH"
   | "OWNER_SOURCE_MISMATCH"
+  | "PLAN_EXISTS"
   | "PROFILE_BINDING_REQUIRED"
   | "REVISION_REQUIRED"
   | "VALIDATION_FAILED";
 
+// A budget plan is a whole document, not a tombstoned row, so it only appears
+// in failure payloads.
+type DeviceFailureEntityType = RowEntityType | "budgetPlan";
+
 function deviceFailure(
   code: DeviceErrorCode,
   message: string,
-  entityType?: RowEntityType,
+  entityType?: DeviceFailureEntityType,
   entityId?: string,
 ): never {
   throw new ConvexError({
@@ -4371,7 +4376,7 @@ function canonicalLedgerOwner(owner: FamilyMember): FamilyMember {
 function requireMoneyOwnerBinding(
   device: { profile?: DeviceProfile },
   requestedOwner: FamilyMember,
-  entityType: RowEntityType,
+  entityType: DeviceFailureEntityType,
   entityId: string,
 ): FamilyMember {
   if (device.profile === undefined) {
@@ -4570,6 +4575,209 @@ async function upsertBudgetCategoryCore(
   }
   await clearRowTombstone(ctx, "budgetCategory", sourceFile, targetFold);
   return { entityId: name, outcome };
+}
+
+// ── Budget plan carry-forward ────────────────────────────────────────────────
+//
+// There is exactly one plan per budget source and it names one month. Copying
+// the plan "forward" therefore advances that document's month in place and
+// keeps everything the plan carries (category set and order, planned cents,
+// icons, income configuration, allowance, notes). It mirrors the operator
+// month advance in operatorImport.ts: MTD income resets to zero, ledger rows
+// and monthly history are never touched, and nothing is fabricated for months
+// that were skipped.
+
+const BUDGET_MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+const STORED_BUDGET_MONTH_LABEL =
+  /^(January|February|March|April|May|June|July|August|September|October|November|December) (\d{4})$/;
+const BUDGET_PLAN_MAX_GAP_MONTHS = 24;
+
+/** Stored budget months are canonical yyyy-MM or the legacy English label. */
+function canonicalBudgetMonth(stored: string): string | undefined {
+  if (DEVICE_MONTH.test(stored)) return stored;
+  const match = STORED_BUDGET_MONTH_LABEL.exec(stored);
+  if (!match) return undefined;
+  const index = BUDGET_MONTH_NAMES.indexOf(
+    match[1] as (typeof BUDGET_MONTH_NAMES)[number],
+  );
+  return `${match[2]}-${String(index + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Write the target month in the spelling the document already uses. The
+ * operator path validates the stored label form, so a device carry must not
+ * silently change a legacy "August 2026" document into "2026-09".
+ */
+function storedBudgetMonthLike(stored: string, canonicalTarget: string): string {
+  if (DEVICE_MONTH.test(stored)) return canonicalTarget;
+  const [year, month] = canonicalTarget.split("-");
+  return `${BUDGET_MONTH_NAMES[Number(month) - 1]} ${year}`;
+}
+
+function budgetMonthIndex(month: string): number {
+  const [year, monthOfYear] = month.split("-").map(Number);
+  return year * 12 + (monthOfYear - 1);
+}
+
+function budgetMonthFromIndex(index: number): string {
+  const year = Math.floor(index / 12);
+  const monthOfYear = (index % 12) + 1;
+  return `${year}-${String(monthOfYear).padStart(2, "0")}`;
+}
+
+type BudgetPlanCarryResult = {
+  outcome: "copied" | "already-copied";
+  sourceFile: "budget" | "mason-budget";
+  fromMonth: string;
+  toMonth: string;
+  categoryCount: number;
+  updatedAtMs: number;
+};
+
+async function copyBudgetPlanForwardCore(
+  ctx: MutationCtx,
+  sourceFile: "budget" | "mason-budget",
+  owner: FamilyMember,
+  request: {
+    fromMonth?: string;
+    toMonth?: string;
+    allowGap: boolean;
+    baseUpdatedAtMs: number;
+    deviceId: string;
+  },
+): Promise<BudgetPlanCarryResult> {
+  const expectedOwner = budgetOwnerForSource(sourceFile);
+  if (owner !== expectedOwner) {
+    deviceFailure(
+      "OWNER_SOURCE_MISMATCH",
+      `Budget source "${sourceFile}" belongs to ${expectedOwner}, not ${owner}.`,
+    );
+  }
+  const existing = await ctx.db
+    .query("budgetDocuments")
+    .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
+    .unique();
+  if (!existing) {
+    deviceFailure(
+      "ENTITY_NOT_FOUND",
+      `Budget document "${sourceFile}" does not exist; there is no plan to copy.`,
+      "budgetPlan",
+      sourceFile,
+    );
+  }
+  if (existing.owner !== owner) {
+    deviceFailure(
+      "OWNER_MISMATCH",
+      `Budget document "${sourceFile}" belongs to ${existing.owner}, not ${owner}.`,
+      "budgetPlan",
+      sourceFile,
+    );
+  }
+  const planMonth = canonicalBudgetMonth(existing.month);
+  if (planMonth === undefined) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `Budget document "${sourceFile}" stores an unreadable month.`,
+      "budgetPlan",
+      sourceFile,
+    );
+  }
+  const fromMonth = request.fromMonth ?? planMonth;
+  const toMonth =
+    request.toMonth ?? budgetMonthFromIndex(budgetMonthIndex(fromMonth) + 1);
+  const gap = budgetMonthIndex(toMonth) - budgetMonthIndex(fromMonth);
+  if (gap < 1 || gap > BUDGET_PLAN_MAX_GAP_MONTHS) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `toMonth ${toMonth} must be after fromMonth ${fromMonth} and within ` +
+        `${BUDGET_PLAN_MAX_GAP_MONTHS} months.`,
+      "budgetPlan",
+      toMonth,
+    );
+  }
+  if (gap !== 1 && !request.allowGap) {
+    deviceFailure(
+      "VALIDATION_FAILED",
+      `toMonth ${toMonth} is not the month after ${fromMonth}; set allowGap ` +
+        "to skip months deliberately.",
+      "budgetPlan",
+      toMonth,
+    );
+  }
+  const receipt = await ctx.db
+    .query("budgetPlanCarries")
+    .withIndex("by_source_months", (q) =>
+      q.eq("sourceFile", sourceFile).eq("fromMonth", fromMonth).eq("toMonth", toMonth),
+    )
+    .unique();
+  if (planMonth === toMonth && receipt) {
+    return {
+      outcome: "already-copied",
+      sourceFile,
+      fromMonth,
+      toMonth,
+      categoryCount: existing.categories.length,
+      updatedAtMs: existing.updatedAtMs,
+    };
+  }
+  if (planMonth !== fromMonth) {
+    if (budgetMonthIndex(planMonth) >= budgetMonthIndex(toMonth)) {
+      deviceFailure(
+        "PLAN_EXISTS",
+        `Budget "${sourceFile}" already has a plan for ${planMonth}; ` +
+          `nothing to copy into ${toMonth}.`,
+        "budgetPlan",
+        toMonth,
+      );
+    }
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      `Budget "${sourceFile}" holds the ${planMonth} plan, not ${fromMonth}.`,
+      "budgetPlan",
+      fromMonth,
+    );
+  }
+  if (request.baseUpdatedAtMs !== existing.updatedAtMs) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      "The budget changed after it was read.",
+      "budgetPlan",
+      toMonth,
+    );
+  }
+
+  const updatedAtMs = nextUpdatedAtMs(existing.updatedAtMs);
+  await lockRuntimeSource(ctx, sourceFile);
+  await ctx.db.patch(existing._id, {
+    month: storedBudgetMonthLike(existing.month, toMonth),
+    mtdIncomeCents: 0n,
+    ...(existing.income
+      ? { income: { ...existing.income, mtdIncomeCents: 0n } }
+      : {}),
+    updatedAtMs,
+  });
+  await ctx.db.insert("budgetPlanCarries", {
+    sourceFile,
+    owner,
+    fromMonth,
+    toMonth,
+    categoryCount: existing.categories.length,
+    fromUpdatedAtMs: existing.updatedAtMs,
+    appliedUpdatedAtMs: updatedAtMs,
+    deviceId: request.deviceId,
+    appliedAtMs: Date.now(),
+  });
+  return {
+    outcome: "copied",
+    sourceFile,
+    fromMonth,
+    toMonth,
+    categoryCount: existing.categories.length,
+    updatedAtMs,
+  };
 }
 
 async function deleteBudgetCategoryCore(
@@ -6169,6 +6377,66 @@ export const deleteBudgetCategoryFromDevice = mutation({
     );
     await markDeviceSeen(ctx, device);
     return { ok: true as const, entityId: args.entityId, removed };
+  },
+});
+
+const budgetPlanCarryResultValidator = v.object({
+  ok: v.literal(true),
+  outcome: v.union(v.literal("copied"), v.literal("already-copied")),
+  sourceFile: budgetSourceValidator,
+  fromMonth: v.string(),
+  toMonth: v.string(),
+  categoryCount: v.float64(),
+  updatedAtMs: v.float64(),
+});
+
+/**
+ * Copy the one live budget plan forward to the next month from a paired device.
+ *
+ * `fromMonth` defaults to the month the plan currently names and `toMonth` to
+ * the month after it. Both are canonical yyyy-MM. A gap larger than one month
+ * needs `allowGap`; the operator doctrine still applies, so skipped months are
+ * left missing rather than fabricated. `baseUpdatedAtMs` must equal the
+ * document revision the screen read. Replaying an identical request after it
+ * landed answers `already-copied` and writes nothing.
+ */
+export const copyBudgetPlanForwardFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceToken: v.string(),
+    owner: familyMemberValidator,
+    sourceFile: budgetSourceValidator,
+    fromMonth: v.optional(v.string()),
+    toMonth: v.optional(v.string()),
+    allowGap: v.optional(v.boolean()),
+    baseUpdatedAtMs: v.float64(),
+  },
+  returns: budgetPlanCarryResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(
+      ctx,
+      args.deviceId,
+      args.deviceToken,
+      "budget:write",
+    );
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    if (args.fromMonth !== undefined) requireDeviceMonth(args.fromMonth);
+    if (args.toMonth !== undefined) requireDeviceMonth(args.toMonth);
+    const owner = requireMoneyOwnerBinding(
+      device,
+      args.owner,
+      "budgetPlan",
+      args.sourceFile,
+    );
+    const result = await copyBudgetPlanForwardCore(ctx, args.sourceFile, owner, {
+      fromMonth: args.fromMonth,
+      toMonth: args.toMonth,
+      allowGap: args.allowGap === true,
+      baseUpdatedAtMs: args.baseUpdatedAtMs,
+      deviceId: device.deviceId,
+    });
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, ...result };
   },
 });
 

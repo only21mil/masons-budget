@@ -122,6 +122,80 @@ class RedesignFixtureParityTest {
         }
     }
 
+    @Test
+    fun `budget plan carry matches the shared fixture after sibling integration`() {
+        val fixture = requireFixture("budget-plan-carry-cases.json")
+        val root = JsonParser.parseString(fixture.readText()).asJsonObject
+        assertEquals(1, root.get("contractVersion").asInt)
+
+        root.array("accepted").forEach { element ->
+            val case = element.asJsonObject
+            val revision = requireNotNull(case.get("baseUpdatedAtMs").checkedRevision())
+            val result = validateBudgetPlanCarry(
+                activeProfile = case.owner("activeProfile"),
+                currentMonth = case.string("currentMonth"),
+                selectedMonth = case.optionalString("selectedMonth"),
+                budget = Budget(
+                    month = case.string("budgetMonth"),
+                    categories = listOf(BudgetCategory("Groceries", 1L, 0L)),
+                    owner = case.owner("budgetOwner"),
+                    updatedAtMs = revision,
+                ),
+                baseUpdatedAtMs = revision,
+            )
+            assertEquals(null, result.rejection, case.string("name"))
+            assertEquals(
+                BudgetPlanCarryIntent(
+                    owner = case.owner("expectedOwner"),
+                    sourceFile = case.string("expectedSourceFile"),
+                    fromMonth = case.string("expectedFromMonth"),
+                    toMonth = case.string("expectedToMonth"),
+                    baseUpdatedAtMs = revision,
+                ),
+                result.intent,
+                case.string("name"),
+            )
+        }
+
+        val accepted = root.array("accepted").first().asJsonObject
+        val acceptedRevision = accepted.get("baseUpdatedAtMs").checkedRevision()!!
+        root.array("rejected").forEach { element ->
+            val case = element.asJsonObject
+            val replace = case.getAsJsonObject("replace") ?: JsonObject()
+            val revision = (replace.get("baseUpdatedAtMs") ?: accepted.get("baseUpdatedAtMs")).checkedRevision()
+            val expected = carryRejection(case.string("reason"))
+            if (revision == null) {
+                assertEquals(BudgetPlanCarryRejection.INVALID_REVISION, expected, case.string("name"))
+                return@forEach
+            }
+            val result = validateBudgetPlanCarry(
+                activeProfile = replace.optionalOwner("activeProfile") ?: accepted.owner("activeProfile"),
+                currentMonth = replace.optionalString("currentMonth") ?: accepted.string("currentMonth"),
+                selectedMonth = replace.optionalString("selectedMonth") ?: accepted.optionalString("selectedMonth"),
+                budget = Budget(
+                    month = case.optionalString("budgetMonth") ?: accepted.string("budgetMonth"),
+                    categories = listOf(BudgetCategory("Groceries", 1L, 0L)),
+                    owner = case.optionalOwner("budgetOwner") ?: accepted.owner("budgetOwner"),
+                    updatedAtMs = acceptedRevision,
+                ),
+                baseUpdatedAtMs = revision,
+            )
+            assertEquals(expected, result.rejection, case.string("name"))
+        }
+    }
+
+    private fun carryRejection(value: String): BudgetPlanCarryRejection = when (value) {
+        "invalid-current-month" -> BudgetPlanCarryRejection.INVALID_CURRENT_MONTH
+        "invalid-selected-month" -> BudgetPlanCarryRejection.INVALID_SELECTED_MONTH
+        "unsupported-profile" -> BudgetPlanCarryRejection.UNSUPPORTED_PROFILE
+        "owner-mismatch" -> BudgetPlanCarryRejection.OWNER_MISMATCH
+        "invalid-plan-month" -> BudgetPlanCarryRejection.INVALID_PLAN_MONTH
+        "plan-is-current" -> BudgetPlanCarryRejection.PLAN_IS_CURRENT
+        "invalid-revision" -> BudgetPlanCarryRejection.INVALID_REVISION
+        "revision-mismatch" -> BudgetPlanCarryRejection.REVISION_MISMATCH
+        else -> error("Unknown budget plan carry rejection: $value")
+    }
+
     private fun requireFixture(name: String): File {
         var directory = File(requireNotNull(System.getProperty("user.dir"))).absoluteFile
         while (true) {
