@@ -269,6 +269,16 @@ enum AppFormatter {
         return fmt.string(from: value as NSDecimalNumber) ?? "$0"
     }
 
+    /// The price hero as two runs: the whole dollars, and the separator plus
+    /// cents, so the decimals can take the `priceHeroDecimals` role and colour.
+    /// Always carries cents, unlike `formatCurrency` above 1000.
+    static func priceHeroParts(_ value: Decimal) -> (integer: String, decimals: String) {
+        let text = centsCurrencyFormatter.string(from: value as NSDecimalNumber) ?? "$0.00"
+        let separator = centsCurrencyFormatter.currencyDecimalSeparator ?? "."
+        guard let range = text.range(of: separator, options: .backwards) else { return (text, "") }
+        return (String(text[..<range.lowerBound]), String(text[range.lowerBound...]))
+    }
+
     // MARK: - Month grouping (shared by the buys and bill-pay lists)
 
     private static let monthFormatterLock = NSLock()

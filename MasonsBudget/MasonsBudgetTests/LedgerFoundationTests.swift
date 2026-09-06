@@ -88,6 +88,23 @@ final class LedgerFoundationTests: XCTestCase {
         }
     }
 
+    func testPriceHeroSplitsWholeDollarsFromCents() throws {
+        let reference = NumberFormatter()
+        reference.numberStyle = .currency
+        reference.currencyCode = "USD"
+        reference.minimumFractionDigits = 2
+        reference.maximumFractionDigits = 2
+        let separator = try XCTUnwrap(reference.currencyDecimalSeparator)
+        for raw in ["112345.67", "950.5", "0", "1000000"] {
+            let value = try XCTUnwrap(Decimal(string: raw))
+            let parts = AppFormatter.priceHeroParts(value)
+            let full = try XCTUnwrap(reference.string(from: value as NSDecimalNumber))
+            XCTAssertEqual(parts.integer + parts.decimals, full, raw)
+            XCTAssertTrue(parts.decimals.hasPrefix(separator), raw)
+            XCTAssertEqual(parts.decimals.count, separator.count + 2, raw)
+        }
+    }
+
     func testGlowKeepsReleaseAlpha() {
         XCTAssertEqual(LedgerGlowToken.opacity, 0.35)
         XCTAssertEqual(LedgerGlowToken.restingRadius, 18)
@@ -228,6 +245,14 @@ final class LedgerFoundationTests: XCTestCase {
         let amount = try XCTUnwrap(viewSources().first { $0.file == "AmountView.swift" })
         XCTAssertFalse(amount.lines.contains { $0.contains(".opacity(") }, "AmountView must not composite alpha text")
         XCTAssertTrue(amount.lines.contains { $0.contains("accent ? theme.accent : theme.textMuted") })
+    }
+
+    /// The price hero draws its cents with the decimals role and token.
+    func testPriceHeroDrawsTheDecimalsToken() throws {
+        let price = try XCTUnwrap(viewSources().first { $0.file == "BitcoinOverviewView.swift" })
+        XCTAssertTrue(price.lines.contains { $0.contains(".ledgerType(.priceHeroDecimals)") })
+        XCTAssertTrue(price.lines.contains { $0.contains("tokens.colors.priceHeroDecimals") })
+        XCTAssertTrue(price.lines.contains { $0.contains(".ledgerGlow(radius: glowRadius)") })
     }
 
     /// Source-level guard: views draw only ledger roles and SF Symbol glyphs.
