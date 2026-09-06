@@ -115,7 +115,7 @@ object LedgerPalettes {
     )
 }
 
-/** Official variable font registered at handoff weights 300, 400, 500, 600, and 700. */
+/** Official static files at handoff weights 300, 400, 500, 600, and 700. */
 val SourceCodePro: FontFamily = FontFamily(
     sourceCodeProFont(FontWeight.Light),
     sourceCodeProFont(FontWeight.Normal),
@@ -124,9 +124,20 @@ val SourceCodePro: FontFamily = FontFamily(
     sourceCodeProFont(FontWeight.Bold),
 )
 
+/**
+ * One static file per weight. The variable file's default instance is weight 200, and a
+ * runtime weight axis that fails to apply renders the whole app as hairlines, so the
+ * weight now lives in the file itself.
+ */
 private fun sourceCodeProFont(
     weight: FontWeight,
-    @FontRes resource: Int = R.font.source_code_pro_variable,
+    @FontRes resource: Int = when (weight) {
+        FontWeight.Light -> R.font.source_code_pro_light
+        FontWeight.Medium -> R.font.source_code_pro_medium
+        FontWeight.SemiBold -> R.font.source_code_pro_semibold
+        FontWeight.Bold -> R.font.source_code_pro_bold
+        else -> R.font.source_code_pro_regular
+    },
 ): Font = Font(resource, weight, FontStyle.Normal)
 
 /** Explicit even with a monospaced face, so figures keep the contract if the face changes. */
