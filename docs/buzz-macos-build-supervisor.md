@@ -39,9 +39,11 @@ After clearing supplementary groups and dropping GID and UID, the supervisor
 executes installed `buzz_macos_build_boundary.py --payload ROOT` with a minimal
 environment and closed inherited descriptors. Only that unprivileged payload
 starts Seatbelt, clones the fixed public repository, and builds the exact source.
-The supervisor does not execute checkout code as root. Build stdout/stderr go to
-`/dev/null` so source-controlled output cannot emit runner workflow commands.
-Failures produce a fixed generic message.
+The supervisor does not execute checkout code as root. The supervisor drains build stdout/stderr through a pipe and retains only the
+last 64 KiB in memory. On failure it emits that diagnostic tail as one base64
+line, which cannot emit runner workflow commands or terminal control bytes.
+Decode that public tail locally to investigate Hermit/compiler failures. The
+boundary failure message itself is fixed and does not interpolate input values.
 
 Before exporting, the supervisor kills all real/effective build-UID processes,
 reaps its child, and requires two empty process readbacks. It opens the caller's

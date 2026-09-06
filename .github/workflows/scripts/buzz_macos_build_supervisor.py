@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 """Fixed sudo entrypoint. Never imports or executes workflow-controlled code as root."""
+import base64
 import fcntl
 import hashlib
 import json
@@ -187,8 +188,26 @@ def export_files(root, output_fd, uid, caller_uid, caller_gid, arch):
     finally:
         os.close(source_fd)
 
+def drain_log(fd, tail):
+    # Fixed work per poll prevents a continuously writing child from hiding timeout.
+    for _ in range(16):
+        try:
+            chunk = os.read(fd, 16384)
+        except BlockingIOError:
+            break
+        if not chunk:
+            break
+        tail.extend(chunk)
+        del tail[:-65536]
+
+def report_log(tail):
+    if tail:
+        # Base64 cannot inject GitHub workflow commands or terminal control bytes.
+        print('Buzz unsigned diagnostic tail (base64): ' + base64.b64encode(tail).decode('ascii'), file=sys.stderr)
+
 def execute(root, request, builder):
     read_fd, write_fd = os.pipe()
+    log_read, log_write = os.pipe()
     pid = os.fork()
     if pid == 0:
         try:
@@ -196,9 +215,9 @@ def execute(root, request, builder):
             os.dup2(read_fd, 0)
             os.close(read_fd)
             # Do not inherit runner pipes, sockets, terminal, credentials, or root FDs.
-            null_fd = os.open('/dev/null', os.O_RDWR)
-            os.dup2(null_fd, 1)
-            os.dup2(null_fd, 2)
+            os.close(log_read)
+            os.dup2(log_write, 1)
+            os.dup2(log_write, 2)
             os.closerange(3, max(256, *map(int, os.listdir('/dev/fd'))) + 1)
             os.setsid()
             os.setgroups([])
@@ -213,6 +232,9 @@ def execute(root, request, builder):
         except BaseException:
             os._exit(125)
     os.close(read_fd)
+    os.close(log_write)
+    os.set_blocking(log_read, False)
+    tail = bytearray()
     try:
         payload = json.dumps(request).encode()
         require(len(payload) < 16384, 'payload too large')
@@ -220,18 +242,27 @@ def execute(root, request, builder):
             stream.write(payload)
         deadline = time.monotonic() + 7200
         while time.monotonic() < deadline:
+            drain_log(log_read, tail)
             found, status = os.waitpid(pid, os.WNOHANG)
             if found:
+                drain_log(log_read, tail)
                 require(os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, 'unsigned build failed')
                 return
             time.sleep(0.25)
         raise BoundaryError('unsigned build timed out')
+    except BaseException:
+        drain_log(log_read, tail)
+        report_log(tail)
+        raise
     finally:
-        stop_builder(builder.pw_uid, pid)
         try:
-            os.waitpid(pid, os.WNOHANG)
-        except ChildProcessError:
-            pass
+            stop_builder(builder.pw_uid, pid)
+            try:
+                os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                pass
+        finally:
+            os.close(log_read)
 
 def main():
     require(sys.platform == 'darwin' and os.geteuid() == 0 and len(sys.argv) == 1, 'fixed macOS root entrypoint only')
