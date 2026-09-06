@@ -82,7 +82,12 @@ struct ColorTokens {
     let text: Color
     let textMuted: Color
     let textFaint: Color
+    /// Bitcoin text and line art: F7931A dark, 9E5104 light.
     let accent: Color
+    /// Filled controls and cards: F7931A in both treatments, always under `onAccent`.
+    let accentFill: Color
+    /// Ink on `accentFill`: 0A0D0C in both treatments (8.5:1).
+    let onAccent: Color
     let accentDeep: Color
     let accentSoft: Color
     let accentSoft2: Color
@@ -111,6 +116,8 @@ extension ColorTokens {
         textMuted: LedgerPalette.terminalLedger.secondaryForeground,
         textFaint: LedgerPalette.terminalLedger.tertiaryForeground,
         accent: LedgerPalette.terminalLedger.accentForeground,
+        accentFill: LedgerPalette.terminalLedger.accentFill,
+        onAccent: LedgerPalette.terminalLedger.foregroundOnAccentFill,
         accentDeep: LedgerPalette.terminalLedger.accentFill,
         accentSoft: LedgerPalette.terminalLedger.accentSoft,
         accentSoft2: LedgerPalette.terminalLedger.accentFill.opacity(0.24),
@@ -138,6 +145,8 @@ extension ColorTokens {
         textMuted: LedgerPalette.daylightLedger.secondaryForeground,
         textFaint: LedgerPalette.daylightLedger.tertiaryForeground,
         accent: LedgerPalette.daylightLedger.accentForeground,
+        accentFill: LedgerPalette.daylightLedger.accentFill,
+        onAccent: LedgerPalette.daylightLedger.foregroundOnAccentFill,
         accentDeep: LedgerPalette.daylightLedger.accentFill,
         accentSoft: LedgerPalette.daylightLedger.accentSoft,
         accentSoft2: LedgerPalette.daylightLedger.accentFill.opacity(0.22),

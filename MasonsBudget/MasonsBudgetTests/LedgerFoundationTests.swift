@@ -45,6 +45,49 @@ final class LedgerFoundationTests: XCTestCase {
         XCTAssertEqual(ColorTokens.light.accentDeep, Color(hex: 0xF7931A))
     }
 
+    func testCompatibilityThemeExposesTheFillAndItsInk() {
+        XCTAssertEqual(ColorTokens.dark.accentFill, Color(hex: 0xF7931A))
+        XCTAssertEqual(ColorTokens.light.accentFill, Color(hex: 0xF7931A))
+        XCTAssertEqual(ColorTokens.dark.onAccent, Color(hex: 0x0A0D0C))
+        XCTAssertEqual(ColorTokens.light.onAccent, Color(hex: 0x0A0D0C))
+    }
+
+    func testAccentSoftTintsFromEachTreatmentsTextInk() {
+        XCTAssertEqual(dark.accentSoft, Color(hex: 0xF7931A, opacity: 0.12))
+        XCTAssertEqual(light.accentSoft, Color(hex: 0x9E5104, opacity: 0.10))
+    }
+
+    // MARK: - Contrast
+
+    /// WCAG 2 contrast from the resolved linear sRGB components.
+    private func contrast(_ ink: Color, on fill: Color) -> Double {
+        func luminance(_ color: Color) -> Double {
+            let resolved = color.resolve(in: EnvironmentValues())
+            return 0.2126 * Double(resolved.linearRed)
+                + 0.7152 * Double(resolved.linearGreen)
+                + 0.0722 * Double(resolved.linearBlue)
+        }
+        let lighter = max(luminance(ink), luminance(fill))
+        let darker = min(luminance(ink), luminance(fill))
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    func testInkOnAccentFillClearsAAInBothTreatments() {
+        for palette in [dark, light] {
+            XCTAssertGreaterThanOrEqual(contrast(palette.foregroundOnAccentFill, on: palette.accentFill), 4.5)
+        }
+        for tokens in [ColorTokens.dark, ColorTokens.light] {
+            XCTAssertGreaterThanOrEqual(contrast(tokens.onAccent, on: tokens.accentFill), 4.5)
+        }
+    }
+
+    /// The swipe delete action draws the page colour on the loss fill.
+    func testPageInkClearsAAOnTheLossFill() {
+        for tokens in [ColorTokens.dark, ColorTokens.light] {
+            XCTAssertGreaterThanOrEqual(contrast(tokens.bg, on: tokens.danger), 4.5)
+        }
+    }
+
     func testGlowKeepsReleaseAlpha() {
         XCTAssertEqual(LedgerGlowToken.opacity, 0.35)
         XCTAssertEqual(LedgerGlowToken.restingRadius, 18)
@@ -153,27 +196,44 @@ final class LedgerFoundationTests: XCTestCase {
         )
     }
 
-    /// Source-level guard: views draw only ledger roles and SF Symbol glyphs.
-    /// Runs when the test bundle sits next to the checkout; skips otherwise.
-    func testViewsDrawOnlyLedgerRolesAndIconGlyphs() throws {
-        let projectRoot = URL(fileURLWithPath: #filePath)
+    // MARK: - Source scans
+
+    private var projectRoot: URL {
+        URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("MasonsBudget")
+    }
+
+    /// Every Swift file under Views/ as lines. Skips when the test bundle does
+    /// not sit next to the checkout.
+    private func viewSources() throws -> [(file: String, lines: [String])] {
         let viewsRoot = projectRoot.appendingPathComponent("Views")
-        guard let enumerator = FileManager.default.enumerator(at: viewsRoot, includingPropertiesForKeys: nil) else {
+        var sources: [(file: String, lines: [String])] = []
+        if let enumerator = FileManager.default.enumerator(at: viewsRoot, includingPropertiesForKeys: nil) {
+            for case let url as URL in enumerator where url.pathExtension == "swift" {
+                let source = try String(contentsOf: url, encoding: .utf8)
+                sources.append((url.lastPathComponent, source.components(separatedBy: "\n")))
+            }
+        }
+        guard !sources.isEmpty else {
             throw XCTSkip("Source tree not available at \(viewsRoot.path)")
         }
+        return sources
+    }
+
+    /// Source-level guard: views draw only ledger roles and SF Symbol glyphs.
+    /// Runs when the test bundle sits next to the checkout; skips otherwise.
+    func testViewsDrawOnlyLedgerRolesAndIconGlyphs() throws {
         var offenders: [String] = []
         var roleSites = 0
-        for case let url as URL in enumerator where url.pathExtension == "swift" {
-            let source = try String(contentsOf: url, encoding: .utf8)
-            for (index, line) in source.components(separatedBy: "\n").enumerated() {
+        for source in try viewSources() {
+            for (index, line) in source.lines.enumerated() {
                 roleSites += line.components(separatedBy: ".ledgerType(").count - 1
                 let usesAppFont = line.contains("AppFont.") && !line.contains("AppFont.icon")
                 let usesRawFont = line.contains(".font(") && !line.contains(".font(AppFont.icon")
                 if usesAppFont || usesRawFont {
-                    offenders.append("\(url.lastPathComponent):\(index + 1): \(line.trimmingCharacters(in: .whitespaces))")
+                    offenders.append("\(source.file):\(index + 1): \(line.trimmingCharacters(in: .whitespaces))")
                 }
             }
         }

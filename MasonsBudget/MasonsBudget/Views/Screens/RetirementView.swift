@@ -530,10 +530,10 @@ struct RetirementView: View {
                 } label: {
                     Text("\(yr)yr")
                         .ledgerType(.chip)
-                        .foregroundStyle(projectionHorizon == yr ? .white : theme.textMuted)
+                        .foregroundStyle(projectionHorizon == yr ? theme.onAccent : theme.textMuted)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 7)
-                        .background(projectionHorizon == yr ? theme.accent : Color.clear)
+                        .background(projectionHorizon == yr ? theme.accentFill : Color.clear)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)

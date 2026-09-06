@@ -92,7 +92,8 @@ extension LedgerPalette {
         // Filled controls keep F7931A with dark ink.
         accentForeground: Color(hex: 0x9E5104),
         accentFill: Color(hex: 0xF7931A),
-        accentSoft: Color(hex: 0xC96A05, opacity: 0.10),
+        // Same base as FOUNDATIONS and Android: the light text ink at 0.10.
+        accentSoft: Color(hex: 0x9E5104, opacity: 0.10),
         priceHeroDecimals: Color(hex: 0x9E5104),
         foregroundOnAccentFill: Color(hex: 0x0A0D0C),
         // Exact Display P3 encodings of oklch(0.52 0.13 158) and

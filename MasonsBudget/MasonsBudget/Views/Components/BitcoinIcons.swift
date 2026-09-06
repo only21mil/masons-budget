@@ -26,7 +26,7 @@ enum CategoryGlyph: String, CaseIterable {
 struct CatGlyphView: View {
     let kind: String
     var size: CGFloat = 18
-    var color: Color = .white
+    let color: Color
 
     private var glyph: CategoryGlyph {
         CategoryGlyph(rawValue: kind) ?? .box

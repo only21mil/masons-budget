@@ -306,9 +306,9 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "sun.max.fill")
                         .font(AppFont.icon(size: 11, weight: .semibold))
-                        .foregroundStyle(appearanceMode == .light ? .white : theme.textMuted)
+                        .foregroundStyle(appearanceMode == .light ? theme.onAccent : theme.textMuted)
                         .frame(width: 28, height: 24)
-                        .background(appearanceMode == .light ? theme.accent : Color.clear)
+                        .background(appearanceMode == .light ? theme.accentFill : Color.clear)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -319,9 +319,9 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "moon.fill")
                         .font(AppFont.icon(size: 11, weight: .semibold))
-                        .foregroundStyle(appearanceMode == .dark ? .white : theme.textMuted)
+                        .foregroundStyle(appearanceMode == .dark ? theme.onAccent : theme.textMuted)
                         .frame(width: 28, height: 24)
-                        .background(appearanceMode == .dark ? theme.accent : Color.clear)
+                        .background(appearanceMode == .dark ? theme.accentFill : Color.clear)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -339,12 +339,12 @@ struct ContentView: View {
             } label: {
                 HStack(spacing: 8) {
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(LinearGradient(colors: [theme.accent, theme.accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .fill(theme.accentFill)
                         .frame(width: 22, height: 22)
                         .overlay(
                             Text(String(activeMember.displayName.prefix(1)))
                                 .ledgerType(.chip)
-                                .foregroundStyle(.white),
+                                .foregroundStyle(theme.onAccent),
                         )
 
                     VStack(alignment: .leading, spacing: 1) {
@@ -385,12 +385,11 @@ struct ContentView: View {
                     Spacer()
                     Text("\u{2318}N")
                         .ledgerType(.rowMeta)
-                        .foregroundStyle(.white.opacity(0.85))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(theme.onAccent)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(theme.accent)
+                .background(theme.accentFill)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
@@ -448,12 +447,12 @@ struct ContentView: View {
             showProfileSwitcher = true
         } label: {
             RoundedRectangle(cornerRadius: 10)
-                .fill(LinearGradient(colors: [theme.accent, theme.accentDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .fill(theme.accentFill)
                 .frame(width: 32, height: 32)
                 .overlay(
                     Text(String(activeMember.displayName.prefix(1)))
                         .ledgerType(.rowFigure)
-                        .foregroundStyle(.white),
+                        .foregroundStyle(theme.onAccent),
                 )
                 .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
         }
@@ -467,9 +466,9 @@ struct ContentView: View {
         } label: {
             Image(systemName: "plus")
                 .font(AppFont.icon(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(theme.onAccent)
                 .frame(width: 32, height: 32)
-                .background(theme.accent)
+                .background(theme.accentFill)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
         }
@@ -505,9 +504,9 @@ struct ContentView: View {
                 if syncStatus.pendingCount > 1 {
                     Text("\(syncStatus.pendingCount)")
                         .ledgerType(.chip)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(theme.onAccent)
                         .frame(minWidth: 14, minHeight: 14)
-                        .background(theme.accent)
+                        .background(theme.accentFill)
                         .clipShape(Circle())
                         .offset(x: 4, y: -4)
                 }

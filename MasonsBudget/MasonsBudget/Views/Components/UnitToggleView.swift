@@ -37,10 +37,10 @@ struct UnitToggleView: View {
                 } label: {
                     Text(u.label)
                         .ledgerType(size.role)
-                        .foregroundStyle(unit == u ? .white : theme.textMuted)
+                        .foregroundStyle(unit == u ? theme.onAccent : theme.textMuted)
                         .frame(height: size.height)
                         .padding(.horizontal, size.horizontalPadding)
-                        .background(unit == u ? theme.accent : .clear)
+                        .background(unit == u ? theme.accentFill : .clear)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)

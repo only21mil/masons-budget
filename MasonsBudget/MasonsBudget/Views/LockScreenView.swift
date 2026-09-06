@@ -18,10 +18,10 @@ struct LockScreenView: View {
                     .foregroundStyle(theme.text)
                 Button("Unlock") { authenticate() }
                     .ledgerType(.button)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(theme.onAccent)
                     .padding(.horizontal, 32)
                     .padding(.vertical, 12)
-                    .background(theme.accent)
+                    .background(theme.accentFill)
                     .clipShape(Capsule())
 
                 if let authError {
