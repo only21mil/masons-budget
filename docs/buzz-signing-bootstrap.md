@@ -6,10 +6,14 @@ not extract that credential, run Buzz code, build an app, revoke certificates,
 or publish releases. The existing App Store workflow inputs and defaults remain
 unchanged. All new operations require an explicit `purpose`.
 
-Victor's 2026-09-05 instruction authorizes the minimum Buzz setup and future
-routine releases through this account and route. The root controller binds
-the reviewed candidate and exact phase inputs before execution. No additional
-user permission question is needed for a covered update. Review still applies.
+Victor's 2026-09-05 instruction authorizes this minimum setup and routine
+`only21mil/buzz` updates on Apple team `384ZGKG4GB`, using the existing
+`only21mil/masons-budget` protected ASC credential and manual Mac signing route.
+It does not authorize a different product, team, account or credential route,
+role changes, certificate revocation, or unrelated infrastructure. Within that
+scope, updates reuse the retained signing assets without another permission
+question. The root controller still binds the reviewed candidate and exact
+phase inputs before execution; review and publication gates remain required.
 
 ## Current evidence and decision
 
@@ -82,8 +86,13 @@ entries, and never sources the file into a shell.
 4. **Assemble and retain the p12.** Download the applicable public Developer ID
    intermediate from Apple's PKI page and Apple Root CA from
    `https://www.apple.com/appleca/AppleIncRootCertificate.cer`. The script pins
-   that root's SHA-256, verifies issuer signatures, validity, the Developer ID
-   extension, team and retained private-key match. Pass those public paths:
+   that root's exact DER SHA-256 as the trust anchor. It verifies the
+   intermediate and leaf issuer signatures, every certificate's validity,
+   the Developer ID extension, team and retained private-key match. The pinned
+   root's legacy SHA-1 self-signature is outside the certificate path under
+   RFC 5280 section 6.1 and is not reverified. Python cryptography 49.0.0 rejects
+   that SHA-1 operation but verifies both Apple Developer ID intermediates.
+   Pass those public paths:
 
    ```sh
    python3 .github/workflows/scripts/buzz_signing_store.py assemble-p12 \
@@ -107,6 +116,9 @@ entries, and never sources the file into a shell.
    ```
 
    Add `--execute` after root GO. The subprocess output is captured in memory.
+   The parser follows CLI 2.11.4's stdout branch without `--write-keys`:
+   `Private: (Keep it secret!)`, then the private key, then `Public:` and the
+   public key. The synthetic regression fixture covers that exact layout.
    Its private value is never printed or written to a temporary key file.
    The retained names are `BUZZ_TAURI_SIGNING_PRIVATE_KEY` and
    `BUZZ_TAURI_SIGNING_PUBLIC_KEY`. The optional updater password is empty.
@@ -164,6 +176,7 @@ The later signer owns run-scoped keychain and key-file cleanup on every exit.
 
 ## Primary sources
 
+- [RFC 5280 trust anchors and certificate path validation](https://www.rfc-editor.org/rfc/rfc5280.html#section-6.1)
 - [Apple Developer ID requirements](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/)
 - [Apple certificate type API](https://developer.apple.com/documentation/appstoreconnectapi/certificatetype)
 - [Apple certificate create attributes](https://developer.apple.com/documentation/appstoreconnectapi/certificatecreaterequest/data-data.dictionary/attributes-data.dictionary)

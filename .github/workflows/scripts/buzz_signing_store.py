@@ -148,19 +148,25 @@ def load_cert(path):
     return x509.load_pem_x509_certificate(raw) if raw.startswith(b"-----BEGIN") else x509.load_der_x509_certificate(raw)
 
 
-def assemble_p12(store, cert_path, intermediate_path, root_path):
-    if any(name in store.values for name in SECRET_NAMES[:2]):
-        raise Hold("Buzz p12 already exists; no overwrite or rotation permitted")
-    key = serialization.load_pem_private_key(base64.b64decode(store.require("BUZZ_DEVELOPER_ID_PRIVATE_KEY_PEM_B64"), validate=True), None)
-    cert, intermediate, root = (load_cert(p) for p in (cert_path, intermediate_path, root_path))
+def verify_apple_chain(cert, intermediate, root):
     now = datetime.now(timezone.utc)
     if any(c.not_valid_before_utc > now or c.not_valid_after_utc <= now for c in (cert, intermediate, root)):
         raise Hold("Certificate chain is outside its validity period")
     if root.fingerprint(hashes.SHA256()).hex() != APPLE_ROOT_SHA256:
         raise Hold("Apple root fingerprint mismatch")
-    root.verify_directly_issued_by(root)
+    # The exact DER SHA-256 pin establishes the trust anchor (RFC 5280 §6.1).
+    # Its legacy SHA-1 self-signature is not a path signature and is unsupported
+    # by current backends. Intermediate and leaf signatures remain mandatory.
     intermediate.verify_directly_issued_by(root)
     cert.verify_directly_issued_by(intermediate)
+
+
+def assemble_p12(store, cert_path, intermediate_path, root_path):
+    if any(name in store.values for name in SECRET_NAMES[:2]):
+        raise Hold("Buzz p12 already exists; no overwrite or rotation permitted")
+    key = serialization.load_pem_private_key(base64.b64decode(store.require("BUZZ_DEVELOPER_ID_PRIVATE_KEY_PEM_B64"), validate=True), None)
+    cert, intermediate, root = (load_cert(p) for p in (cert_path, intermediate_path, root_path))
+    verify_apple_chain(cert, intermediate, root)
     if public_bytes(key.public_key()) != public_bytes(cert.public_key()):
         raise Hold("Issued certificate does not match retained Buzz private key")
     teams = cert.subject.get_attributes_for_oid(NameOID.ORGANIZATIONAL_UNIT_NAME)
