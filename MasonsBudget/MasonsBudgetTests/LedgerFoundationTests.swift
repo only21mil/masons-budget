@@ -277,12 +277,17 @@ final class LedgerFoundationTests: XCTestCase {
         var offenders: [String] = []
         var roleSites = 0
         for source in try viewSources() {
+            var previousLine = ""
             for (index, line) in source.lines.enumerated() {
                 roleSites += line.components(separatedBy: ".ledgerType(").count - 1
                 let usesAppFont = line.contains("AppFont.") && !line.contains("AppFont.icon")
-                let usesRawFont = line.contains(".font(") && !line.contains(".font(AppFont.icon")
-                if usesAppFont || usesRawFont {
+                // A glyph size may only follow an Image; text of any kind takes a role.
+                let fontOffGlyph = line.contains(".font(") && !line.contains("Image(") && !previousLine.contains("Image(")
+                if usesAppFont || fontOffGlyph {
                     offenders.append("\(source.file):\(index + 1): \(line.trimmingCharacters(in: .whitespaces))")
+                }
+                if !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                    previousLine = line
                 }
             }
         }
@@ -295,6 +300,59 @@ final class LedgerFoundationTests: XCTestCase {
             XCTAssertTrue(line.contains("icon"), "AppFont keeps glyph sizes only: \(line.trimmingCharacters(in: .whitespaces))")
         }
     }
+
+    /// The numeric keypad draws its digits on the amount input role, not a glyph size.
+    func testKeypadDigitsDrawTheAmountInputRole() throws {
+        let addTransaction = try XCTUnwrap(viewSources().first { $0.file == "AddTransactionView.swift" })
+        let amountInputSites = addTransaction.lines.filter { $0.contains(".ledgerType(.amountInput)") }.count
+        XCTAssertGreaterThanOrEqual(amountInputSites, 2, "amount field and keypad")
+        XCTAssertFalse(addTransaction.lines.contains { $0.contains("AppFont.iconLarge") })
+    }
+
+    // MARK: - System chrome
+
+    func testChromeSpecsSitOnTheTypeFloor() {
+        XCTAssertEqual(LedgerChromeSpec.tabLabel.size, 11)
+        XCTAssertEqual(LedgerChromeSpec.tabLabel.weight, .semibold)
+        XCTAssertEqual(LedgerChromeSpec.tabLabel.trackingEm, 0.06, accuracy: 0.0001)
+        XCTAssertTrue(LedgerChromeSpec.tabLabel.uppercase)
+        XCTAssertEqual(LedgerChromeSpec.badge.size, 11)
+        XCTAssertEqual(LedgerChromeSpec.badge.weight, .semibold)
+        XCTAssertEqual(LedgerChromeSpec.inlineTitle.size, 15)
+        XCTAssertEqual(LedgerChromeSpec.inlineTitle.weight, .semibold)
+        XCTAssertEqual(LedgerChromeSpec.largeTitle.size, 24)
+        XCTAssertEqual(LedgerChromeSpec.largeTitle.weight, .semibold)
+        XCTAssertEqual(LedgerChromeSpec.barButton.size, 13)
+        XCTAssertEqual(LedgerChromeSpec.barButton.weight, .medium)
+        let specifications = [
+            LedgerChromeSpec.tabLabel, LedgerChromeSpec.badge, LedgerChromeSpec.inlineTitle,
+            LedgerChromeSpec.largeTitle, LedgerChromeSpec.barButton,
+        ]
+        for specification in specifications {
+            XCTAssertGreaterThanOrEqual(specification.size, LedgerTypeRole.minimumSize)
+            XCTAssertLessThanOrEqual(specification.trackingEm, LedgerTypeRole.maximumTrackingEm)
+            XCTAssertTrue(specification.font == Font.custom(specification.weight.postScriptName, size: specification.size, relativeTo: specification.relativeTo))
+        }
+    }
+
+    #if canImport(UIKit)
+        private func components(_ color: UIColor, style: UIUserInterfaceStyle) -> (UInt, UInt, UInt) {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            color.resolvedColor(with: UITraitCollection(userInterfaceStyle: style)).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            return (UInt((red * 255).rounded()), UInt((green * 255).rounded()), UInt((blue * 255).rounded()))
+        }
+
+        func testChromeColoursFollowTheInterfaceStyle() {
+            XCTAssertEqual(components(LedgerChrome.color(\.accentFill), style: .dark).0, 0xF7)
+            XCTAssertEqual(components(LedgerChrome.color(\.accentFill), style: .light).0, 0xF7)
+            XCTAssertEqual(components(LedgerChrome.color(\.foregroundOnAccentFill), style: .dark).0, 0x0A)
+            XCTAssertEqual(components(LedgerChrome.color(\.foregroundOnAccentFill), style: .light).0, 0x0A)
+            XCTAssertEqual(components(LedgerChrome.color(\.accentForeground), style: .dark).0, 0xF7)
+            XCTAssertEqual(components(LedgerChrome.color(\.accentForeground), style: .light).0, 0x9E)
+            XCTAssertEqual(components(LedgerChrome.color(\.panel), style: .dark).1, 0x10)
+            XCTAssertEqual(components(LedgerChrome.color(\.panel), style: .light).1, 0xEB)
+        }
+    #endif
 
     func testStaticWeightsMapToBundledFaces() {
         XCTAssertEqual(LedgerFontWeight.allCases.map(\.rawValue), [300, 400, 500, 600, 700])

@@ -554,7 +554,7 @@ struct AddTransactionView: View {
                             handleKey(key)
                         } label: {
                             Text(key)
-                                .font(AppFont.iconLarge)
+                                .ledgerType(.amountInput)
                                 .foregroundStyle(theme.text)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 56)
