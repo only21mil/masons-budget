@@ -139,10 +139,10 @@ struct TaskDetailView: View {
         Button(action: save) {
             Text("Save changes")
                 .ledgerType(.button)
-                .foregroundStyle(.white)
+                .foregroundStyle(theme.onAccent)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 13)
-                .background(theme.accent)
+                .background(theme.accentFill)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)

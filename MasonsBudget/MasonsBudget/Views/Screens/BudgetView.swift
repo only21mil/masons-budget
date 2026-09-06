@@ -148,7 +148,7 @@ struct BudgetView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(label) '\(String(year).suffix(2))\(offset == 0 ? " · now" : "")")
                     .ledgerType(.chip)
-                    .opacity(isSelected ? 0.85 : 0.55)
+                    .foregroundStyle(isSelected ? theme.onAccent : theme.textMuted)
 
                 if let rate {
                     Text("\(rate)%")
@@ -158,15 +158,15 @@ struct BudgetView: View {
                         .ledgerType(.rowFigure)
                 }
             }
-            .foregroundStyle(isSelected ? .white : theme.text)
+            .foregroundStyle(isSelected ? theme.onAccent : theme.text)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(minWidth: 64, alignment: .leading)
-            .background(isSelected ? theme.accent : theme.surface)
+            .background(isSelected ? theme.accentFill : theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(isSelected ? theme.accent : theme.border, lineWidth: 1),
+                    .stroke(isSelected ? theme.accentFill : theme.border, lineWidth: 1),
             )
             .ledgerAnimation(.chipAndNavigation, value: isSelected)
         }

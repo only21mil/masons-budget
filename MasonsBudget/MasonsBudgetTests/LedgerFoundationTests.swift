@@ -45,6 +45,68 @@ final class LedgerFoundationTests: XCTestCase {
         XCTAssertEqual(ColorTokens.light.accentDeep, Color(hex: 0xF7931A))
     }
 
+    func testCompatibilityThemeExposesTheFillAndItsInk() {
+        XCTAssertEqual(ColorTokens.dark.accentFill, Color(hex: 0xF7931A))
+        XCTAssertEqual(ColorTokens.light.accentFill, Color(hex: 0xF7931A))
+        XCTAssertEqual(ColorTokens.dark.onAccent, Color(hex: 0x0A0D0C))
+        XCTAssertEqual(ColorTokens.light.onAccent, Color(hex: 0x0A0D0C))
+    }
+
+    func testAccentSoftTintsFromEachTreatmentsTextInk() {
+        XCTAssertEqual(dark.accentSoft, Color(hex: 0xF7931A, opacity: 0.12))
+        XCTAssertEqual(light.accentSoft, Color(hex: 0x9E5104, opacity: 0.10))
+    }
+
+    // MARK: - Contrast
+
+    /// WCAG 2 contrast from the resolved linear sRGB components.
+    private func contrast(_ ink: Color, on fill: Color) -> Double {
+        func luminance(_ color: Color) -> Double {
+            let resolved = color.resolve(in: EnvironmentValues())
+            return 0.2126 * Double(resolved.linearRed)
+                + 0.7152 * Double(resolved.linearGreen)
+                + 0.0722 * Double(resolved.linearBlue)
+        }
+        let lighter = max(luminance(ink), luminance(fill))
+        let darker = min(luminance(ink), luminance(fill))
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    func testInkOnAccentFillClearsAAInBothTreatments() {
+        for palette in [dark, light] {
+            XCTAssertGreaterThanOrEqual(contrast(palette.foregroundOnAccentFill, on: palette.accentFill), 4.5)
+        }
+        for tokens in [ColorTokens.dark, ColorTokens.light] {
+            XCTAssertGreaterThanOrEqual(contrast(tokens.onAccent, on: tokens.accentFill), 4.5)
+        }
+    }
+
+    /// The swipe delete action and the Bill Pay card draw the page colour on
+    /// the loss and plum fills.
+    func testPageInkClearsAAOnTheLossAndPlumFills() {
+        for tokens in [ColorTokens.dark, ColorTokens.light] {
+            XCTAssertGreaterThanOrEqual(contrast(tokens.bg, on: tokens.danger), 4.5)
+            XCTAssertGreaterThanOrEqual(contrast(tokens.bg, on: tokens.plum), 4.5)
+        }
+    }
+
+    func testPriceHeroSplitsWholeDollarsFromCents() throws {
+        let reference = NumberFormatter()
+        reference.numberStyle = .currency
+        reference.currencyCode = "USD"
+        reference.minimumFractionDigits = 2
+        reference.maximumFractionDigits = 2
+        let separator = try XCTUnwrap(reference.currencyDecimalSeparator)
+        for raw in ["112345.67", "950.5", "0", "1000000"] {
+            let value = try XCTUnwrap(Decimal(string: raw))
+            let parts = AppFormatter.priceHeroParts(value)
+            let full = try XCTUnwrap(reference.string(from: value as NSDecimalNumber))
+            XCTAssertEqual(parts.integer + parts.decimals, full, raw)
+            XCTAssertTrue(parts.decimals.hasPrefix(separator), raw)
+            XCTAssertEqual(parts.decimals.count, separator.count + 2, raw)
+        }
+    }
+
     func testGlowKeepsReleaseAlpha() {
         XCTAssertEqual(LedgerGlowToken.opacity, 0.35)
         XCTAssertEqual(LedgerGlowToken.restingRadius, 18)
@@ -153,27 +215,79 @@ final class LedgerFoundationTests: XCTestCase {
         )
     }
 
-    /// Source-level guard: views draw only ledger roles and SF Symbol glyphs.
-    /// Runs when the test bundle sits next to the checkout; skips otherwise.
-    func testViewsDrawOnlyLedgerRolesAndIconGlyphs() throws {
-        let projectRoot = URL(fileURLWithPath: #filePath)
+    // MARK: - Source scans
+
+    private var projectRoot: URL {
+        URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("MasonsBudget")
+    }
+
+    /// Every Swift file under Views/ as lines. Skips when the test bundle does
+    /// not sit next to the checkout.
+    private func viewSources() throws -> [(file: String, lines: [String])] {
         let viewsRoot = projectRoot.appendingPathComponent("Views")
-        guard let enumerator = FileManager.default.enumerator(at: viewsRoot, includingPropertiesForKeys: nil) else {
+        var sources: [(file: String, lines: [String])] = []
+        if let enumerator = FileManager.default.enumerator(at: viewsRoot, includingPropertiesForKeys: nil) {
+            for case let url as URL in enumerator where url.pathExtension == "swift" {
+                let source = try String(contentsOf: url, encoding: .utf8)
+                sources.append((url.lastPathComponent, source.components(separatedBy: "\n")))
+            }
+        }
+        guard !sources.isEmpty else {
             throw XCTSkip("Source tree not available at \(viewsRoot.path)")
         }
+        return sources
+    }
+
+    /// The unit suffix is opaque: the secondary tier, the accent, or the
+    /// caller's colour. Alpha text undercut the opaque tiers.
+    func testAmountSuffixDrawsOpaqueInk() throws {
+        let amount = try XCTUnwrap(viewSources().first { $0.file == "AmountView.swift" })
+        XCTAssertFalse(amount.lines.contains { $0.contains(".opacity(") }, "AmountView must not composite alpha text")
+        XCTAssertTrue(amount.lines.contains { $0.contains("accent ? theme.accent : theme.textMuted") })
+    }
+
+    /// The price hero draws its cents with the decimals role and token.
+    func testPriceHeroDrawsTheDecimalsToken() throws {
+        let price = try XCTUnwrap(viewSources().first { $0.file == "BitcoinOverviewView.swift" })
+        XCTAssertTrue(price.lines.contains { $0.contains(".ledgerType(.priceHeroDecimals)") })
+        XCTAssertTrue(price.lines.contains { $0.contains("tokens.colors.priceHeroDecimals") })
+        XCTAssertTrue(price.lines.contains { $0.contains(".ledgerGlow(radius: glowRadius)") })
+    }
+
+    /// Source-level guard: no view paints `.white`. Ink on a fill comes from
+    /// the palette (`theme.onAccent`, or the page colour on loss and plum) so
+    /// both treatments clear 4.5:1 instead of white on orange at 2.3:1.
+    func testViewsNeverDrawWhiteInk() throws {
+        let white = try Regex(#"\.white\b"#)
+        var offenders: [String] = []
+        for source in try viewSources() {
+            for (index, line) in source.lines.enumerated() where line.contains(white) {
+                offenders.append("\(source.file):\(index + 1): \(line.trimmingCharacters(in: .whitespaces))")
+            }
+        }
+        XCTAssertTrue(offenders.isEmpty, "Views must not paint .white:\n" + offenders.joined(separator: "\n"))
+    }
+
+    /// Source-level guard: views draw only ledger roles and SF Symbol glyphs.
+    /// Runs when the test bundle sits next to the checkout; skips otherwise.
+    func testViewsDrawOnlyLedgerRolesAndIconGlyphs() throws {
         var offenders: [String] = []
         var roleSites = 0
-        for case let url as URL in enumerator where url.pathExtension == "swift" {
-            let source = try String(contentsOf: url, encoding: .utf8)
-            for (index, line) in source.components(separatedBy: "\n").enumerated() {
+        for source in try viewSources() {
+            var previousLine = ""
+            for (index, line) in source.lines.enumerated() {
                 roleSites += line.components(separatedBy: ".ledgerType(").count - 1
                 let usesAppFont = line.contains("AppFont.") && !line.contains("AppFont.icon")
-                let usesRawFont = line.contains(".font(") && !line.contains(".font(AppFont.icon")
-                if usesAppFont || usesRawFont {
-                    offenders.append("\(url.lastPathComponent):\(index + 1): \(line.trimmingCharacters(in: .whitespaces))")
+                // A glyph size may only follow an Image; text of any kind takes a role.
+                let fontOffGlyph = line.contains(".font(") && !line.contains("Image(") && !previousLine.contains("Image(")
+                if usesAppFont || fontOffGlyph {
+                    offenders.append("\(source.file):\(index + 1): \(line.trimmingCharacters(in: .whitespaces))")
+                }
+                if !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                    previousLine = line
                 }
             }
         }
@@ -186,6 +300,59 @@ final class LedgerFoundationTests: XCTestCase {
             XCTAssertTrue(line.contains("icon"), "AppFont keeps glyph sizes only: \(line.trimmingCharacters(in: .whitespaces))")
         }
     }
+
+    /// The numeric keypad draws its digits on the amount input role, not a glyph size.
+    func testKeypadDigitsDrawTheAmountInputRole() throws {
+        let addTransaction = try XCTUnwrap(viewSources().first { $0.file == "AddTransactionView.swift" })
+        let amountInputSites = addTransaction.lines.filter { $0.contains(".ledgerType(.amountInput)") }.count
+        XCTAssertGreaterThanOrEqual(amountInputSites, 2, "amount field and keypad")
+        XCTAssertFalse(addTransaction.lines.contains { $0.contains("AppFont.iconLarge") })
+    }
+
+    // MARK: - System chrome
+
+    func testChromeSpecsSitOnTheTypeFloor() {
+        XCTAssertEqual(LedgerChromeSpec.tabLabel.size, 11)
+        XCTAssertEqual(LedgerChromeSpec.tabLabel.weight, .semibold)
+        XCTAssertEqual(LedgerChromeSpec.tabLabel.trackingEm, 0.06, accuracy: 0.0001)
+        XCTAssertTrue(LedgerChromeSpec.tabLabel.uppercase)
+        XCTAssertEqual(LedgerChromeSpec.badge.size, 11)
+        XCTAssertEqual(LedgerChromeSpec.badge.weight, .semibold)
+        XCTAssertEqual(LedgerChromeSpec.inlineTitle.size, 15)
+        XCTAssertEqual(LedgerChromeSpec.inlineTitle.weight, .semibold)
+        XCTAssertEqual(LedgerChromeSpec.largeTitle.size, 24)
+        XCTAssertEqual(LedgerChromeSpec.largeTitle.weight, .semibold)
+        XCTAssertEqual(LedgerChromeSpec.barButton.size, 13)
+        XCTAssertEqual(LedgerChromeSpec.barButton.weight, .medium)
+        let specifications = [
+            LedgerChromeSpec.tabLabel, LedgerChromeSpec.badge, LedgerChromeSpec.inlineTitle,
+            LedgerChromeSpec.largeTitle, LedgerChromeSpec.barButton,
+        ]
+        for specification in specifications {
+            XCTAssertGreaterThanOrEqual(specification.size, LedgerTypeRole.minimumSize)
+            XCTAssertLessThanOrEqual(specification.trackingEm, LedgerTypeRole.maximumTrackingEm)
+            XCTAssertTrue(specification.font == Font.custom(specification.weight.postScriptName, size: specification.size, relativeTo: specification.relativeTo))
+        }
+    }
+
+    #if canImport(UIKit)
+        private func components(_ color: UIColor, style: UIUserInterfaceStyle) -> (UInt, UInt, UInt) {
+            var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+            color.resolvedColor(with: UITraitCollection(userInterfaceStyle: style)).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            return (UInt((red * 255).rounded()), UInt((green * 255).rounded()), UInt((blue * 255).rounded()))
+        }
+
+        func testChromeColoursFollowTheInterfaceStyle() {
+            XCTAssertEqual(components(LedgerChrome.color(\.accentFill), style: .dark).0, 0xF7)
+            XCTAssertEqual(components(LedgerChrome.color(\.accentFill), style: .light).0, 0xF7)
+            XCTAssertEqual(components(LedgerChrome.color(\.foregroundOnAccentFill), style: .dark).0, 0x0A)
+            XCTAssertEqual(components(LedgerChrome.color(\.foregroundOnAccentFill), style: .light).0, 0x0A)
+            XCTAssertEqual(components(LedgerChrome.color(\.accentForeground), style: .dark).0, 0xF7)
+            XCTAssertEqual(components(LedgerChrome.color(\.accentForeground), style: .light).0, 0x9E)
+            XCTAssertEqual(components(LedgerChrome.color(\.panel), style: .dark).1, 0x10)
+            XCTAssertEqual(components(LedgerChrome.color(\.panel), style: .light).1, 0xEB)
+        }
+    #endif
 
     func testStaticWeightsMapToBundledFaces() {
         XCTAssertEqual(LedgerFontWeight.allCases.map(\.rawValue), [300, 400, 500, 600, 700])

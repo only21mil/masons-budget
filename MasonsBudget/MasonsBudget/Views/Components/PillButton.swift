@@ -24,11 +24,11 @@ struct PillButton: View {
 
     private var foregroundColor: Color {
         guard isActive else { return theme.textMuted }
-        return accent ? .white : theme.surface
+        return accent ? theme.onAccent : theme.surface
     }
 
     private var backgroundColor: Color {
         guard isActive else { return .clear }
-        return accent ? theme.accent : theme.text
+        return accent ? theme.accentFill : theme.text
     }
 }

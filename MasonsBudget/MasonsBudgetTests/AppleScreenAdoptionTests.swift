@@ -9,6 +9,10 @@ final class AppleScreenAdoptionTests: XCTestCase {
         XCTAssertEqual(AppTab.allCases, [.home, .budget, .today, .vault, .more])
     }
 
+    func testTabTitlesAreUppercaseLedgerLabels() {
+        XCTAssertEqual(AppTab.allCases.map(\.tabTitle), ["BITCOIN", "BUDGET", "TODAY", "VAULT", "MORE"])
+    }
+
     func testMoreCatalogIncludesFullAdoptionRoutes() {
         XCTAssertEqual(Set(AppleMoreScreen.allCases.map(\.rawValue)).count, AppleMoreScreen.allCases.count)
         XCTAssertEqual(AppleMoreScreen.allCases.count, 12)
