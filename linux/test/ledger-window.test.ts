@@ -24,7 +24,7 @@ describe("ledger window background", () => {
     const [dark, light] = foundations.split('[data-vv-theme="light"]')
     expect(dark).toContain(`--vv-ledger-bg: ${LEDGER_WINDOW_BACKGROUND.dark}`)
     expect(light).toContain(`--vv-ledger-bg: ${LEDGER_WINDOW_BACKGROUND.light}`)
-    expect(LEDGER_WINDOW_BACKGROUND).toEqual({ dark: "#0a0d0c", light: "#f4f3ee" })
+    expect(LEDGER_WINDOW_BACKGROUND).toEqual({ dark: "#050505", light: "#f4f3ee" })
   })
 
   it("reads the persisted treatment the way the renderer does", () => {
@@ -38,12 +38,12 @@ describe("ledger window background", () => {
   })
 
   it("accepts only the two ledger backgrounds from the theme-color event", () => {
-    expect(ledgerThemeForBackground("#0a0d0c")).toBe("dark")
-    expect(ledgerThemeForBackground("#0A0D0C")).toBe("dark")
-    expect(ledgerThemeForBackground("#0a0d0cff")).toBe("dark")
+    expect(ledgerThemeForBackground("#050505")).toBe("dark")
+    expect(ledgerThemeForBackground("#050505FF")).toBe("dark")
+    expect(ledgerThemeForBackground("#050505ff")).toBe("dark")
     expect(ledgerThemeForBackground("#f4f3ee")).toBe("light")
     expect(ledgerThemeForBackground("#F4F3EEFF")).toBe("light")
-    expect(ledgerThemeForBackground("#050505")).toBeNull()
+    expect(ledgerThemeForBackground("#0a0d0c")).toBeNull()
     expect(ledgerThemeForBackground("#ffffff")).toBeNull()
     expect(ledgerThemeForBackground(null)).toBeNull()
     expect(ledgerThemeForBackground("")).toBeNull()
@@ -69,7 +69,7 @@ describe("ledger window background", () => {
   })
 
   it("creates the Electron window in the persisted ledger colour and follows theme changes", () => {
-    expect(main).not.toContain("#050505")
+    expect(main).not.toMatch(/backgroundColor:\s*["']#[0-9a-f]{6}/i)
     expect(main).toContain("backgroundColor: LEDGER_WINDOW_BACKGROUND[ledgerTheme.read()]")
     expect(main).toMatch(
       /did-change-theme-color[\s\S]*?ledgerThemeForBackground\(color\)[\s\S]*?window\.setBackgroundColor\(LEDGER_WINDOW_BACKGROUND\[theme\]\)[\s\S]*?void ledgerTheme\.write\(theme\)/,

@@ -10,15 +10,24 @@ final class LedgerFoundationTests: XCTestCase {
 
     // MARK: - Colour tokens
 
+    func testSatsBlackSurfacesAndRules() {
+        XCTAssertEqual(dark.background, Color(hex: 0x050505))
+        XCTAssertEqual(dark.panel, Color(hex: 0x0E0E0E))
+        XCTAssertEqual(dark.raisedPanel, Color(hex: 0x161616))
+        XCTAssertEqual(dark.primaryRule, Color(hex: 0xF5F2EA, opacity: 0.10))
+        XCTAssertEqual(dark.rowRule, Color(hex: 0xF5F2EA, opacity: 0.06))
+        XCTAssertEqual(dark.toggleKnob, Color(hex: 0xF5F2EA))
+    }
+
     func testInkTiersAreOpaque() {
-        XCTAssertEqual(dark.secondaryForeground, Color(hex: 0xA3ABA6))
-        XCTAssertEqual(dark.tertiaryForeground, Color(hex: 0x8F9792))
+        XCTAssertEqual(dark.secondaryForeground, Color(hex: 0xABA8A1))
+        XCTAssertEqual(dark.tertiaryForeground, Color(hex: 0x95928C))
         XCTAssertEqual(light.secondaryForeground, Color(hex: 0x505452))
         XCTAssertEqual(light.tertiaryForeground, Color(hex: 0x5C605D))
     }
 
-    func testForegroundInksAreUnchanged() {
-        XCTAssertEqual(dark.primaryForeground, Color(hex: 0xE8EFE9))
+    func testForegroundInksMatchAcceptedTreatments() {
+        XCTAssertEqual(dark.primaryForeground, Color(hex: 0xF5F2EA))
         XCTAssertEqual(light.primaryForeground, Color(hex: 0x141715))
     }
 
@@ -27,7 +36,7 @@ final class LedgerFoundationTests: XCTestCase {
         XCTAssertEqual(dark.accentFill, Color(hex: 0xF7931A))
         XCTAssertEqual(light.accentForeground, Color(hex: 0x9E5104))
         XCTAssertEqual(light.accentFill, Color(hex: 0xF7931A))
-        XCTAssertEqual(light.foregroundOnAccentFill, Color(hex: 0x0A0D0C))
+        XCTAssertEqual(light.foregroundOnAccentFill, Color(hex: 0x050505))
     }
 
     func testPriceHeroDecimalsUseAccentAtSeventyFivePercentOnDarkAndOpaqueOnLight() {
@@ -37,8 +46,8 @@ final class LedgerFoundationTests: XCTestCase {
     }
 
     func testCompatibilityThemeReadsTheOpaqueTiers() {
-        XCTAssertEqual(ColorTokens.dark.textMuted, Color(hex: 0xA3ABA6))
-        XCTAssertEqual(ColorTokens.dark.textFaint, Color(hex: 0x8F9792))
+        XCTAssertEqual(ColorTokens.dark.textMuted, Color(hex: 0xABA8A1))
+        XCTAssertEqual(ColorTokens.dark.textFaint, Color(hex: 0x95928C))
         XCTAssertEqual(ColorTokens.light.textMuted, Color(hex: 0x505452))
         XCTAssertEqual(ColorTokens.light.textFaint, Color(hex: 0x5C605D))
         XCTAssertEqual(ColorTokens.light.accent, Color(hex: 0x9E5104))
@@ -48,8 +57,8 @@ final class LedgerFoundationTests: XCTestCase {
     func testCompatibilityThemeExposesTheFillAndItsInk() {
         XCTAssertEqual(ColorTokens.dark.accentFill, Color(hex: 0xF7931A))
         XCTAssertEqual(ColorTokens.light.accentFill, Color(hex: 0xF7931A))
-        XCTAssertEqual(ColorTokens.dark.onAccent, Color(hex: 0x0A0D0C))
-        XCTAssertEqual(ColorTokens.light.onAccent, Color(hex: 0x0A0D0C))
+        XCTAssertEqual(ColorTokens.dark.onAccent, Color(hex: 0x050505))
+        XCTAssertEqual(ColorTokens.light.onAccent, Color(hex: 0x050505))
     }
 
     func testAccentSoftTintsFromEachTreatmentsTextInk() {
@@ -345,11 +354,11 @@ final class LedgerFoundationTests: XCTestCase {
         func testChromeColoursFollowTheInterfaceStyle() {
             XCTAssertEqual(components(LedgerChrome.color(\.accentFill), style: .dark).0, 0xF7)
             XCTAssertEqual(components(LedgerChrome.color(\.accentFill), style: .light).0, 0xF7)
-            XCTAssertEqual(components(LedgerChrome.color(\.foregroundOnAccentFill), style: .dark).0, 0x0A)
-            XCTAssertEqual(components(LedgerChrome.color(\.foregroundOnAccentFill), style: .light).0, 0x0A)
+            XCTAssertEqual(components(LedgerChrome.color(\.foregroundOnAccentFill), style: .dark).0, 0x05)
+            XCTAssertEqual(components(LedgerChrome.color(\.foregroundOnAccentFill), style: .light).0, 0x05)
             XCTAssertEqual(components(LedgerChrome.color(\.accentForeground), style: .dark).0, 0xF7)
             XCTAssertEqual(components(LedgerChrome.color(\.accentForeground), style: .light).0, 0x9E)
-            XCTAssertEqual(components(LedgerChrome.color(\.panel), style: .dark).1, 0x10)
+            XCTAssertEqual(components(LedgerChrome.color(\.panel), style: .dark).1, 0x0E)
             XCTAssertEqual(components(LedgerChrome.color(\.panel), style: .light).1, 0xEB)
         }
     #endif

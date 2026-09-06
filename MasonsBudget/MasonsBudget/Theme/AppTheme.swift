@@ -86,7 +86,7 @@ struct ColorTokens {
     let accent: Color
     /// Filled controls and cards: F7931A in both treatments, always under `onAccent`.
     let accentFill: Color
-    /// Ink on `accentFill`: 0A0D0C in both treatments (8.5:1).
+    /// Ink on `accentFill`: 050505 in both treatments.
     let onAccent: Color
     let accentDeep: Color
     let accentSoft: Color

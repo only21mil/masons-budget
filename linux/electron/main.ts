@@ -457,7 +457,7 @@ function createWindow(): BrowserWindow {
     minWidth: 1100,
     minHeight: 700,
     show: false,
-    // The ledger background of the persisted treatment (#0a0d0c dark, #f4f3ee
+    // The ledger background of the persisted treatment (#050505 dark, #f4f3ee
     // light), never the retired Graphite black.
     backgroundColor: LEDGER_WINDOW_BACKGROUND[ledgerTheme.read()],
     autoHideMenuBar: true,

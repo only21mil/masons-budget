@@ -12,7 +12,7 @@ export type LedgerWindowTheme = "dark" | "light"
 
 /** Exact --vv-ledger-bg values from src/renderer/styles/ledger-foundations.css. */
 export const LEDGER_WINDOW_BACKGROUND: Readonly<Record<LedgerWindowTheme, string>> = {
-  dark: "#0a0d0c",
+  dark: "#050505",
   light: "#f4f3ee",
 }
 

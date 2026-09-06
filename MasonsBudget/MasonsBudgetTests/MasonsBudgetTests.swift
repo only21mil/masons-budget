@@ -9,9 +9,9 @@ final class MasonsBudgetTests: XCTestCase {
 
     func testAppThemeColorsExist() {
         XCTAssertEqual(ColorTokens.dark.accent, Color(hex: 0xF7931A))
-        XCTAssertEqual(ColorTokens.dark.bg, Color(hex: 0x0A0D0C))
-        XCTAssertEqual(ColorTokens.dark.surface, Color(hex: 0x0C100E))
-        XCTAssertEqual(ColorTokens.dark.text, Color(hex: 0xE8EFE9))
+        XCTAssertEqual(ColorTokens.dark.bg, Color(hex: 0x050505))
+        XCTAssertEqual(ColorTokens.dark.surface, Color(hex: 0x0E0E0E))
+        XCTAssertEqual(ColorTokens.dark.text, Color(hex: 0xF5F2EA))
 
         XCTAssertEqual(ColorTokens.light.accent, Color(hex: 0x9E5104))
         XCTAssertEqual(ColorTokens.light.bg, Color(hex: 0xF4F3EE))

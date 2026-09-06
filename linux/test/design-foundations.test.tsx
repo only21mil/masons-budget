@@ -60,9 +60,14 @@ describe("ledger design foundations", () => {
 
   it("keeps the exact Terminal and Daylight semantic tokens", () => {
     for (const token of [
-      "--vv-ledger-bg: #0a0d0c",
-      "--vv-ledger-panel: #0c100e",
-      "--vv-ledger-panel-raised: #111614",
+      "--vv-ledger-bg: #050505",
+      "--vv-ledger-panel: #0e0e0e",
+      "--vv-ledger-panel-raised: #161616",
+      "--vv-ledger-rule: rgba(245, 242, 234, 0.1)",
+      "--vv-ledger-rule-subtle: rgba(245, 242, 234, 0.06)",
+      "--vv-ledger-ink: #f5f2ea",
+      "--vv-ledger-toggle-knob: #f5f2ea",
+      "--vv-ledger-on-bitcoin: #050505",
       "--vv-ledger-bitcoin: #f7931a",
       "--vv-ledger-gain: oklch(0.74 0.155 158)",
       "--vv-ledger-loss: oklch(0.7 0.155 28)",
@@ -91,8 +96,8 @@ describe("ledger design foundations", () => {
   it("keeps the ink tiers opaque and the Bitcoin text and fill split", () => {
     const [dark, light] = foundations.split('[data-vv-theme="light"]')
     for (const token of [
-      "--vv-ledger-ink-secondary: #a3aba6",
-      "--vv-ledger-ink-meta: #8f9792",
+      "--vv-ledger-ink-secondary: #aba8a1",
+      "--vv-ledger-ink-meta: #95928c",
       "--vv-ledger-bitcoin: #f7931a",
       "--vv-ledger-bitcoin-fill: #f7931a",
       "--vv-ledger-bitcoin-decimals: rgba(247, 147, 26, 0.75)",
@@ -187,7 +192,7 @@ describe("ledger design foundations", () => {
 
     window.localStorage.setItem("vogel-vault.ledger-theme", "dark")
     unmount = await mount()
-    expect(readThemeColor()).toBe("#0a0d0c")
+    expect(readThemeColor()).toBe("#050505")
     await unmount()
     document.head.querySelector('meta[name="theme-color"]')?.remove()
   })

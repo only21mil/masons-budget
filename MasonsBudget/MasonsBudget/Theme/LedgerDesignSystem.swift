@@ -58,27 +58,26 @@ struct LedgerPalette: Sendable {
 
 extension LedgerPalette {
     static let terminalLedger = LedgerPalette(
-        background: Color(hex: 0x0A0D0C),
-        panel: Color(hex: 0x0C100E),
-        raisedPanel: Color(hex: 0x111614),
-        primaryRule: Color(hex: 0xD6EEE0, opacity: 0.10),
-        rowRule: Color(hex: 0xD6EEE0, opacity: 0.06),
-        primaryForeground: Color(hex: 0xE8EFE9),
-        // Opaque tiers: E8EFE9 blended over the background at 0.70 and 0.61,
-        // so nothing composites at draw time (contrast audit 2026-09-05).
-        secondaryForeground: Color(hex: 0xA3ABA6),
-        tertiaryForeground: Color(hex: 0x8F9792),
+        background: Color(hex: 0x050505),
+        panel: Color(hex: 0x0E0E0E),
+        raisedPanel: Color(hex: 0x161616),
+        primaryRule: Color(hex: 0xF5F2EA, opacity: 0.10),
+        rowRule: Color(hex: 0xF5F2EA, opacity: 0.06),
+        primaryForeground: Color(hex: 0xF5F2EA),
+        // Opaque warm grey tiers for the Sats black treatment.
+        secondaryForeground: Color(hex: 0xABA8A1),
+        tertiaryForeground: Color(hex: 0x95928C),
         accentForeground: Color(hex: 0xF7931A),
         accentFill: Color(hex: 0xF7931A),
         accentSoft: Color(hex: 0xF7931A, opacity: 0.12),
         priceHeroDecimals: Color(hex: 0xF7931A, opacity: LedgerGlowToken.priceHeroDecimalOpacity),
-        foregroundOnAccentFill: Color(hex: 0x0A0D0C),
+        foregroundOnAccentFill: Color(hex: 0x050505),
         // Exact Display P3 encodings of oklch(0.74 0.155 158) and
         // oklch(0.70 0.155 28), preserving the handoff colors on Apple displays.
         gain: Color(.displayP3, red: 0.403_133_570, green: 0.771_433_512, blue: 0.540_537_773),
         loss: Color(.displayP3, red: 0.876_730_664, green: 0.480_479_274, blue: 0.422_105_613),
         scanline: Color.white.opacity(0.022),
-        toggleKnob: Color(hex: 0xE8EFE9),
+        toggleKnob: Color(hex: 0xF5F2EA),
     )
 
     static let daylightLedger = LedgerPalette(
@@ -98,7 +97,7 @@ extension LedgerPalette {
         // Same base as FOUNDATIONS and Android: the light text ink at 0.10.
         accentSoft: Color(hex: 0x9E5104, opacity: 0.10),
         priceHeroDecimals: Color(hex: 0x9E5104),
-        foregroundOnAccentFill: Color(hex: 0x0A0D0C),
+        foregroundOnAccentFill: Color(hex: 0x050505),
         // Exact Display P3 encodings of oklch(0.52 0.13 158) and
         // oklch(0.52 0.15 28). Both are inside Display P3.
         gain: Color(.displayP3, red: 0.189_090_905, green: 0.487_614_912, blue: 0.310_875_612),
