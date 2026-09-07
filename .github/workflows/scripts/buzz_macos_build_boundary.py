@@ -87,7 +87,7 @@ exec /bin/bash "$BUZZ_CONTROLLER/buzz_macos_build.sh"
     arch = request['arch']
     if arch == 'ios':
         confined(root, request, ['/usr/bin/python3', '-I', str(SCRIPT / 'buzz_ios_release.py'), 'pack',
-                 '--app', 'mobile/build/ios/iphoneos/Runner.app', '--output', '../unsigned',
+                 '--app', 'mobile/build/ios/iphoneos/Buzz.app', '--output', '../unsigned',
                  '--source', request['source_sha'], '--version', request['version'],
                  '--build-number', request['build_number']], cwd=root / 'buzz')
         return

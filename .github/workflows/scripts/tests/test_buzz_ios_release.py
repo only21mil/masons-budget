@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import sys
 import tarfile
 import tempfile
@@ -34,7 +35,7 @@ ENV = {'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1', 'GITHUB_SHA': 'b' * 40
 
 def args(root):
     return argparse.Namespace(source='a' * 40, version='0.5.9', build_number='1',
-                              input=root / 'unsigned', output=root / 'unsigned', app=root / 'Runner.app')
+                              input=root / 'unsigned', output=root / 'unsigned', app=root / 'Buzz.app')
 
 
 def app_fixture(app):
@@ -64,6 +65,39 @@ class IosReleaseTests(unittest.TestCase):
             path.write_bytes(plistlib.dumps(info))
             with self.assertRaisesRegex(ValueError, 'version differs'):
                 ios.app_info(a.app, a)
+
+    def test_payload_packages_the_actual_buzz_product(self):
+        # Source excerpt preserves the real Release product setting; the test
+        # executes the payload's actual pack invocation against that output.
+        source_settings = (SCRIPT / 'tests/fixtures/buzz-ios-runner-release.pbxproj').read_text()
+        product = re.search(r'PRODUCT_NAME = ([A-Za-z0-9_-]+);', source_settings).group(1)
+        with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, ENV), \
+                patch.object(boundary.pwd, 'getpwuid') as user, \
+                patch.object(boundary.os, 'getgroups', return_value=[590]):
+            user.return_value = boundary.pwd.struct_passwd(('buzzbuild', 'x', 590, 590, '', '/owned', '/bin/bash'))
+            root = Path(temp)
+            source = root / 'buzz'
+            app_fixture(source / 'mobile/build/ios/iphoneos' / (product + '.app'))
+            overrides = source / 'mobile/ios/Flutter/AppOverrides.xcconfig'
+            overrides.parent.mkdir(parents=True); overrides.write_text(ios.OVERRIDES)
+            request = {'arch': 'ios', 'source_sha': 'a' * 40, 'version': '0.5.9', 'build_number': '1'}
+            def confined(_root, _request, command, *, cwd):
+                if 'pack' not in command:
+                    return  # Compilation is replaced by the source-derived fixture.
+                options = dict(zip(command[4::2], command[5::2]))
+                a = argparse.Namespace(source=options['--source'], version=options['--version'],
+                    build_number=options['--build-number'], app=Path(options['--app']),
+                    output=Path(options['--output']))
+                old = Path.cwd()
+                try:
+                    os.chdir(cwd); ios.pack(a)
+                finally:
+                    os.chdir(old)
+            with patch.object(boundary, 'confined', side_effect=confined) as invocation:
+                boundary.payload(root, request)
+            self.assertEqual(invocation.call_count, 2)
+            self.assertTrue((root / 'unsigned/unsigned-ios.app.tar.gz').is_file())
+            self.assertFalse((source / 'mobile/build/ios/iphoneos/Runner.app').exists())
 
     def test_archive_roundtrip_and_exact_source_binding(self):
         with tempfile.TemporaryDirectory() as temp, patch.dict(os.environ, ENV):
