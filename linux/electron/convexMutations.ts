@@ -705,8 +705,8 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
         budgetSource(owner)
         const fromMonth = exactMonth(record["fromMonth"])
         const toMonth = exactMonth(record["toMonth"])
-        // One month at a time. The server accepts a gap only with an explicit
-        // allowGap, which this device never sends.
+        // One month at a time. The device mutation no longer accepts allowGap;
+        // multi-month advance stays on the operator import path.
         if (toMonth !== nextBudgetMonth(fromMonth)) throw new InvalidRequest()
         const baseUpdatedAtMs = revision(record["baseUpdatedAtMs"])
         if (baseUpdatedAtMs === 0) throw new InvalidRequest()

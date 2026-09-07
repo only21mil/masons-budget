@@ -262,9 +262,17 @@ struct CategoryDetailView: View {
     }
 
     // Cached: DateFormatter construction per call was the avoidable cost here.
+    // Default calendar is UTC Gregorian so "current month" matches Android,
+    // Linux, and server trustedCurrentMonth() (ISO slice) around month edges.
     private static var cachedMonthKeyFormatter: (calendar: Calendar, formatter: DateFormatter)?
 
-    static func monthKey(for date: Date, calendar: Calendar = .current) -> String {
+    static var utcMonthCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
+    static func monthKey(for date: Date, calendar: Calendar = utcMonthCalendar) -> String {
         let formatter: DateFormatter
         if let cached = cachedMonthKeyFormatter, cached.calendar == calendar {
             formatter = cached.formatter

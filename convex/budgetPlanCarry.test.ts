@@ -332,7 +332,7 @@ describe("copyBudgetPlanForwardFromDevice", () => {
     expect(after.carries).toEqual([]);
   });
 
-  it("requires exactly one month forward unless the request allows a gap", async () => {
+    it("requires exactly one month forward; devices cannot skip months", async () => {
     await seedAdultBudget();
     const device = await budgetDevice();
     const base = { ...authArgs(device), owner: "victor", sourceFile: "budget", baseUpdatedAtMs: 1_000 };
@@ -353,24 +353,36 @@ describe("copyBudgetPlanForwardFromDevice", () => {
       t.mutation(copyPlan, { ...base, fromMonth: "2026-8", toMonth: "2026-09" }),
       "VALIDATION_FAILED",
     );
+    // allowGap is closed on the device mutation: a non-adjacent target stays
+    // rejected even if a client tries to pass the old flag.
+    await expect(
+      t.mutation(copyPlan, {
+        ...base,
+        fromMonth: "2026-08",
+        toMonth: "2026-10",
+        allowGap: true,
+      }),
+    ).rejects.toThrow();
     await expectDeviceError(
-      t.mutation(copyPlan, { ...base, fromMonth: "2026-08", toMonth: "2028-10", allowGap: true }),
+      t.mutation(copyPlan, {
+        ...base,
+        fromMonth: "2026-08",
+        toMonth: "2026-10",
+      }),
+      "VALIDATION_FAILED",
+    );
+    await expectDeviceError(
+      t.mutation(copyPlan, {
+        ...base,
+        fromMonth: "2026-08",
+        toMonth: "2028-10",
+      }),
       "VALIDATION_FAILED",
     );
 
-    const skipped = await t.mutation(copyPlan, {
-      ...base,
-      fromMonth: "2026-08",
-      toMonth: "2026-10",
-      allowGap: true,
-    });
-    expect(skipped).toMatchObject({ outcome: "copied", toMonth: "2026-10" });
     const after = await snapshot();
-    expect(after.budget!.month).toBe("October 2026");
-    // The skipped month is left missing, never fabricated.
-    expect(after.carries.map((row) => [row.fromMonth, row.toMonth])).toEqual([
-      ["2026-08", "2026-10"],
-    ]);
+    expect(after.budget!.month).toBe("August 2026");
+    expect(after.carries).toEqual([]);
   });
 
   it("refuses an unbound credential, a foreign owner, and a missing capability", async () => {

@@ -72,6 +72,27 @@ const api = {
 
 const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
 
+const BUDGET_MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
+/** Operator-import spelling for the trusted UTC current month. */
+function englishCurrentMonth(canonical = CURRENT_MONTH): string {
+  const [year, month] = canonical.split("-");
+  return `${BUDGET_MONTH_NAMES[Number(month) - 1]} ${year}`;
+}
+
 function lifecycleTestConvex() {
   return convexTest(schema, modules);
 }
@@ -99,12 +120,13 @@ async function seedBudget(
   owner: "victor" | "mason",
   categories: string[],
   updatedAtMs: number,
+  month: string = CURRENT_MONTH,
 ) {
   await t.run(async (ctx) => {
     await ctx.db.insert("budgetDocuments", {
       sourceFile,
       owner,
-      month: CURRENT_MONTH,
+      month,
       coinbaseOneBalanceCents: 0n,
       categories: categories.map((name) => ({ name, budgetCents: 10_000n })),
       mtdIncomeCents: 0n,
@@ -380,5 +402,62 @@ describe("budget category deletion lifecycle", () => {
     expect(state.budget!.updatedAtMs).toBe(revision);
     expect(state.tombstones).toEqual([]);
     expect(state.locks).toEqual([]);
+  });
+
+  it("matches operator English month labels against device yyyy-MM without rewriting", async () => {
+    const revision = fixture.accepted[0]!.baseUpdatedAtMs;
+    const storedMonth = englishCurrentMonth();
+    await seedBudget("budget", "victor", ["Groceries", "Keep"], revision, storedMonth);
+    const device = await budgetDevice("category-english-month-device");
+    const auth = {
+      deviceId: device.deviceId,
+      deviceToken: device.deviceToken,
+      owner: "victor" as const,
+      sourceFile: "budget" as const,
+      month: CURRENT_MONTH,
+    };
+
+    await expect(
+      t.mutation(api.upsertCategory, {
+        ...auth,
+        baseUpdatedAtMs: revision,
+        category: { name: "Groceries", budgetCents: 12_500n },
+      }),
+    ).resolves.toMatchObject({ ok: true, outcome: "updated" });
+
+    const afterUpsert = await t.run(async (ctx) =>
+      ctx.db
+        .query("budgetDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "budget"))
+        .unique(),
+    );
+    expect(afterUpsert!.month).toBe(storedMonth);
+    expect(afterUpsert!.categories).toEqual([
+      { name: "Groceries", budgetCents: 12_500n },
+      { name: "Keep", budgetCents: 10_000n },
+    ]);
+
+    await expect(
+      t.mutation(api.deleteCategory, {
+        ...auth,
+        entityId: "Groceries",
+        baseUpdatedAtMs: afterUpsert!.updatedAtMs,
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      entityId: "Groceries",
+      removed: true,
+    });
+
+    const afterDelete = await t.run(async (ctx) =>
+      ctx.db
+        .query("budgetDocuments")
+        .withIndex("by_source_file", (q) => q.eq("sourceFile", "budget"))
+        .unique(),
+    );
+    expect(afterDelete!.month).toBe(storedMonth);
+    expect(afterDelete!.categories.map((category) => category.name)).toEqual([
+      "Keep",
+    ]);
   });
 });

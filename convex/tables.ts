@@ -4488,15 +4488,12 @@ async function upsertBudgetCategoryCore(
       previousName ?? category.name,
     );
   }
-  if (month !== existing.month) {
-    deviceFailure(
-      "ENTITY_CONFLICT",
-      `requested month ${JSON.stringify(month)} does not match ` +
-        `${sourceFile}'s month ${JSON.stringify(existing.month)}.`,
-      "budgetCategory",
-      previousName ?? category.name,
-    );
-  }
+  requireCanonicalBudgetMonthMatch(
+    month,
+    existing.month,
+    sourceFile,
+    previousName ?? category.name,
+  );
   if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
     deviceFailure(
       "REVISION_REQUIRED",
@@ -4604,6 +4601,35 @@ function canonicalBudgetMonth(stored: string): string | undefined {
     match[1] as (typeof BUDGET_MONTH_NAMES)[number],
   );
   return `${match[2]}-${String(index + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Device category guards compare canonical yyyy-MM. Operator import may store
+ * "August 2026" while Android/Linux send "2026-08"; both name the same month.
+ * Do not rewrite the document's stored spelling here — carry already preserves
+ * it via storedBudgetMonthLike when the plan advances.
+ */
+function requireCanonicalBudgetMonthMatch(
+  requested: string,
+  stored: string,
+  sourceFile: string,
+  entityId: string,
+): void {
+  const requestedCanonical = canonicalBudgetMonth(requested);
+  const storedCanonical = canonicalBudgetMonth(stored);
+  if (
+    requestedCanonical === undefined ||
+    storedCanonical === undefined ||
+    requestedCanonical !== storedCanonical
+  ) {
+    deviceFailure(
+      "ENTITY_CONFLICT",
+      `requested month ${JSON.stringify(requested)} does not match ` +
+        `${sourceFile}'s month ${JSON.stringify(stored)}.`,
+      "budgetCategory",
+      entityId,
+    );
+  }
 }
 
 /**
@@ -4824,15 +4850,7 @@ async function deleteBudgetCategoryCore(
       name,
     );
   }
-  if (month !== existing.month) {
-    deviceFailure(
-      "ENTITY_CONFLICT",
-      `requested month ${JSON.stringify(month)} does not match ` +
-        `${sourceFile}'s month ${JSON.stringify(existing.month)}.`,
-      "budgetCategory",
-      name,
-    );
-  }
+  requireCanonicalBudgetMonthMatch(month, existing.month, sourceFile, name);
   if (optimistic && optimistic.baseUpdatedAtMs === undefined) {
     deviceFailure(
       "REVISION_REQUIRED",
@@ -6394,11 +6412,11 @@ const budgetPlanCarryResultValidator = v.object({
  * Copy the one live budget plan forward to the next month from a paired device.
  *
  * `fromMonth` defaults to the month the plan currently names and `toMonth` to
- * the month after it. Both are canonical yyyy-MM. A gap larger than one month
- * needs `allowGap`; the operator doctrine still applies, so skipped months are
- * left missing rather than fabricated. `baseUpdatedAtMs` must equal the
- * document revision the screen read. Replaying an identical request after it
- * landed answers `already-copied` and writes nothing.
+ * the month after it. Both are canonical yyyy-MM. Product is next-month-only:
+ * devices cannot skip months. Multi-month advance stays on the operator import
+ * path. `baseUpdatedAtMs` must equal the document revision the screen read.
+ * Replaying an identical request after it landed answers `already-copied` and
+ * writes nothing.
  */
 export const copyBudgetPlanForwardFromDevice = mutation({
   args: {
@@ -6408,7 +6426,6 @@ export const copyBudgetPlanForwardFromDevice = mutation({
     sourceFile: budgetSourceValidator,
     fromMonth: v.optional(v.string()),
     toMonth: v.optional(v.string()),
-    allowGap: v.optional(v.boolean()),
     baseUpdatedAtMs: v.float64(),
   },
   returns: budgetPlanCarryResultValidator,
@@ -6431,7 +6448,8 @@ export const copyBudgetPlanForwardFromDevice = mutation({
     const result = await copyBudgetPlanForwardCore(ctx, args.sourceFile, owner, {
       fromMonth: args.fromMonth,
       toMonth: args.toMonth,
-      allowGap: args.allowGap === true,
+      // Device product is adjacent-month only. Operator import owns multi-month.
+      allowGap: false,
       baseUpdatedAtMs: args.baseUpdatedAtMs,
       deviceId: device.deviceId,
     });

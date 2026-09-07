@@ -105,4 +105,40 @@ final class AppleScreenAdoptionTests: XCTestCase {
         let date = Date(timeIntervalSince1970: 1_767_268_800)
         XCTAssertEqual(CategoryDetailView.monthKey(for: date, calendar: calendar), "2026-01")
     }
+
+    func testCategoryDeletionMonthKeyDefaultsToUTC() throws {
+        // 2026-01-31 23:30 UTC is still January UTC; local Americas zones are
+        // already February. Eligibility must follow server trustedCurrentMonth.
+        let nearUtcMonthEdge = Date(timeIntervalSince1970: 1_769_902_200)
+        XCTAssertEqual(CategoryDetailView.monthKey(for: nearUtcMonthEdge), "2026-01")
+        XCTAssertEqual(
+            CategoryDetailView.monthKey(for: nearUtcMonthEdge, calendar: CategoryDetailView.utcMonthCalendar),
+            "2026-01",
+        )
+    }
+
+    func testCategoryDeletionIntentAcceptsLegacyEnglishBudgetMonth() throws {
+        let document = ConvexBudgetDocumentRow(
+            owner: .victor,
+            month: "July 2026",
+            coinbaseOneBalanceCents: 0,
+            categories: [
+                .init(name: "Groceries", icon: nil, budgetCents: 10_000),
+            ],
+            effectiveApr: nil,
+            strategyNote: nil,
+            income: nil,
+            mtdIncomeCents: 0,
+            ytdIncomeCents: 0,
+            monthlyHistory: [],
+            updatedAtMs: 42,
+        )
+        let intent = try document.categoryDeletionIntent(
+            viewer: .victor,
+            trustedCurrentMonth: "2026-07",
+            categoryName: "Groceries",
+        )
+        XCTAssertEqual(intent.month, "2026-07")
+        XCTAssertEqual(intent.categoryName, "Groceries")
+    }
 }

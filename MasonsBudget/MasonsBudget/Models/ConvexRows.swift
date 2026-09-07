@@ -417,7 +417,8 @@ struct ConvexBudgetDocumentRow: Decodable {
         return try BudgetCategoryDeletionIntent.make(
             viewer: viewer,
             currentMonth: trustedCurrentMonth,
-            budgetMonth: month,
+            // Row API may retain legacy English labels; compare as yyyy-MM.
+            budgetMonth: BudgetPlanCarry.canonicalStoredMonth(month) ?? month,
             budgetOwner: owner,
             budgetSource: resolvedSource,
             existingCategoryNames: categories.map(\.name),

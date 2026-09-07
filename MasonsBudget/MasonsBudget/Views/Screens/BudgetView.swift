@@ -94,7 +94,7 @@ struct BudgetView: View {
                     .padding(.bottom, AppLayout.cardSpacing)
 
                 BudgetPlanCarryAction(viewer: activeMember, selectedMonth: selectedMonth) { targetMonth in
-                    let currentKey = CategoryDetailView.monthKey(for: Date(), calendar: Calendar(identifier: .gregorian))
+                    let currentKey = CategoryDetailView.monthKey(for: Date())
                     if let current = BudgetPlanCarry.monthIndex(currentKey),
                        let target = BudgetPlanCarry.monthIndex(targetMonth)
                     {
@@ -452,7 +452,7 @@ private struct BudgetPlanCarryAction: View {
     }
 
     private func monthKey(_ date: Date) -> String {
-        CategoryDetailView.monthKey(for: date, calendar: Calendar(identifier: .gregorian))
+        CategoryDetailView.monthKey(for: date)
     }
 
     @MainActor
