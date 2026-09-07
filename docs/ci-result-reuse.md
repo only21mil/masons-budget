@@ -82,7 +82,15 @@ and the hosted image/OS package inventory. Android additionally resolves and
 hashes external Gradle artifacts, plugin inputs, SDK package identities and the
 checksum-verified offline Robolectric runtimes before deciding. Resolution
 failure produces no dependency proof and leaves the ordinary checks enabled.
-The Gradle collector never invokes an app build or test task.
+The Gradle collector realizes the dependency graph of `:domain:test`,
+`:app:lintDebug` and `:app:testDebugUnitTest` to include lazily registered tool
+configurations. Before execution, it disables every graph task except the
+collector, including finalizers. No app build, lint or test action runs. The
+collector requires an exclusive invocation; ordinary invocations remain unchanged.
+It also resolves and hashes each realized lint task's actual `lintTool.classpath`
+in classpath order, including AGP's detached transitive lint engine dependencies.
+Missing protected tasks, absent or empty lint tools, or missing runtime bytes
+refuse proof. Collection clears any prior output before resolution.
 
 For Kotlin JVM/Android projects, the collector excludes only generated
 `*DependenciesMetadata` configurations with the `kotlin-metadata` usage,
