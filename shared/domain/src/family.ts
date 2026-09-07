@@ -122,12 +122,6 @@ export function hasDedicatedChildFinanceFiles(member: FamilyMember): boolean {
   return member === "mason"
 }
 
-/**
- * @deprecated Compatibility export for the retained Convex blob-writeback
- * parity check. New code should use transactionsDataFileName.
- */
-export { transactionsDataFileName as mc2TransactionsFileName }
-
 // ── Collection helpers ──────────────────────────────────────────────────────
 // The clients should filter through these rather than hand-rolling predicates,
 // so the v0.3 strict-equality regression cannot reappear per-view.

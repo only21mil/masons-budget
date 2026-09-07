@@ -41,7 +41,7 @@ import {
 // makes the mirrors checkable.
 import {
   FAMILY_MEMBERS as DOMAIN_FAMILY_MEMBERS,
-  mc2TransactionsFileName,
+  transactionsDataFileName,
 } from "../shared/domain/src/family";
 import { parseCents } from "../shared/domain/src/money";
 import { isIsoDate as domainIsIsoDate, TODO_LANES as DOMAIN_TODO_LANES } from "../shared/domain/src/todo";
@@ -365,7 +365,7 @@ describe("mirror parity with the shared domain contract", () => {
   it("routes each owner to the file the domain routes them to", () => {
     for (const member of DOMAIN_FAMILY_MEMBERS) {
       expect(transactionsFileFor(member)).toBe(
-        mc2TransactionsFileName(member),
+        transactionsDataFileName(member),
       );
     }
   });
