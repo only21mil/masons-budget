@@ -30,6 +30,13 @@ const copyPlan = "tables:copyBudgetPlanForwardFromDevice" as unknown as Function
   CarryResult
 >;
 
+const copyPlanSync = "tables:copyBudgetPlanForward" as unknown as FunctionReference<
+  "mutation",
+  "public",
+  Record<string, unknown>,
+  CarryResult
+>;
+
 type T = ReturnType<typeof testConvex>;
 
 let t: T;
@@ -483,6 +490,79 @@ describe("copyBudgetPlanForwardFromDevice", () => {
     );
     const after = await snapshot();
     expect(after.budget).toBeNull();
+    expect(after.carries).toEqual([]);
+  });
+});
+
+describe("copyBudgetPlanForward (sync token)", () => {
+  it("copies under the household sync token and attributes the receipt to sync-token", async () => {
+    await seedAdultBudget();
+
+    const result = await t.mutation(copyPlanSync, {
+      token: syncToken,
+      owner: "rachel",
+      sourceFile: "budget",
+      fromMonth: "2026-08",
+      toMonth: "2026-09",
+      baseUpdatedAtMs: 1_000,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      outcome: "copied",
+      sourceFile: "budget",
+      fromMonth: "2026-08",
+      toMonth: "2026-09",
+      categoryCount: 3,
+    });
+    const after = await snapshot();
+    expect(after.budget!.month).toBe("September 2026");
+    expect(after.carries).toHaveLength(1);
+    expect(after.carries[0]).toMatchObject({
+      deviceId: "sync-token",
+      owner: "victor",
+      fromMonth: "2026-08",
+      toMonth: "2026-09",
+    });
+  });
+
+  it("rejects a missing or wrong sync token before touching the plan", async () => {
+    await seedAdultBudget();
+    const request = {
+      owner: "victor",
+      sourceFile: "budget",
+      fromMonth: "2026-08",
+      toMonth: "2026-09",
+      baseUpdatedAtMs: 1_000,
+    };
+
+    await expect(t.mutation(copyPlanSync, request)).rejects.toThrow(/invalid sync token|not configured/);
+    await expect(
+      t.mutation(copyPlanSync, { ...request, token: "wrong-token" }),
+    ).rejects.toThrow(/invalid sync token/);
+
+    const after = await snapshot();
+    expect(after.budget!.month).toBe("August 2026");
+    expect(after.carries).toEqual([]);
+  });
+
+  it("never accepts allowGap on the sync-token route", async () => {
+    await seedAdultBudget();
+
+    await expectDeviceError(
+      t.mutation(copyPlanSync, {
+        token: syncToken,
+        owner: "victor",
+        sourceFile: "budget",
+        fromMonth: "2026-08",
+        toMonth: "2026-10",
+        baseUpdatedAtMs: 1_000,
+      }),
+      "VALIDATION_FAILED",
+    );
+
+    const after = await snapshot();
+    expect(after.budget!.month).toBe("August 2026");
     expect(after.carries).toEqual([]);
   });
 });

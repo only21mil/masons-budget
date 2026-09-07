@@ -138,25 +138,46 @@ internal class ConvexMutationClient(
                 }
             }
 
-            "error" -> {
-                val errorData = envelope["errorData"]
-                val message = if (errorData == null || errorData is JsonNull) {
-                    envelope["errorMessage"].stringOrNull()
-                } else {
-                    errorData.stringOrNull()
-                }
-                if (message?.contains("Unauthorized", ignoreCase = true) == true) {
-                    ConvexResult.Unauthorized
-                } else {
-                    ConvexResult.Failed("convex rejection")
-                }
-            }
+            "error" -> classifyMutationError(envelope["errorData"], envelope["errorMessage"])
 
             else -> ConvexResult.Failed("unrecognised response envelope")
         }
     }
 
-    private fun JsonObject.string(key: String): String? = get(key).stringOrNull()
+    /**
+     * Prefer structured `errorData.code` (shared with device mutations that reuse
+     * the same cores) over free-text, then fall back to Unauthorized detection.
+     * Response bodies are never retained on the result.
+     */
+    private fun classifyMutationError(
+        errorData: JsonElement?,
+        errorMessage: JsonElement?,
+    ): ConvexResult<Nothing> {
+        val structured = when (errorData) {
+            is JsonObject -> errorData
+            is JsonPrimitive -> errorData.contentOrNull?.let {
+                runCatching { JSON.parseToJsonElement(it) as? JsonObject }.getOrNull()
+            }
+            else -> null
+        }
+        when (structured?.string("code")) {
+            "PLAN_EXISTS" -> return ConvexResult.Failed(DEVICE_PLAN_EXISTS_REASON)
+            else -> Unit
+        }
+        val message = if (errorData == null || errorData is JsonNull) {
+            errorMessage.stringOrNull()
+        } else {
+            errorData.stringOrNull() ?: errorMessage.stringOrNull()
+        }
+        return if (message?.contains("Unauthorized", ignoreCase = true) == true) {
+            ConvexResult.Unauthorized
+        } else {
+            ConvexResult.Failed("convex rejection")
+        }
+    }
+
+    private fun JsonObject.string(key: String): String? =
+        (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
 
     private fun JsonElement?.stringOrNull(): String? =
         (this as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull

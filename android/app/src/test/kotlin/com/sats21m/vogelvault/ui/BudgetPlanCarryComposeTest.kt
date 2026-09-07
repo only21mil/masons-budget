@@ -16,9 +16,8 @@ import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.BudgetPlanCarryGateway
 import com.sats21m.vogelvault.data.ConvexConfig
-import com.sats21m.vogelvault.data.ConvexDeviceCredential
-import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
-import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
+import com.sats21m.vogelvault.data.ConvexMutationClient
+import com.sats21m.vogelvault.data.ConvexSyncTokenSource
 import com.sats21m.vogelvault.data.HttpPoster
 import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
@@ -48,7 +47,7 @@ import org.robolectric.annotation.Config
  * The fixture plan is July 2026. The test application pins the trusted current
  * month, so the action's visibility is a decision about data, not the wall
  * clock. Transport is a recording poster: the assertions read the exact wire
- * body the device would send.
+ * body the sync-token client would send.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -66,6 +65,14 @@ class BudgetPlanCarryComposeTest {
 
     @Before
     fun startHost() {
+        val app = RuntimeEnvironment.getApplication() as BudgetPlanCarryTestApplication
+        app.syncToken = "compose-sync-token"
+        app.poster.bodies.clear()
+        app.poster.response = HttpTextResponse(
+            200,
+            """{"status":"success","value":{"ok":true,"outcome":"copied","sourceFile":"budget","fromMonth":"2026-07","toMonth":"2026-08","categoryCount":8,"updatedAtMs":1787654321001}}""",
+        )
+        writesSucceeded = 0
         activityController = Robolectric.buildActivity(ComponentActivity::class.java)
         activityController.get().setTheme(R.style.Theme_VogelVault)
         activityController.setup()
@@ -114,7 +121,7 @@ class BudgetPlanCarryComposeTest {
     }
 
     @Test
-    fun `the copy needs a confirm tap then sends exactly one device mutation`() {
+    fun `the copy needs a confirm tap then sends exactly one sync-token mutation`() {
         application.currentMonth = "2026-08"
         show(liveState())
 
@@ -130,13 +137,14 @@ class BudgetPlanCarryComposeTest {
         settle()
 
         val wire = Json.parseToJsonElement(application.poster.bodies.single()).jsonObject
-        assertEquals("tables:copyBudgetPlanForwardFromDevice", wire.getValue("path").jsonPrimitive.content)
+        assertEquals("tables:copyBudgetPlanForward", wire.getValue("path").jsonPrimitive.content)
         val args = wire.getValue("args").jsonObject
         assertEquals("victor", args.getValue("owner").jsonPrimitive.content)
         assertEquals("budget", args.getValue("sourceFile").jsonPrimitive.content)
         assertEquals("2026-07", args.getValue("fromMonth").jsonPrimitive.content)
         assertEquals("2026-08", args.getValue("toMonth").jsonPrimitive.content)
         assertEquals(REVISION.toString(), args.getValue("baseUpdatedAtMs").jsonPrimitive.content)
+        assertEquals("compose-sync-token", args.getValue("token").jsonPrimitive.content)
         assertEquals(1, writesSucceeded)
     }
 
@@ -180,6 +188,25 @@ class BudgetPlanCarryComposeTest {
         assertEquals(0, writesSucceeded)
     }
 
+    @Test
+    fun `a missing sync token shows the credential banner without contacting Convex`() {
+        application.currentMonth = "2026-08"
+        application.syncToken = null
+        show(liveState())
+
+        compose.onNodeWithText("Copy July plan to August").performClick()
+        settle()
+        compose.onNodeWithText("Confirm copy to August").performClick()
+        settle()
+        compose.waitUntil(timeoutMillis = 5_000L) {
+            nodesWithText("Plan not copied: the credential is missing or was rejected.") > 0
+        }
+        settle()
+
+        assertEquals(0, application.poster.bodies.size)
+        assertEquals(0, writesSucceeded)
+    }
+
     private fun liveState(revision: Long = REVISION): VaultUiState {
         val base = VaultUiState.of(FamilyMember.VICTOR, Destination.BUDGET, Freshness.LIVE)
         val budget = requireNotNull(base.data.budget.value).copy(updatedAtMs = revision)
@@ -218,16 +245,15 @@ class SwappableRecordingPoster : HttpPoster {
 class BudgetPlanCarryTestApplication : VaultApplication() {
     val poster = SwappableRecordingPoster()
     var currentMonth: String = "2026-08"
+    var syncToken: String? = "compose-sync-token"
 
     override val budgetPlanCarryGateway: BudgetPlanCarryGateway by lazy {
         BudgetPlanCarryGateway(
-            client = ConvexDeviceMutationClient(
+            client = ConvexMutationClient(
                 configSource = MutableConvexConfigSource(
                     ConvexConfig("https://budget-carry-compose-test.convex.cloud"),
                 ),
-                credentialSource = ConvexDeviceCredentialSource {
-                    ConvexDeviceCredential("compose-device", "t".repeat(43))
-                },
+                syncTokenSource = ConvexSyncTokenSource { syncToken },
                 http = poster,
             ),
             trustedCurrentMonth = { currentMonth },

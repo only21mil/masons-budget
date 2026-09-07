@@ -404,15 +404,12 @@ open class VaultApplication : Application() {
         )
     }
 
-    /** Copying the budget plan forward stays behind the same budget capability. */
+    /** Copying the budget plan forward uses the household sync-token write surface. */
     internal open val budgetPlanCarryGateway: BudgetPlanCarryGateway by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
         BudgetPlanCarryGateway(
-            client = ConvexDeviceMutationClient(
-                configSource = MutableConvexConfigSource(writeConvexConfig()),
-                credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
-            ),
+            client = convexMutationClient,
             trustedCurrentMonth = { YearMonth.now(ZoneOffset.UTC).toString() },
         )
     }

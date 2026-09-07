@@ -12,9 +12,13 @@ import com.sats21m.vogelvault.domain.validateBudgetPlanCarry
  * The month the plan is compared against comes from application authority,
  * not from the Budget picker. Convex repeats the identity, month-gap, and
  * revision checks before it advances the canonical budget document.
+ *
+ * Transport is the household sync-token client: Android bootstrap credentials
+ * only carry `todos:write`, while this write needs the same admin surface as
+ * [ConvexMutation.UpsertBudgetCategory].
  */
 internal class BudgetPlanCarryGateway(
-    private val client: ConvexDeviceMutationClient,
+    private val client: ConvexMutationClient,
     private val trustedCurrentMonth: () -> String,
 ) {
     fun currentMonth(): String = trustedCurrentMonth()
@@ -41,7 +45,7 @@ internal class BudgetPlanCarryGateway(
             it.intent ?: return BudgetPlanCarryResult.Rejected(requireNotNull(it.rejection))
         }
         val result = client.mutate(
-            ConvexMutation.CopyBudgetPlanForwardFromDevice(
+            ConvexMutation.CopyBudgetPlanForward(
                 owner = intent.owner,
                 sourceFile = intent.sourceFile,
                 fromMonth = intent.fromMonth,

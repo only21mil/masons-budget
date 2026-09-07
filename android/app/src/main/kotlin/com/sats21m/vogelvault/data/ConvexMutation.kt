@@ -312,18 +312,22 @@ internal sealed class ConvexMutation(val path: String) {
         )
     }
     /**
-     * Copy the one live budget plan forward by exactly one month. The server
-     * defaults both months when omitted; Android always sends them so a replay
-     * after a lost response is answered as `already-copied` rather than
-     * advancing the plan twice.
+     * Copy the one live budget plan forward by exactly one month.
+     *
+     * Android budget category upserts already use the household sync-token
+     * surface (`tables:upsertBudgetCategory`). The paired-device carry route
+     * requires `budget:write`, which Android read-bootstrap never mints
+     * (todos:write only), so this client must stay on the sync-token twin.
+     * Months are always sent so a replay after a lost response is answered as
+     * `already-copied` rather than advancing the plan twice.
      */
-    data class CopyBudgetPlanForwardFromDevice(
+    data class CopyBudgetPlanForward(
         val owner: FamilyMember,
         val sourceFile: String,
         val fromMonth: String,
         val toMonth: String,
         val baseUpdatedAtMs: Long,
-    ) : ConvexMutation("tables:copyBudgetPlanForwardFromDevice") {
+    ) : ConvexMutation("tables:copyBudgetPlanForward") {
         init {
             require(fromMonth.matches(BUDGET_MONTH_PATTERN) && toMonth.matches(BUDGET_MONTH_PATTERN)) {
                 "budget plan months must be canonical yyyy-MM"

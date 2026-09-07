@@ -15,7 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class BudgetPlanCarryGatewayTest {
     @Test
-    fun `adult copy sends canonical owner source months and revision`() = runBlocking {
+    fun `adult copy sends canonical owner source months and revision on the sync-token path`() = runBlocking {
         val poster = RecordingPoster(success())
         val result = gateway(poster).copyForward(
             activeProfile = FamilyMember.RACHEL,
@@ -28,13 +28,15 @@ class BudgetPlanCarryGatewayTest {
         assertIs<ConvexResult.Ok<ConvexValue>>(result.result)
         val wire = Json.parseToJsonElement(poster.bodies.single()).jsonObject
         val args = wire.getValue("args").jsonObject
-        assertEquals("tables:copyBudgetPlanForwardFromDevice", wire.getValue("path").jsonPrimitive.content)
+        assertEquals("tables:copyBudgetPlanForward", wire.getValue("path").jsonPrimitive.content)
         assertEquals("victor", args.getValue("owner").jsonPrimitive.content)
         assertEquals("budget", args.getValue("sourceFile").jsonPrimitive.content)
         assertEquals("2026-08", args.getValue("fromMonth").jsonPrimitive.content)
         assertEquals("2026-09", args.getValue("toMonth").jsonPrimitive.content)
         assertEquals(REVISION.toString(), args.getValue("baseUpdatedAtMs").jsonPrimitive.content)
-        assertEquals("test-device", args.getValue("deviceId").jsonPrimitive.content)
+        assertEquals(SYNC_TOKEN, args.getValue("token").jsonPrimitive.content)
+        assertTrue(!args.containsKey("deviceId"))
+        assertTrue(!args.containsKey("deviceToken"))
     }
 
     @Test
@@ -80,14 +82,25 @@ class BudgetPlanCarryGatewayTest {
         assertEquals(ConvexResult.Failed(DEVICE_PLAN_EXISTS_REASON), result.result)
     }
 
-    private fun gateway(poster: RecordingPoster) = BudgetPlanCarryGateway(
-        client = ConvexDeviceMutationClient(
+    @Test
+    fun `a missing sync token is unauthorized before any network call`() = runBlocking {
+        val poster = RecordingPoster(success())
+        val result = gateway(poster, syncToken = null).copyForward(
+            FamilyMember.VICTOR,
+            budget(),
+            selectedMonth = null,
+        )
+        assertIs<BudgetPlanCarryResult.Submitted>(result)
+        assertEquals(ConvexResult.Unauthorized, result.result)
+        assertTrue(poster.bodies.isEmpty())
+    }
+
+    private fun gateway(poster: RecordingPoster, syncToken: String? = SYNC_TOKEN) = BudgetPlanCarryGateway(
+        client = ConvexMutationClient(
             configSource = MutableConvexConfigSource(
                 ConvexConfig("https://budget-carry-test.convex.cloud"),
             ),
-            credentialSource = ConvexDeviceCredentialSource {
-                ConvexDeviceCredential("test-device", "t".repeat(43))
-            },
+            syncTokenSource = ConvexSyncTokenSource { syncToken },
             http = poster,
         ),
         trustedCurrentMonth = { CURRENT_MONTH },
@@ -112,5 +125,6 @@ class BudgetPlanCarryGatewayTest {
     private companion object {
         const val CURRENT_MONTH = "2026-09"
         const val REVISION = 1_787_654_321_000L
+        const val SYNC_TOKEN = "budget-carry-sync-token"
     }
 }

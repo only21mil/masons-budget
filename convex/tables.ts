@@ -6440,6 +6440,42 @@ export const copyBudgetPlanForwardFromDevice = mutation({
   },
 });
 
+/**
+ * Household-admin copy of the live budget plan, gated by CONVEX_SYNC_TOKEN.
+ *
+ * Android's read-bootstrap pairing only mints `todos:write`, so the device
+ * carry mutation above always returns DEVICE_UNAUTHORIZED on that client even
+ * when budget category upserts succeed through this same sync-token surface.
+ * Linux and Apple keep using the paired-device route; Android uses this one,
+ * matching `upsertBudgetCategory`. Adjacent-month only — no `allowGap`.
+ */
+export const copyBudgetPlanForward = mutation({
+  args: {
+    owner: familyMemberValidator,
+    sourceFile: budgetSourceValidator,
+    fromMonth: v.optional(v.string()),
+    toMonth: v.optional(v.string()),
+    baseUpdatedAtMs: v.float64(),
+    token: v.optional(v.string()),
+  },
+  returns: budgetPlanCarryResultValidator,
+  handler: async (ctx, args) => {
+    validateSyncToken(args.token);
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    if (args.fromMonth !== undefined) requireDeviceMonth(args.fromMonth);
+    if (args.toMonth !== undefined) requireDeviceMonth(args.toMonth);
+    const owner = canonicalLedgerOwner(args.owner);
+    const result = await copyBudgetPlanForwardCore(ctx, args.sourceFile, owner, {
+      fromMonth: args.fromMonth,
+      toMonth: args.toMonth,
+      allowGap: false,
+      baseUpdatedAtMs: args.baseUpdatedAtMs,
+      deviceId: "sync-token",
+    });
+    return { ok: true as const, ...result };
+  },
+});
+
 export const upsertBtcBuyFromDevice = mutation({
   args: {
     deviceId: v.string(),
