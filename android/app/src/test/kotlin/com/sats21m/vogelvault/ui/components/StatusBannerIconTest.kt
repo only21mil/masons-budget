@@ -19,7 +19,7 @@ class StatusBannerIconTest {
     fun legacySemanticTonesUseMatchingMarks() {
         assertEquals(LedgerStatusMark.GAIN, statusBannerMark(VaultPositive))
         assertEquals(LedgerStatusMark.LOSS, statusBannerMark(VaultNegative))
-        assertEquals(LedgerStatusMark.LOSS, statusBannerMark(VaultWarning))
+        assertEquals(LedgerStatusMark.WARNING, statusBannerMark(VaultWarning))
     }
 
     @Test
@@ -28,6 +28,12 @@ class StatusBannerIconTest {
         assertEquals(LedgerStatusMark.GAIN, statusBannerMark(LedgerPalettes.DaylightLight.gain))
         assertEquals(LedgerStatusMark.LOSS, statusBannerMark(LedgerPalettes.TerminalDark.loss))
         assertEquals(LedgerStatusMark.LOSS, statusBannerMark(LedgerPalettes.DaylightLight.loss))
+    }
+
+    @Test
+    fun currentLedgerWarningsUseWarningMarks() {
+        assertEquals(LedgerStatusMark.WARNING, statusBannerMark(LedgerPalettes.TerminalDark.warning))
+        assertEquals(LedgerStatusMark.WARNING, statusBannerMark(LedgerPalettes.DaylightLight.warning))
     }
 
     @Test

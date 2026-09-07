@@ -42,12 +42,12 @@ class ThemeContrastTest {
         assertEquals(Color(0xFF141715), light.foreground)
         assertEquals(Color(0xFF505452), light.foregroundSecondary)
         assertEquals(Color(0xFF5C605D), light.foregroundTertiary)
-        assertEquals(Color(0xFF9E5104), light.bitcoin)
+        assertEquals(Color(0xFF954C04), light.bitcoin)
         assertEquals(Color(0xFFF7931A), light.bitcoinFill)
         assertEquals(Color(0xFF9E5104).copy(alpha = 0.10f), light.bitcoinSoft)
         assertEquals(Color(0xFF9E5104), light.priceDecimals)
-        assertEquals(LedgerOklch(0.52f, 0.13f, 158f), light.gainSpec)
-        assertEquals(LedgerOklch(0.52f, 0.15f, 28f), light.lossSpec)
+        assertEquals(LedgerOklch(0.47f, 0.10f, 158f), light.gainSpec)
+        assertEquals(LedgerOklch(0.50f, 0.15f, 28f), light.lossSpec)
         assertEquals(ColorSpaces.Oklab, dark.gain.colorSpace)
         assertEquals(ColorSpaces.Oklab, light.loss.colorSpace)
     }
@@ -131,11 +131,14 @@ class ThemeContrastTest {
     @Test
     fun `every ink clears AA on every ledger fill including bitcoinSoft composites`() {
         listOf(LedgerPalettes.TerminalDark, LedgerPalettes.DaylightLight).forEach { palette ->
-            // Gain and loss are unchanged by the 2026-09-05 audit; light gain on panel stays at 4.29.
             val inks = mapOf(
                 "foreground" to palette.foreground,
                 "secondary" to palette.foregroundSecondary,
                 "tertiary" to palette.foregroundTertiary,
+                "bitcoin" to palette.bitcoin,
+                "gain" to palette.gain,
+                "loss" to palette.loss,
+                "warning" to palette.warning,
             )
             inks.forEach { (name, ink) ->
                 palette.fills().forEach { (fillName, fill) ->
@@ -198,6 +201,16 @@ class ThemeContrastTest {
                     "price decimals on $fillName is ${contrastRatio(palette.priceDecimals, fill)}",
                 )
             }
+        }
+    }
+
+    @Test
+    fun `warnings remain amber and distinct from errors in both treatments`() {
+        listOf(LedgerPalettes.TerminalDark, LedgerPalettes.DaylightLight).forEach { palette ->
+            assertTrue(palette.warning != palette.loss)
+            assertEquals(1f, palette.warning.alpha)
+            assertTrue(palette.warning.red > palette.warning.green)
+            assertTrue(palette.warning.green > palette.warning.blue)
         }
     }
 

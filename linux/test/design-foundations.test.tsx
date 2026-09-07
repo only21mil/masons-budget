@@ -80,9 +80,9 @@ describe("ledger design foundations", () => {
       "--vv-ledger-bg: #f4f3ee",
       "--vv-ledger-panel: #edebe4",
       "--vv-ledger-panel-raised: #ffffff",
-      "--vv-ledger-bitcoin: #9e5104",
-      "--vv-ledger-gain: oklch(0.52 0.13 158)",
-      "--vv-ledger-loss: oklch(0.52 0.15 28)",
+      "--vv-ledger-bitcoin: #954c04",
+      "--vv-ledger-gain: oklch(0.47 0.1 158)",
+      "--vv-ledger-loss: oklch(0.5 0.15 28)",
       "--vv-ledger-rule-style: dashed",
       "--vv-ledger-screen-gutter: 22px",
       "--vv-ledger-row-padding-block: 15px",
@@ -110,10 +110,10 @@ describe("ledger design foundations", () => {
     for (const token of [
       "--vv-ledger-ink-secondary: #505452",
       "--vv-ledger-ink-meta: #5c605d",
-      "--vv-ledger-bitcoin: #9e5104",
+      "--vv-ledger-bitcoin: #954c04",
       "--vv-ledger-bitcoin-fill: #f7931a",
       "--vv-ledger-bitcoin-decimals: #9e5104",
-      // The light soft fill is the light bitcoin text tone at 0.10 (FOUNDATIONS).
+      // The soft fill stays unchanged when the small-text ink darkens.
       "--vv-ledger-bitcoin-soft: rgba(158, 81, 4, 0.1)",
       "--vv-ledger-soft-alpha: 10%",
     ]) {

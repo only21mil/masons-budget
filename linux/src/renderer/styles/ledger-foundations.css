@@ -1,9 +1,9 @@
 /*
  * Sovereign Budget App redesign foundations.
  *
- * This file is registered globally so Vite bundles the local font, but none of
- * its classes are adopted by a route or screen yet. A future screen migration
- * opts in with .vv-ledger-root and data-vv-theme="dark|light".
+ * Imported globally for the local font and shared tokens. The app shell owns
+ * .vv-ledger-root and data-vv-theme="dark|light"; global.css bridges existing
+ * screen variables to the active ledger treatment.
  */
 
 @font-face {
@@ -133,7 +133,7 @@
 [data-vv-theme="light"] {
   color-scheme: light;
 
-  /* Daylight Ledger, exact handoff colours. */
+  /* Daylight Ledger with audited small-text contrast. */
   --vv-ledger-bg: #f4f3ee;
   --vv-ledger-panel: #edebe4;
   --vv-ledger-panel-raised: #ffffff;
@@ -143,16 +143,16 @@
   /* Opaque tiers: #141715 at 0.72 and 0.67 over the background. */
   --vv-ledger-ink-secondary: #505452;
   --vv-ledger-ink-meta: #5c605d;
-  /* Bitcoin text clears 4.5:1 on panel; filled controls keep #f7931a. */
-  --vv-ledger-bitcoin: #9e5104;
+  /* Bitcoin text clears 4.5:1 on selected panels; fills keep #f7931a. */
+  --vv-ledger-bitcoin: #954c04;
   --vv-ledger-bitcoin-fill: #f7931a;
   --vv-ledger-bitcoin-decimals: #9e5104;
   --vv-ledger-on-bitcoin: #050505;
-  /* Soft fill is the light bitcoin text tone (#9e5104) at 0.10, as in
-     Design/FOUNDATIONS.md and the Android LedgerFoundation. */
+  /* Keep the existing soft fill and hero decimals independent of text ink. */
   --vv-ledger-bitcoin-soft: rgba(158, 81, 4, 0.1);
-  --vv-ledger-gain: oklch(0.52 0.13 158);
-  --vv-ledger-loss: oklch(0.52 0.15 28);
+  /* In-gamut small text also clears AA over the selection overlay. */
+  --vv-ledger-gain: oklch(0.47 0.1 158);
+  --vv-ledger-loss: oklch(0.5 0.15 28);
   --vv-ledger-soft-alpha: 10%;
   --vv-ledger-scanline: rgba(0, 0, 0, 0.012);
   --vv-ledger-toggle-knob: #ffffff;

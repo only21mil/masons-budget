@@ -59,7 +59,7 @@ data class LedgerColors(
     val foreground: Color,
     val foregroundSecondary: Color,
     val foregroundTertiary: Color,
-    /** Bitcoin orange for text and icons. Light drops to a darker orange so it clears AA on panel. */
+    /** Bitcoin orange for text and icons. Light uses darker ink to clear AA on selected panels. */
     val bitcoin: Color,
     /** Bitcoin orange for filled controls carrying the dark ink; both treatments use the brand orange. */
     val bitcoinFill: Color,
@@ -68,6 +68,8 @@ data class LedgerColors(
     val priceDecimals: Color,
     val gainSpec: LedgerOklch,
     val lossSpec: LedgerOklch,
+    /** Amber for stale and warning states, separate from loss and error red. */
+    val warning: Color,
     val scanline: Color,
     val knob: Color,
 ) {
@@ -91,6 +93,7 @@ object LedgerPalettes {
         priceDecimals = Color(0xFFF7931A).copy(alpha = 0.75f),
         gainSpec = LedgerOklch(0.74f, 0.155f, 158f),
         lossSpec = LedgerOklch(0.70f, 0.155f, 28f),
+        warning = Color(0xFFFBBF24),
         scanline = Color.White.copy(alpha = 0.022f),
         knob = Color(0xFFF5F2EA),
     )
@@ -104,12 +107,15 @@ object LedgerPalettes {
         foreground = Color(0xFF141715),
         foregroundSecondary = Color(0xFF505452),
         foregroundTertiary = Color(0xFF5C605D),
-        bitcoin = Color(0xFF9E5104),
+        bitcoin = Color(0xFF954C04),
         bitcoinFill = Color(0xFFF7931A),
         bitcoinSoft = Color(0xFF9E5104).copy(alpha = 0.10f),
         priceDecimals = Color(0xFF9E5104),
-        gainSpec = LedgerOklch(0.52f, 0.13f, 158f),
-        lossSpec = LedgerOklch(0.52f, 0.15f, 28f),
+        // Small text clears AA on panels and their Bitcoin selection overlay.
+        // Keep the light gain in sRGB gamut so platform gamut mapping agrees.
+        gainSpec = LedgerOklch(0.47f, 0.10f, 158f),
+        lossSpec = LedgerOklch(0.50f, 0.15f, 28f),
+        warning = Color(0xFF785900),
         scanline = Color.Black.copy(alpha = 0.012f),
         knob = Color.White,
     )

@@ -45,12 +45,12 @@ class LedgerColorTest {
     fun legacyNoticeAliasesResolveToCurrentLedgerContrastRoles() {
         assertLegacyNoticeAliases(
             treatment = LedgerTreatment.TERMINAL_DARK,
-            expectedWarning = LedgerPalettes.TerminalDark.loss,
+            expectedWarning = LedgerPalettes.TerminalDark.warning,
             expectedInfo = LedgerPalettes.TerminalDark.foregroundSecondary,
         )
         assertLegacyNoticeAliases(
             treatment = LedgerTreatment.DAYLIGHT_LIGHT,
-            expectedWarning = LedgerPalettes.DaylightLight.loss,
+            expectedWarning = LedgerPalettes.DaylightLight.warning,
             expectedInfo = LedgerPalettes.DaylightLight.foregroundSecondary,
         )
     }

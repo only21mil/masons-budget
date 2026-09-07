@@ -36,6 +36,28 @@ function color(value: string): RGBA {
     }
     return [r / 255, g / 255, b / 255, alpha]
   }
+  if (resolved.startsWith("oklch(")) {
+    const [lightness, chroma, degrees] = capture(resolved, /^oklch\(([^)]+)\)$/).split(/\s+/).map(Number)
+    if (lightness === undefined || chroma === undefined || degrees === undefined) {
+      throw new Error(`Incomplete color ${resolved}`)
+    }
+    const a = chroma * Math.cos(degrees * Math.PI / 180)
+    const b = chroma * Math.sin(degrees * Math.PI / 180)
+    const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3
+    const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3
+    const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3
+    const linear: RGB = [
+      4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
+    ]
+    // Daylight semantic inks stay in gamut, avoiding platform gamut-mapping differences.
+    for (const channel of linear) {
+      if (channel < 0 || channel > 1) throw new Error(`Out-of-gamut text ink ${resolved}`)
+    }
+    const encode = (channel: number) => channel <= 0.0031308 ? 12.92 * channel : 1.055 * channel ** (1 / 2.4) - 0.055
+    return [encode(linear[0]), encode(linear[1]), encode(linear[2]), 1]
+  }
   throw new Error(`Unsupported color ${resolved}`)
 }
 
@@ -84,4 +106,21 @@ describe("Daylight badge text contrast", () => {
       }
     }
   })
+})
+
+
+describe("Daylight small text on ledger surfaces", () => {
+  it.each(["ink", "ink-secondary", "ink-meta", "bitcoin", "gain", "loss"])(
+    "keeps %s at 4.5:1 on opaque and selected surfaces",
+    (role) => {
+      const foreground = color(`var(--vv-ledger-${role})`)
+      for (const panel of panels) {
+        const background = color(`var(--vv-ledger-${panel})`)
+        for (const selected of [false, true]) {
+          const fill = selected ? composite(color("var(--vv-ledger-bitcoin-soft)"), background) : background
+          expect(contrast(foreground, fill), `${role} on ${panel}, selected=${selected}`).toBeGreaterThanOrEqual(4.5)
+        }
+      }
+    },
+  )
 })

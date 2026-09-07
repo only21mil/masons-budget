@@ -85,7 +85,7 @@ internal fun ledgerColor(requested: Color): Color {
         VaultAccent -> colors.bitcoin
         VaultPositive -> colors.gain
         VaultNegative -> colors.loss
-        VaultWarning -> colors.loss
+        VaultWarning -> colors.warning
         VaultInfo -> colors.foregroundSecondary
         VaultLine -> colors.line
         VaultSurface -> colors.panel
@@ -602,7 +602,7 @@ fun StateBlock(
         Freshness.STALE -> {
             fallbackTitle = stringResource(R.string.convex_read_stale_title)
             fallbackDetail = stringResource(R.string.convex_read_stale_detail)
-            tone = tokens.colors.loss
+            tone = tokens.colors.warning
         }
         else -> {
             fallbackTitle = stringResource(R.string.convex_read_empty_title)
@@ -643,6 +643,7 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
     val dotTone = when (statusBannerMark(tone)) {
         LedgerStatusMark.GAIN -> tokens.colors.gain
         LedgerStatusMark.LOSS -> tokens.colors.loss
+        LedgerStatusMark.WARNING -> tokens.colors.warning
         LedgerStatusMark.NEUTRAL -> tokens.colors.foregroundTertiary
     }
     Row(
@@ -666,8 +667,8 @@ fun StatusBanner(text: String, detail: String? = null, tone: Color = VaultInfo) 
     }
 }
 
-/** What a banner's dot reports. Warning collapses into loss, as [ledgerColor] already does. */
-enum class LedgerStatusMark { GAIN, LOSS, NEUTRAL }
+/** What a banner's dot reports, preserving warning and error as separate states. */
+enum class LedgerStatusMark { GAIN, LOSS, WARNING, NEUTRAL }
 
 internal fun statusBannerMark(tone: Color): LedgerStatusMark = when (tone) {
     VaultPositive,
@@ -675,10 +676,13 @@ internal fun statusBannerMark(tone: Color): LedgerStatusMark = when (tone) {
     LedgerPalettes.DaylightLight.gain,
     -> LedgerStatusMark.GAIN
     VaultNegative,
-    VaultWarning,
     LedgerPalettes.TerminalDark.loss,
     LedgerPalettes.DaylightLight.loss,
     -> LedgerStatusMark.LOSS
+    VaultWarning,
+    LedgerPalettes.TerminalDark.warning,
+    LedgerPalettes.DaylightLight.warning,
+    -> LedgerStatusMark.WARNING
     else -> LedgerStatusMark.NEUTRAL
 }
 
