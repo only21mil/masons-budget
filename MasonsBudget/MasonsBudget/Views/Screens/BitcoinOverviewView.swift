@@ -369,44 +369,94 @@ struct BitcoinTransferView: View {
     @Environment(\.theme) private var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
     @State private var sourceKey = ""
     @State private var destinationKey = ""
     @State private var amount = ""
+    @State private var date = Date()
+    @State private var draft: BitcoinTransferDraftStore.Draft?
+    @State private var store: BitcoinTransferDraftStore?
+    @State private var saving = false
+    @State private var loaded = false
+    @State private var message: String?
+
+    private var viewer: FamilyMember? { FamilyMember(rawValue: selectedMemberRaw) }
 
     private var accounts: [CanonicalBTCBalance.Account] {
-        canonicalFinancials.btcBalance.value?.accounts ?? []
+        guard let viewer, viewer.isAdult,
+              let balance = canonicalFinancials.btcBalance.value,
+              balance.owner == viewer.ledgerOwner else { return [] }
+        return balance.accounts
     }
 
     var body: some View {
         ScrollView {
             VStack(spacing: AppLayout.cardSpacing) {
                 ScreenHeader(title: "Transfer", eyebrow: "Between Bitcoin accounts")
-
-                VStack(spacing: 0) {
-                    accountPicker("FROM", selection: $sourceKey)
-                    Hairline()
-                    accountPicker("TO", selection: $destinationKey)
-                    Hairline()
-                    HStack {
-                        Text("SATS")
-                            .ledgerType(.kpiLabel)
-                            .foregroundStyle(theme.textMuted)
-                        TextField("0", text: $amount)
-                            .ledgerType(.rowFigure)
-                            .multilineTextAlignment(.trailing)
-                        #if os(iOS)
-                            .keyboardType(.numberPad)
-                        #endif
+                if viewer?.isAdult == true {
+                    if let draft {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(draft.accepted ? "TRANSFER ACCEPTED" : "PENDING TRANSFER")
+                                .ledgerType(.sectionLabel)
+                            Text("\(draft.intent.sats) sats · \(draft.intent.date)")
+                            Text("\(accountLabel(draft.intent.fromAccountKey)) → \(accountLabel(draft.intent.toAccountKey))")
+                            Text(draft.accepted
+                                 ? "Both accounts were updated. Finish saving the receipt before starting another transfer."
+                                 : "Retry sends the same transfer. Its amount, accounts, and date stay fixed until the receipt is confirmed.")
+                                .ledgerType(.rowMeta)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .glassCard(padding: 14, radius: AppLayout.radiusMedium)
+                        .padding(.horizontal, AppLayout.sectionPadding)
+                    } else {
+                        VStack(spacing: 0) {
+                            accountPicker("FROM", selection: $sourceKey)
+                            Hairline()
+                            accountPicker("TO", selection: $destinationKey)
+                            Hairline()
+                            HStack {
+                                Text("SATS")
+                                    .ledgerType(.kpiLabel)
+                                    .foregroundStyle(theme.textMuted)
+                                TextField("0", text: $amount)
+                                    .ledgerType(.rowFigure)
+                                    .multilineTextAlignment(.trailing)
+                                #if os(iOS)
+                                    .keyboardType(.numberPad)
+                                #endif
+                            }
+                            .padding(14)
+                            Hairline()
+                            DatePicker("Transfer date", selection: $date, displayedComponents: .date)
+                                .padding(14)
+                        }
+                        .disabled(saving || !loaded)
+                        .glassCard(padding: 0, radius: AppLayout.radiusMedium)
+                        .padding(.horizontal, AppLayout.sectionPadding)
                     }
-                    .padding(14)
+                    Text("Moves the same sats between accounts. Total Bitcoin holdings, income, and spending stay unchanged.")
+                        .ledgerType(.rowMeta)
+                        .foregroundStyle(theme.textMuted)
+                        .padding(.horizontal, AppLayout.sectionPadding)
+                    if let message {
+                        Text(message)
+                            .ledgerType(.rowMeta)
+                            .foregroundStyle(theme.warn)
+                            .padding(.horizontal, AppLayout.sectionPadding)
+                    }
+                    Button(saving ? "Saving…" : (draft == nil ? "Save transfer" : "Recover transfer")) {
+                        Task { await save() }
+                    }
+                    .disabled(saving || !loaded)
+                    .accessibilityIdentifier("bitcoin.transfer.save")
+                    if !loaded {
+                        Button("Reload saved transfer") { recoverDraft() }
+                            .disabled(saving)
+                    }
+                } else {
+                    Text("Bitcoin transfers are available only to adult household profiles.")
+                        .padding(.horizontal, AppLayout.sectionPadding)
                 }
-                .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
-
-                holdCard(
-                    title: "ATOMIC LEDGER HOLD",
-                    message: "Apple does not yet have an atomic account-to-account write route. This compose screen will not create one-sided ledger rows.",
-                )
             }
             .padding(.bottom, 100)
         }
@@ -414,8 +464,76 @@ struct BitcoinTransferView: View {
         .navigationTitle("Transfer")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Close") { dismiss() }
+                Button("Close") { dismiss() }.disabled(saving)
             }
+        }
+        .interactiveDismissDisabled(saving)
+        .onAppear { recoverDraft() }
+        .onChange(of: selectedMemberRaw) { _, _ in
+            // A profile change must never leave another profile's draft on screen.
+            if !saving { recoverDraft() }
+        }
+    }
+
+    private func accountLabel(_ key: String) -> String {
+        accounts.first(where: { $0.key == key })?.label ?? key
+    }
+
+    @MainActor
+    private func recoverDraft() {
+        loaded = false
+        draft = nil
+        store = nil
+        guard viewer?.isAdult == true else { return }
+        do {
+            let recoveredStore = try BitcoinTransferDraftStore()
+            draft = try recoveredStore.load()
+            store = recoveredStore
+            loaded = true
+            message = nil
+        } catch {
+            message = BitcoinTransferError.storageUnavailable.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func save() async {
+        guard !saving, loaded, let viewer, viewer.isAdult, let store else { return }
+        saving = true
+        message = nil
+        defer { saving = false }
+        do {
+            guard ConvexConfig.writesEnabled else { throw BitcoinTransferError.writesDisabled }
+            let intent: BitcoinTransferIntent
+            if let draft {
+                intent = draft.intent
+            } else {
+                intent = try BitcoinTransferIntent.make(
+                    viewer: viewer, balance: canonicalFinancials.btcBalance.value,
+                    from: sourceKey, to: destinationKey, satsText: amount, date: date,
+                )
+                // Persist the full request before any network operation.
+                try store.reserve(intent)
+                draft = BitcoinTransferDraftStore.Draft(intent: intent, accepted: false)
+            }
+            if draft?.accepted != true {
+                try store.reserve(intent)
+                try await AppWritebackClient().transferBitcoin(intent, activeProfile: viewer)
+                draft = BitcoinTransferDraftStore.Draft(intent: intent, accepted: true)
+            }
+            try store.accept(intent)
+            try store.retire(intent)
+            if selectedMemberRaw == viewer.rawValue {
+                await canonicalFinancials.load(viewer: viewer)
+            }
+            dismiss()
+        } catch let error as BitcoinTransferError {
+            message = error.localizedDescription
+            // A failed persistence readback can still have written the file.
+            // Require recovery before allowing a different draft to be created.
+            if draft == nil, error == .storageUnavailable || error == .pendingTransfer { loaded = false }
+        } catch {
+            message = "The transfer receipt could not be confirmed. Recover this same transfer before starting another; retrying cannot post it twice."
         }
     }
 
@@ -434,20 +552,6 @@ struct BitcoinTransferView: View {
             .labelsHidden()
         }
         .padding(14)
-    }
-
-    private func holdCard(title: String, message: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .ledgerType(.sectionLabel)
-                .foregroundStyle(theme.warn)
-            Text(message)
-                .ledgerType(.rowPrimary)
-                .foregroundStyle(theme.textMuted)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(padding: 14, radius: AppLayout.radiusMedium)
-        .padding(.horizontal, AppLayout.sectionPadding)
     }
 }
 

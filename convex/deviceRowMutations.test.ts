@@ -3040,3 +3040,138 @@ describe("money magnitude caps", () => {
     ).toBeUndefined();
   });
 });
+
+describe("Apple zero-fee transfer contract", () => {
+  async function setup(profile: DeviceProfile = "victor") {
+    await seedBtcLedger("victor");
+    const device = await fullDevice("apple-transfer-device", profile);
+    // Seed a second canonical account through the same existing device route.
+    await t.mutation(api.upsertBtcAccount, {
+      ...authArgs(device),
+      owner: "victor",
+      sourceFile: "btc-balance-snapshot",
+      baseUpdatedAtMs: await btcDocumentRevision("btc-balance-snapshot"),
+      account: {
+        key: "coldcard",
+        owner: "victor",
+        label: "Coldcard",
+        custody: "self_custody",
+        sats: 0n,
+        asOf: "2026-08-01T00:00:00.000Z",
+      },
+    });
+    return {
+      ...authArgs(device),
+      owner: "victor",
+      sourceFile: "btc-transfers",
+      transfer: {
+        id: "apple-stable-transfer",
+        owner: "victor",
+        date: "2026-08-01",
+        fromAccountKey: "river",
+        toAccountKey: "coldcard",
+        sats: 1_000_000n,
+        feeSats: 0n,
+      },
+    };
+  }
+
+  async function state() {
+    return t.run(async (ctx) => ({
+      documents: await ctx.db.query("btcBalanceDocuments").collect(),
+      accounts: await ctx.db.query("btcAccounts").collect(),
+      transfers: await ctx.db.query("btcTransfers").collect(),
+      income: await ctx.db.query("income").collect(),
+      transactions: await ctx.db.query("transactions").collect(),
+    }));
+  }
+
+  it.each(["victor", "rachel"] as const)(
+    "recovers a lost %s receipt after draining the source with no second debit",
+    async (profile) => {
+      const request = await setup(profile);
+      const before = await state();
+      expect(await t.mutation(api.upsertBtcTransfer, request)).toEqual({
+        ok: true,
+        entityId: request.transfer.id,
+        outcome: "inserted",
+      });
+      const accepted = await state();
+      expect(
+        accepted.documents[0].accounts.map(({ key, sats }) => ({ key, sats })),
+      ).toEqual([
+        { key: "river", sats: 0n },
+        { key: "coldcard", sats: 1_000_000n },
+      ]);
+      expect(accepted.documents[0].totals.sats).toBe(
+        before.documents[0].totals.sats,
+      );
+      expect(accepted.income).toEqual(before.income);
+      expect(accepted.transactions).toEqual(before.transactions);
+      expect(accepted.transfers).toHaveLength(1);
+      // The client persisted these same fields before its first send. Recovery
+      // must not revalidate against the now-empty source or create a new id.
+      expect(await t.mutation(api.upsertBtcTransfer, request)).toEqual({
+        ok: true,
+        entityId: request.transfer.id,
+        outcome: "updated",
+      });
+      expect(await state()).toEqual(accepted);
+      await expectDeviceError(
+        t.mutation(api.upsertBtcTransfer, {
+          ...request,
+          transfer: { ...request.transfer, sats: 1n },
+        }),
+        "REVISION_REQUIRED",
+        request.transfer.id,
+      );
+      expect(await state()).toEqual(accepted);
+    },
+  );
+
+  it("refuses insufficient, same-account, and foreign-owner requests without half-posting", async () => {
+    const request = await setup();
+    const before = await state();
+    for (const transfer of [
+      { ...request.transfer, sats: 1_000_001n },
+      { ...request.transfer, toAccountKey: "river" },
+      { ...request.transfer, toAccountKey: "unknown" },
+    ]) {
+      await expect(
+        t.mutation(api.upsertBtcTransfer, { ...request, transfer }),
+      ).rejects.toThrow();
+      expect(await state()).toEqual(before);
+    }
+    const child = await fullDevice("child-transfer-device", "mason");
+    await expectDeviceError(
+      t.mutation(api.upsertBtcTransfer, {
+        ...request,
+        ...authArgs(child),
+      }),
+      "OWNER_MISMATCH",
+      request.transfer.id,
+    );
+    expect(await state()).toEqual(before);
+  });
+
+  it("keeps a delayed accepted-create retry behind the deletion tombstone", async () => {
+    const request = await setup();
+    await t.mutation(api.upsertBtcTransfer, request);
+    const accepted = await state();
+    await t.mutation(api.deleteBtcTransfer, {
+      deviceId: request.deviceId,
+      deviceToken: request.deviceToken,
+      owner: "victor",
+      sourceFile: "btc-transfers",
+      entityId: request.transfer.id,
+      baseUpdatedAtMs: accepted.transfers[0].updatedAtMs,
+    });
+    const deleted = await state();
+    await expectDeviceError(
+      t.mutation(api.upsertBtcTransfer, request),
+      "ENTITY_DELETED",
+      request.transfer.id,
+    );
+    expect(await state()).toEqual(deleted);
+  });
+});

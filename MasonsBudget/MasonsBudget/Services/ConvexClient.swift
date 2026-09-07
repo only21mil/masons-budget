@@ -901,6 +901,29 @@ final class AppWritebackClient: Sendable {
         return removed
     }
 
+    /// Uses the existing profile-bound device capability and one atomic ledger mutation.
+    func transferBitcoin(
+        _ intent: BitcoinTransferIntent,
+        activeProfile: FamilyMember,
+    ) async throws {
+        guard ConvexConfig.writesEnabled else { throw BitcoinTransferError.writesDisabled }
+        guard activeProfile.isAdult, intent.owner == activeProfile.ledgerOwner else {
+            throw AppWritebackError.remote(.ownerMismatch)
+        }
+        let device = try await taskSession(activeProfile: activeProfile)
+        // Pairing can suspend; recheck the kill switch and profile before sending.
+        guard ConvexConfig.writesEnabled else { throw BitcoinTransferError.writesDisabled }
+        guard AppWritebackConfig.activeProfile == activeProfile else {
+            throw AppWritebackError.remote(.ownerMismatch)
+        }
+        let value = try await convexMutation(
+            baseURL: device.baseURL,
+            path: BitcoinTransferIntent.mutationPath,
+            args: intent.arguments(deviceID: device.deviceID, deviceToken: device.deviceToken),
+        )
+        try intent.validateReceipt(value)
+    }
+
     func copyBudgetPlanForward(
         _ intent: BudgetPlanCarryIntent,
         activeProfile: FamilyMember,
