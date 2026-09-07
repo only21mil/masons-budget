@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 import stat
 import subprocess
 import sys
@@ -103,7 +104,12 @@ def client() -> None:
         raise RuntimeError('workflow must run on the MBP signing runner')
     verify_installation()
     request = {key: os.environ[env_key] for key, env_key in REQUEST_ENV.items()}
-    output = Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True) / 'unsigned'
+    if (request['arch'] not in ('aarch64', 'x86_64') or
+            any(not re.fullmatch(r'[1-9][0-9]{0,19}', request[key])
+                for key in ('run_id', 'run_attempt'))):
+        raise RuntimeError('invalid build output identity')
+    name = f"unsigned-{request['run_id']}-{request['run_attempt']}-{request['arch']}"
+    output = Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True) / name
     output.mkdir(mode=0o700)  # Fail closed on every stale file, directory, or link.
     request['output_dir'] = str(output)
     subprocess.run(['/usr/bin/sudo', '-n', '/usr/bin/python3', '-I',

@@ -21,12 +21,10 @@ with open(os.environ['CALL_LOG'], 'a') as log:
     log.write(json.dumps([name] + sys.argv[1:]) + '\\n')
 if name == 'git':
     print(os.environ['SOURCE_SHA'])
-elif name == 'python3' and sys.argv[1:] == ['-']:
-    code = sys.stdin.read()
-    if 'tomllib' in code:
-        print(os.environ['MOCK_MESH'])
-    else:
-        exec(code)
+elif name == 'cargo' and sys.argv[1] == 'metadata':
+    print(json.dumps({'packages': [{'name': 'mesh-llm-sdk', 'manifest_path': os.environ['MOCK_MESH'] + '/Cargo.toml'}]}))
+elif name == 'python3':
+    exec(sys.stdin.read() if sys.argv[1:] == ['-'] else sys.argv[2])
 '''
 
 
@@ -71,13 +69,19 @@ class BuildArgumentsTests(unittest.TestCase):
                     ['bundle-sidecars.sh', target]]
                 if arch == 'aarch64':
                     expected += [['cargo', 'fetch', '--locked', '--manifest-path', 'desktop/src-tauri/Cargo.toml'],
-                                 ['python3', '-'], ['prepare-llama.sh', 'pinned'],
+                                 ['cargo', 'metadata', '--locked', '--features', 'mesh-llm', '--format-version', '1', '--manifest-path', 'desktop/src-tauri/Cargo.toml'],
+                                 ['python3', '-c', SCRIPT.read_text().split("| python3 -c '", 1)[1].split("')", 1)[0]],
+                                 ['prepare-llama.sh', 'pinned'],
                                  ['build-llama.sh', '-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15']]
                 expected += [['pnpm', 'tauri', 'build', '--verbose', '--no-sign', '--target', target,
                               '--bundles', 'app'] + (['--features', 'mesh-llm'] if arch == 'aarch64' else []) +
                              ['--config', 'src-tauri/tauri.release.conf.json']]
 
-                self.assertEqual([json.loads(line) for line in log.read_text().splitlines()], expected)
+                actual = [json.loads(line) for line in log.read_text().splitlines()]
+                if arch == 'aarch64':
+                    offset = next(i for i, row in enumerate(actual) if row[:2] == ['cargo', 'fetch']) + 1
+                    actual[offset:offset+2] = sorted(actual[offset:offset+2])
+                self.assertEqual(actual, expected)
                 self.assertEqual(json.loads((tauri / 'tauri.release.conf.json').read_text()),
                                  {'bundle': {'createUpdaterArtifacts': False, 'externalBin': ['unchanged']}})
 

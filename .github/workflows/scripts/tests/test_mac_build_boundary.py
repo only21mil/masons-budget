@@ -45,6 +45,28 @@ class BoundaryTests(unittest.TestCase):
                 boundary.client()
             run.assert_not_called()
 
+    def test_two_architectures_and_rerun_have_distinct_create_only_outputs(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(boundary, 'verify_installation'), \
+                patch.object(boundary.pwd, 'getpwuid') as user, \
+                patch.object(boundary.subprocess, 'run') as run:
+            user.return_value.pw_name = 'm5mbp'
+            env = {key: 'public-only' for key in boundary.REQUEST_ENV.values()}
+            env.update(GITHUB_WORKSPACE=temp, GITHUB_RUN_ID='123', GITHUB_RUN_ATTEMPT='1', ARCH='aarch64')
+            with patch.dict(os.environ, env, clear=True):
+                boundary.client()
+                os.environ['ARCH'] = 'x86_64'
+                boundary.client()
+                os.environ['GITHUB_RUN_ATTEMPT'] = '2'
+                boundary.client()
+                with self.assertRaises(FileExistsError):
+                    boundary.client()
+                os.environ['GITHUB_RUN_ID'] = '../escape'
+                with self.assertRaisesRegex(RuntimeError, 'output identity'):
+                    boundary.client()
+            self.assertEqual(run.call_count, 3)
+            self.assertEqual(set(os.listdir(temp)), {'unsigned-123-1-aarch64',
+                                                     'unsigned-123-1-x86_64', 'unsigned-123-2-x86_64'})
+
     def test_routing_is_mbp_only_and_serialized(self):
         text = (SCRIPT.parent / "buzz-macos-release.yml").read_text()
         self.assertEqual(text.count("runs-on: [self-hosted, macOS, ARM64, macbook-pro-m5]"), 2)

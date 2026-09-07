@@ -37,7 +37,9 @@ supervisor refuses any preexisting real or effective build-UID process.
 
 After clearing supplementary groups and dropping GID and UID, the supervisor
 executes installed `buzz_macos_build_boundary.py --payload ROOT` with a minimal
-environment and closed inherited descriptors. Only that unprivileged payload
+environment and closed inherited descriptors. The post-drop check reads kernel
+groups through libc because macOS Python reports directory-service access
+groups. Only the dedicated primary GID may remain in the kernel group list. Only that unprivileged payload
 starts Seatbelt, clones the fixed public repository, and builds the exact source.
 The supervisor does not execute checkout code as root. The supervisor drains build stdout/stderr through a pipe and retains only the
 last 64 KiB in memory. On failure it emits that diagnostic tail as one base64

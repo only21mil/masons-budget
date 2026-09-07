@@ -32,16 +32,13 @@ BUILD_ARGS=(--verbose --no-sign --target "$TARGET" --bundles app)
 if [[ "$ARCH" == aarch64 ]]; then
   BUILD_ARGS+=(--features mesh-llm)
   cargo fetch --locked --manifest-path desktop/src-tauri/Cargo.toml
-  MESH_ROOT=$(python3 - <<'PY'
-import os, tomllib
+  MESH_ROOT=$(cargo metadata --locked --features mesh-llm --format-version 1 --manifest-path desktop/src-tauri/Cargo.toml | python3 -c '
+import json, sys
 from pathlib import Path
-p = next(p for p in tomllib.loads(Path('Cargo.lock').read_text())['package'] if p['name'] == 'mesh-llm-sdk')
-short = p['source'].rsplit('#', 1)[1][:7]
-paths = list((Path(os.environ.get('CARGO_HOME', str(Path.home()/'.cargo')))/'git/checkouts').glob('*/'+short))
-assert len(paths) == 1, 'mesh checkout must resolve uniquely'
-print(paths[0])
-PY
-)
+packages = [p for p in json.load(sys.stdin)["packages"] if p["name"] == "mesh-llm-sdk"]
+assert len(packages) == 1, "mesh checkout must resolve uniquely"
+print(Path(packages[0]["manifest_path"]).parent)
+')
   export LLAMA_STAGE_BACKEND=metal
   export LLAMA_STAGE_BUILD_DIR="$GITHUB_WORKSPACE/buzz/.cache/mesh-llama/build-stage-abi-metal"
   export SKIPPY_LLAMA_AUTO_BUILD=0

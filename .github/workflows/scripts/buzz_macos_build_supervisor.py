@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Fixed sudo entrypoint. Never imports or executes workflow-controlled code as root."""
 import base64
+import ctypes
 import fcntl
 import hashlib
 import json
@@ -34,6 +35,19 @@ class BoundaryError(Exception):
 def require(ok, message):
     if not ok:
         raise BoundaryError(message)
+
+def kernel_groups():
+    # On macOS Python getgroups() returns directory-service access groups, not
+    # the credentials changed by setgroups(). libc reports the kernel groups;
+    # Darwin includes the primary GID even after supplementary groups are cleared.
+    function = ctypes.CDLL(None, use_errno=True).getgroups
+    function.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_uint)]
+    function.restype = ctypes.c_int
+    count = function(0, None)
+    require(0 <= count <= 1024, 'cannot read kernel groups')
+    groups = (ctypes.c_uint * max(count, 1))()
+    require(function(count, groups) == count, 'kernel groups changed during read')
+    return list(groups)[:count]
 
 def unique_object(pairs):
     result = {}
@@ -223,7 +237,8 @@ def execute(root, request, builder):
             os.setgroups([])
             os.setgid(builder.pw_gid)
             os.setuid(builder.pw_uid)
-            require(os.getuid() == builder.pw_uid and os.geteuid() == builder.pw_uid and not os.getgroups(), 'failed privilege drop')
+            require(os.getuid() == builder.pw_uid and os.geteuid() == builder.pw_uid
+                    and set(kernel_groups()) <= {builder.pw_gid}, 'failed privilege drop')
             os.chdir(root)
             env = dict(ENV, HOME=str(root / 'home'), TMPDIR=str(root / 'tmp') + '/',
                        USER=BUILDER, LOGNAME=BUILDER)

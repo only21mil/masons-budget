@@ -209,31 +209,35 @@ class ProcessTests(unittest.TestCase):
         self.assertEqual(base64.b64decode(text.split(': ', 1)[1]), tail)
 
     def test_child_drops_privileges_before_fixed_exec_and_scrubs_environment(self):
-        events = []
-        class Executed(BaseException):
-            pass
-        def execve(program, argv, env):
-            events.append(('exec', program, argv, env))
-            raise Executed()
-        def exit_child(code):
-            raise Executed()
-        builder = types.SimpleNamespace(pw_uid=590, pw_gid=590)
-        with patch.object(s.os, 'pipe', return_value=(10, 11)), patch.object(s.os, 'fork', return_value=0), \
-             patch.object(s.os, 'close'), patch.object(s.os, 'dup2'), patch.object(s.os, 'open', return_value=12), \
-             patch.object(s.os, 'closerange'), patch.object(s.os, 'listdir', return_value=['0', '1', '2']), \
-             patch.object(s.os, 'setsid'), patch.object(s.os, 'chdir'), \
-             patch.object(s.os, 'setgroups', side_effect=lambda value: events.append(('groups', value))), \
-             patch.object(s.os, 'setgid', side_effect=lambda value: events.append(('gid', value))), \
-             patch.object(s.os, 'setuid', side_effect=lambda value: events.append(('uid', value))), \
-             patch.object(s.os, 'getuid', return_value=590), patch.object(s.os, 'geteuid', return_value=590), \
-             patch.object(s.os, 'getgroups', return_value=[]), patch.object(s.os, 'execve', side_effect=execve), \
-             patch.object(s.os, '_exit', side_effect=exit_child), patch.dict(os.environ, SECRET_CANARY='never inherit'):
-            with self.assertRaises(Executed):
-                s.execute(Path('/private/var/db/buzz-macos-build/build-test'), {}, builder)
-        self.assertEqual(events[:3], [('groups', []), ('gid', 590), ('uid', 590)])
-        self.assertEqual(events[3][1], '/usr/bin/python3')
-        self.assertEqual(events[3][2][1:3], ['-I', str(s.INSTALL / 'buzz_macos_build_boundary.py')])
-        self.assertNotIn('SECRET_CANARY', events[3][3])
+        for groups, allowed in (([], True), ([590], True), ([590, 80], False)):
+            events = []
+            class Executed(BaseException):
+                pass
+            def execve(program, argv, env):
+                events.append(('exec', program, argv, env))
+                raise Executed()
+            def exit_child(code):
+                raise Executed()
+            builder = types.SimpleNamespace(pw_uid=590, pw_gid=590)
+            with patch.object(s.os, 'pipe', return_value=(10, 11)), patch.object(s.os, 'fork', return_value=0), \
+                 patch.object(s.os, 'close'), patch.object(s.os, 'dup2'), patch.object(s.os, 'open', return_value=12), \
+                 patch.object(s.os, 'closerange'), patch.object(s.os, 'listdir', return_value=['0', '1', '2']), \
+                 patch.object(s.os, 'setsid'), patch.object(s.os, 'chdir'), \
+                 patch.object(s.os, 'setgroups', side_effect=lambda value: events.append(('groups', value))), \
+                 patch.object(s.os, 'setgid', side_effect=lambda value: events.append(('gid', value))), \
+                 patch.object(s.os, 'setuid', side_effect=lambda value: events.append(('uid', value))), \
+                 patch.object(s.os, 'getuid', return_value=590), patch.object(s.os, 'geteuid', return_value=590), \
+                 patch.object(s, 'kernel_groups', return_value=groups), patch.object(s.os, 'execve', side_effect=execve), \
+                 patch.object(s.os, '_exit', side_effect=exit_child), patch.dict(os.environ, SECRET_CANARY='never inherit'):
+                with self.assertRaises(Executed):
+                    s.execute(Path('/private/var/db/buzz-macos-build/build-test'), {}, builder)
+            self.assertEqual(events[:3], [('groups', []), ('gid', 590), ('uid', 590)])
+            if not allowed:
+                self.assertEqual(len(events), 3)
+                continue
+            self.assertEqual(events[3][1], '/usr/bin/python3')
+            self.assertEqual(events[3][2][1:3], ['-I', str(s.INSTALL / 'buzz_macos_build_boundary.py')])
+            self.assertNotIn('SECRET_CANARY', events[3][3])
 
 class ProvisionTests(unittest.TestCase):
     def test_bundle_hash_is_external_authority_and_payload_is_held_in_memory(self):
