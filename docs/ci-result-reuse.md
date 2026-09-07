@@ -84,6 +84,15 @@ checksum-verified offline Robolectric runtimes before deciding. Resolution
 failure produces no dependency proof and leaves the ordinary checks enabled.
 The Gradle collector never invokes an app build or test task.
 
+For Kotlin JVM/Android projects, the collector excludes only generated
+`*DependenciesMetadata` configurations with the `kotlin-metadata` usage,
+`common` platform and `library` category. These IDE source-set buckets can
+lack the Compose BOM inherited by the actual Android classpaths. The proof
+records the excluded names and attributes; all other resolvable configurations
+still require exact artifact bytes, including compiler, KSP, lint and test
+inputs. Multiplatform projects receive no metadata exclusion. A missing BOM
+or artifact on an actual compile/runtime classpath still refuses reuse.
+
 The Mac compile proof binds the approved Xcode installation's signature,
 compiler bytes, Xcode/Swift/SDK builds and OS version. A project with external
 Swift packages is currently unproven and executes fresh. Persistent simulator
