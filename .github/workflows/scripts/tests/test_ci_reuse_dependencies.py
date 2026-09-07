@@ -16,7 +16,7 @@ class DependencyProofTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(prefix="budget-dependency-proof-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        (self.root / "settings.gradle").write_text("rootProject.name = 'proof-fixture'\n")
+        (self.root / "settings.gradle").write_text("rootProject.name = 'proof-fixture'\ninclude 'app', 'domain'\n")
         (self.root / "build.gradle").write_text(
             "repositories { maven { url = uri('repo') } }\n"
             "configurations { proof }\n"
@@ -34,14 +34,62 @@ class DependencyProofTests(unittest.TestCase):
         sdk = self.root / "sdk/platforms/fixture"
         sdk.mkdir(parents=True)
         (sdk / "source.properties").write_text("Pkg.Revision=1\n")
+        self.lint_engine = self.add_module("lint-engine", dependencies=["lint-core"])
+        self.lint_core = self.add_module("lint-core")
+        self.lazy_tool = self.add_module("lazy-tool")
+        # Model AGP's lazy detached lint classpath without fetching/building AGP.
+        # The real project's AGP tasks receive a separate integration check.
+        for project in ["app", "domain"]:
+            (self.root / project).mkdir()
+        (self.root / "app/build.gradle").write_text("""
+repositories { maven { url = rootProject.uri('repo') } }
+tasks.register('lintReportDebug') {
+    ext.lintTool = [classpath: configurations.detachedConfiguration(
+        dependencies.create('example:lint-engine:1.0'))]
+    doLast { throw new GradleException('Protected lint action executed') }
+    finalizedBy 'lintFinalizer'
+}
+tasks.register('lintFinalizer') {
+    doLast { throw new GradleException('Protected finalizer executed') }
+}
+tasks.register('lintDebug') {
+    dependsOn 'lintReportDebug'
+    doLast { throw new GradleException('Protected lint root executed') }
+}
+tasks.register('testDebugUnitTest') {
+    doLast { throw new GradleException('Protected app test executed') }
+}
+""")
+        (self.root / "domain/build.gradle").write_text("""
+repositories { maven { url = rootProject.uri('repo') } }
+tasks.register('test') {
+    configurations.create('lazyTool')
+    dependencies.add('lazyTool', 'example:lazy-tool:1.0')
+    doLast { throw new GradleException('Protected domain test executed') }
+}
+""")
 
-    def collect(self, *, sdk=True):
+    def add_module(self, name, *, dependencies=()):
+        module = self.root / f"repo/example/{name}/1.0"
+        module.mkdir(parents=True)
+        artifact = module / f"{name}-1.0.jar"
+        artifact.write_bytes(f"{name} dependency bytes".encode())
+        dependency_xml = "".join(
+            f"<dependency><groupId>example</groupId><artifactId>{dependency}</artifactId>"
+            "<version>1.0</version></dependency>" for dependency in dependencies)
+        (module / f"{name}-1.0.pom").write_text(
+            "<project><modelVersion>4.0.0</modelVersion><groupId>example</groupId>"
+            f"<artifactId>{name}</artifactId><version>1.0</version>"
+            f"<dependencies>{dependency_xml}</dependencies></project>")
+        return artifact
+
+    def collect(self, *, sdk=True, tasks=("ciReuseDependencies",)):
         environment = {**os.environ, "GRADLE_USER_HOME": str(self.root / "gradle-home"),
                        "ANDROID_HOME": str(self.root / "sdk") if sdk else "",
                        "ANDROID_SDK_ROOT": "", "RUNNER_TEMP": str(self.root), "JAVA_TOOL_OPTIONS": ""}
         result = subprocess.run(
             [GRADLE, "--offline", "--no-daemon", "--console=plain", "-p", str(self.root), "-I",
-             str(Path(__file__).resolve().parents[1] / "ci_reuse_dependencies.gradle"), "ciReuseDependencies"],
+             str(Path(__file__).resolve().parents[1] / "ci_reuse_dependencies.gradle"), *tasks],
             env=environment, capture_output=True, text=True, timeout=90)
         return result
 
@@ -120,6 +168,85 @@ dependencies {{
         self.artifact.unlink()
         result = self.collect()
         self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / "budget-gradle-context.json").exists())
+
+    def test_realized_tools_and_detached_lint_bytes_without_task_actions(self):
+        result = self.collect()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        proof = json.loads((self.root / "budget-gradle-context.json").read_text())
+        self.assertEqual(proof["taskToolClasspaths"][":app:lintReportDebug"], [
+            {"name": artifact.name, "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest()}
+            for artifact in [self.lint_engine, self.lint_core]])
+        self.assertEqual(proof["configurations"][":domain:lazyTool"],
+                         ["example:lazy-tool:1.0/lazy-tool-1.0.jar"])
+        self.assertEqual(proof["artifacts"]["example:lazy-tool:1.0/lazy-tool-1.0.jar"],
+                         hashlib.sha256(self.lazy_tool.read_bytes()).hexdigest())
+        self.assertIn(":app:lintFinalizer", proof["protectedTasks"])
+        for task in proof["protectedTasks"]:
+            self.assertIn(f"> Task {task} SKIPPED", result.stdout)
+
+    def test_missing_detached_lint_engine_clears_stale_proof(self):
+        (self.root / "budget-gradle-context.json").write_text('{"stale":true}\n')
+        self.lint_engine.unlink()
+        result = self.assert_collection_refused()
+        self.assertIn("lint-engine-1.0.jar", result.stdout + result.stderr)
+
+    def test_missing_transitive_lint_runtime_refuses_proof(self):
+        self.lint_core.unlink()
+        result = self.assert_collection_refused()
+        self.assertIn("lint-core-1.0.jar", result.stdout + result.stderr)
+
+    def test_missing_lazy_task_configuration_bytes_refuses_proof(self):
+        self.lazy_tool.unlink()
+        result = self.assert_collection_refused()
+        self.assertIn("lazy-tool-1.0.jar", result.stdout + result.stderr)
+
+    def test_empty_lint_classpath_refuses_proof(self):
+        build = self.root / "app/build.gradle"
+        build.write_text(build.read_text().replace(
+            "configurations.detachedConfiguration(\n        dependencies.create('example:lint-engine:1.0'))",
+            "files()"))
+        result = self.assert_collection_refused()
+        self.assertIn("Lint tool classpath missing", result.stdout + result.stderr)
+
+    def test_missing_lint_tool_property_refuses_proof(self):
+        build = self.root / "app/build.gradle"
+        build.write_text(build.read_text().replace("ext.lintTool", "ext.otherTool"))
+        result = self.assert_collection_refused()
+        self.assertIn("Protected lint tool classpaths missing", result.stdout + result.stderr)
+
+    def test_missing_protected_root_refuses_proof(self):
+        build = self.root / "domain/build.gradle"
+        build.write_text(build.read_text().replace("tasks.register('test')", "tasks.register('otherTest')"))
+        self.assert_collection_refused()
+
+    def test_mixed_collector_invocation_is_rejected(self):
+        result = self.collect(tasks=("ciReuseDependencies", ":app:lintDebug"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("exclusive ciReuseDependencies", result.stdout + result.stderr)
+        self.assertFalse((self.root / "budget-gradle-context.json").exists())
+
+    def test_excluded_protected_root_refuses_proof(self):
+        result = self.collect(tasks=("ciReuseDependencies", "-x", ":domain:test"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Protected task graph incomplete", result.stdout + result.stderr)
+        self.assertFalse((self.root / "budget-gradle-context.json").exists())
+
+    def test_non_collector_invocation_keeps_actions_enabled(self):
+        build = self.root / "build.gradle"
+        build.write_text(build.read_text() + """
+tasks.register('ordinaryCheck') {
+    doLast { file('ordinary-action').text = 'executed' }
+    finalizedBy 'ordinaryFinalizer'
+}
+tasks.register('ordinaryFinalizer') {
+    doLast { file('ordinary-finalizer').text = 'executed' }
+}
+""")
+        result = self.collect(tasks=("ordinaryCheck",))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.root / "ordinary-action").read_text(), "executed")
+        self.assertEqual((self.root / "ordinary-finalizer").read_text(), "executed")
         self.assertFalse((self.root / "budget-gradle-context.json").exists())
 
     def test_jvm_metadata_bucket_without_bom_keeps_resolved_classpath_bytes(self):

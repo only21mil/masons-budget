@@ -25,11 +25,40 @@ def hashArtifact = { file ->
 
 gradle.projectsEvaluated {
     def projectRoot = gradle.rootProject
+    if (!gradle.startParameter.taskNames.any { it in ['ciReuseDependencies', ':ciReuseDependencies'] }) return
+    def output = new File(System.getenv('RUNNER_TEMP'), 'budget-gradle-context.json')
+    if (output.exists() && !output.delete()) throw new GradleException('Cannot clear previous dependency proof')
+    if (!(gradle.startParameter.taskNames in [['ciReuseDependencies'], [':ciReuseDependencies']])) {
+        throw new GradleException('Dependency collection requires an exclusive ciReuseDependencies invocation')
+    }
+    // Let Gradle realize the same lazy task configurations as the protected
+    // checks. Disable every other planned task, including finalizers, before
+    // execution so graph discovery never compiles, tests or runs lint.
+    def requiredTasks = [':domain:test', ':app:lintDebug', ':app:testDebugUnitTest']
+    gradle.taskGraph.whenReady { graph ->
+        if (!requiredTasks.every { graph.hasTask(it) }) throw new GradleException('Protected task graph incomplete')
+        graph.allTasks.findAll { it.path != ':ciReuseDependencies' }.each { it.enabled = false }
+    }
     projectRoot.tasks.register('ciReuseDependencies') {
+        dependsOn requiredTasks
         doLast {
             def artifacts = new TreeMap()
             def configurations = new TreeMap()
             def excludedMetadata = new TreeMap()
+            def taskToolClasspaths = new TreeMap()
+            def protectedTasks = gradle.taskGraph.allTasks.findAll { it.path != ':ciReuseDependencies' }
+            protectedTasks.findAll { it.hasProperty('lintTool') }.each { task ->
+                // AGP's lint engine uses a detached configuration, absent from
+                // project.configurations. Resolve the actual consumed classpath
+                // transitively and preserve its order, rather than trusting
+                // incidental engine bytes in a warm plugin cache.
+                def files = task.lintTool.classpath.files
+                if (files.isEmpty()) throw new GradleException("Lint tool classpath missing for ${task.path}")
+                taskToolClasspaths[task.path] = files.collect { file ->
+                    [name: file.name, sha256: hashArtifact(file)]
+                }
+            }
+            if (taskToolClasspaths.isEmpty()) throw new GradleException('Protected lint tool classpaths missing')
             projectRoot.allprojects.sort { it.path }.each { project ->
                 def jvmProject = (project.pluginManager.hasPlugin('org.jetbrains.kotlin.android') ||
                     project.pluginManager.hasPlugin('org.jetbrains.kotlin.jvm')) &&
@@ -81,10 +110,10 @@ gradle.projectsEvaluated {
             if (artifacts.isEmpty() || cached.isEmpty() || packages.isEmpty()) {
                 throw new GradleException('Resolved dependency context is incomplete')
             }
-            def output = new File(System.getenv('RUNNER_TEMP'), 'budget-gradle-context.json')
             output.text = JsonOutput.toJson([
                 schema: 1, gradle: gradle.gradleVersion,
                 artifacts: artifacts, configurations: configurations,
+                protectedTasks: protectedTasks*.path.sort(), taskToolClasspaths: taskToolClasspaths,
                 excludedMetadata: excludedMetadata, pluginCache: cached, sdkPackages: packages
             ]) + '\n'
         }
