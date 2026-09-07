@@ -1,0 +1,40 @@
+(version 1)
+; Every descendant retains this policy, including processes that leave the group.
+(deny default)
+(allow process-fork process-exec sysctl-read)
+(allow signal (target same-sandbox))
+(allow process-info* (target same-sandbox))
+(allow file-read-metadata)
+(allow file-read* (literal "/"))
+; System tools and SDKs are readable, never writable. No real user HOME access.
+(allow file-read* file-map-executable
+    (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/sbin")
+    (literal "/Library/Preferences/com.apple.dt.Xcode.plist")
+    (subpath "/Library/Developer") (subpath "/Library/Apple")
+    (subpath "/Applications/Xcode.app") (subpath "/opt/homebrew")
+    (subpath "/private/etc") (literal "/private/var/run/resolv.conf")
+    (literal "/private/var/select/sh")
+    (subpath (param "CONTROLLER")))
+(allow file* (subpath (param "BUILD_ROOT")))
+(deny file-write-setugid)
+(allow file-read* file-write*
+    (literal "/dev/null") (literal "/dev/zero")
+    (literal "/dev/random") (literal "/dev/urandom")
+    (literal "/dev/stdin") (literal "/dev/stdout") (literal "/dev/stderr")
+    (subpath "/dev/fd"))
+; Package downloads need DNS and TLS. No general Mach or Unix socket access,
+; local services, launchd, keychain service, task ports, or process environment.
+; Permit bootstrap lookup transport; mach-lookup still restricts each service.
+(allow mach-bootstrap)
+(allow system-socket)
+(allow network-outbound (remote ip "*:443") (remote ip "*:80") (remote ip "*:53"))
+(deny network-outbound (remote ip "localhost:*"))
+(allow network-outbound
+    (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
+(allow mach-lookup
+    (global-name "com.apple.system.opendirectoryd.libinfo")
+    (global-name "com.apple.system.notification_center")
+    (global-name "com.apple.logd")
+    (global-name "com.apple.SystemConfiguration.DNSConfiguration")
+    (global-name "com.apple.trustd")
+    (global-name "com.apple.trustd.agent"))

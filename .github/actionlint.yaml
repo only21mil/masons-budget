@@ -3,12 +3,11 @@
 # ON for everything else — dropping the rule entirely would have silenced real
 # typos like `ubunut-latest` across every workflow.
 #
-# These are the labels registered on mac-mini-m4, the fleet's only machine that
-# can run Apple tooling. Keep this list in sync with the runner's registration;
-# a label here that the runner does not carry produces a job that queues
-# forever rather than failing, which is worse than a lint error.
+# Apple release work targets the active MBP. Keep static workflow labels in
+# sync with its runner registration so an unavailable host cannot pass lint.
 self-hosted-runner:
   labels:
     - macOS
     - ARM64
     - xcode
+    - macbook-pro-m5

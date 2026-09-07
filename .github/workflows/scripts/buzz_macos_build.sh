@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs only on an ephemeral, secret-free GitHub-hosted Mac.
+# Runs only inside buzz_macos_build_boundary.py on the MBP.
 set -euo pipefail
 : "${SOURCE_SHA:?}" "${VERSION:?}" "${ARCH:?}" "${BUZZ_UPDATER_PUBLIC_KEY:?}"
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -49,6 +49,3 @@ PY
   "$MESH_ROOT/scripts/build-llama.sh" -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
 fi
 (cd desktop && pnpm tauri build "${BUILD_ARGS[@]}" --config src-tauri/tauri.release.conf.json)
-python3 ../controller/.github/workflows/scripts/buzz_macos_release.py pack \
-  --app "desktop/src-tauri/target/$TARGET/release/bundle/macos/Buzz.app" \
-  --output ../unsigned --source "$SOURCE_SHA" --version "$VERSION" --arch "$ARCH"

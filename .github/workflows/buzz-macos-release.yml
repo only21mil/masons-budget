@@ -11,13 +11,6 @@ on:
         description: Desktop version already committed in that source
         required: true
         type: string
-      runner:
-        description: Signing host (Mac mini is an explicitly selected fallback)
-        type: choice
-        default: macbook-pro-m5
-        options:
-          - macbook-pro-m5
-          - mac-mini-m4
 
 permissions:
   contents: read
@@ -30,9 +23,10 @@ concurrency:
 jobs:
   build:
     if: github.repository == 'only21mil/masons-budget'
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, ARM64, macbook-pro-m5]
     timeout-minutes: 120
     strategy:
+      max-parallel: 1
       fail-fast: false
       matrix:
         arch: [aarch64, x86_64]
@@ -54,19 +48,8 @@ jobs:
           sparse-checkout: .github/workflows/scripts
       - name: Validate release inputs before source checkout
         run: python3 controller/.github/workflows/scripts/buzz_macos_release.py inputs --source "$SOURCE_SHA" --version "$VERSION" --arch "$ARCH"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: only21mil/buzz
-          ref: ${{ inputs.source_sha }}
-          path: buzz
-          persist-credentials: false
-      - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
-        with:
-          cache: false
-          working-directory: buzz
-      - name: Build immutable Buzz source without signing credentials
-        working-directory: buzz
-        run: bash ../controller/.github/workflows/scripts/buzz_macos_build.sh
+      - name: Build immutable source in a confined MBP workspace
+        run: /usr/bin/python3 -I controller/.github/workflows/scripts/buzz_macos_build_boundary.py
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: buzz-macos-unsigned-${{ matrix.arch }}-${{ inputs.source_sha }}
@@ -76,7 +59,7 @@ jobs:
 
   sign:
     needs: build
-    runs-on: [self-hosted, macOS, ARM64, '${{ inputs.runner }}']
+    runs-on: [self-hosted, macOS, ARM64, macbook-pro-m5]
     timeout-minutes: 120
     strategy:
       max-parallel: 1
@@ -90,6 +73,8 @@ jobs:
       BUZZ_UPDATER_PUBLIC_KEY: ${{ vars.BUZZ_TAURI_SIGNING_PUBLIC_KEY }}
       BUZZ_UPDATER_ENDPOINT: https://github.com/only21mil/buzz/releases/download/buzz-desktop-latest/latest.json
     steps:
+      - name: Require the MBP signing account
+        run: test "$(/usr/bin/id -un)" = m5mbp
       # This job never checks out Buzz, runs its scripts, or executes its binaries.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

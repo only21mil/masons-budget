@@ -124,6 +124,8 @@ jobs:
         run: |
           python3 .github/workflows/scripts/tests/test_mac_release_workflow.py
           python3 .github/workflows/scripts/tests/test_mac_build_portability.py
+          python3 .github/workflows/scripts/tests/test_mac_build_boundary.py
+          python3 .github/workflows/scripts/tests/test_buzz_macos_build_supervisor.py
           shellcheck .github/workflows/scripts/buzz_macos_build.sh .github/workflows/scripts/buzz-verify-macos-entitlements.sh
 
       - name: Manual Apple release signing contract

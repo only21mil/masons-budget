@@ -75,10 +75,8 @@ class BuildArgumentsTests(unittest.TestCase):
                                  ['build-llama.sh', '-DCMAKE_OSX_DEPLOYMENT_TARGET=10.15']]
                 expected += [['pnpm', 'tauri', 'build', '--verbose', '--no-sign', '--target', target,
                               '--bundles', 'app'] + (['--features', 'mesh-llm'] if arch == 'aarch64' else []) +
-                             ['--config', 'src-tauri/tauri.release.conf.json'],
-                             ['python3', '../controller/.github/workflows/scripts/buzz_macos_release.py', 'pack',
-                              '--app', 'desktop/src-tauri/target/' + target + '/release/bundle/macos/Buzz.app',
-                              '--output', '../unsigned', '--source', 'a'*40, '--version', '0.5.8', '--arch', arch]]
+                             ['--config', 'src-tauri/tauri.release.conf.json']]
+
                 self.assertEqual([json.loads(line) for line in log.read_text().splitlines()], expected)
                 self.assertEqual(json.loads((tauri / 'tauri.release.conf.json').read_text()),
                                  {'bundle': {'createUpdaterArtifacts': False, 'externalBin': ['unchanged']}})

@@ -12,28 +12,46 @@ credential route, temporary keychain pattern, and cleanup approach. It does
 not prove Developer ID signing or notarization. The first successful Mac run
 must establish those facts with real Apple responses.
 
-The source currently selected by the release controller is Buzz
-`9daaf702afa3ed1146bd3cdd96af1f023f28f9fb`, desktop version `0.5.8`. The
-workflow checks the committed version and does not patch source versions or
-lockfiles. Later releases must supply another fully reviewed immutable commit
-and its committed desktop version.
+The release controller supplies a reviewed immutable Buzz candidate and its
+committed desktop version. The workflow checks that version and does not patch
+source versions or lockfiles. The version-only release PR head remains the
+artifact and immutable-tag source after that PR lands on main.
 
 ## Credential boundary
 
-Buzz and dependency build scripts run on ephemeral GitHub-hosted `macos-15`
-runners, with read-only repository access and only the public updater key and
-fixed fork endpoint. Source builds cannot reach any Apple or updater private
-credential. Apple Silicon keeps the maintained `mesh-llm` native library build;
-Intel follows the maintained Intel release feature selection. Both retain the
-platform sidecar configuration and build all six native sidecars.
+Both architecture builds and signing jobs run serially on `macbook-pro-m5`.
+The retired Mac mini is not a dispatch option, and no Apple compilation runs
+on a GitHub-hosted runner. Apple Silicon keeps the maintained `mesh-llm`
+native library build; Intel keeps its existing feature selection. Both retain
+all six native sidecars.
 
-The signing job runs on `macbook-pro-m5`. The dispatch input must explicitly
-select `mac-mini-m4` to use the fallback. It checks out only the trusted Budget
-workflow scripts, installs the integrity-locked Tauri CLI with lifecycle scripts
-disabled, and validates the same-run unsigned archive before secrets are bound.
-It never checks out Buzz or executes an app binary, source script, or artifact
-script. Its copy of `desktop/scripts/verify-macos-entitlements.sh` is reviewed
-in Budget and hash-compared with the immutable Buzz source during packaging.
+The existing `m5mbp` runner calls the reviewed root-owned build supervisor
+through one narrow sudo command. The supervisor uses the dedicated non-admin
+`buzzbuild` account, a fresh source tree, HOME, cache and temporary directory,
+and the checked-in Seatbelt profile. Public source fetch, Hermit activation,
+and all dependency/build commands execute inside that sandbox. It permits
+writes only inside the disposable build root. It cannot read the signing
+account's HOME, modify installed controller/tool bytes, or use arbitrary
+host Unix sockets or Mach services. The environment contains only explicit
+public build inputs; GitHub tokens and runner command files are omitted.
+
+The separate UID is required. A direct `KERN_PROCARGS2` probe on the MBP
+showed that Seatbelt alone permits reading another process's environment
+under the same UID, even with a default-deny profile. A process-group cleanup
+alone also cannot account for descendants that create their own sessions.
+The supervisor owns the dedicated build UID exclusively, removes all its
+processes before exporting the two fixed inert artifacts, and removes the
+build root. Any failure blocks the build job and therefore both signing jobs.
+The supervisor never executes source or dependencies as root. The workflow
+requires the installed supervisor and payload bytes to match its exact Budget
+checkout. See [the host setup contract](buzz-macos-build-supervisor.md).
+
+Signing remains on the `m5mbp` account. Its fresh checkout contains only the
+trusted Budget workflow scripts. It installs the integrity-locked Tauri CLI
+with lifecycle scripts disabled and validates the same-run unsigned archive
+before secrets are bound. It never checks out Buzz or executes an app binary,
+source script, or artifact script. Its trusted entitlement verifier is
+hash-compared with the immutable Buzz source during packaging.
 
 The signer rejects archive traversal, links escaping the app, writes through
 links, special files, duplicate names, privileged modes, and other app roots.
@@ -107,20 +125,22 @@ An unrecognized error retains its exit code and an explicit unclassified cause.
 The root controller owns promotion and signing authorization. Preparation and
 portable tests perform no signing, app build, credential mutation, or publishing.
 
-1. Promote this signing workflow as a standalone candidate from current Budget
-   `main`, preserving the active Budget lane. The repaired candidate has one
-   parent, the exact base commit in the root-bound review receipt, and preserves
-   all unrelated changes on that base. Keep the separately reviewed bootstrap on its own feature
-   branch; do not combine it into the signing workflow candidate. Reuse the
-   original 136-test workflow-suite evidence and run the affected correction
-   checks. The root binds the complete path manifest, exact commit, correction
-   delta, diff hash, independent review, approval, and rollback commit.
+1. Prepare the workflow and host supervisor from current Budget `main` in an
+   isolated branch, preserving other active lanes. Freeze the complete source
+   and host-setup candidate, run affected checks, and obtain one fresh separate
+   Astra High review. Keep the separately reviewed signing bootstrap on its
+   own feature branch. Reuse unchanged signer and source check evidence.
 2. Land the reviewed workflow through the Budget pull-request route. A new
    `workflow_dispatch` file must exist on default `main` before GitHub registers
    it. Fetch current main immediately before integration and landing; do not
    reset or overwrite another lane. Record the resulting exact main commit and
    its required CI. This is a workflow-only change, not a Budget app release.
-3. Complete the separately reviewed minimum bootstrap under the approved Apple
+3. Before supplying release credentials, install the exact reviewed build
+   supervisor and isolated-account setup on the MBP through its maintained
+   setup procedure. Verify its installed hashes, account restrictions,
+   cross-UID environment/file denial, process cleanup, and bounded sandbox
+   tool smoke. The workflow refuses a stale or missing installation.
+   Complete the separately reviewed minimum bootstrap under the approved Apple
    team from its exact reviewed feature ref. The existing default-branch
    `apple-signing-assets.yml` registers that workflow; the bootstrap's reviewed
    feature ref supplies its new manual Buzz inputs for one-time issuance.
@@ -130,8 +150,8 @@ portable tests perform no signing, app build, credential mutation, or publishing
 4. Verify Buzz's exact committed source CI, independent review, source version,
    current channel version, and release approval. Then dispatch the workflow
    from the exact reviewed Budget commit, with that immutable Buzz source,
-   matching version, and `runner=macbook-pro-m5`. Do not use a floating branch
-   as evidence. A run retry must rebuild both architectures because build
+   matching version. The workflow fixes the runner to `macbook-pro-m5`. Do not
+   use a floating branch as evidence. A run retry must rebuild both architectures because build
    receipts bind the run attempt.
 5. Require both signing jobs and cleanup to pass. Download both signed artifacts,
    verify every file hash and updater signature, require both app and DMG
@@ -155,6 +175,8 @@ Run from Budget's checkout:
 ```bash
 python3 .github/workflows/scripts/tests/test_mac_release_workflow.py
 python3 .github/workflows/scripts/tests/test_mac_build_portability.py
+python3 .github/workflows/scripts/tests/test_mac_build_boundary.py
+python3 .github/workflows/scripts/tests/test_buzz_macos_build_supervisor.py
 python3 .github/workflows/scripts/check_action_pins.py
 python3 .github/workflows/scripts/check_secret_inventory.py
 actionlint
