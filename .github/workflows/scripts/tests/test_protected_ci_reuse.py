@@ -20,6 +20,10 @@ SPEC.loader.exec_module(reuse)
 BASE, SOURCE, LANDED, TREE = (letter * 40 for letter in "abcd")
 
 
+def ago(minutes):
+    return (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=minutes)).isoformat()
+
+
 class InputAndAuthorityTests(unittest.TestCase):
     def test_read_only_authority_does_not_require_hidden_bypass_actors(self):
         rule = {"ruleset_id": 7, "ruleset_source_type": "Repository", "ruleset_source": reuse.REPO,
@@ -128,12 +132,13 @@ class LandingAPI:
             self.runs[index] = {"id": index, "run_attempt": 1, "status": "completed", "conclusion": "success",
                                "event": "pull_request", "path": ".github/workflows/" + filename,
                                "head_sha": SOURCE, "head_repository": {"full_name": reuse.REPO},
-                               "check_suite_id": index * 100, "updated_at": dt.datetime.now(dt.timezone.utc).isoformat()}
+                               "check_suite_id": index * 100, "created_at": ago(20),
+                               "run_started_at": ago(20), "updated_at": ago(19)}
             self.jobs[index] = []
             for count, name in enumerate(names, 1):
                 check_id = index * 1000 + count
                 self.jobs[index].append({"id": check_id + 10000, "name": name, "run_attempt": 1,
-                    "status": "completed", "conclusion": "success", "completed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                    "status": "completed", "conclusion": "success", "completed_at": ago(19),
                     "check_run_url": f"https://api.github.com{reuse.PREFIX}/check-runs/{check_id}"})
                 self.checks.append({"id": check_id, "name": name, "head_sha": SOURCE, "app": {"id": 15368},
                     "status": "completed", "conclusion": "success", "check_suite": {"id": index * 100}})
@@ -154,6 +159,24 @@ class LandingAPI:
         self.moves_at_end = False
         self.main_reads = 0
         self.extra_runs = {}
+
+    def add_run(self, identity, original=1, *, started=10, attempt=1):
+        """Another provider execution, with its own suite, jobs and artifacts."""
+        run = self.extra_runs[identity] = {**self.runs[original], "id": identity, "run_attempt": attempt,
+            "check_suite_id": identity * 100, "run_started_at": ago(started), "updated_at": ago(started - 1)}
+        self.jobs[identity] = []
+        for job in self.jobs[original]:
+            check = next(check for check in self.checks
+                         if job["check_run_url"].endswith("/" + str(check["id"])))
+            check_id = identity * 1000 + check["id"] % 1000
+            self.checks.append({**copy.deepcopy(check), "id": check_id, "check_suite": {"id": identity * 100}})
+            self.jobs[identity].append({**copy.deepcopy(job), "id": check_id + 10000, "run_attempt": attempt,
+                "completed_at": ago(started - 1),
+                "check_run_url": f"https://api.github.com{reuse.PREFIX}/check-runs/{check_id}"})
+        for key, source in list(self.sources.items()):
+            if source["run_id"] == original:
+                self.sources[f"{key}-{identity}"] = {**copy.deepcopy(source), "run_id": identity, "run_attempt": attempt}
+        return run
 
     def one(self, endpoint):
         suffix = endpoint.removeprefix(reuse.PREFIX)
@@ -250,8 +273,96 @@ class LandingTests(unittest.TestCase):
         self.assertEqual(len(self.verify()["reused_checks"]), 11)
 
     def test_newer_failed_source_workflow_never_falls_back(self):
-        self.api.extra_runs[99] = {**self.api.runs[1], "id": 99, "conclusion": "failure"}
+        self.api.add_run(99)["conclusion"] = "failure"
         self.refuse()
+
+    def test_later_rerun_of_older_run_blocks_candidate_and_landing(self):
+        for candidate_only in (False, True):
+            for status, conclusion in (("completed", "failure"), ("completed", "cancelled"),
+                                       ("in_progress", None), ("queued", None), ("waiting", None)):
+                with self.subTest(candidate_only=candidate_only, status=status, conclusion=conclusion):
+                    self.api = LandingAPI()
+                    self.api.add_run(10)
+                    self.api.runs[1].update(run_attempt=2, run_started_at=ago(5),
+                                            updated_at=ago(4), status=status, conclusion=conclusion)
+                    if candidate_only:
+                        self.api.main = BASE
+                        self.api.pr.update(merged=False, merged_at=None, merge_commit_sha=None)
+                    with self.assertRaisesRegex(reuse.Refusal, "source workflow (is pending|did not succeed)"):
+                        self.verify(candidate_only=candidate_only)
+
+    def test_successful_older_run_rerun_supersedes_later_created_failure(self):
+        self.api.add_run(10)["conclusion"] = "failure"
+        self.api.runs[1].update(run_attempt=2, run_started_at=ago(5), updated_at=ago(4))
+        for job in self.api.jobs[1]:
+            job.update(run_attempt=2, completed_at=ago(4))
+        for source in self.api.sources.values():
+            if source["run_id"] == 1:
+                source["run_attempt"] = 2
+        result = self.verify()
+        self.assertEqual(result["source_workflows"]["clients.yml"]["id"], 1)
+        self.assertEqual(result["source_proofs"]["shared-domain"]["source_proof"]["run_attempt"], 2)
+
+    def test_metadata_update_does_not_refresh_or_reorder_execution(self):
+        self.api.add_run(10)
+        self.api.runs[1].update(conclusion="failure", updated_at=ago(1))
+        result = self.verify()
+        self.assertEqual(result["source_workflows"]["clients.yml"]["id"], 10)
+        self.api.extra_runs[10].update(run_started_at=ago(60 * 49), updated_at=ago(0))
+        self.api.runs[1]["run_started_at"] = ago(60 * 50)
+        for identity, minutes in ((1, 60 * 50 - 1), (10, 60 * 49 - 1)):
+            for job in self.api.jobs[identity]:
+                job["completed_at"] = ago(minutes)
+        with self.assertRaisesRegex(reuse.Refusal, "source execution expired"):
+            self.verify()
+
+    def test_pending_rerun_with_previous_start_is_not_hidden(self):
+        self.api.add_run(10)
+        self.api.runs[1].update(status="queued", conclusion=None, run_attempt=2)
+        with self.assertRaisesRegex(reuse.Refusal, "source workflow is pending"):
+            self.verify()
+
+    def test_missing_tied_and_invalid_execution_order_refuse(self):
+        self.api.add_run(10)
+        for value in (None, "invalid", "2026-09-07T00:00:00", ago(-5),
+                      self.api.extra_runs[10]["run_started_at"]):
+            with self.subTest(timestamp=value):
+                self.api.runs[1]["run_started_at"] = value
+                self.refuse()
+
+    def test_overlapping_older_attempt_cannot_hide_its_later_outcome(self):
+        self.api.add_run(10)
+        for conclusion in ("failure", "cancelled", "success"):
+            with self.subTest(conclusion=conclusion):
+                self.api.runs[1]["conclusion"] = conclusion
+                self.api.jobs[1][0].update(conclusion=conclusion, completed_at=ago(5))
+                with self.assertRaisesRegex(reuse.Refusal, "execution order is ambiguous"):
+                    self.verify()
+
+    def test_missing_latest_attempt_jobs_and_incomplete_chronology_refuse(self):
+        self.api.add_run(10)
+        self.api.runs[1]["run_attempt"] = 2
+        with self.assertRaisesRegex(reuse.Refusal, "latest source attempt has missing or pending jobs"):
+            self.verify()
+        self.api.runs[1]["run_attempt"] = 1
+        self.api.jobs[1][0]["completed_at"] = None
+        self.refuse()
+
+    def test_final_readback_catches_a_new_rerun_of_an_older_run(self):
+        self.api.add_run(10)
+        pages = self.api.pages
+        reads = 0
+        def reread(endpoint, kind):
+            nonlocal reads
+            if "/actions/workflows/clients.yml/runs?" in endpoint:
+                reads += 1
+                if reads == 2:
+                    self.api.runs[1].update(run_attempt=2, run_started_at=ago(5), conclusion="failure")
+            return pages(endpoint, kind)
+        with patch.object(self.api, "pages", side_effect=reread):
+            with self.assertRaisesRegex(reuse.Refusal, "latest source workflow did not succeed"):
+                self.verify()
+        self.assertEqual(reads, 2)
 
     def test_failed_pending_cancelled_and_skipped_source_jobs_refuse(self):
         for conclusion in ("failure", "cancelled", "skipped", None):
@@ -269,30 +380,56 @@ class LandingTests(unittest.TestCase):
         self.assertNotIn("linux-client", result["source_proofs"])
 
     def test_noop_apple_edit_uses_original_successful_suite(self):
-        run = self.api.extra_runs[99] = {**self.api.runs[2], "id": 99, "check_suite_id": 9900}
-        self.api.jobs[99] = copy.deepcopy(self.api.jobs[2])
+        run = self.api.add_run(99, original=2)
         self.api.jobs[99][0]["steps"] = [{"name": "Recognize a base-unchanged PR edit", "conclusion": "success"}]
         for job in self.api.jobs[99][1:]:
             job["conclusion"] = "skipped"
-        self.api.sources["swift-routing-noop"] = {**self.api.sources["swift-routing"],
-            "run_id": 99, "event_action": "edited", "base_changed": False}
+        self.api.sources["swift-routing-99"].update(event_action="edited", base_changed=False)
         result = self.verify()
         self.assertEqual(result["source_workflows"]["swift.yml"]["id"], 2)
         self.assertEqual(result["ignored_unchanged_edit_runs"], [run])
 
+    def test_older_run_noop_rerun_preserves_the_later_created_successful_suite(self):
+        self.api.add_run(99, original=2)
+        self.api.runs[2].update(run_attempt=2, run_started_at=ago(5), updated_at=ago(4))
+        for index, original in enumerate(list(self.api.jobs[2])):
+            job = {**original, "id": original["id"] + 90000, "run_attempt": 2, "completed_at": ago(4),
+                   "conclusion": "success" if index == 0 else "skipped"}
+            if index == 0:
+                job["steps"] = [{"name": "Recognize a base-unchanged PR edit", "conclusion": "success"}]
+            self.api.jobs[2].append(job)
+        self.api.sources["swift-routing"].update(run_attempt=2, event_action="edited", base_changed=False)
+        result = self.verify()
+        self.assertEqual(result["source_workflows"]["swift.yml"]["id"], 99)
+        self.assertEqual(result["ignored_unchanged_edit_runs"], [self.api.runs[2]])
+        self.assertEqual(result["ignored_event_proofs"][0]["source_proof"]["run_attempt"], 2)
+        self.api.sources["swift-routing"]["base_changed"] = True
+        self.refuse()
+
     def test_skipped_apple_without_noop_guard_cannot_reuse_older_run(self):
-        self.api.extra_runs[99] = {**self.api.runs[2], "id": 99, "check_suite_id": 9900}
-        self.api.jobs[99] = copy.deepcopy(self.api.jobs[2])
+        self.api.add_run(99, original=2)
         for job in self.api.jobs[99][1:]:
             job["conclusion"] = "skipped"
         self.refuse()
 
     def test_partial_rerun_keeps_original_attempt_and_its_age(self):
-        self.api.runs[1]["run_attempt"] = 2
+        # Run 10 was created later, but run 1's partial rerun executed last.
+        self.api.add_run(10)
+        self.api.runs[1].update(run_attempt=2, run_started_at=ago(5), updated_at=ago(4))
+        previous = next(job for job in self.api.jobs[1] if job["name"] == "Linux client")
+        check_id = 99001
+        self.api.jobs[1].append({**previous, "id": check_id + 10000, "run_attempt": 2, "completed_at": ago(4),
+            "check_run_url": f"https://api.github.com{reuse.PREFIX}/check-runs/{check_id}"})
+        check = next(check for check in self.api.checks if check["name"] == "Linux client")
+        self.api.checks.append({**check, "id": check_id})
+        self.api.sources["linux-client"]["run_attempt"] = 2
         result = self.verify()
+        self.assertEqual(result["source_workflows"]["clients.yml"]["id"], 1)
         self.assertEqual(result["source_proofs"]["shared-domain"]["source_proof"]["run_attempt"], 1)
+        self.assertEqual(result["source_proofs"]["linux-client"]["source_proof"]["run_attempt"], 2)
         self.api.jobs[1][2]["completed_at"] = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2)).isoformat()
-        self.refuse()
+        with self.assertRaisesRegex(reuse.Refusal, "source execution expired"):
+            self.verify()
 
     def test_newer_failed_job_cannot_use_older_success(self):
         self.api.runs[1]["run_attempt"] = 2
@@ -351,14 +488,13 @@ class LandingTests(unittest.TestCase):
         self.refuse()
 
     def test_noop_apple_event_requires_its_own_complete_unchanged_proof(self):
-        self.api.extra_runs[99] = {**self.api.runs[2], "id": 99, "check_suite_id": 9900}
-        self.api.jobs[99] = copy.deepcopy(self.api.jobs[2])
+        self.api.add_run(99, original=2)
         self.api.jobs[99][0]["steps"] = [{"name": "Recognize a base-unchanged PR edit", "conclusion": "success"}]
         for job in self.api.jobs[99][1:]:
             job["conclusion"] = "skipped"
+        proof = self.api.sources.pop("swift-routing-99")
         self.refuse()
-        self.api.sources["swift-routing-noop"] = {**self.api.sources["swift-routing"],
-            "run_id": 99, "event_action": "edited", "base_changed": True}
+        self.api.sources["swift-routing-99"] = {**proof, "event_action": "edited", "base_changed": True}
         self.refuse()
 
     def test_no_broad_workflow_has_a_main_push_trigger_or_step_reuse(self):

@@ -302,9 +302,19 @@ WORKFLOW_CHECKS = {
 }
 
 
+def execution_time(timestamp):
+    need(isinstance(timestamp, str), "source execution timestamp missing")
+    try:
+        value = dt.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        raise Refusal("invalid source execution timestamp") from None
+    need(value.utcoffset() is not None, "source execution timestamp lacks timezone")
+    need(value <= dt.datetime.now(dt.timezone.utc), "source execution timestamp is in the future")
+    return value
+
+
 def fresh(timestamp):
-    age = (dt.datetime.now(dt.timezone.utc) -
-           dt.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))).total_seconds()
+    age = (dt.datetime.now(dt.timezone.utc) - execution_time(timestamp)).total_seconds()
     need(0 <= age <= MAX_AGE, "source execution expired")
 
 
@@ -354,17 +364,48 @@ def unchanged_apple_edit(api, run):
                     for name in WORKFLOW_CHECKS["swift.yml"][1:]))
 
 
+def attempt_finished(api, run):
+    """Bound the latest attempt by actual jobs, never mutable run updated_at.
+
+    Earlier successful jobs retained by a partial rerun do not belong to this
+    interval. Their individual completion times still bound reuse in latest_job.
+    """
+    jobs = api.pages(PREFIX + f"/actions/runs/{run['id']}/jobs?filter=all", "jobs")
+    latest = [job for job in jobs if job.get("run_attempt") == run["run_attempt"]]
+    need(latest and all(job["status"] == "completed" for job in latest),
+         "latest source attempt has missing or pending jobs")
+    completed = [execution_time(job.get("completed_at")) for job in latest]
+    need(min(completed) >= execution_time(run["run_started_at"]), "source attempt chronology differs")
+    return max(completed)
+
+
 def qualification_runs(api, head):
     selected, ignored = {}, []
     for filename in WORKFLOW_CHECKS:
         rows = api.pages(PREFIX + f"/actions/workflows/{filename}/runs?head_sha={head}&event=pull_request", "runs")
-        for row in sorted(rows, key=lambda item: item["id"], reverse=True):
+        ordered, identities = [], set()
+        for row in rows:
+            need(type(row.get("id")) is int and row["id"] > 0 and row["id"] not in identities,
+                 "source workflow identity missing or ambiguous")
+            identities.add(row["id"])
             run = api.one(PREFIX + f"/actions/runs/{row['id']}")
-            need(run["head_sha"] == head and run["event"] == "pull_request"
+            need(run["id"] == row["id"] and run["head_sha"] == head and run["event"] == "pull_request"
                  and run["path"] == ".github/workflows/" + filename
                  and run["head_repository"]["full_name"] == REPO, "untrusted source workflow")
-            need(run["status"] == "completed" and run["conclusion"] == "success", "latest source workflow did not succeed")
-            fresh(run["updated_at"])
+            need(type(run.get("run_attempt")) is int and run["run_attempt"] > 0, "source workflow attempt missing")
+            # A pending rerun can still expose its previous attempt's start.
+            # It cannot be treated as an older, superseded execution.
+            need(run["status"] == "completed", "source workflow is pending")
+            ordered.append((execution_time(run.get("run_started_at")), run))
+        # GitHub defines run_started_at as the latest attempt's start and resets
+        # it on rerun. IDs and created_at identify the original run, not a rerun.
+        ordered.sort(key=lambda item: item[0], reverse=True)
+        for index, (started, run) in enumerate(ordered):
+            need(run["conclusion"] == "success", "latest source workflow did not succeed")
+            attempt_finished(api, run)
+            for older_started, older_run in ordered[index + 1:]:
+                need(older_started < started and attempt_finished(api, older_run) < started,
+                     "source workflow execution order is ambiguous")
             if unchanged_apple_edit(api, run):
                 ignored.append(run)
                 continue
