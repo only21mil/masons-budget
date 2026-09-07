@@ -3167,11 +3167,13 @@ describe("Apple zero-fee transfer contract", () => {
       baseUpdatedAtMs: accepted.transfers[0].updatedAtMs,
     });
     const deleted = await state();
-    await expectDeviceError(
-      t.mutation(api.upsertBtcTransfer, request),
-      "ENTITY_DELETED",
-      request.transfer.id,
-    );
+    await expect(t.mutation(api.upsertBtcTransfer, request)).rejects.toMatchObject({
+      data: {
+        code: "ENTITY_DELETED",
+        entityType: "btcTransfer",
+        entityId: request.transfer.id,
+      },
+    });
     expect(await state()).toEqual(deleted);
   });
 });

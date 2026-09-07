@@ -17,6 +17,7 @@ final class BitcoinTransferWriteTests: XCTestCase {
         try .make(
             viewer: viewer, balance: balance(), from: "river", to: "coldcard",
             satsText: sats, date: Date(timeIntervalSince1970: 1_788_782_400),
+            now: Date(timeIntervalSince1970: 1_788_782_400),
         )
     }
 
@@ -90,6 +91,161 @@ final class BitcoinTransferWriteTests: XCTestCase {
         // A stale receipt must never remove a newer transfer.
         XCTAssertThrowsError(try restarted.accept(transfer))
         XCTAssertThrowsError(try restarted.retire(transfer))
+    }
+
+    private func instant(_ value: String) throws -> Date {
+        try XCTUnwrap(ISO8601DateFormatter().date(from: value))
+    }
+
+    @MainActor
+    func testDateWindowRejectsBeforeReservationAndAcceptsBothBoundaries() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try BitcoinTransferDraftStore(fileURL: directory.appendingPathComponent("draft.json"))
+        let now = try instant("2026-09-07T12:00:00Z")
+        let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        for invalid in ["1999-12-31T12:00:00Z", "2026-10-08T00:00:00Z"] {
+            XCTAssertThrowsError(try store.reserve(BitcoinTransferIntent.make(
+                viewer: .victor, balance: balance(), from: "river", to: "coldcard", satsText: "1",
+                date: instant(invalid), now: now, timeZone: utc,
+            ))) { error in
+                XCTAssertEqual(error as? BitcoinTransferError, .invalidDate)
+            }
+            XCTAssertNil(try store.load(), "Invalid dates must not freeze a saved request")
+        }
+        for valid in ["2000-01-01T00:00:00Z", "2026-10-07T23:59:59Z"] {
+            let transfer = try BitcoinTransferIntent.make(
+                viewer: .victor, balance: balance(), from: "river", to: "coldcard", satsText: "1",
+                date: instant(valid), now: now, timeZone: utc,
+            )
+            XCTAssertEqual(transfer.date, String(valid.prefix(10)))
+            try store.reserve(transfer)
+            try store.accept(transfer)
+            try store.retire(transfer)
+        }
+    }
+
+    func testPickerBoundsMatchUTCLimitAcrossLocalDateAndDaylightSavingChanges() throws {
+        for timestamp in ["2026-09-07T00:30:00Z", "2026-09-07T23:30:00Z", "2026-10-15T23:30:00Z"] {
+            let now = try instant(timestamp)
+            let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+            let expected = try BitcoinTransferDateWindow.validatedISODate(
+                now.addingTimeInterval(30 * 86_400), now: now, timeZone: utc,
+            )
+            for zone in ["Pacific/Kiritimati", "America/Los_Angeles", "America/Chicago"] {
+                let timeZone = try XCTUnwrap(TimeZone(identifier: zone))
+                let range = BitcoinTransferDateWindow.allowedDates(now: now, timeZone: timeZone)
+                XCTAssertEqual(try BitcoinTransferDateWindow.validatedISODate(
+                    range.lowerBound, now: now, timeZone: timeZone,
+                ), "2000-01-01")
+                XCTAssertEqual(try BitcoinTransferDateWindow.validatedISODate(
+                    range.upperBound, now: now, timeZone: timeZone,
+                ), expected)
+                for outside in [range.lowerBound.addingTimeInterval(-1), range.upperBound.addingTimeInterval(1)] {
+                    XCTAssertThrowsError(try BitcoinTransferDateWindow.validatedISODate(outside, now: now, timeZone: timeZone))
+                }
+            }
+        }
+    }
+
+    func testDeletionRequiresMatchingStructuredTransferIdentity() throws {
+        let transfer = try intent()
+        let matching: [String: Any] = [
+            "code": "ENTITY_DELETED", "entityType": "btcTransfer", "entityId": transfer.id,
+        ]
+        XCTAssertEqual(BitcoinTransferDeletionReceipt(intent: transfer, errorData: matching)?.intent, transfer)
+        let encoded = try JSONSerialization.data(withJSONObject: matching)
+        XCTAssertNotNil(BitcoinTransferDeletionReceipt(intent: transfer, errorData: String(data: encoded, encoding: .utf8)))
+        let invalid: [Any] = [
+            ["code": "ENTITY_DELETED"],
+            ["code": "ENTITY_DELETED", "entityType": "btcTransfer", "entityId": "another"],
+            ["code": "ENTITY_DELETED", "entityType": "btcBuy", "entityId": transfer.id],
+            ["code": "ENTITY_NOT_FOUND", "entityType": "btcTransfer", "entityId": transfer.id],
+            ["code": "DEVICE_UNAUTHORIZED", "entityType": "btcTransfer", "entityId": transfer.id],
+            "ENTITY_DELETED", NSNull(),
+        ]
+        for value in invalid {
+            XCTAssertNil(BitcoinTransferDeletionReceipt(intent: transfer, errorData: value))
+        }
+    }
+
+    @MainActor
+    func testDeletionSurvivesRestartAndStaleResultCannotRetireReplacement() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("draft.json")
+        let store = try BitcoinTransferDraftStore(fileURL: url)
+        let transfer = try intent()
+        try store.reserve(transfer)
+        // Old drafts had only accepted. Decoding them must retain pending recovery.
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        legacy.removeValue(forKey: "deleted")
+        try JSONSerialization.data(withJSONObject: legacy).write(to: url)
+        XCTAssertEqual(try store.load()?.terminal, false)
+        let receipt = try XCTUnwrap(BitcoinTransferDeletionReceipt(intent: transfer, errorData: [
+            "code": "ENTITY_DELETED", "entityType": "btcTransfer", "entityId": transfer.id,
+        ]))
+        try store.recordDeletion(receipt)
+        // Simulate interruption between recording the deletion and removing the file.
+        let restarted = try BitcoinTransferDraftStore(fileURL: url)
+        XCTAssertEqual(try restarted.load()?.intent, transfer)
+        XCTAssertEqual(try restarted.load()?.deleted, true)
+        XCTAssertEqual(try restarted.load()?.terminal, true)
+        XCTAssertThrowsError(try restarted.reserve(transfer))
+        XCTAssertThrowsError(try restarted.accept(transfer))
+        try restarted.retire(transfer)
+        XCTAssertNil(try restarted.load())
+        let replacement = try intent(sats: "200")
+        try restarted.reserve(replacement)
+        XCTAssertThrowsError(try restarted.recordDeletion(receipt))
+        XCTAssertThrowsError(try restarted.retire(transfer))
+        XCTAssertEqual(try restarted.load()?.intent, replacement)
+        XCTAssertEqual(try restarted.load()?.terminal, false)
+    }
+
+    func testMutationResponseRecognizesDeletionOnlyFromExpectedHTTPStatuses() throws {
+        let transfer = try intent()
+        let body = try JSONSerialization.data(withJSONObject: [
+            "status": "error",
+            "errorData": ["code": "ENTITY_DELETED", "entityType": "btcTransfer", "entityId": transfer.id],
+        ])
+        for status in [200, 560] {
+            XCTAssertThrowsError(try AppWritebackClient.mutationValue(
+                data: body, statusCode: status, bitcoinTransfer: transfer,
+            )) { error in
+                XCTAssertEqual((error as? BitcoinTransferDeletionReceipt)?.intent, transfer)
+            }
+        }
+        for status in [401, 403, 500, 502] {
+            XCTAssertThrowsError(try AppWritebackClient.mutationValue(
+                data: body, statusCode: status, bitcoinTransfer: transfer,
+            )) { error in
+                guard case AppWritebackError.httpError(let actual) = error else {
+                    return XCTFail("An unrelated HTTP failure must not become a deletion receipt")
+                }
+                XCTAssertEqual(actual, status)
+            }
+        }
+        XCTAssertThrowsError(try AppWritebackClient.mutationValue(data: body, statusCode: 560)) { error in
+            guard case AppWritebackError.httpError(560) = error else {
+                return XCTFail("Other mutation routes must keep their existing HTTP error behavior")
+            }
+        }
+        let success = try JSONSerialization.data(withJSONObject: [
+            "status": "success", "value": ["ok": true, "entityId": transfer.id, "outcome": "inserted"],
+        ])
+        try transfer.validateReceipt(AppWritebackClient.mutationValue(
+            data: success, statusCode: 200, bitcoinTransfer: transfer,
+        ))
+        XCTAssertThrowsError(try AppWritebackClient.mutationValue(
+            data: success, statusCode: 560, bitcoinTransfer: transfer,
+        ))
+        let mismatched = try intent()
+        XCTAssertThrowsError(try AppWritebackClient.mutationValue(
+            data: body, statusCode: 560, bitcoinTransfer: mismatched,
+        )) { error in
+            XCTAssertFalse(error is BitcoinTransferDeletionReceipt, "A stale response must remain unresolved")
+        }
     }
 
     @MainActor

@@ -396,13 +396,15 @@ struct BitcoinTransferView: View {
                 if viewer?.isAdult == true {
                     if let draft {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(draft.accepted ? "TRANSFER ACCEPTED" : "PENDING TRANSFER")
+                            Text(draft.deleted == true ? "TRANSFER DELETED" : (draft.accepted ? "TRANSFER ACCEPTED" : "PENDING TRANSFER"))
                                 .ledgerType(.sectionLabel)
                             Text("\(draft.intent.sats) sats · \(draft.intent.date)")
                             Text("\(accountLabel(draft.intent.fromAccountKey)) → \(accountLabel(draft.intent.toAccountKey))")
-                            Text(draft.accepted
-                                 ? "Both accounts were updated. Finish saving the receipt before starting another transfer."
-                                 : "Retry sends the same transfer. Its amount, accounts, and date stay fixed until the receipt is confirmed.")
+                            Text(draft.deleted == true
+                                 ? "This transfer was deleted. Finish recovery to refresh the accounts and start another transfer."
+                                 : (draft.accepted
+                                    ? "Both accounts were updated. Finish saving the receipt before starting another transfer."
+                                    : "Retry sends the same transfer. Its amount, accounts, and date stay fixed until the receipt is confirmed."))
                                 .ledgerType(.rowMeta)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -427,7 +429,11 @@ struct BitcoinTransferView: View {
                             }
                             .padding(14)
                             Hairline()
-                            DatePicker("Transfer date", selection: $date, displayedComponents: .date)
+                            DatePicker(
+                                "Transfer date", selection: $date,
+                                in: BitcoinTransferDateWindow.allowedDates(), displayedComponents: .date,
+                            )
+                                .environment(\.calendar, Calendar(identifier: .gregorian))
                                 .padding(14)
                         }
                         .disabled(saving || !loaded)
@@ -516,17 +522,35 @@ struct BitcoinTransferView: View {
                 try store.reserve(intent)
                 draft = BitcoinTransferDraftStore.Draft(intent: intent, accepted: false)
             }
-            if draft?.accepted != true {
+            if draft?.terminal != true {
                 try store.reserve(intent)
-                try await AppWritebackClient().transferBitcoin(intent, activeProfile: viewer)
-                draft = BitcoinTransferDraftStore.Draft(intent: intent, accepted: true)
+                do {
+                    try await AppWritebackClient().transferBitcoin(intent, activeProfile: viewer)
+                    draft = BitcoinTransferDraftStore.Draft(intent: intent, accepted: true)
+                } catch let receipt as BitcoinTransferDeletionReceipt {
+                    guard receipt.intent == intent else { throw AppWritebackError.unexpectedResponse }
+                    // Persist the terminal result before cleanup. A stale result
+                    // cannot mark or retire a different request in the file.
+                    try store.recordDeletion(receipt)
+                    draft = BitcoinTransferDraftStore.Draft(intent: intent, accepted: false, deleted: true)
+                }
             }
-            try store.accept(intent)
+            let wasDeleted = draft?.deleted == true
+            if !wasDeleted { try store.accept(intent) }
             try store.retire(intent)
             if selectedMemberRaw == viewer.rawValue {
                 await canonicalFinancials.load(viewer: viewer)
             }
-            dismiss()
+            if wasDeleted {
+                draft = nil
+                sourceKey = ""
+                destinationKey = ""
+                amount = ""
+                date = Date()
+                message = "This transfer was deleted on another client. Its saved request has been cleared. You can start a new transfer."
+            } else {
+                dismiss()
+            }
         } catch let error as BitcoinTransferError {
             message = error.localizedDescription
             // A failed persistence readback can still have written the file.

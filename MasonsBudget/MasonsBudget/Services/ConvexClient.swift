@@ -920,6 +920,7 @@ final class AppWritebackClient: Sendable {
             baseURL: device.baseURL,
             path: BitcoinTransferIntent.mutationPath,
             args: intent.arguments(deviceID: device.deviceID, deviceToken: device.deviceToken),
+            bitcoinTransfer: intent,
         )
         try intent.validateReceipt(value)
     }
@@ -1166,7 +1167,10 @@ final class AppWritebackClient: Sendable {
         ) else { throw AppWritebackError.credentialStorageFailed }
     }
 
-    private func convexMutation(baseURL: URL, path: String, args: [String: Any]) async throws -> Any {
+    private func convexMutation(
+        baseURL: URL, path: String, args: [String: Any],
+        bitcoinTransfer: BitcoinTransferIntent? = nil,
+    ) async throws -> Any {
         guard baseURL.scheme?.lowercased() == "https" else {
             throw AppWritebackError.invalidBaseURL
         }
@@ -1187,11 +1191,26 @@ final class AppWritebackClient: Sendable {
         guard let http = response as? HTTPURLResponse else {
             throw AppWritebackError.httpError(0)
         }
+        return try Self.mutationValue(
+            data: data, statusCode: http.statusCode,
+            bitcoinTransfer: path == BitcoinTransferIntent.mutationPath ? bitcoinTransfer : nil,
+        )
+    }
+
+    static func mutationValue(
+        data: Data, statusCode: Int, bitcoinTransfer: BitcoinTransferIntent? = nil,
+    ) throws -> Any {
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        if http.statusCode != 200 {
-            throw AppWritebackError.httpError(http.statusCode)
+        // Convex returns structured function failures as HTTP 560. Only the
+        // transfer path opts into decoding these terminal deletion receipts.
+        if statusCode != 200, !(statusCode == 560 && bitcoinTransfer != nil) {
+            throw AppWritebackError.httpError(statusCode)
         }
         if object?["status"] as? String == "error" {
+            if let bitcoinTransfer,
+               let receipt = BitcoinTransferDeletionReceipt(intent: bitcoinTransfer, errorData: object?["errorData"]) {
+                throw receipt
+            }
             if let code = Self.remoteErrorCode(from: object?["errorData"]) {
                 throw AppWritebackError.remote(code)
             }
@@ -1199,6 +1218,7 @@ final class AppWritebackClient: Sendable {
             // and an upstream message is not safe user-facing diagnostic text.
             throw AppWritebackError.serverError
         }
+        guard statusCode == 200 else { throw AppWritebackError.httpError(statusCode) }
         guard object?["status"] as? String == "success" else {
             throw AppWritebackError.unexpectedResponse
         }
@@ -1206,6 +1226,11 @@ final class AppWritebackClient: Sendable {
     }
 
     static func remoteErrorCode(from raw: Any?) -> AppWritebackRemoteErrorCode? {
+        guard let code = remoteErrorObject(from: raw)?["code"] as? String else { return nil }
+        return AppWritebackRemoteErrorCode(rawValue: code)
+    }
+
+    static func remoteErrorObject(from raw: Any?) -> [String: Any]? {
         let object: [String: Any]?
         if let dictionary = raw as? [String: Any] {
             object = dictionary
@@ -1217,8 +1242,7 @@ final class AppWritebackClient: Sendable {
         } else {
             object = nil
         }
-        guard let code = object?["code"] as? String else { return nil }
-        return AppWritebackRemoteErrorCode(rawValue: code)
+        return object
     }
 
     private static func isConvexBaseURL(_ url: URL) -> Bool {

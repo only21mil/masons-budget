@@ -19,6 +19,8 @@ struct BitcoinTransferIntent: Codable, Equatable, Sendable {
         to: String,
         satsText: String,
         date: Date,
+        now: Date = Date(),
+        timeZone: TimeZone = .current,
     ) throws -> Self {
         guard viewer.isAdult, let balance, balance.owner == viewer.ledgerOwner else {
             throw BitcoinTransferError.householdRequired
@@ -36,14 +38,11 @@ struct BitcoinTransferIntent: Codable, Equatable, Sendable {
               let sats = Int64(text), sats > 0
         else { throw BitcoinTransferError.invalidAmount }
         guard sats <= source.sats else { throw BitcoinTransferError.insufficientFunds }
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
+        let isoDate = try BitcoinTransferDateWindow.validatedISODate(date, now: now, timeZone: timeZone)
         return Self(
             id: "btc-transfer-\(UUID().uuidString.lowercased())",
             owner: viewer.ledgerOwner,
-            date: formatter.string(from: date),
+            date: isoDate,
             fromAccountKey: from,
             toAccountKey: to,
             sats: sats,
@@ -79,8 +78,60 @@ struct BitcoinTransferIntent: Codable, Equatable, Sendable {
     }
 }
 
+/// The server compares date-only strings against a UTC limit 30 days from now.
+/// The picker displays local calendar days, so convert that limit back to local
+/// midnight rather than applying 30 local days across a time-zone boundary.
+enum BitcoinTransferDateWindow {
+    private static func formatter(timeZone: TimeZone) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }
+
+    private static func latestISODate(now: Date) -> String {
+        formatter(timeZone: TimeZone(secondsFromGMT: 0)!)
+            .string(from: now.addingTimeInterval(30 * 86_400))
+    }
+
+    static func allowedDates(now: Date = Date(), timeZone: TimeZone = .current) -> ClosedRange<Date> {
+        let local = formatter(timeZone: timeZone)
+        let earliest = local.date(from: "2000-01-01")!
+        let latest = local.date(from: latestISODate(now: now))!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let end = calendar.date(byAdding: .day, value: 1, to: latest)!.addingTimeInterval(-1)
+        return earliest...end
+    }
+
+    static func validatedISODate(_ date: Date, now: Date, timeZone: TimeZone) throws -> String {
+        let value = formatter(timeZone: timeZone).string(from: date)
+        guard date >= allowedDates(now: now, timeZone: timeZone).lowerBound,
+              value.count == 10, value >= "2000-01-01", value <= latestISODate(now: now) else {
+            throw BitcoinTransferError.invalidDate
+        }
+        return value
+    }
+}
+
+/// Constructed only for a matching structured rejection from the authenticated
+/// transfer mutation. A generic remote error code cannot retire a draft.
+struct BitcoinTransferDeletionReceipt: Error {
+    let intent: BitcoinTransferIntent
+
+    init?(intent: BitcoinTransferIntent, errorData: Any?) {
+        guard let object = AppWritebackClient.remoteErrorObject(from: errorData),
+              object["code"] as? String == AppWritebackRemoteErrorCode.entityDeleted.rawValue,
+              object["entityType"] as? String == "btcTransfer",
+              object["entityId"] as? String == intent.id else { return nil }
+        self.intent = intent
+    }
+}
+
 enum BitcoinTransferError: LocalizedError, Equatable {
-    case householdRequired, accountsRequired, invalidAmount, insufficientFunds
+    case householdRequired, accountsRequired, invalidAmount, insufficientFunds, invalidDate
     case storageUnavailable, pendingTransfer, writesDisabled
 
     var errorDescription: String? {
@@ -88,6 +139,7 @@ enum BitcoinTransferError: LocalizedError, Equatable {
         case .householdRequired: "Load the adult household Bitcoin accounts before transferring."
         case .accountsRequired: "Select two distinct accounts from the household Bitcoin ledger."
         case .invalidAmount: "Enter a positive whole number of sats within the supported range."
+        case .invalidDate: "Choose a transfer date from January 1, 2000 through 30 days from today."
         case .insufficientFunds: "The source account does not have enough sats."
         case .storageUnavailable: "The transfer draft could not be stored or recovered. No new transfer can be submitted."
         case .pendingTransfer: "Recover the pending transfer before starting another."
@@ -104,6 +156,10 @@ final class BitcoinTransferDraftStore {
     struct Draft: Codable, Equatable {
         let intent: BitcoinTransferIntent
         var accepted: Bool
+        // Optional so pending and accepted drafts from earlier versions still decode.
+        var deleted: Bool? = nil
+
+        var terminal: Bool { accepted || deleted == true }
     }
 
     private let fileURL: URL
@@ -126,6 +182,7 @@ final class BitcoinTransferDraftStore {
             let data = try Data(contentsOf: fileURL)
             let draft = try JSONDecoder().decode(Draft.self, from: data)
             guard draft.intent.owner == .victor, !draft.intent.id.isEmpty,
+                  !(draft.accepted && draft.deleted == true),
                   draft.intent.sats > 0, !draft.intent.fromAccountKey.isEmpty,
                   !draft.intent.toAccountKey.isEmpty,
                   draft.intent.fromAccountKey != draft.intent.toAccountKey
@@ -140,7 +197,7 @@ final class BitcoinTransferDraftStore {
 
     func reserve(_ intent: BitcoinTransferIntent) throws {
         if let existing = try load() {
-            guard existing.intent == intent, !existing.accepted else {
+            guard existing.intent == intent, !existing.terminal else {
                 throw BitcoinTransferError.pendingTransfer
             }
             return
@@ -149,15 +206,23 @@ final class BitcoinTransferDraftStore {
     }
 
     func accept(_ intent: BitcoinTransferIntent) throws {
-        guard var existing = try load(), existing.intent == intent else {
+        guard var existing = try load(), existing.intent == intent, existing.deleted != true else {
             throw BitcoinTransferError.pendingTransfer
         }
         existing.accepted = true
         try persist(existing)
     }
 
+    func recordDeletion(_ receipt: BitcoinTransferDeletionReceipt) throws {
+        guard var existing = try load(), existing.intent == receipt.intent, !existing.accepted else {
+            throw BitcoinTransferError.pendingTransfer
+        }
+        existing.deleted = true
+        try persist(existing)
+    }
+
     func retire(_ intent: BitcoinTransferIntent) throws {
-        guard let existing = try load(), existing.intent == intent, existing.accepted else {
+        guard let existing = try load(), existing.intent == intent, existing.terminal else {
             throw BitcoinTransferError.pendingTransfer
         }
         do {
