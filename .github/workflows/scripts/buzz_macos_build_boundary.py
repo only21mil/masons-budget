@@ -21,16 +21,22 @@ SCRIPT = Path(__file__).resolve().parent
 INSTALLED = Path('/usr/local/libexec/buzz-macos-build')
 PAYLOAD_FILES = ('buzz_macos_build_boundary.py', 'buzz_macos_build_supervisor.py',
                  'buzz_macos_build.sh', 'buzz_macos_build.sb', 'buzz_macos_release.py',
-                 'buzz-verify-macos-entitlements.sh')
+                 'buzz-verify-macos-entitlements.sh', 'buzz_ios_build.sh', 'buzz_ios_release.py')
 REQUEST_ENV = {
     'source_sha': 'SOURCE_SHA', 'version': 'VERSION', 'arch': 'ARCH',
     'updater_public_key': 'BUZZ_UPDATER_PUBLIC_KEY', 'updater_endpoint': 'BUZZ_UPDATER_ENDPOINT',
     'run_id': 'GITHUB_RUN_ID', 'run_attempt': 'GITHUB_RUN_ATTEMPT', 'workflow_sha': 'GITHUB_SHA',
 }
 
+IOS_REQUEST_ENV = {key: value for key, value in REQUEST_ENV.items()
+                   if key not in ('updater_public_key', 'updater_endpoint')}
+IOS_REQUEST_ENV['build_number'] = 'BUILD_NUMBER'
+
+def request_env(arch):
+    return IOS_REQUEST_ENV if arch == 'ios' else REQUEST_ENV
 
 def build_env(root: Path, request: dict) -> dict[str, str]:
-    env = {env_key: request[key] for key, env_key in REQUEST_ENV.items()}
+    env = {env_key: request[key] for key, env_key in request_env(request['arch']).items()}
     env.update(HOME=str(root / 'home'), TMPDIR=str(root / 'tmp') + '/',
                PATH='/usr/bin:/bin:/usr/sbin:/sbin', LANG='en_US.UTF-8', SHELL='/bin/bash',
                GITHUB_WORKSPACE=str(root), BUZZ_CONTROLLER=str(SCRIPT),
@@ -39,6 +45,11 @@ def build_env(root: Path, request: dict) -> dict[str, str]:
                MACOSX_DEPLOYMENT_TARGET='10.15', CMAKE_OSX_DEPLOYMENT_TARGET='10.15')
     # Avoid CoreFoundation consulting the real user's text-encoding preference.
     env['__CF_USER_TEXT_ENCODING'] = f'0x{os.getuid():X}:0:0'
+    if request['arch'] == 'ios':
+        # CocoaPods is an existing approved Homebrew tool on the MBP.
+        env['PATH'] = '/opt/homebrew/bin:' + env['PATH']
+        env.pop('MACOSX_DEPLOYMENT_TARGET')
+        env.pop('CMAKE_OSX_DEPLOYMENT_TARGET')
     return env
 
 
@@ -68,9 +79,18 @@ git remote add origin https://github.com/only21mil/buzz.git
 git -c credential.helper= fetch --depth 1 origin "$SOURCE_SHA"
 git checkout --quiet --detach FETCH_HEAD
 source bin/activate-hermit
+if [[ "$ARCH" == ios ]]; then
+  exec /bin/bash "$BUZZ_CONTROLLER/buzz_ios_build.sh"
+fi
 exec /bin/bash "$BUZZ_CONTROLLER/buzz_macos_build.sh"
 '''], cwd=root)
     arch = request['arch']
+    if arch == 'ios':
+        confined(root, request, ['/usr/bin/python3', '-I', str(SCRIPT / 'buzz_ios_release.py'), 'pack',
+                 '--app', 'mobile/build/ios/iphoneos/Runner.app', '--output', '../unsigned',
+                 '--source', request['source_sha'], '--version', request['version'],
+                 '--build-number', request['build_number']], cwd=root / 'buzz')
+        return
     confined(root, request, ['/usr/bin/python3', '-I', str(SCRIPT / 'buzz_macos_release.py'), 'pack',
                            '--app', f'desktop/src-tauri/target/{arch}-apple-darwin/release/bundle/macos/Buzz.app',
                            '--output', '../unsigned', '--source', request['source_sha'],
@@ -103,8 +123,8 @@ def client() -> None:
     if pwd.getpwuid(os.geteuid()).pw_name != 'm5mbp':
         raise RuntimeError('workflow must run on the MBP signing runner')
     verify_installation()
-    request = {key: os.environ[env_key] for key, env_key in REQUEST_ENV.items()}
-    if (request['arch'] not in ('aarch64', 'x86_64') or
+    request = {key: os.environ[env_key] for key, env_key in request_env(os.environ['ARCH']).items()}
+    if (request['arch'] not in ('aarch64', 'x86_64', 'ios') or
             any(not re.fullmatch(r'[1-9][0-9]{0,19}', request[key])
                 for key in ('run_id', 'run_attempt'))):
         raise RuntimeError('invalid build output identity')

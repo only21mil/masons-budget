@@ -23,9 +23,10 @@ CALLER = 'm5mbp'
 BUILDER = 'buzzbuild'
 FILES = ('buzz_macos_build_supervisor.py', 'buzz_macos_build_boundary.py',
          'buzz_macos_build.sh', 'buzz_macos_build.sb', 'buzz_macos_release.py',
-         'buzz-verify-macos-entitlements.sh')
+         'buzz-verify-macos-entitlements.sh', 'buzz_ios_build.sh', 'buzz_ios_release.py')
 FIELDS = {'source_sha', 'version', 'arch', 'updater_public_key', 'updater_endpoint',
           'run_id', 'run_attempt', 'workflow_sha', 'output_dir'}
+IOS_FIELDS = (FIELDS - {'updater_public_key', 'updater_endpoint'}) | {'build_number'}
 ENV = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'LANG': 'en_US.UTF-8',
        'LC_ALL': 'en_US.UTF-8'}
 
@@ -60,18 +61,24 @@ def request_from(stream):
     raw = stream.read(16385)
     require(len(raw) <= 16384, 'request too large')
     request = json.loads(raw, object_pairs_hook=unique_object)
-    require(type(request) is dict and set(request) == FIELDS, 'invalid request fields')
+    require(type(request) is dict, 'invalid request object')
+    fields = IOS_FIELDS if request.get('arch') == 'ios' else FIELDS
+    require(set(request) == fields, 'invalid request fields')
     require(all(type(v) is str for v in request.values()), 'request values must be strings')
     for name in ('source_sha', 'workflow_sha'):
         require(re.fullmatch(r'[0-9a-f]{40}', request[name]), 'invalid commit')
     require(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?', request['version'])
             and len(request['version']) < 100, 'invalid version')
-    require(request['arch'] in ('aarch64', 'x86_64'), 'invalid architecture')
+    require(request['arch'] in ('aarch64', 'x86_64', 'ios'), 'invalid architecture')
     for name in ('run_id', 'run_attempt'):
         require(re.fullmatch(r'[1-9][0-9]{0,19}', request[name]), 'invalid run identity')
-    require(re.fullmatch(r'[A-Za-z0-9+/=]{20,2048}', request['updater_public_key']), 'invalid public key')
-    require(request['updater_endpoint'] == 'https://github.com/only21mil/buzz/releases/download/buzz-desktop-latest/latest.json',
-            'invalid updater endpoint')
+    if request['arch'] == 'ios':
+        require(re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', request['version']), 'invalid iOS version')
+        require(re.fullmatch(r'[1-9][0-9]{0,8}', request['build_number']), 'invalid iOS build number')
+    else:
+        require(re.fullmatch(r'[A-Za-z0-9+/=]{20,2048}', request['updater_public_key']), 'invalid public key')
+        require(request['updater_endpoint'] == 'https://github.com/only21mil/buzz/releases/download/buzz-desktop-latest/latest.json',
+                'invalid updater endpoint')
     require(request['output_dir'].startswith('/') and len(request['output_dir']) < 1024, 'invalid output directory')
     return request
 

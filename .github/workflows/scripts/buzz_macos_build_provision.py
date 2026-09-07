@@ -23,7 +23,7 @@ BUILDER_UID = 590
 BUILDER_GID = 590
 FILES = ('buzz_macos_build_supervisor.py', 'buzz_macos_build_boundary.py',
          'buzz_macos_build.sh', 'buzz_macos_build.sb', 'buzz_macos_release.py',
-         'buzz-verify-macos-entitlements.sh')
+         'buzz-verify-macos-entitlements.sh', 'buzz_ios_build.sh', 'buzz_ios_release.py')
 RULE = 'm5mbp ALL=(root) NOPASSWD: /usr/bin/python3 -I /usr/local/libexec/buzz-macos-build/buzz_macos_build_supervisor.py\n'
 ENV = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'LANG': 'en_US.UTF-8'}
 

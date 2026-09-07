@@ -17,7 +17,7 @@ permissions:
 
 # Serialize Buzz releases; every signing command explicitly selects its keychain.
 concurrency:
-  group: buzz-macos-release
+  group: buzz-apple-release
   cancel-in-progress: false
 
 jobs:
