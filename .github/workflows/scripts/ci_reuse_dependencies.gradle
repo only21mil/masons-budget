@@ -1,0 +1,73 @@
+// Resolve external inputs without compiling, testing, signing or assembling.
+// Resolution failure leaves the ordinary CI checks enabled.
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+
+def hashFile = { file ->
+    def hash = MessageDigest.getInstance('SHA-256')
+    file.withInputStream { input ->
+        byte[] buffer = new byte[65536]
+        for (int count = input.read(buffer); count >= 0; count = input.read(buffer)) {
+            if (count > 0) hash.update(buffer, 0, count)
+        }
+    }
+    hash.digest().encodeHex().toString()
+}
+def hashArtifact = { file ->
+    if (!file.isDirectory()) return hashFile(file)
+    def entries = new TreeMap()
+    file.eachFileRecurse { child ->
+        if (child.isFile()) entries[file.toPath().relativize(child.toPath()).toString()] = hashFile(child)
+    }
+    MessageDigest.getInstance('SHA-256').digest(JsonOutput.toJson(entries).getBytes('UTF-8')).encodeHex().toString()
+}
+
+gradle.projectsEvaluated {
+    def projectRoot = gradle.rootProject
+    projectRoot.tasks.register('ciReuseDependencies') {
+        doLast {
+            def artifacts = new TreeMap()
+            def configurations = new TreeMap()
+            projectRoot.allprojects.sort { it.path }.each { project ->
+                project.configurations.findAll { it.canBeResolved }.sort { it.name }.each { config ->
+                    def resolved = config.incoming.artifactView {
+                        componentFilter { id -> id instanceof ModuleComponentIdentifier }
+                    }.artifacts.artifacts
+                    def names = []
+                    resolved.each { artifact ->
+                        def key = "${artifact.id.componentIdentifier.displayName}/${artifact.file.name}".toString()
+                        def hash = hashArtifact(artifact.file)
+                        if (artifacts.containsKey(key) && artifacts[key] != hash) {
+                            throw new GradleException('Conflicting resolved artifact identity')
+                        }
+                        artifacts[key] = hash
+                        names.add(key)
+                    }
+                    configurations["${project.path}:${config.name}".toString()] = names.sort()
+                }
+            }
+            // Include settings/build plugins as well as application dependencies.
+            def pluginCache = new File(gradle.gradleUserHomeDir, 'caches/modules-2/files-2.1')
+            def cached = new TreeMap()
+            pluginCache.eachFileRecurse { file ->
+                if (file.isFile()) cached[pluginCache.toPath().relativize(file.toPath()).toString()] = hashFile(file)
+            }
+            def sdk = System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+            if (!sdk) throw new GradleException('Android SDK identity missing')
+            def packages = new TreeMap()
+            new File(sdk).eachFileRecurse { file ->
+                if (file.name == 'source.properties') packages[new File(sdk).toPath().relativize(file.toPath()).toString()] = hashFile(file)
+            }
+            if (artifacts.isEmpty() || cached.isEmpty() || packages.isEmpty()) {
+                throw new GradleException('Resolved dependency context is incomplete')
+            }
+            def output = new File(System.getenv('RUNNER_TEMP'), 'budget-gradle-context.json')
+            output.text = JsonOutput.toJson([
+                schema: 1, gradle: gradle.gradleVersion,
+                artifacts: artifacts, configurations: configurations,
+                pluginCache: cached, sdkPackages: packages
+            ]) + '\n'
+        }
+    }
+}

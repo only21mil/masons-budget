@@ -14,7 +14,8 @@ name: Clients CI
 on:
   # main is included deliberately: it was previously excluded to avoid duplicate
   # push+PR runs, which meant the default branch was never verified after a
-  # merge. Concurrency below handles the duplication instead.
+  # merge. Proven source results may cover repeated tree-scoped checks;
+  # exact-main gates and main-only artifact production still run.
   push:
     branches:
       - main
@@ -29,6 +30,9 @@ concurrency:
   group: clients-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  BUDGET_CI_REUSE_EPOCH: ${{ vars.BUDGET_CI_REUSE_EPOCH }}
+
 jobs:
   # Which trees actually changed. Added 2026-07-27 after a session of ~30 PRs
   # exhausted the account's Actions minutes: every PR ran all four jobs, so a
@@ -37,8 +41,8 @@ jobs:
   # by a diff tells you nothing when it passes.
   #
   # A push to main always reports every tree as changed. The default branch must
-  # be verified whole after a merge, which is the property the trigger comment
-  # above is protecting; scoping must not quietly undo it.
+  # retain every applicable exact-main context after a merge. Each job proves
+  # reuse independently; missing evidence runs its ordinary check commands.
   changes:
     name: Detect changed trees
     if: github.repository == 'only21mil/masons-budget'
@@ -70,8 +74,8 @@ jobs:
           base-ref: ${{ github.event.pull_request.base.ref }}
           merge-group-base-sha: ${{ github.event.merge_group.base_sha }}
           # A push to main always reports every tree as changed. The default
-          # branch must be verified whole after a merge, which is the property
-          # the trigger comment above is protecting.
+          # branch retains every client context; a job may reuse only its
+          # separately proven source checks.
           main-push-policy: verify-all
 
       - name: Route the trees
@@ -103,7 +107,7 @@ jobs:
           # mark every detected tree. Erring toward running a job is the safe direction:
           # a needless run costs minutes, a skipped one costs a regression.
           wide=false
-          printf '%s\n' "$files" | grep -qE '^(shared/|convex/|package(-lock)?\.json|\.github/workflows/clients\.yml)' && wide=true
+          printf '%s\n' "$files" | grep -qE '^(shared/|convex/|package(-lock)?\.json|\.github/workflows/clients\.yml|\.github/workflows/scripts/(protected_ci_reuse\.py|tests/test_protected_ci_reuse\.py)$)' && wide=true
 
           # A job's own tooling is part of that job even though it lives outside
           # the client source tree. Keep this map job-specific: the other
@@ -111,7 +115,7 @@ jobs:
           # preflights, so they must not spend Linux or Android client minutes.
           declare -A job_paths=(
             [linux]='^linux/'
-            [android]='^(android/|\.github/workflows/scripts/(verify_android_design_packet\.py|tests/test_verify_android_design_packet\.py)$)'
+            [android]='^(android/|\.github/workflows/scripts/(verify_android_design_packet\.py|tests/test_verify_android_design_packet\.py|ci_reuse_dependencies\.gradle)$)'
             [tooling]='^(\.github/workflows/android-read-bootstrap\.yml|android/app/build\.gradle\.kts|scripts/((build-android-read-bootstrap|mint-(android-read-bootstrap|linux-device-pairing|mobile-pairing-slots))\.mjs|tests/(build-android-read-bootstrap|mint-(android-read-bootstrap|linux-device-pairing|mobile-pairing-slots))\.test\.mjs))$'
           )
 
@@ -161,10 +165,16 @@ jobs:
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -173,10 +183,19 @@ jobs:
 
       - run: npm ci
 
+      - name: Verify protected source result reuse
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/workflows/scripts/protected_ci_reuse.py --job shared-domain
+
+
       - name: Typecheck
+        if: steps.reuse.outputs.reused != 'true'
         run: npm run typecheck --workspace @vogel-vault/domain
 
       - name: Parity tests against the Swift contract
+        if: steps.reuse.outputs.reused != 'true'
         run: npm run test --workspace @vogel-vault/domain
 
   # Synthetic response bodies in the committed wire-shape fixture set, replayed
@@ -186,15 +205,30 @@ jobs:
   # assumption can invalidate both clients even when neither client tree changed.
   # The synthetic-content guard keeps production-shaped values out of the
   # fixtures (they replaced verbatim production captures in 2026-09).
+
+      - name: Retain protected result provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-reuse-${{ github.run_attempt }}-shared-domain
+          path: protected-ci-reuse.json
+          if-no-files-found: error
+          retention-days: 7
+
   convex-wire-golden:
     name: Production wire golden decoders
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -203,10 +237,19 @@ jobs:
 
       - run: npm ci
 
+      - name: Verify protected source result reuse
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/workflows/scripts/protected_ci_reuse.py --job convex-wire-golden
+
+
       - name: Fixture synthetic-content guard
+        if: steps.reuse.outputs.reused != 'true'
         run: node scripts/check-convex-wire-golden-synthetic.mjs
 
       - name: Fixture provenance and Linux values
+        if: steps.reuse.outputs.reused != 'true'
         run: node scripts/check-convex-wire-golden-provenance.mjs
 
       - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
@@ -220,6 +263,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
       - name: Linux wire decoder
+        if: steps.reuse.outputs.reused != 'true'
         run: npx vitest run test/convex-wire-golden.test.ts
         working-directory: linux
 
@@ -238,15 +282,30 @@ jobs:
   # its auth tests are the ones that most need to run on every push — they were
   # written in #18 but had no job to run in, because this file belonged to
   # another agent that wave.
+
+      - name: Retain protected result provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-reuse-${{ github.run_attempt }}-convex-wire-golden
+          path: protected-ci-reuse.json
+          if-no-files-found: error
+          retention-days: 7
+
   convex-functions:
     name: Convex functions
     if: github.repository == 'only21mil/masons-budget'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -258,6 +317,13 @@ jobs:
       # codegen or authenticated deployment is needed here.
       - run: npm ci
 
+      - name: Verify protected source result reuse
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/workflows/scripts/protected_ci_reuse.py --job convex-functions
+
+
       - name: Verify committed Convex generated types
         run: |
           git ls-files --error-unmatch \
@@ -267,13 +333,24 @@ jobs:
             convex/_generated/server.d.ts
 
       - name: Typecheck deployable Convex functions
+        if: steps.reuse.outputs.reused != 'true'
         run: npx tsc --noEmit -p convex/tsconfig.json
 
       - name: Typecheck Convex tests
+        if: steps.reuse.outputs.reused != 'true'
         run: npx tsc --noEmit -p convex/tsconfig.test.json
 
       - name: Read/mutation auth and todo LWW tests
+        if: steps.reuse.outputs.reused != 'true'
         run: npm run convex:test
+
+      - name: Retain protected result provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-reuse-${{ github.run_attempt }}-convex-functions
+          path: protected-ci-reuse.json
+          if-no-files-found: error
+          retention-days: 7
 
   linux-client:
     name: Linux client
@@ -286,10 +363,16 @@ jobs:
       (needs.changes.result != 'success' || needs.changes.outputs.linux == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -298,23 +381,35 @@ jobs:
 
       - run: npm ci
 
+      - name: Verify protected source result reuse
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/workflows/scripts/protected_ci_reuse.py --job linux-client
+
+
       - name: Typecheck renderer
+        if: steps.reuse.outputs.reused != 'true'
         run: npx tsc --noEmit -p tsconfig.json
         working-directory: linux
 
       - name: Typecheck electron main/preload
+        if: steps.reuse.outputs.reused != 'true'
         run: npx tsc --noEmit -p tsconfig.electron.json
         working-directory: linux
 
       - name: Lint
+        if: steps.reuse.outputs.reused != 'true'
         run: npx eslint .
         working-directory: linux
 
       - name: Preload boundary guard
+        if: steps.reuse.outputs.reused != 'true'
         run: node scripts/qa-preload-boundary.mjs
         working-directory: linux
 
       - name: Render matrix (20 routes x profiles x states)
+        if: steps.reuse.outputs.reused != 'true'
         run: npx vitest run
         working-directory: linux
 
@@ -361,6 +456,14 @@ jobs:
           path: linux/screenshots
           retention-days: 30
 
+      - name: Retain protected result provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-reuse-${{ github.run_attempt }}-linux-client
+          path: protected-ci-reuse.json
+          if-no-files-found: error
+          retention-days: 7
+
   android-client:
     name: Android client
     needs: [shared-domain, changes]
@@ -372,10 +475,16 @@ jobs:
       (needs.changes.result != 'success' || needs.changes.outputs.android == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Detect which Android modules exist
         id: probe
@@ -489,6 +598,22 @@ jobs:
             sha512sum --check
           mv "$partial_path" "$runtime_path"
 
+      - name: Resolve Gradle dependency context without build work
+        id: dependencies
+        if: steps.probe.outputs.app == 'true'
+        continue-on-error: true
+        working-directory: android
+        run: |
+          rm -f "$RUNNER_TEMP/budget-gradle-context.json"
+          ./gradlew -I ../.github/workflows/scripts/ci_reuse_dependencies.gradle ciReuseDependencies --no-daemon
+
+      - name: Verify protected source result reuse
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUDGET_GRADLE_CONTEXT_STATUS: ${{ steps.dependencies.outcome }}
+        run: python3 .github/workflows/scripts/protected_ci_reuse.py --job android-client
+
       - name: Verify Android builds cannot embed a read credential
         if: steps.probe.outputs.app == 'true'
         run: |
@@ -537,7 +662,7 @@ jobs:
         working-directory: android
 
       - name: Domain parity tests (shared fixture, no Android SDK)
-        if: steps.probe.outputs.gradle == 'true'
+        if: steps.probe.outputs.gradle == 'true' && steps.reuse.outputs.reused != 'true'
         run: ./gradlew :domain:test --no-daemon
         working-directory: android
 
@@ -597,7 +722,7 @@ jobs:
       # Lint the app. The stable-signed debug APK above is the sideload
       # artifact for the Fold; release signing stays out of CI.
       - name: Lint Android app
-        if: steps.probe.outputs.app == 'true'
+        if: steps.probe.outputs.app == 'true' && steps.reuse.outputs.reused != 'true'
         run: ./gradlew :app:lintDebug --no-daemon
         working-directory: android
 
@@ -656,7 +781,7 @@ jobs:
           done
 
       - name: App unit tests
-        if: steps.probe.outputs.app == 'true'
+        if: steps.probe.outputs.app == 'true' && steps.reuse.outputs.reused != 'true'
         env:
           ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
         run: >-
@@ -731,4 +856,12 @@ jobs:
         with:
           name: android-test-report
           path: android/**/build/reports/tests/**
+          retention-days: 7
+
+      - name: Retain protected result provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-reuse-${{ github.run_attempt }}-android-client
+          path: protected-ci-reuse.json
+          if-no-files-found: error
           retention-days: 7

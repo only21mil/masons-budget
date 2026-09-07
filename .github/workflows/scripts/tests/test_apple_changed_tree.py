@@ -43,6 +43,13 @@ class AppleChangedTreeTests(unittest.TestCase):
             )
         )
 
+    def test_reuse_proof_changes_allocate_apple(self) -> None:
+        for path in (
+            ".github/workflows/scripts/protected_ci_reuse.py",
+            ".github/workflows/scripts/tests/test_protected_ci_reuse.py",
+        ):
+            self.assertTrue(MODULE.requires_apple([path]))
+
     def test_unrelated_shared_file_does_not_allocate_apple(self) -> None:
         self.assertFalse(
             MODULE.requires_apple(["shared/domain/src/writeContract.ts"])
