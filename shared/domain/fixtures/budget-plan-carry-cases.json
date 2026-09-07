@@ -1,7 +1,14 @@
 {
-  "$comment": "Copy the one live budget plan forward by exactly one month. Offered only when the viewed month (trusted current month or a later selected month) is after the plan's month; identity and revision rules match budget category deletion. Server mutation: tables:copyBudgetPlanForwardFromDevice.",
-  "contractVersion": 1,
+  "$comment": "Copy the one live budget plan forward by exactly one month. Offered only when the viewed month (trusted current UTC month or a later selected month) is after the plan's month; identity and revision rules match budget category deletion. Server mutation: tables:copyBudgetPlanForwardFromDevice.",
+  "contractVersion": 2,
   "mutation": "tables:copyBudgetPlanForwardFromDevice",
+  "currentMonthRule": "UTC",
+  "currentMonthCases": [
+    { "name": "instant before UTC midnight", "epochMillis": 1788220799999, "expectedMonth": "2026-08", "chicagoLocalMonth": "2026-08" },
+    { "name": "UTC midnight before Chicago midnight", "epochMillis": 1788220800000, "expectedMonth": "2026-09", "chicagoLocalMonth": "2026-08" },
+    { "name": "instant before Chicago midnight", "epochMillis": 1788238799999, "expectedMonth": "2026-09", "chicagoLocalMonth": "2026-08" },
+    { "name": "Chicago midnight", "epochMillis": 1788238800000, "expectedMonth": "2026-09", "chicagoLocalMonth": "2026-09" }
+  ],
   "accepted": [
     { "name": "adult shared budget one month behind", "activeProfile": "rachel", "budgetOwner": "victor", "budgetMonth": "2026-08", "currentMonth": "2026-09", "baseUpdatedAtMs": 1787654321000, "expectedOwner": "victor", "expectedSourceFile": "budget", "expectedFromMonth": "2026-08", "expectedToMonth": "2026-09" },
     { "name": "Mason budget one month behind", "activeProfile": "mason", "budgetOwner": "mason", "budgetMonth": "2026-08", "currentMonth": "2026-09", "baseUpdatedAtMs": 1787654321000, "expectedOwner": "mason", "expectedSourceFile": "mason-budget", "expectedFromMonth": "2026-08", "expectedToMonth": "2026-09" },

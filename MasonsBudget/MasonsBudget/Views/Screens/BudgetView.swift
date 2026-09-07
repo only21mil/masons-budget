@@ -381,7 +381,7 @@ private struct BudgetPlanCarryAction: View {
     }
 
     private var currentMonthKey: String {
-        monthKey(Date())
+        BudgetPlanCarry.currentMonth()
     }
 
     private var selectedMonthKey: String {

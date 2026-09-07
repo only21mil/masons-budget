@@ -1,8 +1,10 @@
 package com.sats21m.vogelvault.domain
 
 import java.time.DateTimeException
+import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneOffset
 import java.util.Locale
 
 /** Todo representations stay outside the adult-wide financial [Owned] contract. */
@@ -176,6 +178,10 @@ fun validateCurrentMonthCategoryDelete(
 // per budget source, so copying it forward advances that document's month in
 // place; the device offers the action only when the plan lags the viewed month
 // and always moves it exactly one month.
+
+/** The server and every client use the UTC calendar month for eligibility. */
+fun budgetCurrentMonth(now: Instant = Instant.now()): String =
+    YearMonth.from(now.atZone(ZoneOffset.UTC)).toString()
 
 data class BudgetPlanCarryIntent(
     val owner: FamilyMember,

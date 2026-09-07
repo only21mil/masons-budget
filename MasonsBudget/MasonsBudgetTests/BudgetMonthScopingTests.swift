@@ -305,6 +305,26 @@ extension BudgetMonthScopingTests {
             .deletingLastPathComponent().deletingLastPathComponent()
         let data = try Data(contentsOf: root.appendingPathComponent("shared/domain/fixtures/budget-plan-carry-cases.json"))
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(fixture["contractVersion"] as? Int, 2)
+        XCTAssertEqual(fixture["currentMonthRule"] as? String, "UTC")
+        for row in try XCTUnwrap(fixture["currentMonthCases"] as? [[String: Any]]) {
+            let epochMillis = try XCTUnwrap(row["epochMillis"] as? NSNumber).doubleValue
+            let date = Date(timeIntervalSince1970: epochMillis / 1_000)
+            XCTAssertEqual(
+                BudgetPlanCarry.currentMonth(at: date),
+                row["expectedMonth"] as? String,
+                row["name"] as? String ?? "",
+            )
+            var chicago = Calendar(identifier: .gregorian)
+            chicago.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Chicago"))
+            let local = chicago.dateComponents([.year, .month], from: date)
+            let month = try XCTUnwrap(local.month)
+            XCTAssertEqual(
+                "\(try XCTUnwrap(local.year))-\(month < 10 ? "0" : "")\(month)",
+                row["chicagoLocalMonth"] as? String,
+                "\(row["name"] as? String ?? "") local control",
+            )
+        }
         let accepted = try XCTUnwrap(fixture["accepted"] as? [[String: Any]])
         for row in accepted {
             let intent = try XCTUnwrap(carryEligibility(row).intent, row["name"] as? String ?? "")

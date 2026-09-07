@@ -34,6 +34,10 @@ function Probe() {
   </>
 }
 
+function CurrentMonthProbe() {
+  return <output>{useAppState().currentMonth}</output>
+}
+
 function provider(mutate: RendererMutationAdapter["mutateConvexRow"], overrides = {}) {
   const adapter: RendererMutationAdapter = {
     getPairingStatus: async () => ({ status: "paired", pairedAt: 1, capabilities, writesEnabled: true }),
@@ -63,12 +67,23 @@ function ok(req: RendererMutationRequest): RendererMutationResult {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   document.body.replaceChildren()
   window.localStorage.clear()
   Reflect.deleteProperty(window, "vogelVault")
 })
 
 describe("Linux budget copy action", () => {
+  it("derives current-month eligibility from UTC at the local split boundary", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_788_220_800_000)
+    const markup = renderToStaticMarkup(createElement(AppStateProvider, {
+      initialCurrentMonth: undefined,
+      children: createElement(CurrentMonthProbe),
+    }))
+    expect(markup).toContain("2026-09")
+  })
+
   it("uses the shared owner, revision and one-month destination contract", () => {
     expect(request).toEqual({ kind: "budgetPlan.copyForward", requestId: "request-copy", actor: "rachel", owner: "victor", fromMonth: "2026-08", toMonth: "2026-09", baseUpdatedAtMs: 100 })
     expect(budgetPlanCarryRequest({ ...input, selectedMonth: "2027-01" })?.toMonth).toBe("2026-09")

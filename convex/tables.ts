@@ -4593,7 +4593,6 @@ const BUDGET_MONTH_NAMES = [
 ] as const;
 const STORED_BUDGET_MONTH_LABEL =
   /^(January|February|March|April|May|June|July|August|September|October|November|December) (\d{4})$/;
-const BUDGET_PLAN_MAX_GAP_MONTHS = 24;
 
 /** Stored budget months are canonical yyyy-MM or the legacy English label. */
 function canonicalBudgetMonth(stored: string): string | undefined {
@@ -4644,7 +4643,6 @@ async function copyBudgetPlanForwardCore(
   request: {
     fromMonth?: string;
     toMonth?: string;
-    allowGap: boolean;
     baseUpdatedAtMs: number;
     deviceId: string;
   },
@@ -4689,20 +4687,10 @@ async function copyBudgetPlanForwardCore(
   const toMonth =
     request.toMonth ?? budgetMonthFromIndex(budgetMonthIndex(fromMonth) + 1);
   const gap = budgetMonthIndex(toMonth) - budgetMonthIndex(fromMonth);
-  if (gap < 1 || gap > BUDGET_PLAN_MAX_GAP_MONTHS) {
+  if (gap !== 1) {
     deviceFailure(
       "VALIDATION_FAILED",
-      `toMonth ${toMonth} must be after fromMonth ${fromMonth} and within ` +
-        `${BUDGET_PLAN_MAX_GAP_MONTHS} months.`,
-      "budgetPlan",
-      toMonth,
-    );
-  }
-  if (gap !== 1 && !request.allowGap) {
-    deviceFailure(
-      "VALIDATION_FAILED",
-      `toMonth ${toMonth} is not the month after ${fromMonth}; set allowGap ` +
-        "to skip months deliberately.",
+      `toMonth ${toMonth} must be exactly one month after ${fromMonth}.`,
       "budgetPlan",
       toMonth,
     );
@@ -6394,9 +6382,9 @@ const budgetPlanCarryResultValidator = v.object({
  * Copy the one live budget plan forward to the next month from a paired device.
  *
  * `fromMonth` defaults to the month the plan currently names and `toMonth` to
- * the month after it. Both are canonical yyyy-MM. A gap larger than one month
- * needs `allowGap`; the operator doctrine still applies, so skipped months are
- * left missing rather than fabricated. `baseUpdatedAtMs` must equal the
+ * the month after it. Both are canonical yyyy-MM. `allowGap` remains an
+ * accepted legacy argument, but it cannot override the next-month-only
+ * contract. `baseUpdatedAtMs` must equal the
  * document revision the screen read. Replaying an identical request after it
  * landed answers `already-copied` and writes nothing.
  */
@@ -6431,7 +6419,6 @@ export const copyBudgetPlanForwardFromDevice = mutation({
     const result = await copyBudgetPlanForwardCore(ctx, args.sourceFile, owner, {
       fromMonth: args.fromMonth,
       toMonth: args.toMonth,
-      allowGap: args.allowGap === true,
       baseUpdatedAtMs: args.baseUpdatedAtMs,
       deviceId: device.deviceId,
     });

@@ -25,6 +25,7 @@ import com.sats21m.vogelvault.data.ReadBootstrapStatus
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
 import com.sats21m.vogelvault.domain.FamilyMember
+import com.sats21m.vogelvault.domain.budgetCurrentMonth
 import com.sats21m.vogelvault.ui.BtcBillPayMutationGateway
 import com.sats21m.vogelvault.ui.BtcBuyIncomeMutationGateway
 import com.sats21m.vogelvault.ui.ConvexTransactionActions
@@ -34,8 +35,6 @@ import com.sats21m.vogelvault.ui.TransactionDeviceMutationGateway
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
-import java.time.YearMonth
-import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -400,7 +399,7 @@ open class VaultApplication : Application() {
             ),
             // UI month pickers cannot supply or override this value. Convex
             // repeats the current-month check against its own clock.
-            trustedCurrentMonth = { YearMonth.now(ZoneOffset.UTC).toString() },
+            trustedCurrentMonth = { budgetCurrentMonth() },
         )
     }
 
@@ -413,7 +412,7 @@ open class VaultApplication : Application() {
                 configSource = MutableConvexConfigSource(writeConvexConfig()),
                 credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
             ),
-            trustedCurrentMonth = { YearMonth.now(ZoneOffset.UTC).toString() },
+            trustedCurrentMonth = { budgetCurrentMonth() },
         )
     }
 

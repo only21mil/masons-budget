@@ -5,6 +5,7 @@ import { test } from "node:test"
 import {
   BUDGET_PLAN_CARRY_MUTATION,
   type BudgetPlanCarryRejection,
+  budgetCurrentMonth,
   budgetPlanCarryEligibility,
   nextBudgetMonth,
 } from "../src/budgetPlanCarry.ts"
@@ -30,6 +31,13 @@ const fixture = JSON.parse(
 ) as {
   contractVersion: number
   mutation: string
+  currentMonthRule: string
+  currentMonthCases: Array<{
+    name: string
+    epochMillis: number
+    expectedMonth: string
+    chicagoLocalMonth: string
+  }>
   accepted: Accepted[]
   rejected: Array<{
     name: string
@@ -55,8 +63,24 @@ const budget = (owner: FamilyMember, month: string, updatedAtMs = 1787654321000)
 })
 
 test("the fixture names the device mutation this contract feeds", () => {
-  assert.equal(fixture.contractVersion, 1)
+  assert.equal(fixture.contractVersion, 2)
   assert.equal(fixture.mutation, BUDGET_PLAN_CARRY_MUTATION)
+})
+
+test("current month follows UTC on both sides of UTC and Chicago midnight", () => {
+  assert.equal(fixture.currentMonthRule, "UTC")
+  for (const row of fixture.currentMonthCases) {
+    const date = new Date(row.epochMillis)
+    assert.equal(budgetCurrentMonth(date), row.expectedMonth, row.name)
+    const chicago = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Chicago",
+      year: "numeric",
+      month: "2-digit",
+    }).formatToParts(date)
+    const year = chicago.find((part) => part.type === "year")?.value
+    const month = chicago.find((part) => part.type === "month")?.value
+    assert.equal(`${year}-${month}`, row.chicagoLocalMonth, `${row.name} local control`)
+  }
 })
 
 test("copy forward is offered one month at a time for adult and Mason budgets", () => {

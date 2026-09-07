@@ -40,6 +40,11 @@ export type BudgetPlanCarryEligibility =
 
 const MONTH_KEY = /^\d{4}-(0[1-9]|1[0-2])$/
 
+/** The server and every client use the UTC calendar month for eligibility. */
+export function budgetCurrentMonth(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 7)
+}
+
 function monthIndex(month: string): number {
   const [year, monthOfYear] = month.split("-").map(Number)
   return year! * 12 + (monthOfYear! - 1)

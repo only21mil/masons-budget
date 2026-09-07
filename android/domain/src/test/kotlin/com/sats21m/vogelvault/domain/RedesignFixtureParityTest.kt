@@ -5,6 +5,9 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.io.File
 import java.math.BigDecimal
+import java.time.Instant
+import java.time.YearMonth
+import java.time.ZoneId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import org.junit.jupiter.api.Assumptions.assumeTrue
@@ -126,7 +129,24 @@ class RedesignFixtureParityTest {
     fun `budget plan carry matches the shared fixture after sibling integration`() {
         val fixture = requireFixture("budget-plan-carry-cases.json")
         val root = JsonParser.parseString(fixture.readText()).asJsonObject
-        assertEquals(1, root.get("contractVersion").asInt)
+        assertEquals(2, root.get("contractVersion").asInt)
+        assertEquals("UTC", root.string("currentMonthRule"))
+        root.array("currentMonthCases").forEach { element ->
+            val case = element.asJsonObject
+            assertEquals(
+                case.string("expectedMonth"),
+                budgetCurrentMonth(Instant.ofEpochMilli(case.get("epochMillis").asLong)),
+                case.string("name"),
+            )
+            assertEquals(
+                case.string("chicagoLocalMonth"),
+                YearMonth.from(
+                    Instant.ofEpochMilli(case.get("epochMillis").asLong)
+                        .atZone(ZoneId.of("America/Chicago")),
+                ).toString(),
+                "${case.string("name")} local control",
+            )
+        }
 
         root.array("accepted").forEach { element ->
             val case = element.asJsonObject

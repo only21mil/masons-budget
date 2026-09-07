@@ -13,6 +13,7 @@ import {
 } from "react"
 import type { ReactNode } from "react"
 
+import { budgetCurrentMonth } from "@vogel-vault/domain/budgetPlanCarry"
 import { type FamilyMember, allowedSwitchTargets } from "@vogel-vault/domain/family"
 import { type Freshness, type MonthKey, monthOf } from "@vogel-vault/domain/readModel"
 
@@ -163,7 +164,7 @@ export function AppStateProvider({
   const [activeProfile, setActiveProfile] = useState<FamilyMember>(initialProfile)
   const [route, setRoute] = useState(initialRoute)
   const [locked, setLocked] = useState(false)
-  const currentMonth = initialCurrentMonth ?? monthOf(new Date().toISOString().slice(0, 10))
+  const currentMonth = initialCurrentMonth ?? monthOf(budgetCurrentMonth())
   const [stateOverride, setStateOverride] = useState<StateOverride>(initialStateOverride)
   const [selectedMonth, setSelectedMonth] = useState<MonthKey | null>(initialSelectedMonth)
   const [displayUnit, setStoredDisplayUnit] = useState<DisplayUnit>(

@@ -541,6 +541,15 @@ enum BudgetPlanCarry {
         "July", "August", "September", "October", "November", "December",
     ]
 
+    /// The server and every client use the UTC calendar month for eligibility.
+    static func currentMonth(at date: Date = Date()) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let components = calendar.dateComponents([.year, .month], from: date)
+        guard let year = components.year, let month = components.month else { return "" }
+        return "\(year)-\(month < 10 ? "0" : "")\(month)"
+    }
+
     /// The row API retains legacy English month labels. Normalize at the read
     /// boundary; eligibility itself still accepts only canonical month keys.
     static func canonicalStoredMonth(_ stored: String) -> String? {
