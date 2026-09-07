@@ -3,321 +3,35 @@ import { spawnSync } from "node:child_process"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 
-import {
-  CONDITIONAL_CHECKS,
-  REQUIRED_SUCCESS_CHECKS,
-  evaluateReleaseChecks,
-  exactMainReleaseApplicability,
-} from "../release_check_gate.mjs"
-
-const SUCCESS = "success"
-const SKIPPED = "skipped"
+import { verifyReleaseQualification } from "../release_check_gate.mjs"
 const RELEASE_SHA = "1234567890abcdef1234567890abcdef12345678"
-const CREDENTIAL_MINT_TOOLING = "Credential mint tooling"
 
-function check(name, conclusion, overrides = {}) {
-  return {
-    name,
-    status: "completed",
-    conclusion,
-    completed_at: "2026-07-30T12:00:00Z",
-    app: { id: 15368 },
-    head_sha: RELEASE_SHA,
-    ...overrides,
+test("release CLI fetches trusted source proof and binds the actual landing", () => {
+  const env = { RELEASE_SHA, GITHUB_SHA: RELEASE_SHA, GITHUB_REF: "refs/heads/main",
+    GITHUB_REPOSITORY: "only21mil/masons-budget" }
+  let calls = 0
+  const result = verifyReleaseQualification(env, (program, args, options) => {
+    calls++
+    assert.equal(program, "python3")
+    assert.match(args[0], /protected_ci_reuse\.py$/)
+    assert.deepEqual(args.slice(1), ["--verify-landing", RELEASE_SHA])
+    assert.equal(options.env, env)
+    return { status: 0 }
+  })
+  assert.equal(result.status, 0)
+  assert.equal(calls, 1)
+  for (const changes of [{ GITHUB_SHA: "a".repeat(40) }, { GITHUB_REF: "refs/heads/feature" },
+                         { GITHUB_REPOSITORY: "attacker/budget" }]) {
+    assert.equal(verifyReleaseQualification({ ...env, ...changes }, () => { throw Error("must not execute") }).status, 1)
   }
-}
-
-function payload(overrides = {}) {
-  const conclusions = new Map([
-    ...REQUIRED_SUCCESS_CHECKS.map((name) => [name, SUCCESS]),
-    ...CONDITIONAL_CHECKS.map((name) => [name, SUCCESS]),
-    ...Object.entries(overrides),
-  ])
-  return {
-    check_runs: [...conclusions].map(([name, conclusion]) =>
-      check(name, conclusion),
-    ),
-  }
-}
-
-function applicability(overrides = {}) {
-  const evidence = exactMainReleaseApplicability({
-    RELEASE_SHA,
-    GITHUB_SHA: RELEASE_SHA,
-    GITHUB_REF: "refs/heads/main",
-  })
-  assert.notEqual(evidence, null)
-  return {
-    ...evidence,
-    checks: { ...evidence.checks, ...overrides },
-  }
-}
-
-test("all successful exact-SHA checks satisfy the release gate", () => {
-  assert.equal(evaluateReleaseChecks(payload(), applicability()).passed, true)
+  assert.equal(verifyReleaseQualification(env, () => ({ status: 1 })).status, 1)
 })
 
-test("successful exact-SHA credential mint tooling satisfies its requirement", () => {
-  const result = evaluateReleaseChecks(payload(), applicability())
-
-  assert.equal(result.passed, true)
-  assert.ok(result.lines.includes(`PASS  ${CREDENTIAL_MINT_TOOLING}`))
-})
-
-const invalidCredentialMintChecks = [
-  ["missing", null, "missing"],
-  ["skipped", check(CREDENTIAL_MINT_TOOLING, SKIPPED), SKIPPED],
-  [
-    "external",
-    check(CREDENTIAL_MINT_TOOLING, SUCCESS, { app: { id: 999 } }),
-    "missing",
-  ],
-  [
-    "wrong-SHA",
-    check(CREDENTIAL_MINT_TOOLING, SUCCESS, {
-      head_sha: "abcdef1234567890abcdef1234567890abcdef12",
-    }),
-    "missing",
-  ],
-  [
-    "pending",
-    check(CREDENTIAL_MINT_TOOLING, null, {
-      status: "in_progress",
-      completed_at: null,
-      started_at: "2026-07-30T14:00:00Z",
-    }),
-    "pending",
-  ],
-]
-
-for (const [
-  state,
-  credentialCheck,
-  expectedConclusion,
-] of invalidCredentialMintChecks) {
-  test(`${state} credential mint tooling does not satisfy the release gate`, () => {
-    const base = payload()
-    base.check_runs = base.check_runs.filter(
-      (entry) => entry.name !== CREDENTIAL_MINT_TOOLING,
-    )
-    if (credentialCheck != null) base.check_runs.push(credentialCheck)
-
-    const result = evaluateReleaseChecks(base, applicability())
-
-    assert.equal(result.passed, false)
-    assert.ok(
-      result.lines.includes(
-        `FAIL  ${CREDENTIAL_MINT_TOOLING} (${expectedConclusion})`,
-      ),
-    )
-  })
-}
-
-for (const name of CONDITIONAL_CHECKS) {
-  test(`an applicable skipped ${name} check blocks release`, () => {
-    const result = evaluateReleaseChecks(
-      payload({ [name]: SKIPPED }),
-      applicability(),
-    )
-
-    assert.equal(result.passed, false)
-    assert.ok(
-      result.lines.includes(`FAIL  ${name} (skipped; applicability applicable)`),
-    )
-  })
-}
-
-test("an exact-commit inapplicable skipped check is accepted", () => {
-  const result = evaluateReleaseChecks(
-    payload({ "Linux client": SKIPPED }),
-    applicability({ "Linux client": false }),
-  )
-
-  assert.equal(result.passed, true)
-  assert.ok(
-    result.lines.includes(
-      "SKIP  Linux client (exact-commit policy says inapplicable)",
-    ),
-  )
-})
-
-test("a skipped check without applicability evidence blocks release", () => {
-  const evidence = applicability()
-  delete evidence.checks["Linux client"]
-  const result = evaluateReleaseChecks(
-    payload({ "Linux client": SKIPPED }),
-    evidence,
-  )
-
-  assert.equal(result.passed, false)
-  assert.ok(
-    result.lines.includes("FAIL  Linux client (skipped; applicability missing)"),
-  )
-})
-
-test("applicability evidence requires the exact main checkout", () => {
-  assert.equal(
-    exactMainReleaseApplicability({
-      RELEASE_SHA,
-      GITHUB_SHA: "abcdef1234567890abcdef1234567890abcdef12",
-      GITHUB_REF: "refs/heads/main",
-    }),
-    null,
-  )
-  assert.equal(
-    exactMainReleaseApplicability({
-      RELEASE_SHA,
-      GITHUB_SHA: RELEASE_SHA,
-      GITHUB_REF: "refs/heads/release-candidate",
-    }),
-    null,
-  )
-})
-
-test("failed project consistency blocks release even when Apple build skipped", () => {
-  const result = evaluateReleaseChecks(
-    payload({
-      "Verify committed Xcode project": "failure",
-      "Build and test the Apple client": SKIPPED,
-    }),
-    applicability(),
-  )
-
-  assert.equal(result.passed, false)
-  assert.ok(
-    result.lines.includes("FAIL  Verify committed Xcode project (failure)"),
-  )
-  assert.ok(result.lines.includes("FAIL  Build and test the Apple client (skipped)"))
-})
-
-test("skipped Apple checks block release until exact-SHA manual verification", () => {
-  const result = evaluateReleaseChecks(
-    payload({
-      "Verify committed Xcode project": SKIPPED,
-      "Build and test the Apple client": SKIPPED,
-    }),
-    applicability(),
-  )
-
-  assert.equal(result.passed, false)
-})
-
-test("missing project consistency blocks release", () => {
-  const base = payload()
-  base.check_runs = base.check_runs.filter(
-    (entry) => entry.name !== "Verify committed Xcode project",
-  )
-
-  const result = evaluateReleaseChecks(base, applicability())
-
-  assert.equal(result.passed, false)
-  assert.ok(
-    result.lines.includes("FAIL  Verify committed Xcode project (missing)"),
-  )
-})
-
-test("pending project consistency blocks release", () => {
-  const base = payload()
-  base.check_runs = base.check_runs.filter(
-    (entry) => entry.name !== "Verify committed Xcode project",
-  )
-  base.check_runs.push(
-    check("Verify committed Xcode project", null, {
-      status: "in_progress",
-      completed_at: null,
-      started_at: "2026-07-30T14:00:00Z",
-    }),
-  )
-
-  const result = evaluateReleaseChecks(base, applicability())
-
-  assert.equal(result.passed, false)
-  assert.ok(
-    result.lines.includes("FAIL  Verify committed Xcode project (pending)"),
-  )
-})
-
-test("external or pending lookalike checks do not satisfy the gate", () => {
-  const external = check("Build and test the Apple client", SUCCESS, {
-    app: { id: 999 },
-    completed_at: "2026-07-30T13:00:00Z",
-  })
-  const pending = check("Build and test the Apple client", null, {
-    status: "in_progress",
-    completed_at: null,
-    started_at: "2026-07-30T14:00:00Z",
-  })
-  const base = payload()
-  base.check_runs = base.check_runs.filter(
-    (entry) => entry.name !== "Build and test the Apple client",
-  )
-  base.check_runs.push(external, pending)
-
-  const result = evaluateReleaseChecks(base, applicability())
-
-  assert.equal(result.passed, false)
-  assert.ok(result.lines.includes("FAIL  Build and test the Apple client (pending)"))
-})
-
-test("the newest exact-SHA GitHub Actions run wins over stale duplicates", () => {
-  const base = payload()
-  base.check_runs = base.check_runs.filter(
-    (entry) => entry.name !== "Linux client",
-  )
-  base.check_runs.push(
-    check("Linux client", SUCCESS, {
-      completed_at: "2026-07-30T11:00:00Z",
-    }),
-    check("Linux client", "failure", {
-      completed_at: "2026-07-30T13:00:00Z",
-    }),
-    check("Linux client", SUCCESS, {
-      app: { id: 999 },
-      completed_at: "2026-07-30T14:00:00Z",
-    }),
-    check("Linux client", SUCCESS, {
-      head_sha: "abcdef1234567890abcdef1234567890abcdef12",
-      completed_at: "2026-07-30T15:00:00Z",
-    }),
-  )
-
-  const result = evaluateReleaseChecks(base, applicability())
-
-  assert.equal(result.passed, false)
-  assert.ok(result.lines.includes("FAIL  Linux client (failure)"))
-})
-
-test("CLI exits successfully only when the release policy is satisfied", () => {
-  const script = fileURLToPath(
-    new URL("../release_check_gate.mjs", import.meta.url),
-  )
-  const passing = spawnSync(process.execPath, [script], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      RELEASE_SHA,
-      GITHUB_SHA: RELEASE_SHA,
-      GITHUB_REF: "refs/heads/main",
-    },
-    input: JSON.stringify(payload()),
-  })
-  assert.equal(passing.status, 0, passing.stderr)
-
-  const failing = spawnSync(process.execPath, [script], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      RELEASE_SHA,
-      GITHUB_SHA: RELEASE_SHA,
-      GITHUB_REF: "refs/heads/main",
-    },
-    input: JSON.stringify(
-      payload({
-        "Verify committed Xcode project": "failure",
-      }),
-    ),
-  })
-  assert.equal(failing.status, 1)
-  assert.match(failing.stderr, /exact main release SHA/)
-  assert.match(failing.stdout, /Verify committed Xcode project \(failure\)/)
+test("producer-written successful stdin checks cannot authorize the CLI", () => {
+  const script = fileURLToPath(new URL("../release_check_gate.mjs", import.meta.url))
+  const result = spawnSync(process.execPath, [script], { encoding: "utf8",
+    env: { PATH: process.env.PATH, RELEASE_SHA, GITHUB_SHA: RELEASE_SHA,
+           GITHUB_REF: "refs/heads/feature" }, input: JSON.stringify({ check_runs: [{ name: "All tests", conclusion: "success" }] }) })
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /actual main checkout/)
 })

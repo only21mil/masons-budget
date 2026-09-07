@@ -1,130 +1,125 @@
-# Reusing ordinary CI results
+# Premerge qualification and landing evidence
 
-Budget keeps exact-main checks and fresh artifact provenance while avoiding
-repeated ordinary commands whose source and execution inputs are proven equal.
-The repository-owned adapter is
-`.github/workflows/scripts/protected_ci_reuse.py`, derived from Buzz's reviewed
-proof contract. It does not approve a merge, sign an app, publish an artifact or
-change an existing receipt's identity.
+Budget runs its affected checks before merge. `clients.yml`, `swift.yml` and
+`workflow-lint.yml` have no `push` trigger. Landing does not start another Linux,
+Android or Apple CI run, reinstall dependencies, repeat simulator tests or
+produce a design packet.
 
-## Proof boundary
+The lightweight landing verifier reads trusted GitHub source evidence and the
+actual landed commit. `deploy.yml` calls that verifier directly through
+`release_check_gate.mjs`; a JSON receipt supplied on stdin cannot authorize a
+release. It retains `protected-ci-landing.json` with original provider identities
+and a separate actual landing identity. Review, canonical promotion authority,
+release approval and signing readiness remain separate gates.
 
-An internal PR job captures the exact candidate, tested commit, base, tree,
-workflow bytes, named command scope, installed dependency context and public
-protection inventory. The workflow uploads that proof only after successful
-work. A later main job downloads the exact source run/job-attempt artifact and
-verifies GitHub's archive digest, the successful job and its app-bound check.
-It independently reads candidate and tested commit objects and their trees.
+## What qualifies
 
-A failed-jobs rerun may retain successful jobs from an earlier attempt. Reuse
-binds each job to its latest successful execution and original proof artifact,
-while requiring the latest workflow result and current protected checks to
-pass. A newer failed, skipped, cancelled or pending execution of that job cannot
-fall back to an older success. The selected job must have completed within 24
-hours; another job's rerun cannot refresh that age. Provenance distinguishes
-the original job attempt from the latest successful workflow attempt.
+Internal, non-draft PRs targeting the current `main` capture execution inputs in
+`ci-reuse-ATTEMPT-JOB` artifacts. Capture refuses a tested merge tree that differs
+from the candidate tree or a base that has moved. The normal checks then run
+once. Artifacts are uploaded only after the corresponding job succeeds.
 
-Budget's normal fast-forward landing is eligible when main is the exact source
-head, the push's previous commit is the captured tested base and provider
-ancestry confirms that base. An ordered two-parent merge is also eligible when
-its parents are exactly the captured base and source. Tested, candidate and
-landed trees must agree. New reviewed workflow code can qualify in its own PR
-run; it does not need to exist in the first parent.
+Every source workflow has its own tree/policy proof, including Workflow lint and
+the cheap Apple detector. Platform proofs retain the existing Node dependency,
+Gradle runtime and Xcode bindings. The reviewed Gradle collector resolves actual
+lint engines and records ordered classpaths; it preserves the narrowly qualified
+Kotlin IDE metadata exclusion. Its invocation disables all graph tasks except
+the dependency collector, so collecting inputs does not build the app.
 
-The adapter selects original PR workflow suites explicitly. A pending main job
-on a fast-forwarded SHA cannot be mistaken for that source run. Latest required
-checks from the captured Apps must succeed. An unrelated skipped Linux, Android
-or Apple context is accepted only when replaying the unchanged internal-PR path
-rules against the exact source/base Git diff proves it inapplicable. A skipped
-job can never supply reusable source evidence for itself. Missing, failed,
-pending, cancelled, wrong-App or unexplained skipped checks refuse reuse.
+The landing verifier requires:
 
-Budget currently uses legacy branch protection with nine app-bound checks.
-`GET /branches/main` exposes that check inventory to read-only CI tokens;
-`GET /rules/branches/main` currently returns no rulesets. The adapter supports
-both and binds public active ruleset metadata when present. Hidden legacy
-strict/bypass/review settings remain part of the unchanged operator delivery
-gate. The adapter independently requires exact tested-base and tree equality,
-even when branch protection is non-strict. No administrator secret is added to
-PR jobs.
+- Successful, completed source PR workflows from the fixed repository and
+  expected workflow paths; each required check is bound to its configured App,
+  selected source suite and the owning provider job.
+- The latest execution of each source job, its original attempt and matching
+  artifact. Failed-jobs reruns retain earlier successful job attempts. A later
+  failure, cancellation, pending execution or unexplained skip cannot fall back
+  to an older success. Neither a workflow rerun nor an unrelated job refreshes
+  the original job's 24-hour expiry.
+- GitHub's artifact archive digest, complete source inputs, workflow and verifier
+  hashes, unchanged public protection policy and `BUDGET_CI_REUSE_EPOCH`.
+- Equal candidate, tested and landed trees. A two-parent landing must have the
+  exact tested base and candidate as its ordered parents. A fast-forward keeps
+  the candidate SHA and must descend from the tested base.
+- Stable source workflows, PR, checks, protection and current main across the
+  final readback.
 
-Source evidence expires after 24 hours. A new source attempt, changed public
-protection, workflow, relevant dependency or environment, moved main, missing
-artifact or unsupported context runs the normal affected commands. A reused
-proof cannot become a new source proof. Legacy green runs without these
-dependency proofs therefore execute fresh on landing.
+Checks are selected within the source suites. Later unrelated skipped checks on
+the same SHA do not replace the executed source result. A title/body-only Swift
+run may be ignored only when the provider's explicit no-op guard succeeded and
+its own captured source proof binds the same base, tree, workflow and event.
 
-## Affected consumers
+The existing PR path rules may prove Linux, Android, credential tooling, Apple
+project consistency or Apple build inapplicable. Those results remain skips;
+they are omitted from the list of reused successes and cannot supply a platform
+execution proof. Missing or failed applicable checks refuse qualification.
 
-| Consumer | Eligible repeated commands | Work that remains fresh |
-| --- | --- | --- |
-| Clients, Shared domain contract | Typecheck and Swift contract parity tests | Checkout, dependency setup and exact-main proof |
-| Clients, Production wire golden decoders | Synthetic/provenance checks and Linux decoder tests | Java/Gradle setup and Android wire decoder, whose online runtime resolution is outside the Node proof |
-| Clients, Convex functions | Function/test typechecks and local auth/LWW tests | Dependency setup and committed-generated-type existence check |
-| Clients, Linux client | Renderer/electron typechecks, lint, preload guard and render-matrix tests | Build, build output upload, Chromium installation, screenshots and design-packet upload |
-| Clients, Android client | Domain tests, Android lint and ordinary app unit tests | Credential-injection guards, stable-keystore validation, APK assembly/upload, SDK declaration guard and design-packet production/verification/upload |
-| Swift, Build and test the Apple client | Unsigned macOS compile | Xcode 26.6 assertion, MBP/fork routing, simulator preparation, iOS tests and failure xcresult upload |
-| Swift, Verify committed Xcode project | None | Cheap prerequisite stays fresh before allocating the Mac |
-| Clients/Swift changed-tree detectors | None | Commit/event applicability is evaluated for the new run |
-| Clients, Credential mint tooling | None | Small security-sensitive tests stay fresh |
-| Workflow lint | None | Cheap workflow, secret inventory, carrier and reuse-contract tests stay fresh |
-| `changed-base` action | None | Existing PR/main/merge-group comparison authority and fallback remain unchanged |
-| `release_check_gate.mjs` | None | Existing exact-main check selection and release applicability remain unchanged |
-| `buzz-ios-release.yml`, `buzz-macos-release.yml` | None | Dispatch-only carrier source, signing and release gates remain unchanged |
-| `deploy.yml`, `linux-package.yml`, `android-read-bootstrap.yml`, `release-preflight.yml`, `app-store-connect-preflight.yml`, `apple-certificates.yml`, `apple-signing-assets.yml` | None | Dispatch-only consumers have no automatic PR/main duplicate suite to adapt |
+## Source context and release context
 
-All 12 workflow triggers were inventoried. Merge-group and manual dispatch jobs
-execute fresh; this change claims reuse only from qualified internal PR work to
-its exact landing. Offline hosts are outside this workflow rollout.
+The receipt describes the original successful execution. It does not claim that
+a second runner has equivalent mutable simulator state or that current package
+registries still serve the same bytes. No second platform execution happens at
+landing. Tree, workflow, verifier, source dependency/context artifacts and policy
+epoch bind the result being reused. Increment `BUDGET_CI_REUSE_EPOCH` when a
+relevant toolchain/dependency policy change requires fresh qualification; that
+change invalidates earlier proofs.
 
-Node proofs include installed dependency bytes, workspace links, tool versions
-and the hosted image/OS package inventory. Android additionally resolves and
-hashes external Gradle artifacts, plugin inputs, SDK package identities and the
-checksum-verified offline Robolectric runtimes before deciding. Resolution
-failure produces no dependency proof and leaves the ordinary checks enabled.
-The Gradle collector realizes the dependency graph of `:domain:test`,
-`:app:lintDebug` and `:app:testDebugUnitTest` to include lazily registered tool
-configurations. Before execution, it disables every graph task except the
-collector, including finalizers. No app build, lint or test action runs. The
-collector requires an exclusive invocation; ordinary invocations remain unchanged.
-It also resolves and hashes each realized lint task's actual `lintTool.classpath`
-in classpath order, including AGP's detached transitive lint engine dependencies.
-Missing protected tasks, absent or empty lint tools, or missing runtime bytes
-refuse proof. Collection clears any prior output before resolution.
+Linux build verification remains premerge work. APK assembly, stable debug
+signing, screenshot/design packets and their uploads run only under the explicit
+manual Clients dispatch conditions. Apple archives, signing and upload stay in
+their manual release workflows. Release builds use their fresh release context;
+they do not turn a prior source check into a new execution or trigger a blanket
+postmerge suite.
 
-For Kotlin JVM/Android projects, the collector excludes only generated
-`*DependenciesMetadata` configurations with the `kotlin-metadata` usage,
-`common` platform and `library` category. These IDE source-set buckets can
-lack the Compose BOM inherited by the actual Android classpaths. The proof
-records the excluded names and attributes; all other resolvable configurations
-still require exact artifact bytes, including compiler, KSP, lint and test
-inputs. Multiplatform projects receive no metadata exclusion. A missing BOM
-or artifact on an actual compile/runtime classpath still refuses reuse.
+## Canonical authority and bootstrap
 
-The Mac compile proof binds the approved Xcode installation's signature,
-compiler bytes, Xcode/Swift/SDK builds and OS version. A project with external
-Swift packages is currently unproven and executes fresh. Persistent simulator
-state is not used as equivalence evidence, so iOS tests always run.
+GitHub is Budget's CI mirror. The hosted verifier checks provider main and source
+objects; it does not claim to contact the private canonical relay. The delivery
+controller must separately retain fresh authoritative Budget relay main and PR
+readback, the reviewed candidate, tested base and actual landing parents,
+GitHub mirror equality, and a later complete no-op mirror cycle. An operator-
+written SHA receipt is not canonical authority.
 
-Each main job summary names precisely which commands reused the original
-run/attempt. Its `ci-reuse-ATTEMPT-JOB` artifact retains source and provider
-evidence, accepted source applicability and current landing identity. Existing
-build and design artifacts retain their original names and current-run
-production; the adapter never republishes an old artifact as newly built.
+The first candidate carrying this policy must receive fresh review and qualify
+once on its own PR before promotion. Older green runs, including runs made by
+the previous partial step-reuse adapter, lack `qualification_version: 2` and
+cannot be relabeled as valid. Preserve required-check enforcement; if repository
+rules require a merge queue, its required execution remains required. Do not
+bypass rules to force a fast-forward.
 
-## Focused verification
+After all source workflows complete, run `--verify-candidate` from the clean
+candidate checkout to retain `protected-ci-candidate.json` before promotion.
+It requires the captured tested base to remain the current main and records no
+landed commit.
+
+After the canonical-first promotion and mirror readback, run the landing
+verifier from the clean, exact landed checkout with a read-only GitHub token and
+the current policy epoch in the environment:
+
+```bash
+GITHUB_REPOSITORY=only21mil/masons-budget \
+  python3 .github/workflows/scripts/protected_ci_reuse.py \
+  --verify-landing "$(git rev-parse HEAD)"
+```
+
+This command performs API/Git verification only. No CI workflow dispatch is
+needed after merge. A refusal stops promotion/release follow-through; investigate
+its reason and qualify the affected reviewed source again if inputs are missing,
+expired or changed. Do not manufacture proof for an old run, silently launch a
+full main suite, or rewrite a source SHA to match the landing.
+
+## Focused checks
 
 ```bash
 python3 -B .github/workflows/scripts/tests/test_protected_ci_reuse.py
+node --test .github/workflows/scripts/tests/release_check_gate.test.mjs
 python3 -B .github/workflows/scripts/tests/test_apple_changed_tree.py
 python3 -B .github/workflows/scripts/tests/test_clients_credential_tooling.py
 python3 -B .github/workflows/scripts/tests/test_ci_reuse_dependencies.py \
   --gradle /path/to/already-installed/gradle
 actionlint .github/workflows/clients.yml .github/workflows/swift.yml \
-  .github/workflows/workflow-lint.yml
+  .github/workflows/workflow-lint.yml .github/workflows/deploy.yml
 ```
 
-The Gradle test uses only local fixture artifacts with `--offline` and an
-isolated temporary Gradle home. It neither builds the app nor contacts Maven.
-Review, source qualification, canonical-first PR/landing, current-main checks,
-mirror readback and any separate release approval remain required.
+The Gradle fixture checks are offline and use isolated temporary Gradle homes.
+They do not build an app or contact Maven.

@@ -6,11 +6,10 @@ name: Deploy to TestFlight (manual trigger only)
 # Triggering this workflow IS the app-build approval gate described in AGENTS.md.
 # It never runs automatically.
 #
-# Every release SHA, including a non-Apple-only change, must already have a
-# successful Xcode project-consistency check and Apple build from Swift CI. If
-# those jobs skipped, dispatch Swift CI with the MBP against the exact current
-# main SHA and wait for it to pass before dispatching this workflow. The safe
-# operator sequence is documented in docs/apple-self-hosted-release.md.
+# Reuse the candidate's trusted premerge qualification at the actual landed
+# tree. The gate reads provider evidence itself; no second platform CI run is
+# required merely because a merge has a different SHA. Signing and release
+# builds remain fresh, explicit release work.
 #
 # Signing: the runner has no Apple ID, so CODE_SIGN_STYLE=Automatic cannot work.
 # The certificate is imported into a throwaway keychain and the provisioning
@@ -42,6 +41,8 @@ on:
 permissions:
   contents: read
   checks: read
+  actions: read
+  pull-requests: read
 
 # One release run at a time across every ref. Matrix serialization only protects
 # jobs inside one run; without workflow-level concurrency, two manual runs can
@@ -59,6 +60,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Require an exact main ref
         env:
@@ -81,30 +83,20 @@ jobs:
             exit 1
           fi
 
-      # Check the protected contexts and the completed Apple build at the exact
-      # release SHA. A workflow name, detector decision, or older successful run
-      # is not enough: commit 0d546d87 shipped alongside a failed Apple run.
-      # Check runs must also come from GitHub Actions (App ID 15368), matching
-      # branch protection rather than trusting a same-named external check.
-      - name: Require green protected checks at the release SHA
+      - name: Verify the landed candidate's premerge qualification
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
+          BUDGET_CI_REUSE_EPOCH: ${{ vars.BUDGET_CI_REUSE_EPOCH }}
+        run: node .github/workflows/scripts/release_check_gate.mjs
 
-          checks="$(gh api \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "/repos/${GITHUB_REPOSITORY}/commits/${RELEASE_SHA}/check-runs?filter=latest&per_page=100")"
-
-          # Apple release integrity is stricter than ordinary conditional CI.
-          # Every exact release SHA must have successful project-consistency and
-          # Apple build checks, even when its diff is non-Apple. A skipped Apple
-          # check requires a manual MBP Swift CI dispatch on the exact current
-          # main SHA before this deploy is started.
-          printf '%s' "$checks" |
-            node .github/workflows/scripts/release_check_gate.mjs
+      - name: Retain source qualification and exact landing evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-ci-qualification-${{ github.run_attempt }}
+          path: protected-ci-landing.json
+          if-no-files-found: error
+          retention-days: 7
 
   # Reuses release-preflight.yml instead of re-running the ASC probe inline
   # (audit 2026-09-02 finding 8): one implementation of the read-only App Store

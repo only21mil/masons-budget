@@ -28,17 +28,13 @@ name: Swift CI
 # concurrency cancels superseded PR and merge-group runs. Title/body-only PR
 # edits use a separate no-op lane so they cannot cancel or restart unchanged
 # Apple work; base-branch edits stay in the cancellable PR lane because their
-# effective diff changed. Main pushes use per-commit groups and are never
-# cancelled so every consecutive push range is verified. The workflow itself
+# effective diff changed. The workflow itself
 # must start on every PR so its detector check always reports; a workflow-level
 # paths filter reports nothing at all.
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   merge_group:
   # Manual verification defaults to the MacBook Pro. The Mac mini is available
   # only as an explicit fallback; automatic events can never select it.
@@ -57,9 +53,7 @@ permissions:
   contents: read
 
 concurrency:
-  # A main push cannot share a pending slot with a later push: GitHub replaces
-  # an older pending run even when cancel-in-progress is false. Per-SHA groups
-  # ensure every main range starts and finishes. Base-unchanged PR edits use a
+  # Base-unchanged PR edits use a
   # run-unique group so they neither cancel the active PR run nor replace a
   # pending real update. Other PR and merge-group updates keep a stable ref
   # group and remain cancellable to control runner cost.
@@ -69,7 +63,6 @@ concurrency:
       github.event.action == 'edited' &&
       !github.event.changes.base &&
       format('base-unchanged-edit-{0}', github.run_id) ||
-      github.event_name == 'push' && github.sha ||
       github.ref
     }}
   cancel-in-progress: >-
@@ -89,6 +82,11 @@ env:
 jobs:
   changes:
     name: Detect Apple changes
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -107,8 +105,7 @@ jobs:
           echo "apple=false" >> "$GITHUB_OUTPUT"
           echo "::notice::PR title/body edit left the base unchanged; Apple verification checks will report skipped."
 
-      - if: steps.base-unchanged-edit.outputs.apple != 'false'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -164,6 +161,19 @@ jobs:
           else
             run_apple "Apple path matching failed."
           fi
+
+      - name: Capture premerge qualification inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/workflows/scripts/protected_ci_reuse.py --job swift-routing
+
+      - name: Retain protected result provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-reuse-${{ github.run_attempt }}-swift-routing
+          path: protected-ci-reuse.json
+          if-no-files-found: error
+          retention-days: 7
 
   project-consistency:
     name: Verify committed Xcode project
@@ -334,14 +344,12 @@ jobs:
       # exists to catch an iOS-only API landing in shared code. deploy.yml offers
       # a macos platform, so a Mac build that has silently rotted is a release
       # that fails at the archive step.
-      - name: Verify protected source result reuse
-        id: reuse
+      - name: Capture premerge qualification inputs
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/workflows/scripts/protected_ci_reuse.py --job swift
 
       - name: macOS build
-        if: steps.reuse.outputs.reused != 'true'
         working-directory: MasonsBudget
         run: |
           set -euo pipefail

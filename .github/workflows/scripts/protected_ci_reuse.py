@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Reuse selected tree-scoped CI work, retaining a separate exact-main proof.
+"""Capture premerge execution inputs and verify them at the actual landing.
 
-This is a CI optimization, not merge/review/deployment authorization. A refusal
-runs the ordinary job. Never change a source receipt's commit or conclusion.
+No platform work runs after landing. Provider evidence remains attached to its
+original source SHA, run and attempt. Canonical relay readback, review and release
+approval are separate delivery gates.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ import subprocess
 import tempfile
 import zipfile
 import shutil
+import sys
 
 REPO = "only21mil/masons-budget"
 PREFIX = f"/repos/{REPO}"
@@ -29,6 +31,8 @@ JOBS = {
     "linux-client": ("clients.yml", "Linux client"),
     "android-client": ("clients.yml", "Android client"),
     "swift": ("swift.yml", "Build and test the Apple client"),
+    "swift-routing": ("swift.yml", "Detect Apple changes"),
+    "workflow-lint": ("workflow-lint.yml", "actionlint + secret inventory"),
 }
 
 CHECK_SCOPE = {
@@ -38,6 +42,8 @@ CHECK_SCOPE = {
     "linux-client": ["Typecheck renderer", "Typecheck electron main/preload", "Lint", "Preload boundary guard", "Render matrix (20 routes x profiles x states)"],
     "android-client": ["Domain parity tests (shared fixture, no Android SDK)", "Lint Android app", "App unit tests"],
     "swift": ["macOS build"],
+    "swift-routing": ["Recognize a base-unchanged PR edit", "Match Apple-owned paths"],
+    "workflow-lint": ["actionlint", "Secret inventory cross-check"],
 }
 
 
@@ -180,17 +186,17 @@ def inapplicable_source_checks(source):
     need(match is not None, "source client path policy is unrecognized")
     wide = any(re.search(match[1], name) for name in paths)
     result = set()
-    for job in ("linux-client", "android-client"):
-        tree = job.split("-")[0]
+    for job in ("linux-client", "android-client", "credential-tooling"):
+        tree = "tooling" if job == "credential-tooling" else job.split("-")[0]
         pattern = re.search(r"\[" + tree + r"\]='([^']+)'", clients)
         need(pattern is not None, "source client path map is unrecognized")
         if not wide and not any(re.search(pattern[1], name) for name in paths):
-            result.add(JOBS[job][1])
+            result.add("Credential mint tooling" if job == "credential-tooling" else JOBS[job][1])
     spec = importlib.util.spec_from_file_location("apple_paths", Path(__file__).with_name("apple_changed_tree.py"))
     apple = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(apple)
     if not apple.requires_apple(paths):
-        result.add(JOBS["swift"][1])
+        result.update((JOBS["swift"][1], "Verify committed Xcode project"))
     return result
 
 
@@ -215,19 +221,23 @@ def files_digest(directory, seen=()):
 
 
 def context(job):
-    """Measure inputs of the explicitly reused commands after ordinary setup.
+    """Retain the original execution inputs after ordinary premerge setup.
 
-    Main-only artifacts, credential checks and mutable simulator tests always run.
-    Whole-tree identity pins scripts, workflows, action pins and lockfiles. Actual
-    installed Node bytes or resolved Gradle artifacts also bind mutable setup.
+    Tree identity pins scripts, workflows, actions and lockfiles. Dependency
+    bytes and tool versions describe the source execution; the landing verifier
+    does not set up a second platform environment or claim a new execution.
     """
     env = {name: os.environ.get(name, "") for name in (
         "RUNNER_OS", "RUNNER_ARCH", "LANG", "LC_ALL", "TZ", "BUDGET_CI_REUSE_EPOCH")}
     need(env["RUNNER_OS"] and env["RUNNER_ARCH"], "runner identity missing")
     versions = {"python": command(["python3", "--version"])}
+    if job in ("swift-routing", "workflow-lint"):
+        env.update({name: os.environ.get(name, "") for name in ("ImageOS", "ImageVersion")})
+        need(env["ImageOS"] and env["ImageVersion"], "runner image identity missing")
+        return {"environment": env, "versions": versions}
     if job == "swift":
-        # Only the unsigned macOS compile is reused. iOS tests and simulator
-        # preparation remain fresh because persistent device data is not proof.
+        # Retain compile inputs. The provider's successful job separately proves
+        # that its iOS tests ran; no claim about later simulator state is made.
         need(env["RUNNER_OS"] == "macOS" and os.environ.get("XCODE_VERSION") == "26.6", "unqualified Apple context")
         versions.update({"os": command(["sw_vers"]), "xcode": command(["xcodebuild", "-version"]),
                          "swift": command(["swift", "--version"]),
@@ -277,174 +287,270 @@ def capture(api, job, event, current_context):
             "check_scope": CHECK_SCOPE[job], "run_id": int(os.environ["GITHUB_RUN_ID"]), "run_attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
             "pull_request": pr["number"], "head_sha": head, "base_sha": base,
             "tested_sha": tested, "tree_sha": tree, "workflow_sha256": hashlib.sha256(Path(workflow(job)).read_bytes()).hexdigest(),
-            "context": current_context, "authority": authority(api)}
+            "context": current_context, "authority": authority(api),
+            "qualification_version": 2,
+            "policy_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "epoch": os.environ.get("BUDGET_CI_REUSE_EPOCH", ""),
+            "event_action": event.get("action"), "base_changed": "base" in event.get("changes", {})}
 
 
-def validate_source(source, *, job, run, pr, landed, before, current_authority, current_context, workflow_hash, job_attempt=None):
-    """Pure decision boundary, also used by the focused refusal tests."""
-    need(source.get("schema_version") == 1 and source.get("mode") == "source", "source proof is missing or relabeled")
-    need(source["repository"] == REPO and source["job"] == job, "source repository/job mismatch")
-    need(source["check_scope"] == CHECK_SCOPE[job], "source reused command scope differs")
-    expected_attempt = run["run_attempt"] if job_attempt is None else job_attempt
-    need(source["run_id"] == run["id"] and source["run_attempt"] == expected_attempt, "source job attempt mismatch")
-    need(run["status"] == "completed" and run["conclusion"] == "success" and run["event"] == "pull_request",
-         "source protected workflow did not succeed")
-    need(run["path"] == workflow(job) and run["head_repository"]["full_name"] == REPO, "untrusted source workflow")
-    need(pr["merged"] is True and pr["state"] == "closed" and not pr["draft"] and (pr.get("merged_by") or {}).get("id"),
-         "source has no merged pull-request authority")
-    need(pr["head"]["repo"]["full_name"] == REPO and pr["base"]["repo"]["full_name"] == REPO
-         and pr["base"]["ref"] == "main", "source PR authority mismatch")
-    need(source["pull_request"] == pr["number"] and source["head_sha"] == pr["head"]["sha"] == run["head_sha"],
-         "source candidate mismatch")
-    need(pr["merge_commit_sha"] == landed["sha"], "source PR is not the landed merge")
-    if landed["sha"] == source["head_sha"]:
-        need(before == source["base_sha"], "fast-forward push base differs from tested base")
-    else:
-        need([parent["sha"] for parent in landed["parents"]] == [source["base_sha"], source["head_sha"]],
-             "landed ordered parents differ from tested base/candidate")
-    need(source["tree_sha"] == landed["tree"]["sha"], "landed tree changed")
-    need(source["workflow_sha256"] == workflow_hash, "workflow changed")
-    need(source["context"] == current_context, "relevant execution context changed")
-    need(source["authority"] == current_authority, "protected authority changed")
-    return True
+WORKFLOW_CHECKS = {
+    "clients.yml": ["Detect changed trees", "Credential mint tooling", "Shared domain contract",
+                    "Production wire golden decoders", "Convex functions", "Linux client", "Android client"],
+    "swift.yml": ["Detect Apple changes", "Verify committed Xcode project", "Build and test the Apple client"],
+    "workflow-lint.yml": ["actionlint + secret inventory"],
+}
 
 
-def acquire_reuse(api, job, head, current_context, before=None):
-    need(re.fullmatch(r"[0-9a-f]{40}", head) is not None, "landed SHA must be exact")
-    need(api.one(PREFIX + "/git/ref/heads/main")["object"]["sha"] == head, "main authority moved")
-    landed = api.one(PREFIX + f"/git/commits/{head}")
-    need(command(["git", "rev-parse", "HEAD"]) == head, "checkout is not landed commit")
-    candidates = api.pages(PREFIX + f"/commits/{head}/pulls", "array")
-    candidates = [pr for pr in candidates if pr.get("merge_commit_sha") == head and pr.get("merged_at")]
-    need(len(candidates) == 1, "landed PR authority is ambiguous")
-    pr = api.one(PREFIX + f"/pulls/{candidates[0]['number']}")
-    source_head = pr["head"]["sha"]
-    runs = api.pages(PREFIX + f"/actions/workflows/{JOBS[job][0]}/runs?head_sha={source_head}&event=pull_request", "runs")
-    need(bool(runs), "no source CI workflow")
-    run = max(runs, key=lambda item: item["id"])
-    # Never fall back past a failed, cancelled, pending or rerun source attempt.
-    run = api.one(PREFIX + f"/actions/runs/{run['id']}")
-    completed = dt.datetime.fromisoformat(run["updated_at"].replace("Z", "+00:00"))
-    age = (dt.datetime.now(dt.timezone.utc) - completed).total_seconds()
-    need(0 <= age <= MAX_AGE, "source protected result expired")
-    # Failed-jobs reruns retain successful jobs from their original attempts.
-    # Bind the latest execution of this job, not a refreshed workflow timestamp.
-    executions = api.pages(PREFIX + f"/actions/runs/{run['id']}/jobs?filter=all", "jobs")
-    executions = [item for item in executions if item["name"] == JOBS[job][1]]
-    need(bool(executions), "source job is absent")
-    need(all(type(item.get("run_attempt")) is int and item["run_attempt"] > 0 for item in executions),
-         "source job attempt must be positive")
-    job_attempt = max(item["run_attempt"] for item in executions)
-    executions = [item for item in executions if item["run_attempt"] == job_attempt]
-    need(len(executions) == 1, "latest source job is ambiguous")
-    source_job = executions[0]
-    need(source_job["status"] == "completed" and source_job["conclusion"] == "success",
-         "latest source job did not succeed")
-    need(job_attempt <= run["run_attempt"], "source job attempt is ahead of workflow")
-    job_completed = dt.datetime.fromisoformat(source_job["completed_at"].replace("Z", "+00:00"))
-    job_age = (dt.datetime.now(dt.timezone.utc) - job_completed).total_seconds()
-    need(0 <= job_age <= MAX_AGE, "source job result expired")
-    artifact_name = f"ci-reuse-{job_attempt}-{job}"
+def fresh(timestamp):
+    age = (dt.datetime.now(dt.timezone.utc) -
+           dt.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))).total_seconds()
+    need(0 <= age <= MAX_AGE, "source execution expired")
+
+
+def latest_job(api, run, name):
+    jobs = api.pages(PREFIX + f"/actions/runs/{run['id']}/jobs?filter=all", "jobs")
+    matches = [job for job in jobs if job["name"] == name]
+    need(matches and all(type(job.get("run_attempt")) is int and job["run_attempt"] > 0
+                         for job in matches), "source job attempt missing")
+    attempt = max(job["run_attempt"] for job in matches)
+    matches = [job for job in matches if job["run_attempt"] == attempt]
+    need(len(matches) == 1 and attempt <= run["run_attempt"], "ambiguous source job attempt")
+    job = matches[0]
+    need(job["status"] == "completed", "source job is pending")
+    fresh(job["completed_at"])
+    return job
+
+
+def source_artifact(api, run, job, attempt):
     artifacts = api.pages(PREFIX + f"/actions/runs/{run['id']}/artifacts", "artifacts")
-    artifacts = [item for item in artifacts if item["name"] == artifact_name and not item["expired"]]
-    need(len(artifacts) == 1, "source dependency/context proof missing or ambiguous")
-    artifact = artifacts[0]
+    matches = [item for item in artifacts if item["name"] == f"ci-reuse-{attempt}-{job}" and not item["expired"]]
+    need(len(matches) == 1, "source input proof missing or ambiguous")
+    artifact = matches[0]
     archive = api.raw(PREFIX + f"/actions/artifacts/{artifact['id']}/zip")
     need(artifact.get("digest") == "sha256:" + hashlib.sha256(archive).hexdigest(), "source artifact digest mismatch")
     with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
         need(bundle.namelist() == ["protected-ci-reuse.json"], "unexpected source artifact contents")
         need(bundle.getinfo("protected-ci-reuse.json").file_size <= LIMIT, "source proof exceeds size limit")
-        source = json.loads(bundle.read("protected-ci-reuse.json"))
-    current_authority = authority(api)
+        proof = json.loads(bundle.read("protected-ci-reuse.json"))
+    return artifact, proof
+
+
+def unchanged_apple_edit(api, run):
+    """Only the trusted title/body edit guard can supersede no Apple work.
+
+    Keep its provider record separately. A skipped build by itself is never
+    evidence of a no-op event and never supplies a successful execution.
+    """
+    if run["path"] != ".github/workflows/swift.yml" or run["conclusion"] != "success":
+        return False
+    jobs = api.pages(PREFIX + f"/actions/runs/{run['id']}/jobs?filter=all", "jobs")
+    latest = [job for job in jobs if job.get("run_attempt") == run["run_attempt"]]
+    detectors = [job for job in latest if job["name"] == "Detect Apple changes"]
+    return (len(detectors) == 1 and detectors[0]["conclusion"] == "success"
+            and any(step["name"] == "Recognize a base-unchanged PR edit" and step["conclusion"] == "success"
+                    for step in detectors[0].get("steps", []))
+            and all(any(job["name"] == name and job["conclusion"] == "skipped" for job in latest)
+                    for name in WORKFLOW_CHECKS["swift.yml"][1:]))
+
+
+def qualification_runs(api, head):
+    selected, ignored = {}, []
+    for filename in WORKFLOW_CHECKS:
+        rows = api.pages(PREFIX + f"/actions/workflows/{filename}/runs?head_sha={head}&event=pull_request", "runs")
+        for row in sorted(rows, key=lambda item: item["id"], reverse=True):
+            run = api.one(PREFIX + f"/actions/runs/{row['id']}")
+            need(run["head_sha"] == head and run["event"] == "pull_request"
+                 and run["path"] == ".github/workflows/" + filename
+                 and run["head_repository"]["full_name"] == REPO, "untrusted source workflow")
+            need(run["status"] == "completed" and run["conclusion"] == "success", "latest source workflow did not succeed")
+            fresh(run["updated_at"])
+            if unchanged_apple_edit(api, run):
+                ignored.append(run)
+                continue
+            selected[filename] = run
+            break
+        need(filename in selected, "source qualification workflow missing")
+    return selected, ignored
+
+
+def validate_qualification(source, *, job, run, execution, source_head, pr, landed, protection):
+    need(source.get("schema_version") == 1 and source.get("mode") == "source"
+         and source.get("qualification_version") == 2, "run predates complete premerge qualification")
+    need(source["repository"] == REPO and source["job"] == job
+         and source["head_sha"] == source_head and source["pull_request"] == pr["number"], "source proof identity differs")
+    need(source["run_id"] == run["id"] and source["run_attempt"] == execution["run_attempt"], "source proof job attempt differs")
+    need(source["check_scope"] == CHECK_SCOPE[job], "source command scope changed")
+    need(source["tree_sha"] == landed["tree"]["sha"], "landed tree differs from source proof")
+    need(source["workflow_sha256"] == hashlib.sha256(Path(workflow(job)).read_bytes()).hexdigest(), "source workflow changed")
+    need(source["policy_sha256"] == hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), "source verifier policy changed")
+    need(source["authority"] == protection, "protected authority changed")
+    need(source["epoch"] == os.environ.get("BUDGET_CI_REUSE_EPOCH", ""), "execution policy epoch changed")
+    need(source.get("context", {}).get("environment") and source["context"].get("versions"), "source execution inputs missing")
+
+
+def verify_qualification(api, head, *, candidate_only=False):
+    """Verify completed source qualification; do not claim a new execution.
+
+    The immutable source environment is retained, not compared to this Ubuntu
+    verifier host. No platform command is running here. An epoch change revokes
+    qualification when toolchain/dependency policy requires new execution.
+    """
+    need(re.fullmatch(r"[0-9a-f]{40}", head) is not None, "landed SHA must be exact")
+    need(command(["git", "rev-parse", "HEAD"]) == head, "checkout is not the exact target commit")
+    current_main = api.one(PREFIX + "/git/ref/heads/main")["object"]["sha"]
+    need(candidate_only or current_main == head, "main authority moved")
+    landed = api.one(PREFIX + f"/git/commits/{head}")
+    need(landed["sha"] == head, "landed commit authority differs")
+    prs = api.pages(PREFIX + f"/commits/{head}/pulls", "array")
+    candidates = [pr for pr in prs if (pr["head"]["sha"] == head or
+                  (pr.get("merged_at") and pr.get("merge_commit_sha") == head))
+                  and pr["base"]["ref"] == "main" and pr["head"]["repo"]["full_name"] == REPO]
+    need(len(candidates) == 1, "source PR authority is ambiguous")
+    pr = api.one(PREFIX + f"/pulls/{candidates[0]['number']}")
+    need(not pr["draft"] and pr["head"]["repo"]["full_name"] == REPO
+         and pr["base"]["repo"]["full_name"] == REPO and pr["base"]["ref"] == "main", "source PR authority differs")
+    source_head = pr["head"]["sha"]
+    if head != source_head:
+        need(pr.get("merged") and pr.get("merge_commit_sha") == head and (pr.get("merged_by") or {}).get("id"),
+             "merge commit lacks provider PR authority")
     candidate = api.one(PREFIX + f"/git/commits/{source_head}")
-    tested = api.one(PREFIX + f"/git/commits/{source['tested_sha']}")
-    need(candidate["sha"] == source_head and tested["sha"] == source["tested_sha"]
-         and candidate["tree"]["sha"] == tested["tree"]["sha"] == source["tree_sha"],
-         "candidate/tested tree authority differs")
-    if tested["sha"] != source_head:
-        need([parent["sha"] for parent in tested["parents"]] == [source["base_sha"], source_head],
-             "synthetic tested commit has wrong ordered parents")
+    need(candidate["sha"] == source_head and candidate["tree"]["sha"] == landed["tree"]["sha"], "candidate/landing trees differ")
+    protection = authority(api)
+    runs, ignored = qualification_runs(api, source_head)
+    checks = api.pages(PREFIX + f"/commits/{source_head}/check-runs?filter=all", "checks")
+    # The always-executed shared contract proof pins the source base used by
+    # every applicability decision. Other job proofs must name this same base.
+    shared_run = runs["clients.yml"]
+    shared_job = latest_job(api, shared_run, JOBS["shared-domain"][1])
+    _, anchor = source_artifact(api, shared_run, "shared-domain", shared_job["run_attempt"])
+    validate_qualification(anchor, job="shared-domain", run=shared_run, execution=shared_job,
+                           source_head=source_head, pr=pr, landed=landed, protection=protection)
+    base = anchor["base_sha"]
+    if candidate_only:
+        need(head == source_head and current_main == base, "candidate no longer targets its tested main base")
     if head == source_head:
-        comparison = api.one(PREFIX + f"/compare/{source['base_sha']}...{source_head}?per_page=1")
-        need(comparison["status"] == "ahead" and comparison["merge_base_commit"]["sha"] == source["base_sha"],
-             "fast-forward source ancestry unproven")
-    validate_source(source, job=job, run=run, pr=pr, landed=landed, before=before,
-                    current_authority=current_authority, current_context=current_context,
-                    workflow_hash=hashlib.sha256(Path(workflow(job)).read_bytes()).hexdigest(), job_attempt=job_attempt)
-    # Fast-forward landing keeps the source SHA. Its new main checks may
-    # already be pending, so select PR workflow suites explicitly rather than
-    # confusing that fresh run with the original protected source result.
-    source_runs = api.pages(PREFIX + f"/actions/runs?head_sha={source_head}&event=pull_request", "runs")
-    latest_by_workflow = {}
-    for item in source_runs:
-        previous = latest_by_workflow.get(item["workflow_id"])
-        if previous is None or item["id"] > previous["id"]:
-            latest_by_workflow[item["workflow_id"]] = item
-    qualified_runs = [api.one(PREFIX + f"/actions/runs/{item['id']}") for item in latest_by_workflow.values()]
-    need(qualified_runs and all(item["head_sha"] == source_head and item["event"] == "pull_request"
-         and item["head_repository"]["full_name"] == REPO and item["status"] == "completed"
-         and item["conclusion"] == "success" for item in qualified_runs), "source PR workflows did not succeed")
-    suites = {item["check_suite_id"] for item in qualified_runs}
-    allowed_skips = inapplicable_source_checks(source) - {JOBS[job][1]}
-    checks = select_checks([check for check in api.pages(PREFIX + f"/commits/{source_head}/check-runs?filter=all", "checks")
-                            if (check.get("check_suite") or {}).get("id") in suites],
-                           current_authority["required_checks"], source_head, allowed_skips)
-    # The workflow result and check suite must describe this same source run.
-    protected_name = JOBS[job][1]
-    own_checks = [check for check in checks if check["name"] == protected_name]
-    need(bool(own_checks), "source job has no protected check coverage")
-    need(all(check["check_suite_id"] == run["check_suite_id"] for check in own_checks), "source required check belongs to another run")
-    need(authority(api) == current_authority, "protection moved during reuse verification")
-    need(api.one(PREFIX + f"/actions/runs/{run['id']}") == run, "source run changed during reuse verification")
-    need(all(api.one(PREFIX + f"/actions/runs/{item['id']}") == item for item in qualified_runs),
-         "source protected workflows changed during reuse verification")
-    need(api.one(PREFIX + "/git/ref/heads/main")["object"]["sha"] == head, "main moved during reuse verification")
-    return {"schema_version": 1, "mode": "reused", "repository": REPO, "job": job, "head_sha": head,
-            "landed": landed, "pull_request": pr, "source_run": run, "source_job": source_job,
-            "reused_steps": CHECK_SCOPE[job], "other_steps": "Fresh under their unchanged workflow conditions; no old build or design artifact is republished",
-            "source_artifact": artifact, "source_proof": source, "protected_checks": checks,
-            "source_workflows": qualified_runs, "inapplicable_source_checks": sorted(allowed_skips), "candidate_commit": candidate, "tested_commit": tested, "push_before": before,
-            "authority": current_authority, "context": current_context,
-            "canonical_refs": "GitHub main verified; Buzz relay readback remains a delivery gate",
-            "review_and_approval": "Independent delivery gates remain required for the exact candidate"}
+        comparison = api.one(PREFIX + f"/compare/{base}...{source_head}?per_page=1")
+        need(comparison["status"] == "ahead" and comparison["merge_base_commit"]["sha"] == base,
+             "source is not a fast-forward from its tested base")
+    else:
+        need([parent["sha"] for parent in landed["parents"]] == [base, source_head], "landed ordered parents changed")
+    inapplicable = inapplicable_source_checks(anchor)
+    requirements = {item["name"]: item["integration_id"] for item in protection["required_checks"]}
+    supported = {name for names in WORKFLOW_CHECKS.values() for name in names}
+    need(set(requirements) <= supported, "required check has no qualified workflow binding")
+    qualified_checks, executions, proofs = [], [], {}
+    for filename, names in WORKFLOW_CHECKS.items():
+        run = runs[filename]
+        suite_checks = [check for check in checks if (check.get("check_suite") or {}).get("id") == run["check_suite_id"]]
+        selected = select_checks(suite_checks, [{"name": name, "integration_id": requirements.get(name, 15368)}
+                                                for name in names], source_head, inapplicable)
+        for selected_check in selected:
+            name = selected_check["name"]
+            execution = latest_job(api, run, name)
+            provider_check = selected_check["provider_result"]
+            need(execution["conclusion"] == provider_check["conclusion"], "job/check conclusion differs")
+            need(execution.get("check_run_url") == f"https://api.github.com{PREFIX}/check-runs/{provider_check['id']}",
+                 "job does not own the selected provider check")
+            executions.append({"run_id": run["id"], "job": execution})
+            qualified_checks.append(selected_check)
+        for job, (job_workflow, name) in JOBS.items():
+            if job_workflow != filename or name in inapplicable:
+                continue
+            execution = next(item["job"] for item in executions if item["run_id"] == run["id"] and item["job"]["name"] == name)
+            need(execution["conclusion"] == "success", "source job supplies no successful execution")
+            artifact, source = source_artifact(api, run, job, execution["run_attempt"])
+            validate_qualification(source, job=job, run=run, execution=execution,
+                                   source_head=source_head, pr=pr, landed=landed, protection=protection)
+            need(source["base_sha"] == base, "source jobs tested different bases")
+            tested = api.one(PREFIX + f"/git/commits/{source['tested_sha']}")
+            need(tested["sha"] == source["tested_sha"] and tested["tree"]["sha"] == landed["tree"]["sha"], "provider tested tree differs")
+            if tested["sha"] != source_head:
+                need([parent["sha"] for parent in tested["parents"]] == [base, source_head], "tested ordered parents changed")
+            proofs[job] = {"artifact": artifact, "source_proof": source, "tested_commit": tested}
+    # Even ignored no-op events must have tested the same candidate/workflow
+    # tree. The detector captures its own provider-attached source proof.
+    ignored_proofs = []
+    for ignored_run in ignored:
+        execution = latest_job(api, ignored_run, "Detect Apple changes")
+        artifact, source = source_artifact(api, ignored_run, "swift-routing", execution["run_attempt"])
+        validate_qualification(source, job="swift-routing", run=ignored_run, execution=execution,
+                               source_head=source_head, pr=pr, landed=landed, protection=protection)
+        need(source["base_sha"] == base and source.get("event_action") == "edited"
+             and source.get("base_changed") is False, "ignored Apple event changed qualification inputs")
+        tested = api.one(PREFIX + f"/git/commits/{source['tested_sha']}")
+        need(tested["sha"] == source["tested_sha"] and tested["tree"]["sha"] == landed["tree"]["sha"], "ignored event tested a different tree")
+        if tested["sha"] != source_head:
+            need([parent["sha"] for parent in tested["parents"]] == [base, source_head], "ignored event tested different parents")
+        ignored_proofs.append({"run": ignored_run, "job": execution, "artifact": artifact,
+                               "source_proof": source, "tested_commit": tested})
+    need(authority(api) == protection, "protection moved during verification")
+    need(qualification_runs(api, source_head) == (runs, ignored), "source workflows changed during verification")
+    final_checks = api.pages(PREFIX + f"/commits/{source_head}/check-runs?filter=all", "checks")
+    for filename, names in WORKFLOW_CHECKS.items():
+        suite = runs[filename]["check_suite_id"]
+        final_selected = select_checks([check for check in final_checks if (check.get("check_suite") or {}).get("id") == suite],
+            [{"name": name, "integration_id": requirements.get(name, 15368)} for name in names], source_head, inapplicable)
+        need(final_selected == [check for check in qualified_checks if check["name"] in names], "source checks changed during verification")
+    need(api.one(PREFIX + f"/pulls/{pr['number']}") == pr, "source PR changed during verification")
+    need(api.one(PREFIX + "/git/ref/heads/main")["object"]["sha"] == current_main, "main moved during verification")
+    return {"schema_version": 2, "mode": "qualified-candidate" if candidate_only else "qualified-source-at-landing", "repository": REPO,
+            **({} if candidate_only else {"landed_commit": landed}), "candidate_commit": candidate, "tested_base": base,
+            "pull_request": pr, "source_workflows": runs, "ignored_unchanged_edit_runs": ignored, "ignored_event_proofs": ignored_proofs,
+            "source_checks": qualified_checks, "source_executions": executions, "source_proofs": proofs,
+            "inapplicable_checks": sorted(inapplicable), "authority": protection,
+            "fresh_checks": ["provider authority and source identity" + ("" if candidate_only else " and landing equivalence")],
+            "reused_checks": [check["name"] for check in qualified_checks if check["provider_result"]["conclusion"] == "success"],
+            "canonical_authority": "Required separate delivery evidence: fresh relay main, reviewed PR/parents and subsequent complete no-op mirror equality",
+            "execution_context": "Original source execution retained; no new platform execution claimed. Release builds/signing have independent fresh contexts."}
+
+
+def verify_landing(api, head):
+    return verify_qualification(api, head)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--job", choices=JOBS, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--job", choices=JOBS)
+    mode.add_argument("--verify-landing", metavar="SHA")
+    mode.add_argument("--verify-candidate", metavar="SHA")
     args = parser.parse_args()
     api = API()
-    proof = {"schema_version": 1, "mode": "fresh", "job": args.job}
     try:
-        need(os.environ.get("GITHUB_REPOSITORY") == REPO, "repository is not eligible")
         command(["git", "diff", "--quiet", "HEAD", "--"])
-        current_context = context(args.job)
+        if args.verify_landing or args.verify_candidate:
+            need(os.environ.get("GITHUB_REPOSITORY") == REPO, "repository is not eligible")
+            head = args.verify_landing or args.verify_candidate
+            proof = verify_qualification(api, head, candidate_only=bool(args.verify_candidate))
+            proof["api_evidence"] = api.evidence
+            phase = "candidate" if args.verify_candidate else "landing"
+            Path(f"protected-ci-{phase}.json").write_text(json.dumps(proof, indent=2) + "\n")
+            print(f"Verified premerge qualification for {phase} {head}; no platform CI repeated.")
+            return 0
         event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
-        if os.environ.get("GITHUB_EVENT_NAME") == "pull_request":
-            proof = capture(api, args.job, event, current_context)
-        elif os.environ.get("GITHUB_EVENT_NAME") == "push" and os.environ.get("GITHUB_REF") == "refs/heads/main":
-            proof = acquire_reuse(api, args.job, os.environ["GITHUB_SHA"], current_context, event.get("before"))
+        pr = event.get("pull_request") or {}
+        eligible = (os.environ.get("GITHUB_REPOSITORY") == REPO
+                    and os.environ.get("GITHUB_EVENT_NAME") == "pull_request"
+                    and (pr.get("head", {}).get("repo") or {}).get("full_name") == REPO
+                    and (pr.get("base", {}).get("repo") or {}).get("full_name") == REPO
+                    and pr.get("base", {}).get("ref") == "main" and not pr.get("draft", True))
+        if eligible:
+            proof = capture(api, args.job, event, context(args.job))
         else:
-            raise Refusal("event requires fresh execution")
-    except (Refusal, OSError, ValueError, KeyError, TypeError, AttributeError, subprocess.SubprocessError, zipfile.BadZipFile) as exc:
-        # Never expose API response bodies or subprocess output in refusals.
-        proof = {"schema_version": 1, "mode": "fresh", "job": args.job,
-                 "reason": str(exc) if isinstance(exc, (Refusal,)) else "source evidence unavailable or malformed"}
-    proof["api_evidence"] = api.evidence
-    Path("protected-ci-reuse.json").write_text(json.dumps(proof, indent=2) + "\n")
-    reused = proof["mode"] == "reused"
-    with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-        output.write(f"reused={'true' if reused else 'false'}\n")
-    summary = (f"Verified protected-result reuse for {JOBS[args.job][1]} from run {proof['source_run']['id']} "
-               f"job attempt {proof['source_proof']['run_attempt']} at {proof['source_proof']['head_sha']}; "
-               f"latest workflow attempt {proof['source_run']['run_attempt']} passed. "
-               f"Exact landed commit: {proof['head_sha']}. Reused commands: {', '.join(CHECK_SCOPE[args.job])}. "
-               "Other steps keep their ordinary fresh execution and artifact provenance. Full proof is in this job's ci-reuse artifact."
-               if reused else f"Fresh {JOBS[args.job][1]} execution. {proof.get('reason', 'Capturing source proof for a later identical-tree merge.')} ")
-    print(summary)
-    with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as output:
-        output.write(summary + "\n")
+            proof = {"schema_version": 1, "mode": "fresh", "job": args.job,
+                     "reason": "This event is not an eligible internal non-draft main PR source"}
+        proof["api_evidence"] = api.evidence
+        Path("protected-ci-reuse.json").write_text(json.dumps(proof, indent=2) + "\n")
+        print(f"Captured {JOBS[args.job][1]} inputs; this job executes its normal checks once.")
+        return 0
+    except (Refusal, OSError, ValueError, KeyError, TypeError, AttributeError,
+            subprocess.SubprocessError, zipfile.BadZipFile) as exc:
+        # No response bodies, credentials or subprocess output in diagnostics.
+        reason = str(exc) if isinstance(exc, Refusal) else "source evidence unavailable or malformed"
+        print(f"CI qualification refused: {reason}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

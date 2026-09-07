@@ -20,21 +20,23 @@ name: Workflow lint
 # exactly the check a fork most wants to keep working.
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
+  checks: read
+  pull-requests: read
 
 concurrency:
   group: workflow-lint-${{ github.ref }}
   cancel-in-progress: true
 
 env:
+  BUDGET_CI_REUSE_EPOCH: ${{ vars.BUDGET_CI_REUSE_EPOCH }}
   # Pinned by version and verified by checksum rather than piped from an install
   # script, so a compromised release cannot silently execute here.
   ACTIONLINT_VERSION: 1.7.12
@@ -49,6 +51,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       # Installed under RUNNER_TEMP rather than /usr/local/bin so the step needs
       # no privilege at all.
@@ -157,3 +160,16 @@ jobs:
             exit 1
           fi
           echo "Reporter renders its table and fails closed when required secrets are unset."
+
+      - name: Capture premerge qualification inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/workflows/scripts/protected_ci_reuse.py --job workflow-lint
+
+      - name: Retain protected result provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-reuse-${{ github.run_attempt }}-workflow-lint
+          path: protected-ci-reuse.json
+          if-no-files-found: error
+          retention-days: 7
