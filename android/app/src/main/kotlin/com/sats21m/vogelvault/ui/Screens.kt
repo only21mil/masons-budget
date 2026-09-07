@@ -670,7 +670,7 @@ internal fun BitcoinConversionNotice(state: VaultUiState) {
             text = if (quote.status == MarketQuoteStatus.STALE) "BTC conversion · stale quote" else "BTC conversion",
             detail = quote.quoteHint(state.now),
             tone = if (quote.status == MarketQuoteStatus.STALE) {
-                LocalLedgerTheme.current.colors.loss
+                LocalLedgerTheme.current.colors.warning
             } else {
                 LocalLedgerTheme.current.colors.foregroundSecondary
             },
@@ -1895,6 +1895,6 @@ private fun StaleNotice(status: Freshness) {
     StatusBanner(
         stringResource(R.string.convex_read_stale_title),
         stringResource(R.string.convex_read_stale_detail),
-        tone = LocalLedgerTheme.current.colors.loss,
+        tone = LocalLedgerTheme.current.colors.warning,
     )
 }
