@@ -49,6 +49,7 @@
 // no second copy of dataFiles.ts's auth gate here to drift out of sync with it.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { trackedDb } from "./rowTracking";
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
@@ -2103,9 +2104,9 @@ async function writeMigrationTarget(
     case BTC_BALANCE_DOCUMENTS_TABLE:
     case FINANCE_DOCUMENTS_TABLE:
       if (write.existingId === undefined) {
-        await ctx.db.insert(write.table, write.document);
+        await trackedDb(ctx).insert(write.table, write.document);
       } else {
-        await ctx.db.patch(write.existingId, write.document);
+        await trackedDb(ctx).patch(write.existingId, write.document);
       }
       break;
     default:

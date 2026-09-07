@@ -210,7 +210,24 @@ const todoRowFields = {
 
 const todoRestoreCapsuleValidator = v.object(todoRowFields);
 
+const rowCountTotals = v.object({
+  total: v.int64(), victor: v.int64(), rachel: v.int64(),
+  mason: v.int64(), maddox: v.int64(),
+});
+
 export default defineSchema({
+  // Counts and snapshot revisions change in the same transaction as typed rows.
+  // Existing deployments remain unreadable through rowCounts until an approved
+  // internal bounded backfill has established each table's baseline.
+  rowCountStates: defineTable({
+    table: v.string(),
+    revision: v.int64(),
+    ready: v.boolean(),
+    counts: rowCountTotals,
+    backfill: v.optional(v.object({
+      revision: v.int64(), cursor: v.string(), counts: rowCountTotals,
+    })),
+  }).index("by_table", ["table"]),
   // ── Core data store ──
   // Each MC2 JSON file maps to one document.
   // The `data` field holds the raw JSON payload (array or object).
@@ -429,6 +446,7 @@ export default defineSchema({
     .index("by_owner_month", ["owner", "month"]) // budget month, one owner
     .index("by_owner_month_date", ["owner", "month", "date"])
     .index("by_owner_date", ["owner", "date"]) // activity feed, one owner
+    .index("by_month_date", ["month", "date"])
     .index("by_month", ["month"]) // budget month, whole household
     .index("by_date", ["date"]), // activity feed, whole household
 

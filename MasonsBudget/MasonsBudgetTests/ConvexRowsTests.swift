@@ -666,6 +666,96 @@ final class ConvexRowsTests: XCTestCase {
         XCTAssertNil(CanonicalFinancialProjection.btcBillPays(rows: []).value)
     }
 
+    func testTransactionPagesCompleteAboveTwoThousandRowsBeforePublishing() async throws {
+        var requests: [String?] = []
+        let result = try await ConvexRowReader.transactionSnapshot(viewer: .rachel) { cursor in
+            requests.append(cursor)
+            let offset = (requests.count - 1) * 256
+            let count = min(256, 2305 - offset)
+            let complete = offset + count == 2305
+            let rows = (offset ..< offset + count).map { index in
+                var row = self.transactionRow(owner: "victor", amount: "AQAAAAAAAAA=")
+                row["txId"] = "synthetic-\(index)"
+                return row
+            }
+            return try self.decodeTaggedJSON([
+                "rows": rows,
+                "complete": complete,
+                "cursor": complete ? NSNull() : "opaque-page-\(requests.count)" as Any,
+            ])
+        }
+        XCTAssertEqual(requests.count, 10)
+        XCTAssertNil(requests[0])
+        XCTAssertEqual(requests[1], "opaque-page-1")
+        XCTAssertEqual(result.count, 2305)
+        XCTAssertEqual(Set(result.map(\.id)).count, 2305)
+    }
+
+    func testTransactionPageFailureKeepsPreviousSnapshot() async throws {
+        var publishedCount = 7
+        var calls = 0
+        do {
+            let rows = try await ConvexRowReader.transactionSnapshot(viewer: .victor) { _ in
+                calls += 1
+                if calls == 2 { throw URLError(.networkConnectionLost) }
+                return try self.decodeTaggedJSON([
+                    "rows": [self.transactionRow(owner: "victor", amount: "AQAAAAAAAAA=")],
+                    "complete": false,
+                    "cursor": "opaque-next",
+                ])
+            }
+            publishedCount = rows.count
+            XCTFail("An interrupted snapshot must fail before publication")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .networkConnectionLost)
+        }
+        XCTAssertEqual(calls, 2)
+        XCTAssertEqual(publishedCount, 7)
+    }
+
+    func testTransactionSnapshotContinuesAcrossAnEmptyFilteredPage() async throws {
+        var calls = 0
+        let result = try await ConvexRowReader.transactionSnapshot(viewer: .mason) { _ in
+            calls += 1
+            return try self.decodeTaggedJSON([
+                "rows": calls == 1 ? [] : [self.transactionRow(owner: "mason", amount: "AQAAAAAAAAA=")],
+                "complete": calls == 2,
+                "cursor": calls == 1 ? "opaque-next" as Any : NSNull(),
+            ])
+        }
+        XCTAssertEqual(calls, 2)
+        XCTAssertEqual(result.count, 1)
+    }
+
+    func testTransactionSnapshotRejectsMissingRepeatedAndContradictoryCursors() async throws {
+        for malformed in ["missing", "repeated", "terminal"] {
+            var calls = 0
+            do {
+                _ = try await ConvexRowReader.transactionSnapshot(viewer: .victor) { _ in
+                    calls += 1
+                    return try self.decodeTaggedJSON([
+                        "rows": [],
+                        "complete": malformed == "terminal",
+                        "cursor": malformed == "missing" ? NSNull() : "same-cursor" as Any,
+                    ])
+                }
+                XCTFail("Malformed continuation must fail")
+            } catch {
+                XCTAssertEqual(error as? ConvexRowDecodeError, .incompleteSnapshot)
+            }
+            XCTAssertLessThanOrEqual(calls, 2)
+        }
+    }
+
+    func testTransactionPageRequestPreservesOpaqueContinuation() {
+        let cursor = "opaque / + = cursor"
+        let request = ConvexRowQuery.transactionPage(viewer: .rachel, cursor: cursor)
+        XCTAssertEqual(request.path, "tables:pageTransactions")
+        XCTAssertEqual(request.arguments["viewer"] as? String, "rachel")
+        XCTAssertEqual(request.arguments["cursor"] as? String, cursor)
+        XCTAssertNil(ConvexRowQuery.transactionPage(viewer: .mason, cursor: nil).arguments["cursor"])
+    }
+
     private func transactionRow(owner: String, amount: String) -> [String: Any] {
         [
             "txId": "\(owner)-tx",

@@ -21,6 +21,7 @@ import type * as migrate from "../migrate.js";
 import type * as operatorImport from "../operatorImport.js";
 import type * as operatorImportValidation from "../operatorImportValidation.js";
 import type * as readCanary from "../readCanary.js";
+import type * as rowTracking from "../rowTracking.js";
 import type * as tables from "../tables.js";
 import type * as todoNormalize from "../todoNormalize.js";
 import type * as writeback from "../writeback.js";
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   operatorImport: typeof operatorImport;
   operatorImportValidation: typeof operatorImportValidation;
   readCanary: typeof readCanary;
+  rowTracking: typeof rowTracking;
   tables: typeof tables;
   todoNormalize: typeof todoNormalize;
   writeback: typeof writeback;

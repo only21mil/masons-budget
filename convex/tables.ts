@@ -37,6 +37,7 @@
 // and says the same thing; the "auth" block in tables.test.ts pins the auth
 // mirror against dataFiles.ts so the two cannot silently drift.
 
+import { countState, exactRowCounts, trackedDb } from "./rowTracking";
 import { ConvexError, v } from "convex/values";
 
 import type { Doc } from "./_generated/dataModel";
@@ -502,17 +503,18 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 /** Newest first, with a stable tiebreak so paging cannot repeat or drop a row. */
-function byDateDescending<T extends { date: string; _id: string }>(a: T, b: T) {
-  if (a.date === b.date) return a._id < b._id ? 1 : -1;
-  return a.date < b.date ? 1 : -1;
+function byIndexTieDescending(a: { _creationTime: number; _id: string }, b: { _creationTime: number; _id: string }) {
+  if (a._creationTime !== b._creationTime) return b._creationTime - a._creationTime;
+  return a._id === b._id ? 0 : a._id < b._id ? 1 : -1;
 }
 
-function byIncomeDateDescending<T extends { date: string; incomeId: string }>(
-  a: T,
-  b: T,
-) {
-  if (a.date === b.date) return a.incomeId < b.incomeId ? 1 : -1;
-  return a.date < b.date ? 1 : -1;
+function byDateDescending<T extends { date: string; _creationTime: number; _id: string }>(a: T, b: T) {
+  return a.date === b.date ? byIndexTieDescending(a, b) : a.date < b.date ? 1 : -1;
+}
+
+function byIncomeDateDescending<T extends { date: string; incomeId: string; _creationTime: number; _id: string }>(a: T, b: T) {
+  if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+  return a.incomeId === b.incomeId ? byIndexTieDescending(a, b) : a.incomeId < b.incomeId ? 1 : -1;
 }
 
 // A no-limit request means "give me one complete replacement snapshot", not
@@ -1114,16 +1116,15 @@ const scopeValidator = v.union(v.literal("visible"), v.literal("netWorth"));
  *
  * Query handlers below use these exact descriptors, so the schema test proves
  * that the audited plan exists rather than merely documenting an intended plan.
- * `rowCounts` is deliberately absent: exact counts still scan every table and
- * replacing that with transactionally maintained counters is tracked by #76.
+ * `rowCounts` reads transactionally maintained metadata through by_table.
  */
 export const PUBLIC_QUERY_INDEX_PLAN = {
   listTransactions: {
     table: "transactions",
     all: { name: "by_owner_date", fields: ["owner", "date"] },
     month: {
-      name: "by_owner_month",
-      fields: ["owner", "month"],
+      name: "by_owner_month_date",
+      fields: ["owner", "month", "date"],
     },
   },
   listIncome: {
@@ -1148,16 +1149,16 @@ export const PUBLIC_QUERY_INDEX_PLAN = {
     table: "btcBuys",
     all: { name: "by_owner_date", fields: ["owner", "date"] },
     month: {
-      name: "by_owner_month",
-      fields: ["owner", "month"],
+      name: "by_owner_month_date",
+      fields: ["owner", "month", "date"],
     },
   },
   listBtcBillPays: {
     table: "btcBillPays",
     all: { name: "by_owner_date", fields: ["owner", "date"] },
     month: {
-      name: "by_owner_month",
-      fields: ["owner", "month"],
+      name: "by_owner_month_date",
+      fields: ["owner", "month", "date"],
     },
   },
   listBtcTransfers: {
@@ -1224,7 +1225,8 @@ export const listTransactions = query({
                 PUBLIC_QUERY_INDEX_PLAN.listTransactions.month.name,
                 (q) => q.eq("owner", owner).eq("month", month),
               )
-              .collect()
+              .order("desc")
+              .take(cap)
           : ctx.db
               .query("transactions")
               .withIndex(
@@ -1240,6 +1242,56 @@ export const listTransactions = query({
     rows.sort(byDateDescending);
     return {
       ...publicEnvelope(rows.slice(0, cap).map(projectTransaction), limit, "listTransactions"),
+      ...readAuthDeprecation(auth),
+    };
+  },
+});
+
+/** Bounded newest-first transaction pages. Cursors are opaque and scoped to
+ * the authenticated viewer/month. A changed table revision rejects the entire
+ * traversal, including inserts, edits, ownership changes and deletions.
+ */
+export const pageTransactions = query({
+  args: {
+    viewer: familyMemberValidator,
+    month: v.optional(v.string()),
+    cursor: v.optional(v.string()),
+    token: v.optional(v.string()),
+    deviceId: v.optional(v.string()),
+    deviceToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const auth = await authorizeQueryViewer(ctx, args);
+    if (args.month !== undefined && !/^\d{4}-(0[1-9]|1[0-2])$/.test(args.month)) {
+      throw new ConvexError("Invalid transaction page month.");
+    }
+    const state = await countState(ctx, "transactions");
+    const revision = (state?.revision ?? 0n).toString();
+    const scope = JSON.stringify([1, auth.viewer, args.month ?? null]);
+    let cursor: string | null = null;
+    if (args.cursor !== undefined) {
+      try {
+        const value: unknown = JSON.parse(args.cursor);
+        if (!Array.isArray(value) || value.length !== 3 || value[0] !== scope ||
+            typeof value[1] !== "string" || typeof value[2] !== "string") throw new Error();
+        if (value[1] !== revision) throw new ConvexError("Transaction snapshot changed. Restart the read.");
+        cursor = value[2];
+      } catch (error) {
+        if (error instanceof ConvexError) throw error;
+        throw new ConvexError("Invalid transaction page cursor.");
+      }
+    }
+    const owners = ownersInScope(auth.viewer, "visible");
+    const rows = args.month === undefined
+      ? ctx.db.query("transactions").withIndex("by_date")
+      : ctx.db.query("transactions").withIndex("by_month_date", q => q.eq("month", args.month!));
+    const page = await rows.order("desc")
+      .filter(q => q.or(...owners.map(owner => q.eq(q.field("owner"), owner))))
+      .paginate({ cursor, numItems: 256, maximumRowsRead: 256 });
+    return {
+      rows: page.page.map(projectTransaction),
+      complete: page.isDone,
+      cursor: page.isDone ? null : JSON.stringify([scope, revision, page.continueCursor]),
       ...readAuthDeprecation(auth),
     };
   },
@@ -1324,9 +1376,7 @@ export const listTodos = query({
     const rows = perOwner.flat();
     rows.sort((a, b) =>
       a.updatedAtMs === b.updatedAtMs
-        ? a.todoId < b.todoId
-          ? 1
-          : -1
+        ? byIndexTieDescending(a, b)
         : b.updatedAtMs - a.updatedAtMs,
     );
     return {
@@ -1363,7 +1413,8 @@ export const listBtcBuys = query({
               .withIndex(PUBLIC_QUERY_INDEX_PLAN.listBtcBuys.month.name, (q) =>
                 q.eq("owner", owner).eq("month", month),
               )
-              .collect()
+              .order("desc")
+              .take(cap)
           : ctx.db
               .query("btcBuys")
               .withIndex(PUBLIC_QUERY_INDEX_PLAN.listBtcBuys.all.name, (q) =>
@@ -1408,7 +1459,8 @@ export const listBtcBillPays = query({
                 PUBLIC_QUERY_INDEX_PLAN.listBtcBillPays.month.name,
                 (q) => q.eq("owner", owner).eq("month", month),
               )
-              .collect()
+              .order("desc")
+              .take(cap)
           : ctx.db
               .query("btcBillPays")
               .withIndex(
@@ -1591,9 +1643,9 @@ export const listBtcAccounts = query({
     const rows = perOwner.flat();
     rows.sort((a, b) =>
       a.owner === b.owner
-        ? a.key < b.key
-          ? -1
-          : 1
+        ? a.key === b.key
+          ? -byIndexTieDescending(a, b)
+          : a.key < b.key ? -1 : 1
         : a.owner < b.owner
           ? -1
           : 1,
@@ -1833,22 +1885,7 @@ export const rowCounts = query({
   args: { token: v.optional(v.string()) },
   handler: async (ctx, { token }) => {
     validateReadToken(token);
-    return {
-      transactions: (await ctx.db.query("transactions").collect()).length,
-      todos: (await ctx.db.query("todos").collect()).length,
-      btcBuys: (await ctx.db.query("btcBuys").collect()).length,
-      btcBillPays: (await ctx.db.query("btcBillPays").collect()).length,
-      btcTransfers: (await ctx.db.query("btcTransfers").collect()).length,
-      btcAccounts: (await ctx.db.query("btcAccounts").collect()).length,
-      income: (await ctx.db.query("income").collect()).length,
-      balanceDocuments: (await ctx.db.query("balanceDocuments").collect())
-        .length,
-      budgetDocuments: (await ctx.db.query("budgetDocuments").collect()).length,
-      btcBalanceDocuments: (await ctx.db.query("btcBalanceDocuments").collect())
-        .length,
-      financeDocuments: (await ctx.db.query("financeDocuments").collect())
-        .length,
-    };
+    return exactRowCounts(ctx);
   },
 });
 
@@ -2166,7 +2203,7 @@ async function lockRuntimeSource(ctx: MutationCtx, sourceFile: string) {
     .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
     .unique();
   if (!existing) {
-    await ctx.db.insert("runtimeSourceLocks", {
+    await trackedDb(ctx).insert("runtimeSourceLocks", {
       sourceFile,
       lockedAtMs: Date.now(),
     });
@@ -2216,7 +2253,7 @@ async function clearRowTombstone(
     sourceFile,
     entityId,
   );
-  if (tombstone) await ctx.db.delete(tombstone._id);
+  if (tombstone) await trackedDb(ctx).delete(tombstone._id);
 }
 
 async function upsertRowTombstone(
@@ -2244,8 +2281,8 @@ async function upsertRowTombstone(
     ...(deletedFromUpdatedAtMs === undefined ? {} : { deletedFromUpdatedAtMs }),
     ...(todoRestoreCapsule === undefined ? {} : { todoRestoreCapsule }),
   };
-  if (existing) await ctx.db.patch(existing._id, record);
-  else await ctx.db.insert("rowTombstones", record);
+  if (existing) await trackedDb(ctx).patch(existing._id, record);
+  else await trackedDb(ctx).insert("rowTombstones", record);
 }
 
 async function upsertLegacyTodoTombstone(ctx: MutationCtx, todoId: string) {
@@ -2254,9 +2291,9 @@ async function upsertLegacyTodoTombstone(ctx: MutationCtx, todoId: string) {
     .withIndex("by_todo_id", (q) => q.eq("id", todoId))
     .unique();
   if (existing) {
-    await ctx.db.patch(existing._id, { deletedAt: Date.now() });
+    await trackedDb(ctx).patch(existing._id, { deletedAt: Date.now() });
   } else {
-    await ctx.db.insert("todoTombstones", {
+    await trackedDb(ctx).insert("todoTombstones", {
       id: todoId,
       deletedAt: Date.now(),
     });
@@ -2268,7 +2305,7 @@ async function clearLegacyTodoTombstone(ctx: MutationCtx, todoId: string) {
     .query("todoTombstones")
     .withIndex("by_todo_id", (q) => q.eq("id", todoId))
     .unique();
-  if (existing) await ctx.db.delete(existing._id);
+  if (existing) await trackedDb(ctx).delete(existing._id);
 }
 
 function sameTransaction(
@@ -2679,7 +2716,7 @@ async function upsertTransactionRow(
           balancePostingVersion: undefined,
         };
     await lockRuntimeSource(ctx, row.sourceFile);
-    await ctx.db.patch(existing._id, {
+    await trackedDb(ctx).patch(existing._id, {
       ...storedRow,
       updatedAtMs: optimistic
         ? nextUpdatedAtMs(existing.updatedAtMs)
@@ -2719,7 +2756,7 @@ async function upsertTransactionRow(
     };
   }
   await lockRuntimeSource(ctx, row.sourceFile);
-  await ctx.db.insert("transactions", storedRow);
+  await trackedDb(ctx).insert("transactions", storedRow);
   await clearRowTombstone(ctx, "transaction", row.sourceFile, row.txId);
   return "inserted";
 }
@@ -2782,7 +2819,7 @@ async function upsertTodoRow(
       );
     }
     await lockRuntimeSource(ctx, row.sourceFile);
-    await ctx.db.patch(existing._id, {
+    await trackedDb(ctx).patch(existing._id, {
       ...row,
       updatedAtMs: optimistic
         ? nextUpdatedAtMs(existing.updatedAtMs)
@@ -2823,7 +2860,7 @@ async function upsertTodoRow(
     );
   }
   await lockRuntimeSource(ctx, row.sourceFile);
-  await ctx.db.insert("todos", row);
+  await trackedDb(ctx).insert("todos", row);
   await clearRowTombstone(ctx, "todo", row.sourceFile, row.todoId);
   await clearLegacyTodoTombstone(ctx, row.todoId);
   return "inserted";
@@ -2933,7 +2970,7 @@ async function upsertBtcBuyRow(
       };
     }
     await lockRuntimeSource(ctx, row.sourceFile);
-    await ctx.db.patch(existing._id, {
+    await trackedDb(ctx).patch(existing._id, {
       ...storedRow,
       updatedAtMs: optimistic
         ? nextUpdatedAtMs(existing.updatedAtMs)
@@ -2973,7 +3010,7 @@ async function upsertBtcBuyRow(
     };
   }
   await lockRuntimeSource(ctx, row.sourceFile);
-  await ctx.db.insert("btcBuys", storedRow);
+  await trackedDb(ctx).insert("btcBuys", storedRow);
   await clearRowTombstone(ctx, "btcBuy", row.sourceFile, row.buyId);
   return "inserted";
 }
@@ -3094,7 +3131,7 @@ async function upsertLinkedIncomeRow(
     );
   }
   await lockRuntimeSource(ctx, "income");
-  await ctx.db.insert("income", row);
+  await trackedDb(ctx).insert("income", row);
   return "inserted";
 }
 
@@ -3188,7 +3225,7 @@ async function upsertBtcBillPayRow(
       };
     }
     await lockRuntimeSource(ctx, row.sourceFile);
-    await ctx.db.patch(existing._id, {
+    await trackedDb(ctx).patch(existing._id, {
       ...storedRow,
       updatedAtMs: optimistic
         ? nextUpdatedAtMs(existing.updatedAtMs)
@@ -3228,7 +3265,7 @@ async function upsertBtcBillPayRow(
     };
   }
   await lockRuntimeSource(ctx, row.sourceFile);
-  await ctx.db.insert("btcBillPays", storedRow);
+  await trackedDb(ctx).insert("btcBillPays", storedRow);
   await clearRowTombstone(ctx, "btcBillPay", row.sourceFile, row.billPayId);
   return "inserted";
 }
@@ -3354,7 +3391,7 @@ async function upsertBtcTransferRow(
     addDelta(deltas, row.toAccountKey, row.sats);
     await applyBtcAccountDeltas(ctx, row.owner, deltas);
     await lockRuntimeSource(ctx, row.sourceFile);
-    await ctx.db.patch(existing._id, {
+    await trackedDb(ctx).patch(existing._id, {
       ...row,
       // Monotonic for every writer: a raw wall-clock stamp can land below a
       // revision a concurrent reader already holds.
@@ -3386,7 +3423,7 @@ async function upsertBtcTransferRow(
   addDelta(deltas, row.toAccountKey, row.sats);
   await applyBtcAccountDeltas(ctx, row.owner, deltas);
   await lockRuntimeSource(ctx, row.sourceFile);
-  await ctx.db.insert("btcTransfers", row);
+  await trackedDb(ctx).insert("btcTransfers", row);
   await clearRowTombstone(ctx, "btcTransfer", row.sourceFile, row.transferId);
   return "inserted";
 }
@@ -3461,7 +3498,7 @@ async function deleteBtcTransferCore(
   addDelta(deltas, existing.toAccountKey, -existing.sats);
   await applyBtcAccountDeltas(ctx, existing.owner, deltas);
   await lockRuntimeSource(ctx, sourceFile);
-  await ctx.db.delete(existing._id);
+  await trackedDb(ctx).delete(existing._id);
   await upsertRowTombstone(
     ctx,
     "btcTransfer",
@@ -3485,12 +3522,12 @@ async function upsertBtcAccountRow(
     .unique();
   if (existing) {
     await lockRuntimeSource(ctx, row.sourceFile);
-    await ctx.db.patch(existing._id, row);
+    await trackedDb(ctx).patch(existing._id, row);
     await clearRowTombstone(ctx, "btcAccount", row.sourceFile, row.key);
     return "updated";
   }
   await lockRuntimeSource(ctx, row.sourceFile);
-  await ctx.db.insert("btcAccounts", row);
+  await trackedDb(ctx).insert("btcAccounts", row);
   await clearRowTombstone(ctx, "btcAccount", row.sourceFile, row.key);
   return "inserted";
 }
@@ -3950,7 +3987,7 @@ export const deleteTransaction = mutation({
       await applyBtcAccountDeltas(ctx, existing.owner, deltas);
     }
     await lockRuntimeSource(ctx, file);
-    await ctx.db.delete(existing._id);
+    await trackedDb(ctx).delete(existing._id);
     await upsertRowTombstone(
       ctx,
       "transaction",
@@ -4022,7 +4059,7 @@ export const deleteTodo = mutation({
       return { todoId, removed: false };
     }
     await lockRuntimeSource(ctx, existing.sourceFile);
-    await ctx.db.delete(existing._id);
+    await trackedDb(ctx).delete(existing._id);
     await upsertRowTombstone(
       ctx,
       "todo",
@@ -4557,7 +4594,7 @@ async function upsertBudgetCategoryCore(
   else categories[writeIndex] = normalizedCategory;
 
   await lockRuntimeSource(ctx, sourceFile);
-  await ctx.db.patch(existing._id, {
+  await trackedDb(ctx).patch(existing._id, {
     categories,
     updatedAtMs: optimistic
       ? nextUpdatedAtMs(existing.updatedAtMs)
@@ -4751,7 +4788,7 @@ async function copyBudgetPlanForwardCore(
 
   const updatedAtMs = nextUpdatedAtMs(existing.updatedAtMs);
   await lockRuntimeSource(ctx, sourceFile);
-  await ctx.db.patch(existing._id, {
+  await trackedDb(ctx).patch(existing._id, {
     month: storedBudgetMonthLike(existing.month, toMonth),
     mtdIncomeCents: 0n,
     ...(existing.income
@@ -4759,7 +4796,7 @@ async function copyBudgetPlanForwardCore(
       : {}),
     updatedAtMs,
   });
-  await ctx.db.insert("budgetPlanCarries", {
+  await trackedDb(ctx).insert("budgetPlanCarries", {
     sourceFile,
     owner,
     fromMonth,
@@ -4903,7 +4940,7 @@ async function deleteBudgetCategoryCore(
     const categories = [...existing.categories];
     categories.splice(index, 1);
     await lockRuntimeSource(ctx, sourceFile);
-    await ctx.db.patch(existing._id, {
+    await trackedDb(ctx).patch(existing._id, {
       categories,
       updatedAtMs: optimistic
         ? nextUpdatedAtMs(existing.updatedAtMs)
@@ -5096,7 +5133,7 @@ async function deleteTransactionCore(
     await applyBtcAccountDeltas(ctx, existing.owner, deltas);
   }
   await lockRuntimeSource(ctx, sourceFile);
-  if (existing) await ctx.db.delete(existing._id);
+  if (existing) await trackedDb(ctx).delete(existing._id);
   await upsertRowTombstone(
     ctx,
     "transaction",
@@ -5171,7 +5208,7 @@ async function deleteTodoCore(
     );
   }
   await lockRuntimeSource(ctx, "todos");
-  if (existing) await ctx.db.delete(existing._id);
+  if (existing) await trackedDb(ctx).delete(existing._id);
   await upsertRowTombstone(
     ctx,
     "todo",
@@ -5266,8 +5303,8 @@ async function restoreTodoCore(
     Math.max(baseUpdatedAtMs, tombstone.deletedAtMs),
   );
   await lockRuntimeSource(ctx, "todos");
-  await ctx.db.insert("todos", { ...capsule, updatedAtMs });
-  await ctx.db.delete(tombstone._id);
+  await trackedDb(ctx).insert("todos", { ...capsule, updatedAtMs });
+  await trackedDb(ctx).delete(tombstone._id);
   // The legacy blob still contains the pre-row-authority value. Keep its
   // compatibility tombstone until a later cutover removes or rewrites that
   // source; clearing it here would show stale content on Apple/legacy clients.
@@ -5350,7 +5387,7 @@ async function deleteBtcBuyCore(
     await applyBtcAccountDeltas(ctx, existing.owner, deltas);
   }
   await lockRuntimeSource(ctx, sourceFile);
-  if (existing) await ctx.db.delete(existing._id);
+  if (existing) await trackedDb(ctx).delete(existing._id);
   await upsertRowTombstone(
     ctx,
     "btcBuy",
@@ -5428,7 +5465,7 @@ async function deleteBtcBillPayCore(
     await applyBtcAccountDeltas(ctx, existing.owner, deltas);
   }
   await lockRuntimeSource(ctx, sourceFile);
-  if (existing) await ctx.db.delete(existing._id);
+  if (existing) await trackedDb(ctx).delete(existing._id);
   await upsertRowTombstone(
     ctx,
     "btcBillPay",
@@ -5814,10 +5851,10 @@ async function upsertBtcAccountCore(
   };
   if (existingDocument) {
     await lockRuntimeSource(ctx, sourceFile);
-    await ctx.db.patch(existingDocument._id, documentPatch);
+    await trackedDb(ctx).patch(existingDocument._id, documentPatch);
   } else {
     await lockRuntimeSource(ctx, sourceFile);
-    await ctx.db.insert("btcBalanceDocuments", {
+    await trackedDb(ctx).insert("btcBalanceDocuments", {
       sourceFile,
       ...documentPatch,
     });
@@ -5832,8 +5869,8 @@ async function upsertBtcAccountCore(
     sourceFile,
     updatedAtMs: now,
   };
-  if (existingMirror) await ctx.db.patch(existingMirror._id, mirrorRow);
-  else await ctx.db.insert("btcAccounts", mirrorRow);
+  if (existingMirror) await trackedDb(ctx).patch(existingMirror._id, mirrorRow);
+  else await trackedDb(ctx).insert("btcAccounts", mirrorRow);
   await clearRowTombstone(ctx, "btcAccount", sourceFile, key);
   return outcome;
 }
@@ -5934,7 +5971,7 @@ async function deleteBtcAccountCore(
   }
   if (document && removed) {
     await lockRuntimeSource(ctx, sourceFile);
-    await ctx.db.patch(document._id, {
+    await trackedDb(ctx).patch(document._id, {
       accounts,
       totals: btcAccountTotals(accounts),
       updatedAtMs: optimistic
@@ -5951,7 +5988,7 @@ async function deleteBtcAccountCore(
         .eq("key", btcAccountMirrorKey(sourceFile, accountKey)),
     )
     .unique();
-  if (mirror) await ctx.db.delete(mirror._id);
+  if (mirror) await trackedDb(ctx).delete(mirror._id);
   await upsertRowTombstone(
     ctx,
     "btcAccount",

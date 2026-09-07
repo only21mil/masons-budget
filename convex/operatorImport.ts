@@ -5,6 +5,7 @@
 // consulted here. The surface never writes dataFiles, syncVersions, migration
 // provenance, or raw source records.
 
+import { trackedDb } from "./rowTracking";
 import { ConvexError, v } from "convex/values";
 
 import type { Doc } from "./_generated/dataModel";
@@ -848,7 +849,7 @@ async function lockRuntimeSource(ctx: MutationCtx, sourceFile: string) {
     .take(2);
   if (rows.length > 1) reject("DUPLICATE_RUNTIME_SOURCE_LOCK");
   if (rows.length === 0) {
-    await ctx.db.insert("runtimeSourceLocks", {
+    await trackedDb(ctx).insert("runtimeSourceLocks", {
       sourceFile,
       lockedAtMs: Date.now(),
     });
@@ -862,7 +863,7 @@ async function insertExpectedRow(
 ): Promise<void> {
   const op = row.op;
   if (op.kind === "transaction") {
-    await ctx.db.insert("transactions", {
+    await trackedDb(ctx).insert("transactions", {
       txId: op.record_id,
       owner: op.owner,
       date: op.date,
@@ -878,7 +879,7 @@ async function insertExpectedRow(
     return;
   }
   if (op.kind === "income") {
-    await ctx.db.insert("income", {
+    await trackedDb(ctx).insert("income", {
       sourceKey: incomeSourceKey(op.record_id),
       incomeId: op.record_id,
       owner: op.owner,
@@ -895,7 +896,7 @@ async function insertExpectedRow(
     return;
   }
   if (op.kind === "btc_buy") {
-    await ctx.db.insert("btcBuys", {
+    await trackedDb(ctx).insert("btcBuys", {
       buyId: op.record_id,
       owner: op.owner,
       date: op.date,
@@ -914,7 +915,7 @@ async function insertExpectedRow(
     });
     return;
   }
-  await ctx.db.insert("btcBillPays", {
+  await trackedDb(ctx).insert("btcBillPays", {
     billPayId: op.record_id,
     owner: op.owner,
     date: op.date,
@@ -1042,7 +1043,7 @@ export const applyBatch = internalMutation({
         analysis.budget.document.updatedAtMs + 1,
       );
       await lockRuntimeSource(ctx, advance.source_file);
-      await ctx.db.patch(analysis.budget.document._id, {
+      await trackedDb(ctx).patch(analysis.budget.document._id, {
         month: advance.target_month,
         mtdIncomeCents: 0n,
         income: analysis.budget.document.income
@@ -1052,7 +1053,7 @@ export const applyBatch = internalMutation({
       });
     }
 
-    const receiptId = await ctx.db.insert("operatorBatches", {
+    const receiptId = await trackedDb(ctx).insert("operatorBatches", {
       contractVersion: CONTRACT_VERSION,
       batchId: analysis.canonical.envelope.batch_id,
       manifestDigest: `sha256:${analysis.canonical.manifest_digest}`,

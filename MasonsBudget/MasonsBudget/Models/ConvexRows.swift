@@ -12,6 +12,7 @@ enum ConvexRowScope: String, Sendable {
 /// the client boundary, and every Bitcoin case requires an explicit scope.
 enum ConvexRowQuery: Sendable {
     case transactions(viewer: FamilyMember)
+    case transactionPage(viewer: FamilyMember, cursor: String?)
     case income(viewer: FamilyMember, month: String?)
     case todos(viewer: FamilyMember)
     case btcBuys(viewer: FamilyMember, scope: ConvexRowScope)
@@ -25,6 +26,7 @@ enum ConvexRowQuery: Sendable {
     var path: String {
         switch self {
         case .transactions: "tables:listTransactions"
+        case .transactionPage: "tables:pageTransactions"
         case .income: "tables:listIncome"
         case .todos: "tables:listTodos"
         case .btcBuys: "tables:listBtcBuys"
@@ -41,6 +43,12 @@ enum ConvexRowQuery: Sendable {
         switch self {
         case let .transactions(viewer), let .todos(viewer):
             ["viewer": viewer.rawValue]
+        case let .transactionPage(viewer, cursor):
+            if let cursor {
+                ["viewer": viewer.rawValue, "cursor": cursor]
+            } else {
+                ["viewer": viewer.rawValue]
+            }
         case let .income(viewer, month):
             if let month {
                 ["viewer": viewer.rawValue, "month": month]
@@ -95,6 +103,13 @@ struct ConvexRowEnvelope<Row: Decodable>: Decodable {
         guard complete else { throw ConvexRowDecodeError.incompleteSnapshot }
         return rows
     }
+}
+
+/// Only a terminal page with no continuation proves a complete snapshot.
+struct ConvexTransactionPage: Decodable {
+    let rows: [ConvexTransactionRow]
+    let complete: Bool
+    let cursor: String?
 }
 
 struct ConvexTransactionRow: Decodable {
@@ -522,15 +537,41 @@ struct ConvexRowReader: Sendable {
     let client: ConvexClient
 
     func transactions(viewer: FamilyMember) async throws -> [LegacyTransactionDTO] {
-        let envelope = try await client.fetchRows(
-            .transactions(viewer: viewer),
-            as: ConvexRowEnvelope<ConvexTransactionRow>.self,
-        )
-        let rows = try envelope.completeRows()
-        guard rows.allSatisfy({ viewer.canSee(dataOwnedBy: $0.owner) }) else {
-            throw ConvexRowDecodeError.ownerOutOfScope
+        try await Self.transactionSnapshot(viewer: viewer) { cursor in
+            try await client.fetchRows(
+                .transactionPage(viewer: viewer, cursor: cursor),
+                as: ConvexTransactionPage.self,
+            )
         }
-        return try rows.map { try $0.legacyDTO() }
+    }
+
+    /// Accumulate privately. Network, revision or decode failures throw before
+    /// any caller can replace its persisted authoritative snapshot.
+    static func transactionSnapshot(
+        viewer: FamilyMember,
+        fetchPage: (String?) async throws -> ConvexTransactionPage,
+    ) async throws -> [LegacyTransactionDTO] {
+        var cursor: String?
+        var seenCursors = Set<String>()
+        var rows: [LegacyTransactionDTO] = []
+        repeat {
+            try Task.checkCancellation()
+            let page = try await fetchPage(cursor)
+            try Task.checkCancellation()
+            guard page.rows.allSatisfy({ viewer.canSee(dataOwnedBy: $0.owner) }) else {
+                throw ConvexRowDecodeError.ownerOutOfScope
+            }
+            rows += try page.rows.map { try $0.legacyDTO() }
+            if page.complete {
+                guard page.cursor == nil else { throw ConvexRowDecodeError.incompleteSnapshot }
+                return rows
+            }
+            guard let next = page.cursor, !next.isEmpty,
+                  seenCursors.insert(next).inserted else {
+                throw ConvexRowDecodeError.incompleteSnapshot
+            }
+            cursor = next
+        } while true
     }
 
     func todos(viewer: FamilyMember) async throws -> [LegacyTodoDTO] {

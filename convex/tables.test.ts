@@ -10,7 +10,8 @@
 //      directions are asserted, on the same data, in the same test.
 //   3. Money going through a float.
 //   4. The auth mirror in tables.ts drifting from the gates in dataFiles.ts.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { backfillCountsPage, countState, COUNTED_TABLES, trackedDb } from "./rowTracking";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
 import type { FunctionReference, OptionalRestArgs } from "convex/server";
 import { readFileSync } from "node:fs";
@@ -939,15 +940,15 @@ async function migrateAll(t: T) {
   // projection here so this suite tests the schema and public queries without
   // modifying convex/migrate.ts or inventing a blob-backed runtime fallback.
   await t.run(async (ctx) => {
-    await ctx.db.insert(
+    await trackedDb(ctx).insert(
       "budgetDocuments",
       projectBudgetDocument(JSON.stringify(ADULT_BUDGET), "budget", 1000),
     );
-    await ctx.db.insert(
+    await trackedDb(ctx).insert(
       "budgetDocuments",
       projectBudgetDocument(JSON.stringify(MASON_BUDGET), "mason-budget", 1001),
     );
-    await ctx.db.insert(
+    await trackedDb(ctx).insert(
       "btcBalanceDocuments",
       projectBtcBalanceDocument(
         JSON.stringify(SNAPSHOT),
@@ -955,7 +956,7 @@ async function migrateAll(t: T) {
         1002,
       ),
     );
-    await ctx.db.insert(
+    await trackedDb(ctx).insert(
       "btcBalanceDocuments",
       projectBtcBalanceDocument(
         JSON.stringify(SON_BALANCES),
@@ -963,7 +964,7 @@ async function migrateAll(t: T) {
         1003,
       ),
     );
-    await ctx.db.insert(
+    await trackedDb(ctx).insert(
       "financeDocuments",
       projectFinanceDocument(JSON.stringify(FINANCES), 1004),
     );
@@ -976,7 +977,7 @@ async function seedPostingLedgers(t: T) {
       const sourceFile =
         owner === "victor" ? "btc-balance-snapshot" : "son-balances";
       const mirrorKey = owner === "victor" ? "river" : "son-river-mason";
-      await ctx.db.insert("btcBalanceDocuments", {
+      await trackedDb(ctx).insert("btcBalanceDocuments", {
         sourceFile,
         owner,
         schemaVersion: 2n,
@@ -999,7 +1000,7 @@ async function seedPostingLedgers(t: T) {
         postingActivatedAtMs: 1,
         updatedAtMs: 1,
       });
-      await ctx.db.insert("btcAccounts", {
+      await trackedDb(ctx).insert("btcAccounts", {
         key: mirrorKey,
         owner,
         label: "River",
@@ -1045,7 +1046,7 @@ async function replaceDataFile(t: T, name: string, data: unknown) {
       .withIndex("by_name", (q) => q.eq("name", name))
       .first();
     if (!doc) throw new Error(`replaceDataFile: no seeded blob named ${name}`);
-    await ctx.db.patch(doc._id, { data });
+    await trackedDb(ctx).patch(doc._id, { data });
   });
 }
 
@@ -1073,6 +1074,26 @@ beforeEach(async () => {
   t = testTables();
   openGates();
   await seedAll(t);
+  for (const table of COUNTED_TABLES) {
+    while (!(await t.run(ctx => backfillCountsPage(ctx, table))).complete) { /* bounded pages */ }
+  }
+});
+
+afterEach(async () => {
+  if (!t) return;
+  await t.run(async ctx => {
+    for (const table of COUNTED_TABLES) {
+      const state = await countState(ctx, table);
+      if (!state?.ready) continue;
+      const rows = await ctx.db.query(table).collect();
+      expect(state.counts.total, `${table} exact count`).toBe(BigInt(rows.length));
+      for (const owner of ["victor", "rachel", "mason", "maddox"] as const) {
+        expect(state.counts[owner], `${table}/${owner} exact count`).toBe(
+          BigInt(rows.filter(row => "owner" in row && row.owner === owner).length),
+        );
+      }
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1151,7 +1172,7 @@ describe("money is integer minor units", () => {
 
   it("projects signed spend, display magnitude, and refund signs", async () => {
     await t.run(async (ctx) => {
-      await ctx.db.insert("transactions", {
+      await trackedDb(ctx).insert("transactions", {
         txId: "adult-refund",
         owner: "victor",
         date: "2026-07-21",
@@ -1162,7 +1183,7 @@ describe("money is integer minor units", () => {
         sourceFile: "transactions",
         updatedAtMs: 1,
       });
-      await ctx.db.insert("transactions", {
+      await trackedDb(ctx).insert("transactions", {
         txId: "adult-refund-2",
         owner: "victor",
         date: "2026-07-22",
@@ -1210,7 +1231,7 @@ describe("money is integer minor units", () => {
 
   it("projects production purchase and refund signs without owner-based inversion", async () => {
     await t.run(async (ctx) => {
-      await ctx.db.insert("transactions", {
+      await trackedDb(ctx).insert("transactions", {
         txId: "production-adult-purchase",
         owner: "victor",
         date: "2026-03-15",
@@ -1221,7 +1242,7 @@ describe("money is integer minor units", () => {
         sourceFile: "transactions",
         updatedAtMs: 1,
       });
-      await ctx.db.insert("transactions", {
+      await trackedDb(ctx).insert("transactions", {
         txId: "production-adult-refund",
         owner: "victor",
         date: "2026-03-16",
@@ -1232,7 +1253,7 @@ describe("money is integer minor units", () => {
         sourceFile: "transactions",
         updatedAtMs: 1,
       });
-      await ctx.db.insert("transactions", {
+      await trackedDb(ctx).insert("transactions", {
         txId: "production-child-purchase",
         owner: "mason",
         date: "2026-03-17",
@@ -1612,7 +1633,7 @@ describe("indexed month and date", () => {
   it("bounds tied income rows by the same stable income-id order it returns", async () => {
     await t.run(async (ctx) => {
       for (const incomeId of ["income-z", "income-a"]) {
-        await ctx.db.insert("income", {
+        await trackedDb(ctx).insert("income", {
           sourceKey: `income:${incomeId}`,
           incomeId,
           owner: "victor",
@@ -1665,7 +1686,7 @@ describe("indexed month and date", () => {
     // contains only (owner, month), so taking one row from that range before
     // sorting by date returns an older creation-order row.
     await t.run(async (ctx) => {
-      await ctx.db.insert("transactions", {
+      await trackedDb(ctx).insert("transactions", {
         txId: "month-newest-transaction",
         owner: "victor",
         date: "2026-07-31",
@@ -1676,7 +1697,7 @@ describe("indexed month and date", () => {
         sourceFile: "transactions",
         updatedAtMs: 1,
       });
-      await ctx.db.insert("btcBuys", {
+      await trackedDb(ctx).insert("btcBuys", {
         buyId: "month-newest-buy",
         owner: "victor",
         date: "2026-07-31",
@@ -1688,7 +1709,7 @@ describe("indexed month and date", () => {
         sourceFile: "bitcoin-buys",
         updatedAtMs: 1,
       });
-      await ctx.db.insert("btcBillPays", {
+      await trackedDb(ctx).insert("btcBillPays", {
         billPayId: "month-newest-bill-pay",
         owner: "victor",
         date: "2026-07-31",
@@ -1817,7 +1838,7 @@ describe("public Linux/Android read contract", () => {
 
   it("returns scoped Bitcoin transfer history needed for revision-fenced correction", async () => {
     await t.run(async (ctx) => {
-      await ctx.db.insert("btcTransfers", {
+      await trackedDb(ctx).insert("btcTransfers", {
         transferId: "transfer-read-1",
         owner: "victor",
         date: "2026-08-01",
@@ -1911,7 +1932,7 @@ describe("public Linux/Android read contract", () => {
   it("fails closed when a full replacement snapshot exceeds the hard maximum", async () => {
     await t.run(async (ctx) => {
       for (let index = 0; index < 2001; index += 1) {
-        await ctx.db.insert("transactions", {
+        await trackedDb(ctx).insert("transactions", {
           txId: `overflow-${index}`,
           owner: "maddox",
           date: "2026-07-31",
@@ -2176,7 +2197,7 @@ describe("public Linux/Android read contract", () => {
             }
           : account,
       );
-      await ctx.db.patch(document._id, { accounts });
+      await trackedDb(ctx).patch(document._id, { accounts });
     });
 
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -2234,7 +2255,7 @@ describe("public Linux/Android read contract", () => {
       const template = document.accounts[0]!;
       const holding = template.holdings[0]!;
       const lot = holding.lots[0]!;
-      await ctx.db.patch(document._id, {
+      await trackedDb(ctx).patch(document._id, {
         accounts: [
           {
             ...template,
@@ -2319,7 +2340,7 @@ describe("public Linux/Android read contract", () => {
             }
           : account,
       );
-      await ctx.db.patch(document._id, { accounts });
+      await trackedDb(ctx).patch(document._id, { accounts });
     });
 
     // The thrown text is the other way this path can publish household data: a
@@ -2998,7 +3019,7 @@ describe("row mutations", () => {
         )
         .unique();
       expect(stored).not.toBeNull();
-      await ctx.db.patch(stored!._id, {
+      await trackedDb(ctx).patch(stored!._id, {
         category: "Bills",
         budgetEffect: undefined,
       });
@@ -3240,7 +3261,7 @@ describe("row mutations", () => {
   it("the finance schema rejects an unknown nested account owner", async () => {
     await expect(
       t.run(async (ctx) => {
-        await ctx.db.insert("financeDocuments", {
+        await trackedDb(ctx).insert("financeDocuments", {
           sourceFile: "finances",
           lastUpdated: "2026-07-26",
           accounts: [
@@ -3489,7 +3510,7 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
     // whose mutation needs an existing aggregate so the valid-token and hatch
     // cases can proceed past auth and complete the write.
     await t.run(async (ctx) => {
-      await ctx.db.insert(
+      await trackedDb(ctx).insert(
         "budgetDocuments",
         projectBudgetDocument(JSON.stringify(ADULT_BUDGET), "budget", 1000),
       );

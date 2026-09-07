@@ -1,3 +1,4 @@
+import { trackedDb } from "./rowTracking";
 import { ConvexError, v } from "convex/values";
 
 import type { Doc } from "./_generated/dataModel";
@@ -66,7 +67,7 @@ async function lockSource(ctx: MutationCtx, sourceFile: BtcSourceFile) {
     .withIndex("by_source_file", (q) => q.eq("sourceFile", sourceFile))
     .unique();
   if (!existing) {
-    await ctx.db.insert("runtimeSourceLocks", {
+    await trackedDb(ctx).insert("runtimeSourceLocks", {
       sourceFile,
       lockedAtMs: Date.now(),
     });
@@ -178,7 +179,7 @@ export async function applyBtcAccountDeltas(
   const now = Math.max(Date.now(), document.updatedAtMs + 1);
   const asOf = new Date(now).toISOString();
   await lockSource(ctx, sourceFile);
-  await ctx.db.patch(document._id, {
+  await trackedDb(ctx).patch(document._id, {
     accounts,
     totals: totalsFor(accounts),
     asOf,
@@ -197,7 +198,7 @@ export async function applyBtcAccountDeltas(
     if (!mirror) {
       throw new ConvexError(`Bitcoin account mirror ${key} is unavailable.`);
     }
-    await ctx.db.patch(mirror._id, {
+    await trackedDb(ctx).patch(mirror._id, {
       sats: account.sats,
       fiatCents: undefined,
       fiatValuation: undefined,
@@ -305,7 +306,7 @@ export const reconcileBtcAccounts = internalMutation({
 
     const now = Math.max(Date.now(), document.updatedAtMs + 1);
     await lockSource(ctx, sourceFile);
-    await ctx.db.patch(document._id, {
+    await trackedDb(ctx).patch(document._id, {
       accounts,
       totals: totalsFor(accounts),
       asOf: args.asOf,
@@ -322,7 +323,7 @@ export const reconcileBtcAccounts = internalMutation({
         )
         .unique();
       if (!mirror) throw new ConvexError(`Bitcoin account mirror ${key} is unavailable.`);
-      await ctx.db.patch(mirror._id, {
+      await trackedDb(ctx).patch(mirror._id, {
         sats: account.sats,
         fiatCents: undefined,
         fiatValuation: undefined,
@@ -366,7 +367,7 @@ export const reconcileBtcAccounts = internalMutation({
           );
         }
         baselined.push(row.txId);
-        await ctx.db.patch(row._id, {
+        await trackedDb(ctx).patch(row._id, {
           bitcoinAccountKey: accountKey,
           balancePostingVersion: 1n,
           updatedAtMs: Math.max(now, row.updatedAtMs + 1),
@@ -375,7 +376,7 @@ export const reconcileBtcAccounts = internalMutation({
     }
     // Recorded in the same transaction as activation: a lost response must not
     // be the only copy of what was claimed and what was left out.
-    await ctx.db.patch(document._id, {
+    await trackedDb(ctx).patch(document._id, {
       activationBaseline: {
         asOf: args.asOf,
         baselinedIncomeTxIds: baselined,
