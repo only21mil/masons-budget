@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const defaultConvexUrl = "https://keen-elephant-452.convex.cloud";
+const mobileAppCapabilities = ["todos:write", "budget:write"];
 const deviceProfiles = ["victor", "rachel", "mason", "maddox"];
 
 function parseEnvFile(file) {
@@ -132,6 +133,7 @@ if (dryRun) {
   console.log(`count=${count}`);
   console.log(`days=${days}`);
   console.log(`profile=${profile}`);
+  console.log(`capabilities=${mobileAppCapabilities.join(",")}`);
   console.log(`out=${outFile}`);
   console.log(`redacted-manifest=${manifestFile}`);
   process.exit(0);
@@ -174,6 +176,7 @@ for (let i = 1; i <= count; i++) {
     expiresAt,
     createdBy: `SAT-1508 build${build} slot-${i}`,
     profile,
+    capabilities: mobileAppCapabilities,
     token: syncToken,
   });
 

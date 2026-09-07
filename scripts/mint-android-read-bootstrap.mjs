@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Mint one short-lived Android read + todo-write bootstrap on a trusted host.
+// Mint one short-lived Android read + task and budget write bootstrap on a trusted host.
 // The raw proof is written only to a new mode-0600 file under $HOME/work. Convex
 // receives only its SHA-256 hash, and no secret or derivative is printed.
 
@@ -14,7 +14,7 @@ export const DEFAULT_TTL_MINUTES = 15;
 export const MAX_TTL_MINUTES = 30;
 export const REQUEST_TIMEOUT_MS = 10_000;
 export const RESPONSE_LIMIT_BYTES = 16 * 1024;
-export const ANDROID_BOOTSTRAP_CAPABILITIES = Object.freeze(["todos:write"]);
+export const ANDROID_BOOTSTRAP_CAPABILITIES = Object.freeze(["todos:write", "budget:write"]);
 export const DEVICE_PROFILES = Object.freeze(["victor", "rachel", "mason", "maddox"]);
 export const PAIRING_CODE_PATTERN =
   /^android-read-[A-Za-z0-9_-]{16,64}\.[A-Za-z0-9_-]{43}$/;
@@ -280,7 +280,7 @@ export async function main(args = process.argv.slice(2), processEnv = process.en
     homeDirectory: processEnv.HOME,
   });
   console.log(
-    `Minted one short-lived Android read + todo-write bootstrap into ${output}.`,
+    `Minted one short-lived Android read + task and budget write bootstrap into ${output}.`,
   );
   console.log("No pairing value or derivative was printed.");
 }

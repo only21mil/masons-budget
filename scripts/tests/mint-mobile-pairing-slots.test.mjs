@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -73,4 +73,35 @@ test("the archive-embedding b64 payload is no longer produced (L-10)", async () 
     "mint script must not instruct feeding distributable archive manifests",
   );
   assert.match(source, /redacted slot manifest/);
+});
+
+test("mobile mint explicitly requests only task and budget grants for the selected profile", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "vv-mobile-grants-test-"));
+  try {
+    const mock = path.join(directory, "mock-fetch.mjs");
+    await writeFile(mock, `
+      import assert from "node:assert/strict";
+      globalThis.fetch = async (url, options) => {
+        assert.equal(url, "https://stub.invalid/api/mutation");
+        const request = JSON.parse(options.body);
+        assert.equal(request.path, "dataFiles:createMobilePairing");
+        assert.equal(request.args.profile, "mason");
+        assert.deepEqual(request.args.capabilities, ["todos:write", "budget:write"]);
+        return { json: async () => ({ status: "success", value: {} }) };
+      };
+    `);
+    const result = spawnSync(process.execPath, [
+      "--import", mock, script, "--build", "999", "--count", "1", "--profile", "mason",
+      "--out", path.join(directory, "urls.json"),
+    ], {
+      cwd: repoRoot,
+      env: { PATH: process.env.PATH, HOME: directory, CONVEX_URL: "https://stub.invalid",
+        CONVEX_SYNC_TOKEN: "synthetic-test-sync-token" },
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(!result.stdout.includes("synthetic-test-sync-token"));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

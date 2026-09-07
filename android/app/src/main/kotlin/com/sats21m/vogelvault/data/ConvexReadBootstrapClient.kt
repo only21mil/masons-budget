@@ -305,7 +305,8 @@ internal class ConvexReadBootstrapClient(
                 ?: return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
             if (
                 returnedDeviceId != requestedDeviceCredential.deviceId ||
-                capabilities != listOf(TODO_WRITE_CAPABILITY)
+                capabilities.size != APP_WRITE_CAPABILITIES.size ||
+                capabilities.toSet() != APP_WRITE_CAPABILITIES
             ) {
                 return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
             }
@@ -352,7 +353,7 @@ internal class ConvexReadBootstrapClient(
     private companion object {
         const val BOOTSTRAP_PATH = "dataFiles:claimAndroidReadBootstrap"
         const val CONVEX_RESPONSE_FORMAT = "convex_encoded_json"
-        const val TODO_WRITE_CAPABILITY = "todos:write"
+        val APP_WRITE_CAPABILITIES = setOf("todos:write", "budget:write")
         const val MAX_ERROR_DATA_BYTES = 4_096
         val JSON = Json { isLenient = false; allowSpecialFloatingPointValues = false }
 

@@ -1131,7 +1131,7 @@ final class AppWritebackClient: Sendable {
             "deviceId": deviceID,
             "deviceToken": deviceToken,
         ])
-        guard let object = value as? [String: Any], object["ok"] as? Bool == true else {
+        guard Self.isValidPairingResponse(value, expectedDeviceID: deviceID) else {
             throw AppWritebackError.unexpectedResponse
         }
 
@@ -1141,6 +1141,15 @@ final class AppWritebackClient: Sendable {
             deviceToken: deviceToken,
             profile: profile,
         ) else { throw AppWritebackError.credentialStorageFailed }
+    }
+
+    static func isValidPairingResponse(_ value: Any, expectedDeviceID: String) -> Bool {
+        guard let object = value as? [String: Any],
+              object["ok"] as? Bool == true,
+              object["deviceId"] as? String == expectedDeviceID,
+              let capabilities = object["capabilities"] as? [String]
+        else { return false }
+        return Set(["todos:write", "budget:write"]).isSubset(of: Set(capabilities))
     }
 
     private func convexMutation(baseURL: URL, path: String, args: [String: Any]) async throws -> Any {

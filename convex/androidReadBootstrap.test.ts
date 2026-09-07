@@ -214,7 +214,7 @@ describe("createAndroidReadBootstrap", () => {
     expect(await storedBootstrap(pairId)).toEqual(original);
   });
 
-  it("defaults to read-only and accepts only an explicit exact todo-write grant", async () => {
+  it("defaults to read-only and preserves explicit legacy todo-only grants", async () => {
     const readOnly = await createBootstrap();
     expect((await storedBootstrap(readOnly.pairId))!.capabilities).toBeUndefined();
 
@@ -232,7 +232,7 @@ describe("createAndroidReadBootstrap", () => {
       [],
       ["todos:write", "todos:write"],
       ["transactions:write"],
-      ["todos:write", "budget:write"],
+      ["todos:write", "bitcoin:write"],
     ]) {
       const pairId = newPairId();
       await expect(

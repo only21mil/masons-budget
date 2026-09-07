@@ -101,8 +101,8 @@ test("mint sends the exact locked wire shape and writes only pairId dot canonica
     "token",
   ]);
   assert.equal(body.path, "dataFiles:createAndroidReadBootstrap");
-  assert.deepEqual(body.args.capabilities, ["todos:write"]);
-  assert.deepEqual(ANDROID_BOOTSTRAP_CAPABILITIES, ["todos:write"]);
+  assert.deepEqual(body.args.capabilities, ["todos:write", "budget:write"]);
+  assert.deepEqual(ANDROID_BOOTSTRAP_CAPABILITIES, ["todos:write", "budget:write"]);
   assert.equal(Object.isFrozen(ANDROID_BOOTSTRAP_CAPABILITIES), true);
   assert.equal(body.args.profile, "victor");
   assert.equal(body.args.token, syncToken);

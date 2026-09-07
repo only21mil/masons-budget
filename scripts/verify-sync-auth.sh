@@ -233,18 +233,18 @@ if (json?.status === "success") {
 }
 
 if (json?.status === "error") {
-  const data = json.errorData;
-  const dataText =
-    data === undefined || data === null
-      ? ""
-      : typeof data === "string"
-        ? data
-        : JSON.stringify(data);
-  const messageText =
-    typeof json.errorMessage === "string" ? json.errorMessage : "";
-  const combined = `${dataText}\n${messageText}`;
-  const isAuth = /unauthorized/i.test(combined);
-  const unconfigured = /not configured/i.test(combined);
+  // ConvexError data survives production redaction; ordinary Error text does not.
+  // Never infer authorization from a generic failure plus a successful control.
+  let data = json.errorData;
+  if (typeof data === "string") {
+    try { data = JSON.parse(data); } catch { /* Legacy errorData may be plain text. */ }
+  }
+  const code = data && typeof data === "object" ? data.code : undefined;
+  const legacyMessage = typeof data === "string" ? data : json.errorMessage;
+  const unconfigured = code === "SYNC_AUTH_UNCONFIGURED" ||
+    (code === undefined && legacyMessage === "Unauthorized: write auth is not configured (fail-closed).");
+  const isAuth = unconfigured || code === "SYNC_AUTH_REJECTED" ||
+    (code === undefined && legacyMessage === "Unauthorized: invalid sync token");
   emit(isAuth ? "rejected_auth" : "rejected_other", unconfigured);
   process.exit(0);
 }

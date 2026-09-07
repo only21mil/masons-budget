@@ -90,7 +90,37 @@ other_rejection() {
   printf '%s' '200'
 }
 
+structured_rejection() {
+  printf '%s' '{"status":"error","errorData":{"code":"SYNC_AUTH_REJECTED"},"errorMessage":"Server Error"}' >"$output"
+  printf '%s' '200'
+}
+
 case "${VERIFY_SYNC_AUTH_TEST_SCENARIO:?}" in
+  structured_string_enforced)
+    if [ "$kind" = "known_good" ]; then success; else
+      printf '%s' '{"status":"error","errorData":"{\"code\":\"SYNC_AUTH_REJECTED\"}","errorMessage":"Server Error"}' >"$output"
+      printf '%s' '200'
+    fi
+    ;;
+  structured_wrong_known_good)
+    structured_rejection
+    ;;
+  structured_unconfigured)
+    printf '%s' '{"status":"error","errorData":{"code":"SYNC_AUTH_UNCONFIGURED"},"errorMessage":"Server Error"}' >"$output"
+    printf '%s' '200'
+    ;;
+  redacted_known_good)
+    if [ "$kind" = "known_good" ]; then other_rejection; else structured_rejection; fi
+    ;;
+  structured_enforced)
+    if [ "$kind" = "known_good" ]; then success; else structured_rejection; fi
+    ;;
+  redacted_unrelated)
+    if [ "$kind" = "known_good" ]; then success; else other_rejection; fi
+    ;;
+  misleading_unauthorized)
+    if [ "$kind" = "known_good" ]; then success; else auth_rejection "Unrelated upstream unauthorized service"; fi
+    ;;
   enforced)
     if [ "$kind" = "known_good" ]; then success; else auth_rejection "Unauthorized: invalid sync token"; fi
     ;;
@@ -174,6 +204,14 @@ run_case() {
   printf 'ok - %s\n' "$name"
 }
 
+run_case "structured rejection survives production redaction" structured_enforced present 0 ENFORCED
+run_case "encoded structured rejection survives redaction" structured_string_enforced present 0 ENFORCED
+run_case "structured wrong supplied credential" structured_wrong_known_good present 1 WRONG-KNOWN-GOOD
+run_case "structured unconfigured token" structured_unconfigured present 1 TOKEN-UNCONFIGURED
+run_case "known-good unrelated failure remains outage" redacted_known_good present 1 OUTAGE
+run_case "structured rejection without known-good token" structured_enforced absent 2 CLOSED-UNCONFIRMED
+run_case "redacted unrelated failure is not auth proof" redacted_unrelated present 1 OUTAGE
+run_case "unrelated unauthorized wording is not auth proof" misleading_unauthorized present 1 OUTAGE
 run_case "verified write enforcement" enforced present 0 ENFORCED
 run_case "missing known-good credential" enforced absent 2 CLOSED-UNCONFIRMED
 run_case "wrong supplied known-good credential" wrong_known_good present 1 WRONG-KNOWN-GOOD

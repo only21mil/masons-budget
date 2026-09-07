@@ -120,12 +120,16 @@ function validateSyncToken(token?: string) {
         "is being rejected. Configure the deployment write credential — do " +
         "not set ALLOW_TOKENLESS_SYNC to recover.",
     );
-    throw new Error(
-      "Unauthorized: write auth is not configured (fail-closed).",
-    );
+    throw new ConvexError({
+      code: "SYNC_AUTH_UNCONFIGURED",
+      message: "Unauthorized: write auth is not configured (fail-closed).",
+    });
   }
   if (!token || !timingSafeEqualStrings(token, expected)) {
-    throw new Error("Unauthorized: invalid sync token");
+    throw new ConvexError({
+      code: "SYNC_AUTH_REJECTED",
+      message: "Unauthorized: invalid sync token",
+    });
   }
 }
 
@@ -225,7 +229,7 @@ const ANDROID_READ_BOOTSTRAP_PAIR_ID = /^android-read-[A-Za-z0-9_-]{16,64}$/;
 // The final character has two zero padding bits, so only these 16 values are valid.
 const ANDROID_READ_BOOTSTRAP_PROOF = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
-const ANDROID_TODO_WRITE_CAPABILITY = "todos:write" as const;
+const ANDROID_APP_WRITE_CAPABILITIES = ["todos:write", "budget:write"] as const;
 
 type AndroidReadBootstrapErrorCode =
   | "ANDROID_READ_BOOTSTRAP_NOT_FOUND"
@@ -268,11 +272,17 @@ function validateAndroidReadBootstrapProof(proof: string) {
 function validateAndroidReadBootstrapCapabilities(
   capabilities?: readonly string[],
 ) {
-  if (
-    capabilities !== undefined &&
-    (capabilities.length !== 1 ||
-      capabilities[0] !== ANDROID_TODO_WRITE_CAPABILITY)
-  ) {
+  // Preserve old todo-only slots without silently granting them budget access.
+  // New app slots explicitly request both grants. No other write grant belongs here.
+  if (capabilities === undefined) return;
+  const legacyTodoOnly =
+    capabilities.length === 1 && capabilities[0] === "todos:write";
+  const appWrites =
+    capabilities.length === ANDROID_APP_WRITE_CAPABILITIES.length &&
+    ANDROID_APP_WRITE_CAPABILITIES.every((capability) =>
+      capabilities.includes(capability),
+    );
+  if (!legacyTodoOnly && !appWrites) {
     androidReadBootstrapFailure("VALIDATION_FAILED");
   }
 }
@@ -951,8 +961,8 @@ export const createAndroidReadBootstrap = mutation({
     validateAndroidReadBootstrapPairId(pairId);
     validateAndroidReadBootstrapProofHash(proofHash);
     validateAndroidReadBootstrapCapabilities(capabilities);
-    const grantsTodoWrite = capabilities?.length === 1;
-    if (grantsTodoWrite !== (profile !== undefined)) {
+    const grantsAppWrite = capabilities !== undefined;
+    if (grantsAppWrite !== (profile !== undefined)) {
       androidReadBootstrapFailure("VALIDATION_FAILED");
     }
 
@@ -982,7 +992,7 @@ export const createAndroidReadBootstrap = mutation({
       capabilities:
         capabilities === undefined
           ? undefined
-          : [ANDROID_TODO_WRITE_CAPABILITY],
+          : normalizeDeviceCapabilities(capabilities),
       profile,
     });
     return { pairId, expiresAt };
@@ -992,7 +1002,7 @@ export const createAndroidReadBootstrap = mutation({
 /**
  * Redeem a raw 256-bit Android proof for the deployment's current read token.
  *
- * A todo-write bootstrap must also present a client-generated device credential.
+ * A write-enabled bootstrap must also present a client-generated device credential.
  * Its raw token is hashed before storage. Device creation and claim state share
  * one Convex transaction, so any failure leaves both sides unchanged.
  */
@@ -1052,8 +1062,8 @@ export const claimAndroidReadBootstrap = mutation({
 
     validateAndroidReadBootstrapCapabilities(bootstrap.capabilities);
     const capabilities = bootstrap.capabilities ?? [];
-    const grantsTodoWrite = capabilities.length === 1;
-    if (grantsTodoWrite) {
+    const grantsAppWrite = capabilities.length > 0;
+    if (grantsAppWrite) {
       if (deviceId === undefined || deviceToken === undefined) {
         androidReadBootstrapFailure("VALIDATION_FAILED");
       }
@@ -1084,7 +1094,7 @@ export const claimAndroidReadBootstrap = mutation({
         lastSeenAt: now,
         revokedAt: undefined,
         pairId,
-        capabilities: [ANDROID_TODO_WRITE_CAPABILITY],
+        capabilities: normalizeDeviceCapabilities(capabilities),
         profile: bootstrap.profile,
       });
 
@@ -1094,7 +1104,7 @@ export const claimAndroidReadBootstrap = mutation({
         readToken,
         pairedAt: now,
         deviceId,
-        capabilities: [ANDROID_TODO_WRITE_CAPABILITY],
+        capabilities: normalizeDeviceCapabilities(capabilities),
         profile: bootstrap.profile,
       };
     }

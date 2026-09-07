@@ -143,7 +143,7 @@ class ConvexReadBootstrapClientTest {
             """{"status":"success","value":{"ok":true,"readToken":"short","pairedAt":1,"capabilities":[]}}""",
             """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":"1","capabilities":[]}}""",
             """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":-1,"capabilities":[]}}""",
-            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":["todos:write"]}}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":["todos:write","budget:write"]}}""",
             """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":[],"deviceId":"unexpected"}}""",
             """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":{}},"extra":true}""",
             """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":[]},"extra":true}""",
@@ -162,15 +162,16 @@ class ConvexReadBootstrapClientTest {
             deviceToken = deviceToken,
         )
         val validValue =
-            """{"ok":true,"readToken":"$readToken","pairedAt":1,"deviceId":"${requested.deviceId}","capabilities":["todos:write"],"profile":"mason"}"""
+            """{"ok":true,"readToken":"$readToken","pairedAt":1,"deviceId":"${requested.deviceId}","capabilities":["todos:write","budget:write"],"profile":"mason"}"""
         val invalidValues = listOf(
-            """{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":["todos:write"]}""",
+            """{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":["todos:write","budget:write"]}""",
             validValue.replace(requested.deviceId, "different-device"),
-            validValue.replace("[\"todos:write\"]", "[]"),
-            validValue.replace("[\"todos:write\"]", "[\"todos:write\",\"todos:write\"]"),
+            validValue.replace("[\"todos:write\",\"budget:write\"]", "[\"todos:write\"]"),
+            validValue.replace("[\"todos:write\",\"budget:write\"]", "[]"),
+            validValue.replace("[\"todos:write\",\"budget:write\"]", "[\"todos:write\",\"todos:write\"]"),
             validValue.replace("todos:write", "budget:write"),
             validValue.replace("\"mason\"", "\"unknown\""),
-            validValue.replace("[\"todos:write\"]", "\"todos:write\""),
+            validValue.replace("[\"todos:write\",\"budget:write\"]", "\"todos:write\""),
             validValue.dropLast(1) + ",\"extra\":true}",
         )
 
@@ -283,6 +284,34 @@ class ConvexReadBootstrapClientTest {
     }
 
     @Test
+    fun `repository rejects a todo only response before storing any credential`() = runBlocking {
+        val store = RecordingBootstrapCredentialStore()
+        val effective = MutableConvexConfigSource(ConvexConfig())
+        val repository = ConvexReadBootstrapRepository(
+            store,
+            effective,
+            ConvexReadBootstrapClient(
+                RecordingBootstrapPoster(
+                    writeSuccess(readToken, deviceId).replace(
+                        "[\"todos:write\",\"budget:write\"]",
+                        "[\"todos:write\"]",
+                    ),
+                ),
+                ReadBootstrapDeviceCredentialGenerator {
+                    ConvexDeviceCredential(deviceId, deviceToken)
+                },
+            ),
+        )
+        assertEquals(
+            ReadBootstrapStatus.INVALID_RESPONSE,
+            repository.connect(bundle, requestTodoWrite = true),
+        )
+        assertNull(store.readConfig)
+        assertNull(store.deviceCredential)
+        assertFalse(effective.current().hasReadToken)
+    }
+
+    @Test
     fun `empty bundle is inert and failed commit never updates effective config`() = runBlocking {
         val context: Application = RuntimeEnvironment.getApplication()
         val delegate = context.getSharedPreferences("bootstrap-fail-${UUID.randomUUID()}", Context.MODE_PRIVATE)
@@ -313,7 +342,7 @@ class ConvexReadBootstrapClientTest {
         """{"status":"success","value":{"ok":true,"readToken":"$token","pairedAt":1800000000000,"capabilities":[]}}"""
 
     private fun writeSuccess(token: String, deviceId: String): String =
-        """{"status":"success","value":{"ok":true,"readToken":"$token","pairedAt":1800000000000,"deviceId":"$deviceId","capabilities":["todos:write"],"profile":"mason"}}"""
+        """{"status":"success","value":{"ok":true,"readToken":"$token","pairedAt":1800000000000,"deviceId":"$deviceId","capabilities":["todos:write","budget:write"],"profile":"mason"}}"""
 }
 
 private data class HttpTextResponseFixture(
@@ -344,7 +373,7 @@ private class EchoingWriteBootstrapPoster(private val readToken: String) : ReadB
         val deviceId = args["deviceId"]!!.jsonPrimitive.content
         return ReadBootstrapHttpResponse(
             200,
-            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"deviceId":"$deviceId","capabilities":["todos:write"],"profile":"mason"}}""",
+            """{"status":"success","value":{"ok":true,"readToken":"$readToken","pairedAt":1,"deviceId":"$deviceId","capabilities":["todos:write","budget:write"],"profile":"mason"}}""",
         )
     }
 

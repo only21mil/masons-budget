@@ -783,6 +783,34 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertNil(AppWriteSyncService.writeBlocker(requiresSyncToken: false))
     }
 
+    func testPairingResponseRequiresBudgetGrantAndMatchingDevice() {
+        let valid: [String: Any] = [
+            "ok": true,
+            "deviceId": "synthetic-device",
+            "capabilities": ["todos:write", "budget:write"],
+        ]
+        XCTAssertTrue(AppWritebackClient.isValidPairingResponse(
+            valid, expectedDeviceID: "synthetic-device",
+        ))
+        for capabilities in [[], ["todos:write"], ["budget:write"], ["transactions:write"]] as [[String]] {
+            var response = valid
+            response["capabilities"] = capabilities
+            XCTAssertFalse(AppWritebackClient.isValidPairingResponse(
+                response, expectedDeviceID: "synthetic-device",
+            ))
+        }
+        for missing in ["capabilities", "deviceId", "ok"] {
+            var response = valid
+            response.removeValue(forKey: missing)
+            XCTAssertFalse(AppWritebackClient.isValidPairingResponse(
+                response, expectedDeviceID: "synthetic-device",
+            ))
+        }
+        XCTAssertFalse(AppWritebackClient.isValidPairingResponse(
+            valid, expectedDeviceID: "another-device",
+        ))
+    }
+
     func testBudgetCategoryInit() {
         let cat = BudgetCategory(
             name: "Groceries",
