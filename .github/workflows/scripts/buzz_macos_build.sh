@@ -8,6 +8,8 @@ set -euo pipefail
 [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
 TARGET="$ARCH-apple-darwin"
 export TARGET
+# Use the same system Git TLS path that fetched the isolated source successfully.
+export CARGO_NET_GIT_FETCH_WITH_CLI=true
 python3 - <<'PY'
 import json, os
 from pathlib import Path

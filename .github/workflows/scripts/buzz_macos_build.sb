@@ -34,7 +34,10 @@
 (deny network-outbound (remote ip "localhost:*"))
 (allow network-outbound
     (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
+; UniformTypeIdentifiers needs the named database mapping endpoint.
+; LaunchServices open and database modification endpoints remain unavailable.
 (allow mach-lookup
+    (global-name "com.apple.lsd.mapdb")
     (global-name "com.apple.bsd.dirhelper")
     (global-name "com.apple.system.opendirectoryd.libinfo")
     (global-name "com.apple.system.notification_center")
