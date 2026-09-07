@@ -155,10 +155,22 @@ class ProcessTests(unittest.TestCase):
                 s.stop_builder(590)
             commands = [call.args[0] for call in run.call_args_list]
             self.assertTrue(all(command in (['/usr/bin/pkill', '-KILL', '-U', '590', '.'],
-                                           ['/usr/bin/pkill', '-KILL', '-u', '590', '.']) for command in commands))
+                                           ['/usr/bin/pkill', '-KILL', '-u', '590', '.'],
+                                           ['/bin/launchctl', 'bootout', 'user/590']) for command in commands))
+
+    def test_cleanup_refuses_other_uid_and_failed_domain_retirement(self):
+        with patch.object(s.subprocess, 'run') as run:
+            with self.assertRaises(s.BoundaryError):
+                s.stop_builder(501)
+            run.assert_not_called()
+        with patch.object(s.subprocess, 'run', return_value=types.SimpleNamespace(returncode=1)), \
+             patch.object(s, 'uid_processes') as scan:
+            with self.assertRaisesRegex(s.BoundaryError, 'user domain'):
+                s.stop_builder(590)
+            scan.assert_not_called()
 
     def test_cleanup_requires_two_empty_readbacks(self):
-        with patch.object(s.subprocess, 'run', return_value=types.SimpleNamespace(returncode=1)), \
+        with patch.object(s.subprocess, 'run', return_value=types.SimpleNamespace(returncode=0)), \
              patch.object(s, 'uid_processes', side_effect=[[], [42], [], []]) as scan, \
              patch.object(s.time, 'sleep'):
             s.stop_builder(590)
@@ -166,12 +178,16 @@ class ProcessTests(unittest.TestCase):
 
     def test_cleanup_reaps_killed_direct_child_before_empty_scan(self):
         events = []
-        with patch.object(s.subprocess, 'run', return_value=types.SimpleNamespace(returncode=0)), \
+        def command(argv, **_kwargs):
+            if argv[:2] == ['/bin/launchctl', 'bootout']:
+                events.append('retired')
+            return types.SimpleNamespace(returncode=0)
+        with patch.object(s.subprocess, 'run', side_effect=command), \
              patch.object(s.os, 'waitpid', side_effect=lambda pid, flags: events.append('reaped')), \
              patch.object(s, 'uid_processes', side_effect=lambda uid: events.append('scanned') or []), \
              patch.object(s.time, 'sleep'):
             s.stop_builder(590, 42)
-        self.assertEqual(events, ['reaped', 'scanned', 'scanned'])
+        self.assertEqual(events, ['reaped', 'retired', 'scanned', 'scanned'])
 
     def test_preexisting_uid_process_refuses_build_and_export(self):
         caller = types.SimpleNamespace(pw_uid=501, pw_gid=20)
