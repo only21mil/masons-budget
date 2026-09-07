@@ -29,8 +29,27 @@ gradle.projectsEvaluated {
         doLast {
             def artifacts = new TreeMap()
             def configurations = new TreeMap()
+            def excludedMetadata = new TreeMap()
             projectRoot.allprojects.sort { it.path }.each { project ->
+                def jvmProject = (project.pluginManager.hasPlugin('org.jetbrains.kotlin.android') ||
+                    project.pluginManager.hasPlugin('org.jetbrains.kotlin.jvm')) &&
+                    !project.pluginManager.hasPlugin('org.jetbrains.kotlin.multiplatform')
                 project.configurations.findAll { it.canBeResolved }.sort { it.name }.each { config ->
+                    def attributes = new TreeMap()
+                    config.attributes.keySet().each { key ->
+                        attributes[key.name] = config.attributes.getAttribute(key).toString()
+                    }
+                    // Kotlin's per-source-set IDE metadata buckets are not JVM
+                    // task classpaths. A debug-only bucket can lack the main
+                    // Compose BOM; the Android compile/runtime paths inherit it.
+                    // Keep every other configuration strict, including tools.
+                    if (jvmProject && config.name.endsWith('DependenciesMetadata') &&
+                        attributes['org.gradle.usage'] == 'kotlin-metadata' &&
+                        attributes['org.jetbrains.kotlin.platform.type'] == 'common' &&
+                        attributes['org.gradle.category'] == 'library') {
+                        excludedMetadata["${project.path}:${config.name}".toString()] = attributes
+                        return
+                    }
                     def resolved = config.incoming.artifactView {
                         componentFilter { id -> id instanceof ModuleComponentIdentifier }
                     }.artifacts.artifacts
@@ -66,7 +85,7 @@ gradle.projectsEvaluated {
             output.text = JsonOutput.toJson([
                 schema: 1, gradle: gradle.gradleVersion,
                 artifacts: artifacts, configurations: configurations,
-                pluginCache: cached, sdkPackages: packages
+                excludedMetadata: excludedMetadata, pluginCache: cached, sdkPackages: packages
             ]) + '\n'
         }
     }
