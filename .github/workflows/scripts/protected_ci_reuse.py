@@ -280,12 +280,13 @@ def capture(api, job, event, current_context):
             "context": current_context, "authority": authority(api)}
 
 
-def validate_source(source, *, job, run, pr, landed, before, current_authority, current_context, workflow_hash):
+def validate_source(source, *, job, run, pr, landed, before, current_authority, current_context, workflow_hash, job_attempt=None):
     """Pure decision boundary, also used by the focused refusal tests."""
     need(source.get("schema_version") == 1 and source.get("mode") == "source", "source proof is missing or relabeled")
     need(source["repository"] == REPO and source["job"] == job, "source repository/job mismatch")
     need(source["check_scope"] == CHECK_SCOPE[job], "source reused command scope differs")
-    need(source["run_id"] == run["id"] and source["run_attempt"] == run["run_attempt"], "source attempt mismatch")
+    expected_attempt = run["run_attempt"] if job_attempt is None else job_attempt
+    need(source["run_id"] == run["id"] and source["run_attempt"] == expected_attempt, "source job attempt mismatch")
     need(run["status"] == "completed" and run["conclusion"] == "success" and run["event"] == "pull_request",
          "source protected workflow did not succeed")
     need(run["path"] == workflow(job) and run["head_repository"]["full_name"] == REPO, "untrusted source workflow")
@@ -326,7 +327,24 @@ def acquire_reuse(api, job, head, current_context, before=None):
     completed = dt.datetime.fromisoformat(run["updated_at"].replace("Z", "+00:00"))
     age = (dt.datetime.now(dt.timezone.utc) - completed).total_seconds()
     need(0 <= age <= MAX_AGE, "source protected result expired")
-    artifact_name = f"ci-reuse-{run['run_attempt']}-{job}"
+    # Failed-jobs reruns retain successful jobs from their original attempts.
+    # Bind the latest execution of this job, not a refreshed workflow timestamp.
+    executions = api.pages(PREFIX + f"/actions/runs/{run['id']}/jobs?filter=all", "jobs")
+    executions = [item for item in executions if item["name"] == JOBS[job][1]]
+    need(bool(executions), "source job is absent")
+    need(all(type(item.get("run_attempt")) is int and item["run_attempt"] > 0 for item in executions),
+         "source job attempt must be positive")
+    job_attempt = max(item["run_attempt"] for item in executions)
+    executions = [item for item in executions if item["run_attempt"] == job_attempt]
+    need(len(executions) == 1, "latest source job is ambiguous")
+    source_job = executions[0]
+    need(source_job["status"] == "completed" and source_job["conclusion"] == "success",
+         "latest source job did not succeed")
+    need(job_attempt <= run["run_attempt"], "source job attempt is ahead of workflow")
+    job_completed = dt.datetime.fromisoformat(source_job["completed_at"].replace("Z", "+00:00"))
+    job_age = (dt.datetime.now(dt.timezone.utc) - job_completed).total_seconds()
+    need(0 <= job_age <= MAX_AGE, "source job result expired")
+    artifact_name = f"ci-reuse-{job_attempt}-{job}"
     artifacts = api.pages(PREFIX + f"/actions/runs/{run['id']}/artifacts", "artifacts")
     artifacts = [item for item in artifacts if item["name"] == artifact_name and not item["expired"]]
     need(len(artifacts) == 1, "source dependency/context proof missing or ambiguous")
@@ -352,7 +370,7 @@ def acquire_reuse(api, job, head, current_context, before=None):
              "fast-forward source ancestry unproven")
     validate_source(source, job=job, run=run, pr=pr, landed=landed, before=before,
                     current_authority=current_authority, current_context=current_context,
-                    workflow_hash=hashlib.sha256(Path(workflow(job)).read_bytes()).hexdigest())
+                    workflow_hash=hashlib.sha256(Path(workflow(job)).read_bytes()).hexdigest(), job_attempt=job_attempt)
     # Fast-forward landing keeps the source SHA. Its new main checks may
     # already be pending, so select PR workflow suites explicitly rather than
     # confusing that fresh run with the original protected source result.
@@ -371,10 +389,6 @@ def acquire_reuse(api, job, head, current_context, before=None):
     checks = select_checks([check for check in api.pages(PREFIX + f"/commits/{source_head}/check-runs?filter=all", "checks")
                             if (check.get("check_suite") or {}).get("id") in suites],
                            current_authority["required_checks"], source_head, allowed_skips)
-    jobs = api.pages(PREFIX + f"/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs", "jobs")
-    jobs = [item for item in jobs if item["name"] == JOBS[job][1]]
-    need(len(jobs) == 1 and jobs[0]["status"] == "completed" and jobs[0]["conclusion"] == "success",
-         "source job did not succeed in the bound attempt")
     # The workflow result and check suite must describe this same source run.
     protected_name = JOBS[job][1]
     own_checks = [check for check in checks if check["name"] == protected_name]
@@ -386,7 +400,7 @@ def acquire_reuse(api, job, head, current_context, before=None):
          "source protected workflows changed during reuse verification")
     need(api.one(PREFIX + "/git/ref/heads/main")["object"]["sha"] == head, "main moved during reuse verification")
     return {"schema_version": 1, "mode": "reused", "repository": REPO, "job": job, "head_sha": head,
-            "landed": landed, "pull_request": pr, "source_run": run, "source_job": jobs[0],
+            "landed": landed, "pull_request": pr, "source_run": run, "source_job": source_job,
             "reused_steps": CHECK_SCOPE[job], "other_steps": "Fresh under their unchanged workflow conditions; no old build or design artifact is republished",
             "source_artifact": artifact, "source_proof": source, "protected_checks": checks,
             "source_workflows": qualified_runs, "inapplicable_source_checks": sorted(allowed_skips), "candidate_commit": candidate, "tested_commit": tested, "push_before": before,
@@ -422,7 +436,8 @@ def main():
     with open(os.environ["GITHUB_OUTPUT"], "a") as output:
         output.write(f"reused={'true' if reused else 'false'}\n")
     summary = (f"Verified protected-result reuse for {JOBS[args.job][1]} from run {proof['source_run']['id']} "
-               f"attempt {proof['source_run']['run_attempt']} at {proof['source_proof']['head_sha']}. "
+               f"job attempt {proof['source_proof']['run_attempt']} at {proof['source_proof']['head_sha']}; "
+               f"latest workflow attempt {proof['source_run']['run_attempt']} passed. "
                f"Exact landed commit: {proof['head_sha']}. Reused commands: {', '.join(CHECK_SCOPE[args.job])}. "
                "Other steps keep their ordinary fresh execution and artifact provenance. Full proof is in this job's ci-reuse artifact."
                if reused else f"Fresh {JOBS[args.job][1]} execution. {proof.get('reason', 'Capturing source proof for a later identical-tree merge.')} ")

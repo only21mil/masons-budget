@@ -12,9 +12,17 @@ change an existing receipt's identity.
 An internal PR job captures the exact candidate, tested commit, base, tree,
 workflow bytes, named command scope, installed dependency context and public
 protection inventory. The workflow uploads that proof only after successful
-work. A later main job downloads the exact source run/attempt artifact and
+work. A later main job downloads the exact source run/job-attempt artifact and
 verifies GitHub's archive digest, the successful job and its app-bound check.
 It independently reads candidate and tested commit objects and their trees.
+
+A failed-jobs rerun may retain successful jobs from an earlier attempt. Reuse
+binds each job to its latest successful execution and original proof artifact,
+while requiring the latest workflow result and current protected checks to
+pass. A newer failed, skipped, cancelled or pending execution of that job cannot
+fall back to an older success. The selected job must have completed within 24
+hours; another job's rerun cannot refresh that age. Provenance distinguishes
+the original job attempt from the latest successful workflow attempt.
 
 Budget's normal fast-forward landing is eligible when main is the exact source
 head, the push's previous commit is the captured tested base and provider
