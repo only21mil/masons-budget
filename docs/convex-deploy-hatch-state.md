@@ -14,13 +14,14 @@ lowercase, no whitespace. Any other value (`TRUE`, `1`, `yes`, `" true"`,
 `convex/mutationAuth.test.ts` ("only the exact string \"true\" opens the
 hatch") and `convex/readAuth.test.ts`.
 
-Gates implementing the precedence (hatch checked first, then token):
+Gates implementing the precedence (hatch checked first, then token) live in
+`convex/tokenAuth.ts` and are imported by:
 
 | Module | Sync gate | Read gate |
 | --- | --- | --- |
 | `convex/dataFiles.ts` | `validateSyncToken` | `validateReadToken` |
-| `convex/tables.ts` (mirror) | `validateSyncToken` | `validateReadToken` |
-| `convex/writeback.ts` (mirror) | `validateSyncToken` | — |
+| `convex/tables.ts` | `validateSyncToken` | `validateReadToken` |
+| `convex/writeback.ts` | `validateSyncToken` | — |
 | `convex/marketQuotes.ts` | — | `validateReadToken` |
 
 `convex/readCanary.ts` is deliberately hatch-free and fails closed on an

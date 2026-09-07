@@ -90,6 +90,7 @@ const modules: Record<string, () => Promise<unknown>> = {
   "./migrate.ts": () => import("./migrate"),
   "./tables.ts": () => import("./tables"),
   "./todoNormalize.ts": () => import("./todoNormalize"),
+  "./tokenAuth.ts": () => import("./tokenAuth"),
 };
 
 function testTables() {

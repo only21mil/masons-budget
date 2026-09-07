@@ -27,15 +27,16 @@
 // from resurfacing stale content. The source blobs otherwise stay byte-identical
 // until clients have moved and a later cutover removes them.
 //
-// THREE MIRRORS LIVE IN THIS FILE, ALL FOR THE SAME REASON
+// THREE MIRRORS USED TO LIVE IN THIS FILE FOR THE SAME REASON
 //
-// Convex functions cannot import from outside `convex/`, so the auth gates
-// (convex/dataFiles.ts), the visibility rule (shared/domain/src/family.ts, port
-// of MasonsBudget/MasonsBudget/Models/SharedEnums.swift) and the decimal-safe
-// money parser (shared/domain/src/money.ts) are hand-copied below. Each mirror
-// names its canonical source. convex/todoNormalize.ts already does exactly this
-// and says the same thing; the "auth" block in tables.test.ts pins the auth
-// mirror against dataFiles.ts so the two cannot silently drift.
+// Convex functions cannot import from outside `convex/`, so the visibility
+// rule (shared/domain/src/family.ts, port of SharedEnums.swift) and the
+// decimal-safe money parser (shared/domain/src/money.ts) are hand-copied
+// below. Deployment-token auth gates now live once in convex/tokenAuth.ts
+// (shared with dataFiles / writeback / marketQuotes). Each remaining mirror
+// names its canonical source. convex/todoNormalize.ts already does exactly
+// this and says the same thing; auth parity is pinned by the auth block in
+// tables.test.ts against dataFiles.ts through the shared module.
 
 import { ConvexError, v } from "convex/values";
 
@@ -47,7 +48,6 @@ import {
   authenticateDeviceForRead,
   markDeviceSeen,
   requireTaskProfileBinding,
-  timingSafeEqualStrings,
   type DeviceProfile,
 } from "./deviceAuth";
 import {
@@ -68,29 +68,10 @@ import {
   fiatValuationValidator,
 } from "./schema";
 import { normalizeTodoRecord, todoUpdatedMs } from "./todoNormalize";
-
-declare const process: { env: Record<string, string | undefined> };
+import { validateReadToken, validateSyncToken } from "./tokenAuth";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MIRROR 1 — auth gates
-//
-// CANONICAL SOURCE: convex/dataFiles.ts (validateReadToken / validateSyncToken).
-// Copied verbatim, including the hatch-outranks-the-token precedence, the
-// timing-safe token comparison, and the asymmetric throw types (sync throws
-// Error, read throws ConvexError). Do not "tidy" either difference here: the
-// point of a mirror is that a caller cannot tell which file answered it. If you
-// change a gate in dataFiles.ts you MUST change it here, and the auth block in
-// tables.test.ts will fail until you do.
-//
-// THE ESCAPE HATCH OUTRANKS THE TOKEN. ALLOW_TOKENLESS_{READ,SYNC}="true" admits
-// the call even when the matching token IS configured, and is checked first. The
-// full argument for that ordering is in the banner in dataFiles.ts; the short
-// version is that the opposite ordering locks the whole household out remotely
-// the instant a token is set, and nothing detects that.
-//
-// UNAUTHENTICATED-CALLER ERROR DISCIPLINE (mirrors dataFiles.ts): the
-// client-visible rejection is generic and names no environment variable; the
-// specific configuration detail goes to the server log only.
+// Auth gates — shared module convex/tokenAuth.ts
 //
 // CONVEX_SYNC_TOKEN is the legacy full-admin write credential, not a paired
 // device capability. It authorizes every mutation in this compatibility
@@ -99,67 +80,6 @@ declare const process: { env: Record<string, string | undefined> };
 // only through a coordinated client migration; do not describe it as
 // `bitcoin:write`-scoped.
 // ─────────────────────────────────────────────────────────────────────────────
-
-function warnPermissive(hatchVar: string, tokenVar: string, tokenSet: boolean) {
-  console.warn(
-    tokenSet
-      ? `PERMISSIVE: ${hatchVar}=true is admitting this call and ${tokenVar} ` +
-          `is set but IGNORED. This deployment is NOT enforcing auth. Remove ` +
-          `${hatchVar} to flip enforcement on.`
-      : `PERMISSIVE: ${hatchVar}=true is admitting this call unauthenticated ` +
-          `(${tokenVar} is not configured). This deployment is NOT enforcing auth.`,
-  );
-}
-
-function validateSyncToken(token?: string) {
-  const expected = process.env.CONVEX_SYNC_TOKEN;
-  if (process.env.ALLOW_TOKENLESS_SYNC === "true") {
-    warnPermissive(
-      "ALLOW_TOKENLESS_SYNC",
-      "CONVEX_SYNC_TOKEN",
-      Boolean(expected),
-    );
-    return;
-  }
-  if (!expected) {
-    console.error(
-      "AUTH-FAIL-CLOSED: CONVEX_SYNC_TOKEN is not configured; every write " +
-        "is being rejected. Configure the deployment write credential — do " +
-        "not set ALLOW_TOKENLESS_SYNC to recover.",
-    );
-    throw new Error(
-      "Unauthorized: write auth is not configured (fail-closed).",
-    );
-  }
-  if (!token || !timingSafeEqualStrings(token, expected)) {
-    throw new Error("Unauthorized: invalid sync token");
-  }
-}
-
-function validateReadToken(token?: string) {
-  const expected = process.env.CONVEX_READ_TOKEN;
-  if (process.env.ALLOW_TOKENLESS_READ === "true") {
-    warnPermissive(
-      "ALLOW_TOKENLESS_READ",
-      "CONVEX_READ_TOKEN",
-      Boolean(expected),
-    );
-    return;
-  }
-  if (!expected) {
-    console.error(
-      "AUTH-FAIL-CLOSED: CONVEX_READ_TOKEN is not configured; every read " +
-        "is being rejected. Configure the deployment read credential — do " +
-        "not set ALLOW_TOKENLESS_READ to recover.",
-    );
-    throw new ConvexError(
-      "Unauthorized: read auth is not configured (fail-closed).",
-    );
-  }
-  if (!token || !timingSafeEqualStrings(token, expected)) {
-    throw new ConvexError("Unauthorized: invalid read token");
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MIRROR 2 — the family / visibility rule

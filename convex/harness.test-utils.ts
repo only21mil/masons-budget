@@ -28,6 +28,7 @@ const modules: Record<string, () => Promise<unknown>> = {
   "./readCanary.ts": () => import("./readCanary"),
   "./tables.ts": () => import("./tables"),
   "./todoNormalize.ts": () => import("./todoNormalize"),
+  "./tokenAuth.ts": () => import("./tokenAuth"),
 };
 
 export function testConvex() {

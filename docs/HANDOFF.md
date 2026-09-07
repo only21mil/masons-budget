@@ -1,5 +1,10 @@
 # The Vogel Vault — build handoff
 
+> **STALE (Lane D, 2026-09-07).** Tree audit below is dated **2026-07-29** at
+> `62c41bb`. Treat this as historical context only. Prefer `AGENTS.md`, current
+> GitHub/Buzz issues, and dated runbooks under `docs/` for live posture. Do not
+> copy queue counts or production claims from this file without re-verifying.
+
 > Redesign work starts with [`Design/FOUNDATIONS.md`](../Design/FOUNDATIONS.md).
 > It is the canonical cross-client source for accepted tokens, asset geometry,
 > font files, provenance, and proposed-versus-accepted status. Prototype HTML

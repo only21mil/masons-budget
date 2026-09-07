@@ -38,68 +38,14 @@
 import { ConvexError, v } from "convex/values";
 import type { DataModel } from "./_generated/dataModel";
 import { mutation, type MutationCtx } from "./_generated/server";
-import { timingSafeEqualStrings } from "./deviceAuth";
 import { requireIsoDate } from "./dateValidation";
 import { mergeTodoPayload, normalizeTodoRecord, TODO_LANES } from "./todoNormalize";
+import { validateSyncToken } from "./tokenAuth";
 
 export { isRealIsoDate } from "./dateValidation";
 
-declare const process: { env: Record<string, string | undefined> };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Auth
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * MIRROR of `validateSyncToken` in dataFiles.ts, including the escape-hatch
- * precedence documented in that file's banner (ALLOW_TOKENLESS_SYNC=true admits
- * the call even when CONVEX_SYNC_TOKEN is set — the hatch outranks the token, so
- * removing the hatch is the enforcement flip and re-setting it is the rollback),
- * the timing-safe token comparison, and the generic client-visible rejection
- * that names no environment variable (the specific detail goes to the server
- * log only — see dataFiles.ts).
- *
- * A mirror rather than an import because the canonical function is module-
- * private in `dataFiles.ts`, which this change does not own: that file is live
- * and enforcing in production and is not worth touching for a refactor. The
- * mirror is not trusted on inspection — `writeback.test.ts` drives this gate and
- * the real `dataFiles:sync` gate through the same env matrix and asserts they
- * accept and reject identically, so a future edit to one that is not mirrored to
- * the other fails the suite.
- *
- * The obvious cleanup (export the canonical one from dataFiles.ts and delete
- * this) is a one-line change for whoever next owns that file.
- *
- * Never logs a token or whether the caller supplied one that matched.
- */
-function validateSyncToken(token?: string) {
-  const expected = process.env.CONVEX_SYNC_TOKEN;
-  if (process.env.ALLOW_TOKENLESS_SYNC === "true") {
-    console.warn(
-      expected
-        ? "PERMISSIVE: ALLOW_TOKENLESS_SYNC=true is admitting this call and " +
-            "CONVEX_SYNC_TOKEN is set but IGNORED. This deployment is NOT " +
-            "enforcing auth. Remove ALLOW_TOKENLESS_SYNC to flip enforcement on."
-        : "PERMISSIVE: ALLOW_TOKENLESS_SYNC=true is admitting this call " +
-            "unauthenticated (CONVEX_SYNC_TOKEN is not configured). This " +
-            "deployment is NOT enforcing auth.",
-    );
-    return;
-  }
-  if (!expected) {
-    console.error(
-      "AUTH-FAIL-CLOSED: CONVEX_SYNC_TOKEN is not configured; every write " +
-        "is being rejected. Configure the deployment write credential — do " +
-        "not set ALLOW_TOKENLESS_SYNC to recover.",
-    );
-    throw new Error(
-      "Unauthorized: write auth is not configured (fail-closed).",
-    );
-  }
-  if (!token || !timingSafeEqualStrings(token, expected)) {
-    throw new Error("Unauthorized: invalid sync token");
-  }
-}
+// Auth: validateSyncToken from convex/tokenAuth.ts (shared with dataFiles /
+// tables). Hatch precedence and client-visible error discipline live there.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rejection
@@ -154,7 +100,7 @@ function isAdult(member: FamilyMember): boolean {
   return ADULTS.includes(member);
 }
 
-/** Mirror of mc2TransactionsFileName. Victor and Rachel share one file. */
+/** Mirror of transactionsDataFileName. Victor and Rachel share one file. */
 export function transactionsFileFor(owner: FamilyMember): string {
   switch (owner) {
     case "victor":

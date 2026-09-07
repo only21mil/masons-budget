@@ -1,4 +1,7 @@
-// Mason's Budget App — SwiftData models (DRAFT)
+// Mason's Budget App — SwiftData models (DRAFT — STALE)
+//
+// Lane D 2026-09-07: retained as historical sketch only. Not compiled into any
+// client target. Production SwiftData / app models live under MasonsBudget/.
 //
 // Schema mirrors ~/Workspace MC2/mission-control/*.json so the iOS app and
 // MC2 read/write the same data. See PLAN.md for context.

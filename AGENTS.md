@@ -143,7 +143,7 @@ the gated code is deployed, production was recorded as `ENFORCED`, and
 it is not the current posture and must not be copied into a new status report.
 This documentation update did not re-probe production.
 
-`validateReadToken` in `convex/dataFiles.ts` gates `get`, `getVersions`, `list`
+`validateReadToken` in `convex/tokenAuth.ts` (used by `dataFiles.ts`) gates `get`, `getVersions`, `list`
 and `listTodoTombstones`. Clients send a runtime-injected read token; never
 bundle, hardcode, commit, print, or document its value.
 

@@ -50,6 +50,7 @@ const modules: Record<string, () => Promise<unknown>> = {
   "./deviceAuth.ts": () => import("./deviceAuth"),
   "./migrate.ts": () => import("./migrate"),
   "./tables.ts": () => import("./tables"),
+  "./tokenAuth.ts": () => import("./tokenAuth"),
 };
 
 const mutation = <Args extends Record<string, unknown>, Result>(path: string) =>

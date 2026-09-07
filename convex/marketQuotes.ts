@@ -1,16 +1,15 @@
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation, query } from "./_generated/server";
-import { timingSafeEqualStrings } from "./deviceAuth";
 import {
   MARKET_SYMBOLS,
   acquireFixedMarketQuotes,
   type MarketQuoteErrorCode,
   type MarketSymbol,
 } from "./marketQuoteAcquire";
+import { validateReadToken } from "./tokenAuth";
 
-declare const process: { env: Record<string, string | undefined> };
 
 const marketSymbolValidator = v.union(
   v.literal("BTC"),
@@ -62,45 +61,8 @@ function canonicalQuoteInstantMillis(value: string): number | null {
     : null;
 }
 
-function warnPermissive(hatchVar: string, tokenVar: string, tokenSet: boolean) {
-  console.warn(
-    tokenSet
-      ? `PERMISSIVE: ${hatchVar}=true is admitting this call and ${tokenVar} ` +
-          `is set but IGNORED. This deployment is NOT enforcing auth. Remove ` +
-          `${hatchVar} to flip enforcement on.`
-      : `PERMISSIVE: ${hatchVar}=true is admitting this call unauthenticated ` +
-          `(${tokenVar} is not configured). This deployment is NOT enforcing auth.`,
-  );
-}
-
-// Mirrors the existing runtime-injected read boundary in dataFiles.ts. Keep the
-// hatch precedence, the timing-safe comparison, and the generic client-visible
-// rejection aligned so clients cannot distinguish which authenticated read
-// surface answered them.
-function validateReadToken(token?: string) {
-  const expected = process.env.CONVEX_READ_TOKEN;
-  if (process.env.ALLOW_TOKENLESS_READ === "true") {
-    warnPermissive(
-      "ALLOW_TOKENLESS_READ",
-      "CONVEX_READ_TOKEN",
-      Boolean(expected),
-    );
-    return;
-  }
-  if (!expected) {
-    console.error(
-      "AUTH-FAIL-CLOSED: CONVEX_READ_TOKEN is not configured; every read " +
-        "is being rejected. Configure the deployment read credential — do " +
-        "not set ALLOW_TOKENLESS_READ to recover.",
-    );
-    throw new ConvexError(
-      "Unauthorized: read auth is not configured (fail-closed).",
-    );
-  }
-  if (!token || !timingSafeEqualStrings(token, expected)) {
-    throw new ConvexError("Unauthorized: invalid read token");
-  }
-}
+// Auth: validateReadToken from convex/tokenAuth.ts (shared with dataFiles /
+// tables). Hatch precedence and client-visible error discipline live there.
 
 function unavailableQuote(
   symbol: MarketSymbol,
