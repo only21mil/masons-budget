@@ -132,6 +132,9 @@ def profile_check(profile, identifier, certificate):
         actual = permissions.get(key)
         if key == 'keychain-access-groups':
             require(isinstance(actual, list) and all(v in actual or TEAM + '.*' in actual for v in value), 'profile keychain group differs')
+        elif key == 'com.apple.developer.devicecheck.appattest-environment' and isinstance(actual, list):
+            # Apple profiles authorize a set; the signed app still gets only production.
+            require(all(type(item) is str for item in actual) and value in actual, 'profile App Attest permission differs')
         else:
             require(type(actual) is type(value) and actual == value, 'profile entitlement differs: ' + key)
     require(permissions.get('beta-reports-active') is True, 'profile lacks TestFlight reporting')

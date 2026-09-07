@@ -49,7 +49,10 @@ def app_fixture(app):
 
 def profile(identifier):
     permissions = ios.expected_entitlements(identifier)
-    permissions['keychain-access-groups'] = [ios.TEAM + '.*']
+    permissions['keychain-access-groups'] = [ios.TEAM + '.*', 'com.apple.token']
+    if identifier == ios.BUNDLE:
+        # Shape of the actual Apple-generated parent profile, September 7, 2026.
+        permissions['com.apple.developer.devicecheck.appattest-environment'] = ['development', 'production']
     permissions['beta-reports-active'] = True
     return {'TeamIdentifier': [ios.TEAM], 'ApplicationIdentifierPrefix': [ios.TEAM],
             'ExpirationDate': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=30),
@@ -148,6 +151,16 @@ class IosReleaseTests(unittest.TestCase):
                     bad = copy.deepcopy(good); bad['Entitlements'].pop(key)
                     with self.assertRaises(ValueError):
                         ios.profile_check(bad, identifier, b'public-certificate-fixture')
+
+    def test_app_attest_profile_permission_keeps_signed_entitlement_production(self):
+        key = 'com.apple.developer.devicecheck.appattest-environment'
+        p = profile(ios.BUNDLE)
+        signed = ios.profile_check(p, ios.BUNDLE, b'public-certificate-fixture')
+        self.assertEqual(signed[key], 'production')
+        for permission in (['development'], [], ['production', False], 'development'):
+            p['Entitlements'][key] = permission
+            with self.assertRaises(ValueError):
+                ios.profile_check(p, ios.BUNDLE, b'public-certificate-fixture')
 
     def test_profile_rejects_development_expired_wrong_team(self):
         for changed in ({'ProvisionedDevices': ['device']}, {'ProvisionsAllDevices': True},
