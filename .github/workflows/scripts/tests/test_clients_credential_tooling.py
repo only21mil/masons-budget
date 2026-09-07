@@ -79,6 +79,8 @@ class CredentialToolingRoutingTests(unittest.TestCase):
         pattern = wide_path_pattern(self.clients)
         for changed_path in (
             ".github/workflows/clients.yml",
+            ".github/workflows/scripts/protected_ci_reuse.py",
+            ".github/workflows/scripts/tests/test_protected_ci_reuse.py",
             "package.json",
             "package-lock.json",
             "shared/domain/src/index.ts",

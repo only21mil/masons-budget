@@ -18,6 +18,7 @@ APPLE_PATH = re.compile(
     r"shared/domain/fixtures/convex-wire-golden/|"
     r"scripts/regenerate-xcode-project\.sh$|"
     r"\.github/workflows/scripts/ensure_ios_simulator\.py$|"
+    r"\.github/workflows/scripts/(?:protected_ci_reuse\.py|tests/test_protected_ci_reuse\.py)$|"
     r"\.github/workflows/swift\.yml$"
     r")"
 )

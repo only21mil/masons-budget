@@ -108,6 +108,9 @@ jobs:
       - name: Secret presence reporter tests
         run: python3 .github/workflows/scripts/tests/test_report_secret_presence.py
 
+      - name: Protected CI reuse proof tests
+        run: python3 .github/workflows/scripts/tests/test_protected_ci_reuse.py
+
       - name: Apple changed-tree routing tests
         run: python3 .github/workflows/scripts/tests/test_apple_changed_tree.py
 

@@ -84,6 +84,7 @@ env:
   # Both registered Apple hosts must expose this exact version through their
   # selected /Applications/Xcode.app. A mismatch fails before build work starts.
   XCODE_VERSION: '26.6'
+  BUDGET_CI_REUSE_EPOCH: ${{ vars.BUDGET_CI_REUSE_EPOCH }}
 
 jobs:
   changes:
@@ -214,10 +215,16 @@ jobs:
       }}
     timeout-minutes: 45
 
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       # Self-hosted: setup-xcode expects the hosted image's versioned bundles
       # (/Applications/Xcode_26.6.app). Our build hosts have a single /Applications/
@@ -327,7 +334,14 @@ jobs:
       # exists to catch an iOS-only API landing in shared code. deploy.yml offers
       # a macos platform, so a Mac build that has silently rotted is a release
       # that fails at the archive step.
+      - name: Verify protected source result reuse
+        id: reuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/workflows/scripts/protected_ci_reuse.py --job swift
+
       - name: macOS build
+        if: steps.reuse.outputs.reused != 'true'
         working-directory: MasonsBudget
         run: |
           set -euo pipefail
@@ -351,3 +365,11 @@ jobs:
           path: ${{ runner.temp }}/MasonsBudget-iOS.xcresult
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: Retain protected result provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-reuse-${{ github.run_attempt }}-swift
+          path: protected-ci-reuse.json
+          if-no-files-found: error
+          retention-days: 7
