@@ -461,11 +461,10 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
     }
 
     @MainActor
-    func testCompleteTransactionSyncReapsAdoptedCSVAndVoiceRowsDeletedElsewhere() throws {
+    func testMasonRowSnapshotsReapAdoptedCSVAndVoiceRowsThroughChildSync() async throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: Transaction.self, configurations: configuration)
         let context = ModelContext(container)
-        let service = ConvexSyncService(context: context)
 
         context.insert(Transaction(
             id: "csv-adopted",
@@ -473,7 +472,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             merchant: "CSV Local",
             amount: 23,
             category: "Other",
-            owner: .victor,
+            owner: .mason,
             createdBy: "csv_import",
             sourceFile: "csv-import-synthetic",
         ))
@@ -483,7 +482,7 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             merchant: "Voice Local",
             amount: 17,
             category: "Other",
-            owner: .victor,
+            owner: .mason,
             createdBy: "voice",
             sourceFile: "voice-synthetic",
         ))
@@ -493,40 +492,40 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             merchant: "Local only",
             amount: 11,
             category: "Other",
-            owner: .victor,
+            owner: .mason,
             createdBy: "csv_import",
             sourceFile: "csv-import-not-yet-adopted",
         ))
+        context.insert(Transaction(
+            id: "optimistic-local",
+            date: .now,
+            merchant: "Pending app entry",
+            amount: 9,
+            category: "Other",
+            owner: .mason,
+            createdBy: "app",
+        ))
         try context.save()
 
-        try service.replaceTransactions(
-            ownedBy: [.victor],
-            with: [
-                Transaction(
-                    id: "csv-adopted",
-                    date: .now,
-                    merchant: "CSV Remote",
-                    amount: 23,
-                    category: "Other",
-                    owner: .victor,
-                    createdBy: "mc2",
-                    sourceFile: "transactions.json",
-                    updatedAtMs: 42,
-                ),
-                Transaction(
-                    id: "voice-adopted",
-                    date: .now,
-                    merchant: "Voice Remote",
-                    amount: 17,
-                    category: "Other",
-                    owner: .victor,
-                    createdBy: "mc2",
-                    sourceFile: "transactions.json",
-                    updatedAtMs: 43,
-                ),
-            ],
-            rowAuthoritative: true,
+        let adoptionReader = ConvexDataReader(
+            client: try makeSnapshotClient(valueForPath: { path in
+                XCTAssertEqual(path, "tables:listTransactions")
+                return Self.masonRowSnapshot(idsAndRevisions: [
+                    ("csv-adopted", 42),
+                    ("voice-adopted", 43),
+                ])
+            }),
+            rowReadsEnabled: { true },
         )
+        let adoptionService = ConvexSyncService(
+            reader: adoptionReader,
+            context: context,
+            metadataStore: MasonSyncMetadataStore(),
+        )
+        var errors: [String] = []
+        let adoptedCount = await adoptionService.syncMasonTransactions(&errors)
+        XCTAssertEqual(adoptedCount, 2)
+        XCTAssertTrue(errors.isEmpty)
         try context.save()
 
         var rows = try context.fetch(FetchDescriptor<Transaction>())
@@ -539,15 +538,119 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         XCTAssertEqual(adoptedVoice.sourceFile, "voice-synthetic")
         XCTAssertEqual(adoptedVoice.updatedAtMs, 43)
 
-        try service.replaceTransactions(
-            ownedBy: [.victor],
-            with: [],
-            rowAuthoritative: true,
+        let deletionReader = ConvexDataReader(
+            client: try makeSnapshotClient(valueForPath: { path in
+                XCTAssertEqual(path, "tables:listTransactions")
+                return Self.masonRowSnapshot(idsAndRevisions: [])
+            }),
+            rowReadsEnabled: { true },
         )
+        let deletionContext = ModelContext(container)
+        let deletionService = ConvexSyncService(
+            reader: deletionReader,
+            context: deletionContext,
+            metadataStore: MasonSyncMetadataStore(),
+        )
+        let deletedCount = await deletionService.syncMasonTransactions(&errors)
+        XCTAssertEqual(deletedCount, 0)
+        XCTAssertTrue(errors.isEmpty)
+        try deletionContext.save()
+
+        rows = try deletionContext.fetch(FetchDescriptor<Transaction>())
+        XCTAssertEqual(Set(rows.map(\.id)), Set(["csv-local-only", "optimistic-local"]))
+    }
+
+    @MainActor
+    func testRevisionlessMasonBlobPreservesAdoptionUntilNextRowSnapshot() async throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Transaction.self, configurations: configuration)
+        let context = ModelContext(container)
+        context.insert(Transaction(
+            id: "csv-adopted",
+            date: .now,
+            merchant: "CSV Local",
+            amount: 23,
+            category: "Other",
+            owner: .mason,
+            createdBy: "csv_import",
+            sourceFile: "csv-import-synthetic",
+        ))
+        context.insert(Transaction(
+            id: "voice-adopted",
+            date: .now,
+            merchant: "Voice Local",
+            amount: 17,
+            category: "Other",
+            owner: .mason,
+            createdBy: "voice",
+            sourceFile: "voice-synthetic",
+        ))
         try context.save()
 
-        rows = try context.fetch(FetchDescriptor<Transaction>())
-        XCTAssertEqual(rows.map(\.id), ["csv-local-only"])
+        var errors: [String] = []
+        let rowService = ConvexSyncService(
+            reader: ConvexDataReader(
+                client: try makeSnapshotClient(valueForPath: { path in
+                    XCTAssertEqual(path, "tables:listTransactions")
+                    return Self.masonRowSnapshot(idsAndRevisions: [
+                        ("csv-adopted", 42),
+                        ("voice-adopted", 43),
+                    ])
+                }),
+                rowReadsEnabled: { true },
+            ),
+            context: context,
+            metadataStore: MasonSyncMetadataStore(),
+        )
+        let adoptedCount = await rowService.syncMasonTransactions(&errors)
+        XCTAssertEqual(adoptedCount, 2)
+        try context.save()
+
+        let blobContext = ModelContext(container)
+
+        let blobService = ConvexSyncService(
+            reader: ConvexDataReader(
+                client: try makeSnapshotClient(valueForPath: { path in
+                    XCTAssertEqual(path, "dataFiles:get")
+                    return Self.masonLegacyBlob(ids: ["csv-adopted", "voice-adopted"])
+                }),
+                rowReadsEnabled: { false },
+            ),
+            context: blobContext,
+            metadataStore: MasonSyncMetadataStore(),
+        )
+        let blobCount = await blobService.syncMasonTransactions(&errors)
+        XCTAssertEqual(blobCount, 2)
+        try blobContext.save()
+
+        var rows = try blobContext.fetch(FetchDescriptor<Transaction>())
+        let csv = try XCTUnwrap(rows.first(where: { $0.id == "csv-adopted" }))
+        let voice = try XCTUnwrap(rows.first(where: { $0.id == "voice-adopted" }))
+        XCTAssertEqual(csv.updatedAtMs, 42)
+        XCTAssertEqual(csv.createdBy, "csv_import")
+        XCTAssertEqual(voice.updatedAtMs, 43)
+        XCTAssertEqual(voice.createdBy, "voice")
+
+        let deletionContext = ModelContext(container)
+
+        let deletionService = ConvexSyncService(
+            reader: ConvexDataReader(
+                client: try makeSnapshotClient(valueForPath: { path in
+                    XCTAssertEqual(path, "tables:listTransactions")
+                    return Self.masonRowSnapshot(idsAndRevisions: [])
+                }),
+                rowReadsEnabled: { true },
+            ),
+            context: deletionContext,
+            metadataStore: MasonSyncMetadataStore(),
+        )
+        let deletedCount = await deletionService.syncMasonTransactions(&errors)
+        XCTAssertEqual(deletedCount, 0)
+        XCTAssertTrue(errors.isEmpty)
+        try deletionContext.save()
+
+        rows = try deletionContext.fetch(FetchDescriptor<Transaction>())
+        XCTAssertTrue(rows.isEmpty)
     }
 
     private func pendingTransaction(id: String) -> Transaction {
@@ -594,6 +697,39 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
             ))
             return (try JSONSerialization.data(withJSONObject: envelope), response)
         })
+    }
+
+    private static func masonRowSnapshot(
+        idsAndRevisions: [(String, Double)],
+    ) -> [String: Any] {
+        [
+            "complete": true,
+            "rows": idsAndRevisions.map { id, revision in
+                [
+                    "txId": id,
+                    "owner": "mason",
+                    "date": "2026-08-02",
+                    "month": "2026-08",
+                    "merchant": "Remote",
+                    "amountCents": ConvexTaggedInt64Encoder.encode(2_300),
+                    "category": "Other",
+                    "updatedAtMs": revision,
+                ] as [String: Any]
+            },
+        ]
+    }
+
+    private static func masonLegacyBlob(ids: [String]) -> [[String: Any]] {
+        ids.map { id in
+            [
+                "id": id,
+                "date": "2026-08-02",
+                "merchant": "Compatibility snapshot",
+                "amount": 23,
+                "category": "Other",
+                "owner": "mason",
+            ]
+        }
     }
 
     // MARK: - transactions.json
@@ -1319,4 +1455,18 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         XCTAssertEqual(coldcard?.custody, .selfCustody)
         XCTAssertEqual(coldcard?.btc, 0.75072) // Exact — created from Decimal literal
     }
+}
+
+private final class MasonSyncMetadataStore: SyncMetadataStoring {
+    func object(forKey _: String) -> Any? { nil }
+
+    func string(forKey defaultName: String) -> String? {
+        defaultName == ConvexSyncService.selectedMemberKey ? FamilyMember.mason.rawValue : nil
+    }
+
+    func dictionary(forKey _: String) -> [String: Any]? { nil }
+
+    func set(_: Any?, forKey _: String) {}
+
+    func removeObject(forKey _: String) {}
 }

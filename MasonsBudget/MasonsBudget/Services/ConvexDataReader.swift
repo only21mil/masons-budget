@@ -123,17 +123,27 @@ actor ConvexDataReader {
         )
     }
 
-    /// Read Mason's transactions from Convex.
-    func readMasonTransactions(viewer: FamilyMember) async throws -> [LegacyTransactionDTO] {
-        try await rowOrBlob(
-            { try await rowReader.transactions(viewer: viewer) },
-            blob: {
-                try await client.fetchFile(
-                    "mason-transactions",
-                    as: [LegacyTransactionDTO].self,
+    /// Read Mason's transactions from Convex. The batch source determines
+    /// whether the result can prove that a missing local row was deleted.
+    func readMasonTransactions(viewer: FamilyMember) async throws -> ConvexReadBatch<[LegacyTransactionDTO]> {
+        if rowReadsEnabled() {
+            do {
+                let rows = try await rowReader.transactions(viewer: viewer)
+                return ConvexReadBatch(
+                    value: rows,
+                    replacementOwners: Set([viewer]),
+                    source: .rowAPI,
                 )
-            },
+            } catch let error as ConvexError where error.isRowAPIUnavailable {
+                log.notice("Public row API is not deployed; reading authenticated mason-transactions blob")
+            }
+        }
+
+        let blob = try await client.fetchFile(
+            "mason-transactions",
+            as: [LegacyTransactionDTO].self,
         )
+        return ConvexReadBatch(value: blob, replacementOwners: nil, source: .legacyBlob)
     }
 
     /// Read Mason's BTC buys from Convex (same batch semantics as `readBTCBuys`).

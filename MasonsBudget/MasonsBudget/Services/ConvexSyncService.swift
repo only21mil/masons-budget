@@ -319,11 +319,15 @@ final class ConvexSyncService {
         )
     }
 
-    private func syncMasonTransactions(_ errors: inout [String]) async -> Int {
+    func syncMasonTransactions(_ errors: inout [String]) async -> Int {
         do {
-            let dtos = try await reader.readMasonTransactions(viewer: currentMember)
-            let models = LedgerMapper.mapTransactions(dtos, owner: .mason)
-            try replaceTransactions(ownedBy: [.mason], with: models)
+            let batch = try await reader.readMasonTransactions(viewer: currentMember)
+            let models = LedgerMapper.mapTransactions(batch.value, owner: .mason)
+            try replaceTransactions(
+                ownedBy: [.mason],
+                with: models,
+                rowAuthoritative: batch.isRowAuthoritative,
+            )
             return models.count
         } catch {
             log.error("Mason transactions sync failed: \(error.localizedDescription)")
@@ -559,7 +563,11 @@ final class ConvexSyncService {
         if !preservesLocalImportProvenance {
             local.sourceFile = remote.sourceFile
         }
-        local.updatedAtMs = remote.updatedAtMs
+        // Compatibility blobs may omit revisions. They cannot revoke a revision
+        // already learned from an authoritative row snapshot or accepted write.
+        if let remoteRevision = remote.updatedAtMs {
+            local.updatedAtMs = remoteRevision
+        }
     }
 
     private func replaceBTCBuys(
