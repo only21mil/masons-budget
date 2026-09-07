@@ -507,15 +507,22 @@ final class ConvexSyncService {
 
         // Retry actions are intentionally in-memory. The source marker makes
         // their failure durable: after a complete authoritative row read, remove
-        // only retry-pending app rows the server still does not contain. Active
-        // attempts clear the marker before network I/O, so sync cannot reap an
-        // in-flight optimistic row.
+        // retry-pending app rows the server still does not contain. Active attempts
+        // clear the marker before network I/O, so sync cannot reap an in-flight
+        // optimistic row. CSV and voice provenance survives adoption, so a server
+        // revision is the proof that those rows also became authoritative and may
+        // be reaped after a later cross-device delete.
         if rowAuthoritative {
-            for transaction in existing where owners.contains(transaction.ownerMember)
-                && transaction.createdBy == "app"
-                && transaction.sourceFile == Transaction.pendingRowWriteSource
-            {
-                guard !AppWriteSyncService.hasLiveOptimisticTransaction(transaction.id) else {
+            for transaction in existing where owners.contains(transaction.ownerMember) {
+                let isAbandonedAppCreate = transaction.createdBy == "app"
+                    && transaction.sourceFile == Transaction.pendingRowWriteSource
+                let isAdoptedProvenanceRow = (transaction.createdBy == "csv_import"
+                    || transaction.createdBy == "voice")
+                    && transaction.updatedAtMs != nil
+                guard isAbandonedAppCreate || isAdoptedProvenanceRow else { continue }
+                guard !isAbandonedAppCreate
+                    || !AppWriteSyncService.hasLiveOptimisticTransaction(transaction.id)
+                else {
                     continue
                 }
                 guard !remoteIds.contains(transaction.id) else { continue }

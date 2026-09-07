@@ -460,6 +460,96 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         XCTAssertEqual(csvPresent.createdBy, "csv_import")
     }
 
+    @MainActor
+    func testCompleteTransactionSyncReapsAdoptedCSVAndVoiceRowsDeletedElsewhere() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: Transaction.self, configurations: configuration)
+        let context = ModelContext(container)
+        let service = ConvexSyncService(context: context)
+
+        context.insert(Transaction(
+            id: "csv-adopted",
+            date: .now,
+            merchant: "CSV Local",
+            amount: 23,
+            category: "Other",
+            owner: .victor,
+            createdBy: "csv_import",
+            sourceFile: "csv-import-synthetic",
+        ))
+        context.insert(Transaction(
+            id: "voice-adopted",
+            date: .now,
+            merchant: "Voice Local",
+            amount: 17,
+            category: "Other",
+            owner: .victor,
+            createdBy: "voice",
+            sourceFile: "voice-synthetic",
+        ))
+        context.insert(Transaction(
+            id: "csv-local-only",
+            date: .now,
+            merchant: "Local only",
+            amount: 11,
+            category: "Other",
+            owner: .victor,
+            createdBy: "csv_import",
+            sourceFile: "csv-import-not-yet-adopted",
+        ))
+        try context.save()
+
+        try service.replaceTransactions(
+            ownedBy: [.victor],
+            with: [
+                Transaction(
+                    id: "csv-adopted",
+                    date: .now,
+                    merchant: "CSV Remote",
+                    amount: 23,
+                    category: "Other",
+                    owner: .victor,
+                    createdBy: "mc2",
+                    sourceFile: "transactions.json",
+                    updatedAtMs: 42,
+                ),
+                Transaction(
+                    id: "voice-adopted",
+                    date: .now,
+                    merchant: "Voice Remote",
+                    amount: 17,
+                    category: "Other",
+                    owner: .victor,
+                    createdBy: "mc2",
+                    sourceFile: "transactions.json",
+                    updatedAtMs: 43,
+                ),
+            ],
+            rowAuthoritative: true,
+        )
+        try context.save()
+
+        var rows = try context.fetch(FetchDescriptor<Transaction>())
+        let adoptedCSV = try XCTUnwrap(rows.first(where: { $0.id == "csv-adopted" }))
+        let adoptedVoice = try XCTUnwrap(rows.first(where: { $0.id == "voice-adopted" }))
+        XCTAssertEqual(adoptedCSV.createdBy, "csv_import")
+        XCTAssertEqual(adoptedCSV.sourceFile, "csv-import-synthetic")
+        XCTAssertEqual(adoptedCSV.updatedAtMs, 42)
+        XCTAssertEqual(adoptedVoice.createdBy, "voice")
+        XCTAssertEqual(adoptedVoice.sourceFile, "voice-synthetic")
+        XCTAssertEqual(adoptedVoice.updatedAtMs, 43)
+
+        try service.replaceTransactions(
+            ownedBy: [.victor],
+            with: [],
+            rowAuthoritative: true,
+        )
+        try context.save()
+
+        rows = try context.fetch(FetchDescriptor<Transaction>())
+        XCTAssertEqual(rows.map(\.id), ["csv-local-only"])
+    }
+
     private func pendingTransaction(id: String) -> Transaction {
         Transaction(
             id: id,
