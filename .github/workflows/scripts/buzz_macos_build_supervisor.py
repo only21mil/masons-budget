@@ -114,6 +114,89 @@ def root_path(path, directory=False):
     require(stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode), 'wrong installed file type')
     return info
 
+def darwin_scratch_parent(builder):
+    """Ask the OS as the fixed build UID; never accept a caller-supplied path."""
+    require(builder.pw_uid == builder.pw_gid == 590, 'scratch requires dedicated UID/GID')
+    def drop():
+        os.setgroups([])
+        os.setgid(builder.pw_gid)
+        os.setuid(builder.pw_uid)
+    paths = []
+    for key in ('DARWIN_USER_TEMP_DIR', 'DARWIN_USER_CACHE_DIR'):
+        result = subprocess.run(['/usr/bin/getconf', key], preexec_fn=drop, cwd='/', env=ENV,
+                                close_fds=True, check=True, capture_output=True, text=True, timeout=10)
+        paths.append(result.stdout.strip())
+    return scratch_parent_from_paths(*paths)
+
+def scratch_parent_from_paths(temp, cache):
+    pattern = r'/(?:private/)?var/folders/([a-z0-9]{2})/([a-z0-9_]{20,64})/T/'
+    match = re.fullmatch(pattern, temp)
+    require(match is not None and cache == temp[:-2] + 'C/', 'unexpected Darwin scratch paths')
+    return Path('/private/var/folders') / match[1] / match[2]
+
+def scratch_identity(info):
+    return (info.st_dev, info.st_ino, info.st_uid, info.st_gid,
+            stat.S_IMODE(info.st_mode), getattr(info, 'st_flags', 0))
+
+def scratch_snapshot(parent, uid, gid):
+    """Attest the OS-owned ancestry and fixed, exclusively task-owned skeleton."""
+    require(uid == gid == 590, 'scratch requires dedicated UID/GID')
+    root_path(parent.parent, True)
+    result = {}
+    for relative, mode in (('.', 0o755), ('T', 0o700), ('C', 0o700),
+                           ('T/com.apple.trustd', 0o700)):
+        path = parent / relative
+        if relative == 'T/com.apple.trustd' and not path.exists():
+            continue
+        fd = open_directory(path)
+        try:
+            info = os.fstat(fd)
+            no_acl(path)
+            require(info.st_uid == uid and info.st_gid == gid
+                    and stat.S_IMODE(info.st_mode) == mode, 'unsafe Darwin scratch skeleton')
+            result[relative] = scratch_identity(info)
+        finally:
+            os.close(fd)
+    return result
+
+def clear_darwin_scratch(parent, expected, uid, gid):
+    # Call only under the supervisor lock after attesting an empty build UID.
+    # macOS protects T/C and T/com.apple.trustd with sunlnk: retain those inodes
+    # and flags. Never restore protected timestamps or carry source caches over.
+    actual = scratch_snapshot(parent, uid, gid)
+    require(all(actual.get(key) == value for key, value in expected.items()),
+            'Darwin scratch skeleton changed')
+    protected = {'T', 'C', 'T/com.apple.trustd'}
+    def clear(fd, relative):
+        for name in os.listdir(fd):
+            info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            child = relative + '/' + name
+            flags = getattr(info, 'st_flags', 0)
+            require(not flags or child in protected, 'unexpected protected scratch entry')
+            if stat.S_ISDIR(info.st_mode):
+                nested = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                try:
+                    require(scratch_identity(os.fstat(nested)) == scratch_identity(info),
+                            'scratch entry replaced')
+                    clear(nested, child)
+                finally:
+                    os.close(nested)
+                if child not in protected:
+                    os.rmdir(name, dir_fd=fd)
+            else:
+                # Unlink links themselves; never follow source-controlled targets.
+                os.unlink(name, dir_fd=fd)
+    for relative in ('T', 'C'):
+        fd = open_directory(parent / relative)
+        try:
+            require(scratch_identity(os.fstat(fd)) == actual[relative], 'scratch root replaced')
+            clear(fd, relative)
+        finally:
+            os.close(fd)
+    after = scratch_snapshot(parent, uid, gid)
+    require(after == actual, 'Darwin scratch skeleton changed during cleanup')
+    return after
+
 def installed_manifest():
     root_path(INSTALL, True)
     root_path(STATE, True)
@@ -233,7 +316,7 @@ def report_log(tail):
         # Base64 cannot inject GitHub workflow commands or terminal control bytes.
         print('Buzz unsigned diagnostic tail (base64): ' + base64.b64encode(tail).decode('ascii'), file=sys.stderr)
 
-def execute(root, request, builder):
+def execute(root, request, builder, darwin_parent):
     read_fd, write_fd = os.pipe()
     log_read, log_write = os.pipe()
     pid = os.fork()
@@ -255,7 +338,7 @@ def execute(root, request, builder):
                     and set(kernel_groups()) <= {builder.pw_gid}, 'failed privilege drop')
             os.chdir(root)
             env = dict(ENV, HOME=str(root / 'home'), TMPDIR=str(root / 'tmp') + '/',
-                       USER=BUILDER, LOGNAME=BUILDER)
+                       USER=BUILDER, LOGNAME=BUILDER, BUZZ_DARWIN_ROOT=str(darwin_parent))
             os.execve('/usr/bin/python3', ['/usr/bin/python3', '-I', str(INSTALL / 'buzz_macos_build_boundary.py'),
                                         '--payload', str(root)], env)
         except BaseException:
@@ -315,24 +398,37 @@ def main():
     output_fd = caller_output(request['output_dir'], caller.pw_uid)
     lock_fd = os.open(STATE / 'supervisor.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     root = None
+    darwin_parent = None
+    scratch = None
+    scratch_started = False
     try:
         lock_info = os.fstat(lock_fd)
         require(lock_info.st_uid == 0 and stat.S_IMODE(lock_info.st_mode) == 0o600
                 and stat.S_ISREG(lock_info.st_mode) and lock_info.st_nlink == 1, 'unsafe lock')
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         require(not uid_processes(builder.pw_uid), 'dedicated build UID already active; operator recovery required')
+        scratch_started = True
+        darwin_parent = darwin_scratch_parent(builder)
+        # getconf can activate task-owned system services; drain before touching caches.
+        stop_builder(builder.pw_uid)
+        scratch = scratch_snapshot(darwin_parent, builder.pw_uid, builder.pw_gid)
+        scratch = clear_darwin_scratch(darwin_parent, scratch, builder.pw_uid, builder.pw_gid)
         root = Path(tempfile.mkdtemp(prefix='build-', dir=STATE))
         for directory in (root, root / 'home', root / 'tmp'):
             if directory != root:
                 directory.mkdir(mode=0o700)
             os.chown(directory, builder.pw_uid, builder.pw_gid)
-        execute(root, request, builder)
-        # execute has killed and attested all UID descendants before any root file reads.
+        execute(root, request, builder, darwin_parent)
+        # No source descendants or cache state may survive into artifact export.
+        scratch = clear_darwin_scratch(darwin_parent, scratch, builder.pw_uid, builder.pw_gid)
         export_files(root, output_fd, builder.pw_uid, caller.pw_uid, caller.pw_gid, request['arch'])
     finally:
-        if root is not None:
-            # A failed drain preserves the root for operator recovery and fails closed.
+        if scratch_started:
+            # A failed drain/cleanup preserves the build root and prohibits export.
             stop_builder(builder.pw_uid)
+            if scratch is not None:
+                clear_darwin_scratch(darwin_parent, scratch, builder.pw_uid, builder.pw_gid)
+        if root is not None:
             require(shutil.rmtree.avoids_symlink_attacks, 'safe tree cleanup unavailable')
             shutil.rmtree(root)
         os.close(lock_fd)

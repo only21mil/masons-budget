@@ -15,6 +15,21 @@ BUZZ_KEYCHAIN_ACCESS_GROUP = com.sats21m.buzz
 BUZZ_IOS_PUSH_ENVIRONMENT = production
 BUZZ_APP_ATTEST_ENVIRONMENT = production
 CONFIG
+# Flutter's initial xcrun xcodebuild -list does not forward build settings.
+# Its manifest compiler inherits our outer sandbox; avoid an unsupported nested
+# sandbox without granting cfprefsd or changing global Xcode preferences.
+mkdir "$HOME/xcode-tools"
+cat > "$HOME/xcode-tools/xcrun" <<'XCRUN'
+#!/bin/bash
+set -euo pipefail
+if [[ "${1:-}" == xcodebuild ]]; then
+  shift
+  exec /usr/bin/xcrun xcodebuild -IDEPackageSupportDisableManifestSandbox=YES "$@"
+fi
+exec /usr/bin/xcrun "$@"
+XCRUN
+chmod 700 "$HOME/xcode-tools/xcrun"
+export PATH="$HOME/xcode-tools:$PATH"
 cd mobile
 flutter pub get --enforce-lockfile
 flutter build ios --release --no-codesign --no-pub \

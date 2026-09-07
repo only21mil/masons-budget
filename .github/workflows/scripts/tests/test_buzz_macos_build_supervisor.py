@@ -139,6 +139,83 @@ class FilesystemTests(unittest.TestCase):
         with self.assertRaises(s.BoundaryError):
             s.caller_output(str(self.output), os.getuid())
 
+class ScratchTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.parent = Path(self.temp.name).resolve() / 'darwin'
+        self.parent.mkdir(mode=0o755)
+        for name in ('T', 'C', 'T/com.apple.trustd'):
+            (self.parent / name).mkdir(mode=0o700)
+        self.expected = self.snapshot()
+
+    def snapshot(self, *_args):
+        return {name: s.scratch_identity((self.parent / name).stat())
+                for name in ('.', 'T', 'C', 'T/com.apple.trustd')}
+
+    def clear(self):
+        # Portable tests use ordinary current-user dirs; production attestation
+        # of UID590 and OS ancestry is tested separately below.
+        with patch.object(s, 'scratch_snapshot', side_effect=self.snapshot):
+            return s.clear_darwin_scratch(self.parent, self.expected, 590, 590)
+
+    def test_clears_contents_preserves_skeleton_and_never_follows_links(self):
+        outside = Path(self.temp.name) / 'outside'
+        outside.mkdir()
+        (outside / 'private').write_text('untouched')
+        (self.parent / 'C/link').symlink_to(outside, target_is_directory=True)
+        (self.parent / 'T/cache').mkdir()
+        (self.parent / 'T/cache/file').write_text('source cache')
+        (self.parent / 'T/com.apple.trustd/entry').write_text('source cache')
+        self.assertEqual(self.clear(), self.expected)
+        self.assertEqual((outside / 'private').read_text(), 'untouched')
+        self.assertEqual(os.listdir(self.parent / 'T'), ['com.apple.trustd'])
+        self.assertEqual(os.listdir(self.parent / 'T/com.apple.trustd'), [])
+        self.assertEqual(os.listdir(self.parent / 'C'), [])
+        self.assertEqual(self.clear(), self.expected)
+
+    def test_replaced_or_chmod_skeleton_refused_before_deletion(self):
+        (self.parent / 'C/keep').touch()
+        (self.parent / 'T').chmod(0o755)
+        with self.assertRaisesRegex(s.BoundaryError, 'skeleton changed'):
+            self.clear()
+        self.assertTrue((self.parent / 'C/keep').exists())
+
+    def test_unknown_protected_entry_refused_without_clearing_flags(self):
+        (self.parent / 'C/protected').mkdir()
+        original = s.os.stat
+        def info(path, **kwargs):
+            value = original(path, **kwargs)
+            if path == 'protected':
+                return types.SimpleNamespace(st_flags=1048576)
+            return value
+        with patch.object(s.os, 'stat', side_effect=info):
+            with self.assertRaisesRegex(s.BoundaryError, 'protected scratch entry'):
+                self.clear()
+        self.assertTrue((self.parent / 'C/protected').is_dir())
+
+    def test_snapshot_rejects_wrong_identity_mode_and_symlink(self):
+        with self.assertRaises(s.BoundaryError):
+            s.scratch_snapshot(self.parent, 501, 501)
+        with patch.object(s, 'root_path'), patch.object(s, 'no_acl'):
+            with self.assertRaisesRegex(s.BoundaryError, 'unsafe Darwin scratch'):
+                s.scratch_snapshot(self.parent, 590, 590)
+        (self.parent / 'C').rmdir()
+        (self.parent / 'C').symlink_to(self.parent / 'T')
+        with self.assertRaises(OSError):
+            s.open_directory(self.parent / 'C')
+
+    def test_getconf_paths_must_be_matching_fixed_darwin_roots(self):
+        temp = '/var/folders/y9/_3fghj8j0114rb7z9dxsfyx00000kf/T/'
+        self.assertEqual(str(s.scratch_parent_from_paths(temp, temp[:-2] + 'C/')),
+                         '/private' + temp[:-3])
+        for first, second in ((temp, temp.replace('/T/', '/other/')),
+                              ('/private/tmp/T/', '/private/tmp/C/'),
+                              (temp.replace('y9', '..'), temp[:-2] + 'C/')):
+            with self.assertRaises(s.BoundaryError):
+                s.scratch_parent_from_paths(first, second)
+
+
 class ProcessTests(unittest.TestCase):
     def test_process_scan_checks_real_and_effective_uid(self):
         output = types.SimpleNamespace(stdout='10 590 501\n11 501 590\n12 0 0\n')
@@ -209,6 +286,51 @@ class ProcessTests(unittest.TestCase):
             create.assert_not_called()
             export.assert_not_called()
 
+    def test_scratch_failure_prevents_export_and_cleanup_follows_uid_drain(self):
+        caller = types.SimpleNamespace(pw_uid=501, pw_gid=20)
+        builder = types.SimpleNamespace(pw_uid=590, pw_gid=590, pw_shell='/usr/bin/false')
+        manifest = dict(builder_uid=590, builder_gid=590, caller_uid=501, workflow_sha='b' * 40)
+        lock_info = types.SimpleNamespace(st_uid=0, st_mode=stat.S_IFREG | 0o600, st_nlink=1)
+        for failed in (False, True):
+            events = []
+            def clear(*_args):
+                events.append('clear')
+                if failed and events.count('clear') == 2:
+                    raise s.BoundaryError('scratch cleanup failed')
+                return {}
+            def execute(*_args):
+                # execute() itself owns the post-source UID drain (tested above).
+                events.extend(['execute', 'drain'])
+            patches = (patch.object(s.sys, 'platform', 'darwin'), patch.object(s.sys, 'argv', ['supervisor']),
+                 patch.object(s.os, 'geteuid', return_value=0), patch.object(s.os, 'umask'),
+                 patch.dict(s.os.environ, SUDO_UID='501'), patch.object(s.pwd, 'getpwnam', side_effect=[caller, builder]),
+                 patch.object(s, 'installed_manifest', return_value=manifest), patch.object(s.signal, 'alarm'),
+                 patch.object(s, 'request_from', return_value=RequestTests().request()),
+                 patch.object(s, 'caller_output', return_value=100), patch.object(s.os, 'open', return_value=101),
+                 patch.object(s.os, 'fstat', return_value=lock_info), patch.object(s.os, 'close'),
+                 patch.object(s.fcntl, 'flock'), patch.object(s, 'uid_processes', return_value=[]),
+                 patch.object(s, 'darwin_scratch_parent', return_value=Path('/owned/darwin')),
+                 patch.object(s, 'scratch_snapshot', return_value={}),
+                 patch.object(s, 'clear_darwin_scratch', side_effect=clear),
+                 patch.object(s, 'stop_builder', side_effect=lambda *_: events.append('drain')),
+                 patch.object(s.tempfile, 'mkdtemp', return_value='/owned/build'),
+                 patch.object(s.Path, 'mkdir'), patch.object(s.os, 'chown'),
+                 patch.object(s, 'execute', side_effect=execute),
+                 patch.object(s, 'export_files', side_effect=lambda *_: events.append('export')),
+                 patch.object(s.shutil, 'rmtree', side_effect=lambda *_: events.append('remove')))
+            with contextlib.ExitStack() as stack:
+                for item in patches:
+                    stack.enter_context(item)
+                if failed:
+                    with self.assertRaisesRegex(s.BoundaryError, 'scratch cleanup failed'):
+                        s.main()
+                else:
+                    s.main()
+            expected = ['drain', 'clear', 'execute', 'drain', 'clear']
+            if not failed:
+                expected.append('export')
+            self.assertEqual(events, expected + ['drain', 'clear', 'remove'])
+
     def test_diagnostic_tail_is_bounded_and_cannot_inject_workflow_commands(self):
         dangerous = b'::add-mask::value\n\x1b[31m'
         tail = bytearray(b'a' * 65536)
@@ -246,7 +368,7 @@ class ProcessTests(unittest.TestCase):
                  patch.object(s, 'kernel_groups', return_value=groups), patch.object(s.os, 'execve', side_effect=execve), \
                  patch.object(s.os, '_exit', side_effect=exit_child), patch.dict(os.environ, SECRET_CANARY='never inherit'):
                 with self.assertRaises(Executed):
-                    s.execute(Path('/private/var/db/buzz-macos-build/build-test'), {}, builder)
+                    s.execute(Path('/private/var/db/buzz-macos-build/build-test'), {}, builder, Path('/owned/darwin'))
             self.assertEqual(events[:3], [('groups', []), ('gid', 590), ('uid', 590)])
             if not allowed:
                 self.assertEqual(len(events), 3)
@@ -254,6 +376,7 @@ class ProcessTests(unittest.TestCase):
             self.assertEqual(events[3][1], '/usr/bin/python3')
             self.assertEqual(events[3][2][1:3], ['-I', str(s.INSTALL / 'buzz_macos_build_boundary.py')])
             self.assertNotIn('SECRET_CANARY', events[3][3])
+            self.assertEqual(events[3][3]['BUZZ_DARWIN_ROOT'], '/owned/darwin')
 
 class ProvisionTests(unittest.TestCase):
     def test_bundle_hash_is_external_authority_and_payload_is_held_in_memory(self):

@@ -16,6 +16,9 @@
     (literal "/private/var/select/sh")
     (subpath (param "CONTROLLER")))
 (allow file* (subpath (param "BUILD_ROOT")))
+; Only the dedicated build UID Darwin scratch, attested and cleared under lock.
+(allow file* (subpath (string-append (param "DARWIN_ROOT") "/T"))
+             (subpath (string-append (param "DARWIN_ROOT") "/C")))
 (deny file-write-setugid)
 (allow file-read* file-write*
     (literal "/dev/null") (literal "/dev/zero")
@@ -32,6 +35,7 @@
 (allow network-outbound
     (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))
 (allow mach-lookup
+    (global-name "com.apple.bsd.dirhelper")
     (global-name "com.apple.system.opendirectoryd.libinfo")
     (global-name "com.apple.system.notification_center")
     (global-name "com.apple.logd")

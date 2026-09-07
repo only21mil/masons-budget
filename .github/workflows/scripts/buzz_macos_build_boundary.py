@@ -37,7 +37,7 @@ def request_env(arch):
 
 def build_env(root: Path, request: dict) -> dict[str, str]:
     env = {env_key: request[key] for key, env_key in request_env(request['arch']).items()}
-    env.update(HOME=str(root / 'home'), TMPDIR=str(root / 'tmp') + '/',
+    env.update(HOME=str(root / 'home'), CFFIXED_USER_HOME=str(root / 'home'), TMPDIR=str(root / 'tmp') + '/',
                PATH='/usr/bin:/bin:/usr/sbin:/sbin', LANG='en_US.UTF-8', SHELL='/bin/bash',
                GITHUB_WORKSPACE=str(root), BUZZ_CONTROLLER=str(SCRIPT),
                CARGO_HOME=str(root / 'home/.cargo'), RUSTUP_HOME=str(root / 'home/.rustup'),
@@ -55,7 +55,8 @@ def build_env(root: Path, request: dict) -> dict[str, str]:
 
 def sandbox_command(root: Path, command: list[str]) -> list[str]:
     return ['/usr/bin/sandbox-exec', '-D', 'BUILD_ROOT=' + str(root),
-            '-D', 'CONTROLLER=' + str(SCRIPT), '-f', str(SCRIPT / 'buzz_macos_build.sb'),
+            '-D', 'CONTROLLER=' + str(SCRIPT),
+            '-D', 'DARWIN_ROOT=' + os.environ['BUZZ_DARWIN_ROOT'], '-f', str(SCRIPT / 'buzz_macos_build.sb'),
             *command]
 
 

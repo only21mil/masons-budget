@@ -25,11 +25,20 @@ class BoundaryTests(unittest.TestCase):
                         'NODE_OPTIONS': '--require /evil', 'GITHUB_ENV': '/runner-command'}, clear=True):
             env = boundary.build_env(Path('/scratch'), request)
         self.assertEqual(env['HOME'], '/scratch/home')
+        self.assertEqual(env['CFFIXED_USER_HOME'], '/scratch/home')
         self.assertNotIn('private-canary', str(env))
         for key in ('NODE_OPTIONS', 'PYTHONPATH', 'GITHUB_ENV'):
             self.assertNotIn(key, env)
         self.assertEqual(env['PATH'], '/usr/bin:/bin:/usr/sbin:/sbin')
         self.assertEqual(env['SHELL'], '/bin/bash')
+
+    def test_sandbox_requires_supervisor_scratch_parameter(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(KeyError):
+                boundary.sandbox_command(Path('/owned/build'), ['/usr/bin/true'])
+        with patch.dict(os.environ, BUZZ_DARWIN_ROOT='/owned/darwin'):
+            argv = boundary.sandbox_command(Path('/owned/build'), ['/usr/bin/true'])
+        self.assertIn('DARWIN_ROOT=/owned/darwin', argv)
 
     def test_payload_refuses_signing_uid_before_execution(self):
         with patch.object(boundary.pwd, 'getpwuid') as user, patch.object(boundary, 'confined') as run:
@@ -120,7 +129,8 @@ for command in [['/usr/bin/git', '--version'], ['/usr/bin/xcrun', '--find', 'cla
     assert subprocess.run(command).returncode == 0
 '''
             request = {key: 'public-only' for key in boundary.REQUEST_ENV}
-            boundary.confined(root, request, ["/usr/bin/python3", "-I", "-c", code, str(root),
+            with patch.dict(os.environ, BUZZ_DARWIN_ROOT=str(root / 'darwin')):
+                boundary.confined(root, request, ["/usr/bin/python3", "-I", "-c", code, str(root),
                                     str(canary), str(SCRIPT), str(os.getpid()), str(parent / "ipc.sock")], cwd=root)
             self.assertTrue((root / "allowed").is_file())
             self.assertEqual(canary.read_text(), "must remain outside the sandbox")

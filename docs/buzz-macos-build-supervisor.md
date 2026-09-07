@@ -47,6 +47,31 @@ line, which cannot emit runner workflow commands or terminal control bytes.
 Decode that public tail locally to investigate Hermit/compiler failures. The
 boundary failure message itself is fixed and does not interpolate input values.
 
+Xcode also uses Darwin's per-user scratch independently of `HOME`. Under the
+same lock, the supervisor asks `/usr/bin/getconf` for UID/GID 590's canonical
+T/C directories after dropping privileges, validates their shared parent and
+ownership, and grants only those two directories plus the `dirhelper` lookup.
+It drains the UID before clearing these exclusively task-owned caches, both
+before source execution and before artifact export. Cleanup retains macOS's
+protected T/C and `T/com.apple.trustd` skeleton inodes and flags; it removes
+ordinary descendants without following links. Changed skeleton identity or an
+unexpected protected entry fails closed. There is no cache reuse across builds,
+account-home change, flag clearing, or access to the signing user's scratch.
+
+`CFFIXED_USER_HOME` directs Xcode's CoreFoundation home/DerivedData to the fresh
+build home. For unsigned iOS only, the trusted build recipe creates a local
+`xcrun` shim that forwards arguments to `/usr/bin/xcrun`, adding the supported
+`-IDEPackageSupportDisableManifestSandbox=YES` only for `xcodebuild`. Flutter's
+initial `xcodebuild -list` does not forward ordinary build settings; the flag
+avoids a nested manifest sandbox that macOS refuses inside the existing outer
+sandbox. The outer policy remains inherited by the manifest compiler. No
+preferences daemon or global preference is changed. The shim's PATH exists
+only in the unsigned subprocess, never in the signing stage.
+
+This payload change requires reinstalling the reviewed exact-commit host bundle
+and receipt before workflow dispatch; the client rejects an old installation.
+It needs no account, sudoers, signing material, or release-input changes.
+
 Before exporting, the supervisor kills all real/effective build-UID processes,
 reaps its child, retires only the dedicated `user/590` launchd domain, and
 requires two empty process readbacks. The domain teardown prevents launchd

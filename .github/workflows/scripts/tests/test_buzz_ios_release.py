@@ -11,6 +11,7 @@ from pathlib import Path
 import plistlib
 import re
 import sys
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -190,11 +191,48 @@ class IosReleaseTests(unittest.TestCase):
         self.assertNotIn('MACOSX_DEPLOYMENT_TARGET', environment)
         self.assertNotIn('BUZZ_UPDATER_PUBLIC_KEY', environment)
         self.assertEqual(environment['HOME'], '/owned/build/home')
+        self.assertEqual(environment['CFFIXED_USER_HOME'], '/owned/build/home')
 
     def test_fixed_override_matches_recipe(self):
         recipe = (SCRIPT / 'buzz_ios_build.sh').read_text()
         self.assertIn("<<'CONFIG'\n" + ios.OVERRIDES + 'CONFIG\n', recipe)
         self.assertIn('--no-codesign', recipe)
+
+
+class XcrunShimTests(unittest.TestCase):
+    def test_unsigned_recipe_shim_preserves_every_argument(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'mobile/ios/Flutter').mkdir(parents=True)
+            home = root / 'home'; home.mkdir()
+            bin_dir = root / 'bin'; bin_dir.mkdir()
+            for name, body in [('git', 'printf "%s\\n" ' + 'a' * 40),
+                               ('flutter', 'exit 0')]:
+                tool = bin_dir / name
+                tool.write_text('#!/bin/bash\n' + body + '\n')
+                tool.chmod(0o700)
+            env = dict(PATH=str(bin_dir) + ':/usr/bin:/bin', HOME=str(home),
+                       SOURCE_SHA='a' * 40, VERSION='0.5.9', BUILD_NUMBER='1')
+            subprocess.run(['/bin/bash', str(SCRIPT / 'buzz_ios_build.sh')],
+                           cwd=root, env=env, check=True, capture_output=True)
+            shim = home / 'xcode-tools/xcrun'
+            self.assertEqual(shim.stat().st_mode & 0o777, 0o700)
+            # Shadow only Bash's exec builtin, capturing the actual generated
+            # shim's argv without replacing its absolute /usr/bin/xcrun target.
+            capture = 'exec() { printf "%s\\0" "$@"; exit 0; }; shim=$1; shift; source "$shim" "$@"'
+            cases = [[], ['--find', 'xcodebuild'], ['--sdk', 'iphoneos', '--find', 'clang'],
+                     ['xcodebuild', '-list'],
+                     ['xcodebuild', 'space value', '; touch injected', '$(touch injected)', '*']]
+            for args in cases:
+                with self.subTest(args=args):
+                    result = subprocess.run(['/bin/bash', '-c', capture, 'capture', str(shim), *args],
+                                            cwd=root, env=env, capture_output=True, check=True)
+                    actual = result.stdout.decode().split('\0')[:-1]
+                    expected = ['/usr/bin/xcrun', *args]
+                    if args and args[0] == 'xcodebuild':
+                        expected.insert(2, '-IDEPackageSupportDisableManifestSandbox=YES')
+                    self.assertEqual(actual, expected)
+            self.assertFalse((root / 'injected').exists())
 
 
 if __name__ == '__main__':
