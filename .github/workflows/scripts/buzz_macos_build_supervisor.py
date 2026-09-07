@@ -150,6 +150,7 @@ def uid_processes(uid):
     return found
 
 def stop_builder(uid, child_pid=None):
+    require(uid == 590, 'cleanup requires the dedicated build UID')
     # pkill matches the UID at kill time, avoiding root kill-by-stale-PID races.
     for _ in range(30):
         for selector in ('-U', '-u'):
@@ -161,6 +162,12 @@ def stop_builder(uid, child_pid=None):
                 os.waitpid(child_pid, os.WNOHANG)
             except ChildProcessError:
                 pass
+        # Killing distnoted alone lets launchd restart it after empty ps reads.
+        # Retire only this task-owned user domain after killing source processes.
+        # Do not `launchctl print user/590`: that query recreates the user domain.
+        result = subprocess.run(['/bin/launchctl', 'bootout', 'user/590'], env=ENV,
+                                capture_output=True, timeout=10)
+        require(result.returncode == 0, 'cannot retire dedicated build user domain')
         if not uid_processes(uid):
             time.sleep(0.1)
             if not uid_processes(uid):

@@ -48,7 +48,13 @@ Decode that public tail locally to investigate Hermit/compiler failures. The
 boundary failure message itself is fixed and does not interpolate input values.
 
 Before exporting, the supervisor kills all real/effective build-UID processes,
-reaps its child, and requires two empty process readbacks. It opens the caller's
+reaps its child, retires only the dedicated `user/590` launchd domain, and
+requires two empty process readbacks. The domain teardown prevents launchd
+from restarting the UID's notification helper after a process kill. A failed
+teardown refuses export. Do not verify absence with `launchctl print user/590`:
+that query creates the domain again. Use the successful exact-domain bootout
+and non-creating process observations, including a delayed readback for live
+acceptance. No other user or system domain is touched. It opens the caller's
 empty mode-0700 output directory before launching the build and retains the
 file descriptor. It transfers exactly `unsigned-{arch}.app.tar.gz` and
 `build-{arch}.json`, as inert regular files. Component symlinks, output symlinks,
