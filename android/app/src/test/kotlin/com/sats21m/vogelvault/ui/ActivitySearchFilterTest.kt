@@ -38,6 +38,22 @@ class ActivitySearchFilterTest {
     }
 
     @Test
+    fun `sats search uses exact signed authoritative integers and omits absent values`() {
+        val purchase = cafe.copy(id = "purchase", amountSats = -9_007_199_254_740_993L)
+        val refund = cafe.copy(id = "refund", amountSats = 123_456L)
+        val minimum = cafe.copy(id = "minimum", amountSats = Long.MIN_VALUE)
+        val index = ActivitySearchIndex.build(listOf(cafe, purchase, refund, minimum))
+
+        assertEquals(listOf(purchase), index.search("-9007199254740993", ActivityTransactionFilter.SPENDS))
+        assertEquals(listOf(refund), index.search("123456", ActivityTransactionFilter.LIGHTNING))
+        assertEquals(listOf(minimum), index.search(Long.MIN_VALUE.toString(), ActivityTransactionFilter.ALL))
+        assertTrue(index.search("-123456", ActivityTransactionFilter.ALL).isEmpty())
+        assertTrue(index.search("null", ActivityTransactionFilter.ALL).isEmpty())
+        assertTrue(index.search("123456", ActivityTransactionFilter.INCOME).isEmpty())
+        assertTrue(ActivitySearchIndex.build(listOf(cafe)).search("123456", ActivityTransactionFilter.ALL).isEmpty())
+    }
+
+    @Test
     fun `fiat amount search translates integer cents to Decimal description`() {
         assertEquals("42.75", canonicalDecimalAmount(4_275L))
         assertEquals("-42.75", canonicalDecimalAmount(-4_275L))

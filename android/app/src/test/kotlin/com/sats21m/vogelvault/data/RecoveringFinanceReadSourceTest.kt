@@ -89,6 +89,38 @@ class RecoveringFinanceReadSourceTest {
         assertSame(ConvexResult.Missing, loaded.quotes)
     }
 
+    @Test
+    fun `quote refresh reads no finance document and retries only quotes on recovery`() = runBlocking {
+        val rejected = configured("rejected-token")
+        val fallback = configured("fallback-token")
+        val config = MutableConvexConfigSource(rejected)
+        val repositories = mutableListOf<FixedResultFinanceRepository>()
+        val source = RecoveringFinanceReadSource(
+            remoteForConfig = { attempt ->
+                FixedResultFinanceRepository(
+                    if (attempt === rejected) ConvexResult.Unauthorized else ConvexResult.Missing,
+                ).also(repositories::add)
+            },
+            configSource = config,
+            onUnauthorized = { config.update(fallback); true },
+        )
+
+        assertSame(ConvexResult.Missing, source.loadQuotes())
+        assertEquals(2, repositories.size)
+        assertTrue(repositories.all { it.financeReads == 0 && it.quoteReads == 1 })
+    }
+
+    @Test
+    fun `quote refresh preserves unrecoverable rejection without loading finance`() = runBlocking {
+        val repository = FixedResultFinanceRepository(ConvexResult.Unauthorized)
+        var rejections = 0
+        val source = RecoveringFinanceReadSource(repository, onUnauthorized = { rejections++; false })
+        assertSame(ConvexResult.Unauthorized, source.loadQuotes())
+        assertEquals(1, rejections)
+        assertEquals(0, repository.financeReads)
+        assertEquals(1, repository.quoteReads)
+    }
+
     private fun configured(token: String) =
         ConvexConfig("https://finance-test.example", token, remoteReadEnabled = true)
 }

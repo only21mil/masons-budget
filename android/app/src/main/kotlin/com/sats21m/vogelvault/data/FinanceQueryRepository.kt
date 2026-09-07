@@ -19,6 +19,8 @@ data class LoadedFinanceRead(
 
 interface FinanceReadSource {
     suspend fun load(viewer: FamilyMember): LoadedFinanceRead
+
+    suspend fun loadQuotes(): ConvexResult<MarketQuoteReadSnapshot>
 }
 
 /**
@@ -46,6 +48,27 @@ class RecoveringFinanceReadSource(
     override suspend fun load(viewer: FamilyMember): LoadedFinanceRead {
         val first = loadOnce(viewer)
         return if (first.retryWithFallback) loadOnce(viewer).loaded else first.loaded
+    }
+
+    override suspend fun loadQuotes(): ConvexResult<MarketQuoteReadSnapshot> {
+        val requestConfig = configSource.current()
+        val quotes = remoteForConfig(requestConfig).getMarketQuoteSnapshot()
+        val unauthorized = quotes === ConvexResult.Unauthorized
+        val recoveredHere = unauthorized && onUnauthorized(requestConfig)
+        val currentConfig = configSource.current()
+        val recoveredConcurrently =
+            unauthorized &&
+                currentConfig.allowsRemoteRead &&
+                !currentConfig.hasSameReadConfigurationAs(requestConfig)
+        return if (recoveredHere || recoveredConcurrently) {
+            // Retry only the rejected projection, using the installed fallback.
+            val retryConfig = configSource.current()
+            val retried = remoteForConfig(retryConfig).getMarketQuoteSnapshot()
+            if (retried === ConvexResult.Unauthorized) onUnauthorized(retryConfig)
+            retried
+        } else {
+            quotes
+        }
     }
 
     private suspend fun loadOnce(viewer: FamilyMember): FinanceLoadAttempt {

@@ -86,6 +86,7 @@ internal class ActivitySearchIndex private constructor(
                             transaction.merchant,
                             transaction.note,
                             canonicalDecimalAmount(transaction.amount),
+                            transaction.amountSats?.toString(),
                             transaction.category,
                             transaction.card,
                         ).map(::normalizeSearchValue),

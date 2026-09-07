@@ -118,7 +118,7 @@ class MainActivity : FragmentActivity() {
         model = ViewModelProvider(this, app.viewModelFactory)[VaultViewModel::class.java]
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                refreshMarketQuotesPeriodically(refresh = model::refreshActiveProfile)
+                refreshMarketQuotesPeriodically(refresh = model::refreshMarketQuotes)
             }
         }
         biometricPrompt =

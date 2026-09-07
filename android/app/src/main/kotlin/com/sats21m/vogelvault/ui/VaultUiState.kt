@@ -23,6 +23,8 @@ import com.sats21m.vogelvault.domain.MarketQuoteSnapshot
 import com.sats21m.vogelvault.domain.ReadModel
 import com.sats21m.vogelvault.domain.budgetMonthsFor
 import com.sats21m.vogelvault.domain.resolveBudgetMonth
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -230,6 +232,7 @@ class VaultViewModel(
     private var liveModel: ReadModel? = null
     private var liveUnauthorized = false
     private var loadGeneration = 0L
+    private var quoteGeneration = 0L
 
     init {
         if (readReady.value && (rowSource != null || financeSource != null)) {
@@ -297,6 +300,36 @@ class VaultViewModel(
     fun refreshActiveProfile() {
         if (!readReady.value || (rowSource == null && financeSource == null)) return
         connectRows(_state.value.activeProfile)
+    }
+
+    /** Runs in the foreground lifecycle scope so stopping it also cancels the read. */
+    suspend fun refreshMarketQuotes() {
+        val source = financeSource ?: return
+        if (!readReady.value) return
+        val profile = _state.value.activeProfile
+        val generation = loadGeneration
+        val quoteRequest = ++quoteGeneration
+        val loaded = source.loadQuotes()
+        currentCoroutineContext().ensureActive()
+        val next = financeSurfaceState(ConvexResult.Missing, loaded)
+        _state.update { current ->
+            if (!isCurrentLoad(current, profile, generation) || quoteRequest != quoteGeneration) {
+                current
+            } else {
+                val diagnostics = current.financeReadDiagnostics
+                    .filterNot { it.projection == RowReadProjection.MARKET_QUOTES }.toSet() +
+                    next.readDiagnostics
+                val unauthorized = diagnostics.any { it.failure == RowReadFailure.UNAUTHORIZED }
+                current.copy(
+                    marketQuotes = next.marketQuotes,
+                    marketQuoteStatus = next.marketQuoteStatus,
+                    financeReadDiagnostics = diagnostics,
+                    financeUnauthorized = unauthorized,
+                    staleAuthorization = current.rowUnauthorized || unauthorized,
+                    now = clock(),
+                )
+            }
+        }
     }
 
     fun simulate(status: Freshness) {
@@ -451,6 +484,7 @@ class VaultViewModel(
         generation: Long,
     ) {
         val source = financeSource ?: return
+        val quoteRequest = ++quoteGeneration
         _state.update { current ->
             if (!isCurrentLoad(current, profile, generation)) current else current.copy(
                 financeStatus = Freshness.LOADING,
@@ -461,14 +495,21 @@ class VaultViewModel(
         if (!isCurrentLoad(profile, generation)) return
         val next = financeSurfaceState(loaded)
         _state.update { current ->
-            if (!isCurrentLoad(current, profile, generation)) current else current.copy(
+            if (!isCurrentLoad(current, profile, generation)) return@update current
+            val quotesCurrent = quoteRequest == quoteGeneration
+            val diagnostics = if (quotesCurrent) next.readDiagnostics else {
+                next.readDiagnostics.filterNot { it.projection == RowReadProjection.MARKET_QUOTES }.toSet() +
+                    current.financeReadDiagnostics.filter { it.projection == RowReadProjection.MARKET_QUOTES }
+            }
+            val unauthorized = diagnostics.any { it.failure == RowReadFailure.UNAUTHORIZED }
+            current.copy(
                 financeDocument = next.financeDocument,
                 financeStatus = next.financeStatus,
-                marketQuotes = next.marketQuotes,
-                marketQuoteStatus = next.marketQuoteStatus,
-                financeReadDiagnostics = next.readDiagnostics,
-                financeUnauthorized = next.unauthorized,
-                staleAuthorization = current.rowUnauthorized || next.unauthorized,
+                marketQuotes = if (quotesCurrent) next.marketQuotes else current.marketQuotes,
+                marketQuoteStatus = if (quotesCurrent) next.marketQuoteStatus else current.marketQuoteStatus,
+                financeReadDiagnostics = diagnostics,
+                financeUnauthorized = unauthorized,
+                staleAuthorization = current.rowUnauthorized || unauthorized,
                 now = clock(),
             )
         }
