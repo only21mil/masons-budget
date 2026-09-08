@@ -97,23 +97,35 @@ export async function internalAccess(api, email, addBuzzVisibility = false) {
   return { user_exists: true, eligible_role: role, app_visible: visible };
 }
 
-async function internalInvitation(api, email, input, record) {
+async function pendingInternalInvitations(api, email, record) {
+  await record('asc-invitation-lookup-started', { phase: 'GET_PENDING_INVITATION' });
   const existing = await list(api, '/v1/userInvitations', {
     'filter[email]': email, 'fields[userInvitations]': 'email,roles,allAppsVisible,provisioningAllowed,expirationDate' });
   require(existing.length <= 1, 'AMBIGUOUS_ASC_INVITATION');
   if (existing.length) {
     require(existing[0].type === 'userInvitations' && existing[0].attributes?.email?.toLowerCase() === email,
       'ASC_INVITATION_IDENTITY_MISMATCH');
+  }
+  await record('asc-invitation-lookup-result', { exists: existing.length === 1 });
+  return existing;
+}
+
+async function internalInvitation(api, email, input, record) {
+  const existing = await pendingInternalInvitations(api, email, record);
+  if (existing.length) {
     return 'EXISTING_ASC_INVITATION_REQUIRES_ACCEPTANCE';
   }
   const name = input?.internal_user;
   require(name && typeof name === 'object' && Object.keys(name).length === 2 &&
     ['firstName', 'lastName'].every(key => typeof name[key] === 'string' && name[key].trim() === name[key] && name[key].length > 0 && name[key].length <= 100),
   'INTERNAL_USER_NAME_REQUIRED');
+  await record('asc-invitation-create-started', { phase: 'CREATE_BUZZ_MARKETING_INVITATION' });
   const { data } = await api('/v1/userInvitations', 'POST', { data: { type: 'userInvitations',
     attributes: { email, ...name, roles: ['MARKETING'], allAppsVisible: false, provisioningAllowed: false },
     relationships: { visibleApps: { data: [resource('apps', APP)] } } } });
   require(data?.type === 'userInvitations' && metadataId(data.id), 'INVALID_ASC_INVITATION_RECEIPT');
+  await record('asc-invitation-create-accepted', { status: 'PROVIDER_ACCEPTED_READBACK_PENDING' });
+  await record('asc-invitation-readback-started', { phase: 'GET_CREATED_INVITATION_AND_APP_SCOPE' });
   const { data: saved } = await api(`/v1/userInvitations/${data.id}`);
   const apps = await list(api, `/v1/userInvitations/${data.id}/visibleApps`, { 'fields[apps]': 'bundleId' });
   require(saved?.id === data.id && saved.type === 'userInvitations' && saved.attributes?.email?.toLowerCase() === email &&
@@ -259,9 +271,11 @@ export async function operate({ api, email, action, groupId, metadata, record = 
   require(typeof email === 'string' && email === email.trim().toLowerCase() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'INVALID_RECIPIENT');
   const access = action === 'inventory' ? await internalAccess(api, email) : undefined;
   if (access) await record('internal-access', access);
+  const pending = access && !access.user_exists ? await pendingInternalInvitations(api, email, record) : undefined;
   const before = await inventory(api, email);
   await record('before', before.receipt);
-  if (action === 'inventory') return { status: 'INVENTORY_ONLY', ...before.receipt, internal_access: access };
+  if (action === 'inventory') return { status: 'INVENTORY_ONLY', ...before.receipt, internal_access: access,
+    ...(pending ? { pending_internal_invitation: { exists: pending.length === 1 } } : {}) };
   if (action === 'metadata') {
     require(!groupId, 'METADATA_GROUP_MUST_BE_EMPTY');
     const changes = await updateBetaMetadata(api, metadata, record);

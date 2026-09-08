@@ -419,3 +419,32 @@ test('Buzz visibility grant refuses ineligible roles and detects broadened readb
   await assert.rejects(internalAccess(api, EMAIL, true), /ASC_APP_ACCESS_READBACK_MISMATCH/);
   assert.equal(writes, 1);
 });
+
+test('read-only inventory confirms pending invitation without contact disclosure or sends', async () => {
+  const base = fixture(); const records = [];
+  const api = async (path, ...args) => {
+    const url = new URL(path, 'https://fixture.test');
+    if (url.pathname === '/v1/users') return { data: [] };
+    if (url.pathname === '/v1/userInvitations') {
+      assert.equal(url.searchParams.get('filter[email]'), EMAIL);
+      return { data: [{ type: 'userInvitations', id: 'fixture-invitation', attributes: { email: EMAIL } }] };
+    }
+    return base.api(path, ...args);
+  };
+  const result = await operate({ api, email: EMAIL, action: 'inventory', record: async (name, value) => records.push({ name, value }) });
+  assert.deepEqual(result.pending_internal_invitation, { exists: true });
+  assert.equal(JSON.stringify({ result, records }).includes(EMAIL), false); assert.deepEqual(base.writes, []);
+});
+
+test('pending-invitation provider failure leaves read-only stage proof and never sends', async () => {
+  const base = fixture(); const records = [];
+  const api = async (path, ...args) => {
+    const p = new URL(path, 'https://fixture.test').pathname;
+    if (p === '/v1/users') return { data: [] };
+    if (p === '/v1/userInvitations') throw new Error('APPLE_HTTP_500');
+    return base.api(path, ...args);
+  };
+  await assert.rejects(operate({ api, email: EMAIL, action: 'inventory', record: async (name, value) => records.push({ name, value }) }), /APPLE_HTTP_500/);
+  assert.deepEqual(records.map(item => item.name), ['internal-access', 'asc-invitation-lookup-started']);
+  assert.deepEqual(base.writes, []);
+});
