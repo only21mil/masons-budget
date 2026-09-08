@@ -42,6 +42,8 @@
     ; This is a named endpoint grant, not a method or serving-peer restriction.
     ; Production use requires the dedicated-home/service lifecycle acceptance.
     (global-name "com.apple.CoreSimulator.CoreSimulatorService")
+    (global-name "com.apple.CoreSimulator.simdiskimaged")
+    (global-name "com.apple.CoreSimulator.SimLaunchHost-arm64")
     (global-name "com.apple.lsd.mapdb")
     (global-name "com.apple.bsd.dirhelper")
     (global-name "com.apple.system.opendirectoryd.libinfo")
