@@ -63,6 +63,28 @@ async function recipient(api, email) {
   return tester;
 }
 
+async function betaMetadata(api) {
+  const present = value => typeof value === 'string' && value.trim().length > 0;
+  // Request only these current-app fields. Never retrieve demo-account passwords.
+  let detail;
+  try {
+    ({ data: detail } = await api(`/v1/apps/${APP}/betaAppReviewDetail?fields%5BbetaAppReviewDetails%5D=contactFirstName,contactLastName,contactPhone,contactEmail,demoAccountRequired`));
+  } catch (error) { if (error.message !== 'APPLE_HTTP_404') throw error; }
+  const contactFields = ['contactFirstName', 'contactLastName', 'contactPhone', 'contactEmail'];
+  const missingContact = contactFields.filter(field => !present(detail?.attributes?.[field]));
+  const localizations = await list(api, `/v1/apps/${APP}/betaAppLocalizations`, {
+    'fields[betaAppLocalizations]': 'description,feedbackEmail,locale' });
+  const notes = await list(api, `/v1/builds/${BUILD}/betaBuildLocalizations`, {
+    'fields[betaBuildLocalizations]': 'whatsNew,locale' });
+  const missingDescriptions = localizations.filter(item => !present(item.attributes?.description)).length;
+  return { review_detail_exists: !!detail, missing_contact_fields: missingContact,
+    demo_account_required: detail?.attributes?.demoAccountRequired ?? null,
+    demo_account_credentials_checked: false, app_localization_count: localizations.length,
+    missing_description_count: missingDescriptions,
+    feedback_email_present: localizations.some(item => present(item.attributes?.feedbackEmail)),
+    build_test_notes_present: notes.some(item => present(item.attributes?.whatsNew)) };
+}
+
 export async function inventory(api, email) {
   const { data: app } = await api(`/v1/apps/${APP}`);
   require(app?.id === APP && app.type === 'apps' && app.attributes?.bundleId === 'com.sats21m.buzz', 'APP_MISMATCH');
@@ -93,7 +115,7 @@ export async function inventory(api, email) {
     summaries.some(group => group.build_member && group.other_testers);
   return { tester, receipt: { app: APP, build: BUILD, version: '0.5.9', build_number: '1', processing: 'VALID',
     internal_state: beta.attributes?.internalBuildState, external_state: beta.attributes?.externalBuildState,
-    unrelated_build_audience: unrelatedAudience, recipient_exists: !!tester, recipient_state: tester?.attributes?.state ?? null, groups: summaries } };
+    beta_metadata: await betaMetadata(api), unrelated_build_audience: unrelatedAudience, recipient_exists: !!tester, recipient_state: tester?.attributes?.state ?? null, groups: summaries } };
 }
 
 export async function operate({ api, email, action, groupId, record = async () => {} }) {
@@ -144,6 +166,11 @@ export async function operate({ api, email, action, groupId, record = async () =
   let current = await inventory(api, email);
   if (!group.internal && current.receipt.external_state === 'READY_FOR_BETA_SUBMISSION') {
     require(!current.receipt.unrelated_build_audience, 'BETA_REVIEW_WOULD_NOTIFY_OTHER_TESTERS');
+    const metadata = current.receipt.beta_metadata;
+    require(metadata.review_detail_exists && metadata.missing_contact_fields.length === 0 &&
+      metadata.app_localization_count > 0 && metadata.missing_description_count === 0 &&
+      metadata.feedback_email_present && metadata.build_test_notes_present, 'BETA_REVIEW_METADATA_INCOMPLETE');
+    require(metadata.demo_account_required === false, 'BETA_REVIEW_DEMO_ACCOUNT_REQUIRES_SEPARATE_VERIFICATION');
     const { data } = await api('/v1/betaAppReviewSubmissions', 'POST', { data: { type: 'betaAppReviewSubmissions',
       relationships: { build: relationship('builds', BUILD) } } });
     require(data?.type === 'betaAppReviewSubmissions', 'INVALID_BETA_REVIEW_RECEIPT');

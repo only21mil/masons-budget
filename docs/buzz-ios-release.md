@@ -113,3 +113,7 @@ Group names never enter receipts. Apple Ready to Test is pending until a scoped
 build notification and live IN_BETA_TESTING readback succeed. Notifications and
 auto-notifying beta review submission refuse any unrelated build audience.
 API failures retain only bounded error codes and attribute pointers.
+
+Inventory reports presence-only beta review contact, description, feedback email
+and test notes for the fixed app/build. It never retrieves demo-account passwords.
+Submission refuses missing required metadata or unverified demo-account access.

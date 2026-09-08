@@ -18,6 +18,9 @@ function fixture({ internal = false, publicLink = false, other = false, member =
       return {};
     }
     const p = url.pathname;
+    if (p.endsWith('/betaAppReviewDetail')) return { data: { attributes: { contactFirstName: EMAIL, contactLastName: EMAIL, contactPhone: EMAIL, contactEmail: EMAIL, demoAccountRequired: false } } };
+    if (p.endsWith('/betaAppLocalizations')) return { data: [{ attributes: { description: EMAIL, feedbackEmail: EMAIL, locale: 'en-US' } }] };
+    if (p.endsWith('/betaBuildLocalizations')) return { data: [{ attributes: { whatsNew: EMAIL, locale: 'en-US' } }] };
     if (p === `/v1/apps/${APP}` || p.endsWith('/app')) return { data: { id: APP, type: 'apps', attributes: { bundleId: 'com.sats21m.buzz' } } };
     if (p === `/v1/builds/${BUILD}`) return { data: { id: BUILD, type: 'builds', attributes: { version: '1', processingState: 'VALID', expired: false } } };
     if (p.endsWith('/preReleaseVersion')) return { data: { attributes: { version: '0.5.9', platform: 'IOS' } } };
@@ -112,4 +115,25 @@ test('Apple error diagnostics omit details, titles and unsafe pointers', async (
     assert.equal(error.message, 'APPLE_HTTP_409'); assert.equal(JSON.stringify(error.apple).includes(EMAIL), false);
     assert.equal(error.apple[0].pointer, '/data/attributes/description'); return true;
   });
+});
+
+test('metadata inventory reports presence without contact or description values', async () => {
+  const { api } = fixture();
+  const result = await operate({ api, email: EMAIL, action: 'inventory' });
+  assert.equal(result.beta_metadata.review_detail_exists, true);
+  assert.deepEqual(result.beta_metadata.missing_contact_fields, []);
+  assert.equal(result.beta_metadata.build_test_notes_present, true);
+  assert.equal(JSON.stringify(result).includes(EMAIL), false);
+});
+test('absent beta review detail is reported and submission refuses missing metadata', async () => {
+  const base = fixture({ beta: 'READY_FOR_BETA_SUBMISSION' });
+  const api = async (path, ...args) => {
+    if (new URL(path, 'https://api.appstoreconnect.apple.com').pathname.endsWith('/betaAppReviewDetail')) throw new Error('APPLE_HTTP_404');
+    return base.api(path, ...args);
+  };
+  const result = await operate({ api, email: EMAIL, action: 'inventory' });
+  assert.equal(result.beta_metadata.review_detail_exists, false);
+  assert.equal(result.beta_metadata.missing_contact_fields.length, 4);
+  await assert.rejects(operate({ api, email: EMAIL, action: 'distribute', groupId: GROUP }), /BETA_REVIEW_METADATA_INCOMPLETE/);
+  assert.deepEqual(base.writes, []);
 });
