@@ -4,7 +4,7 @@ import { APP, BUILD, client, operate } from '../buzz_testflight_recipient.mjs';
 const EMAIL = 'fixture@example.test';
 const GROUP = '11111111-1111-1111-1111-111111111111';
 const TESTER = '22222222-2222-2222-2222-222222222222';
-function fixture({ internal = false, publicLink = false, other = false, member = true, assigned = true,
+function fixture({ internal = false, publicLink = false, allBuilds = false, other = false, member = true, assigned = true,
   state = 'INVITED', beta = 'IN_BETA_TESTING', otherBuild = false, otherIndividual = false, notificationActivates = true, groupName = 'Buzz private beta' } = {}) {
   const writes = [];
   const api = async (path, method = 'GET', body) => {
@@ -26,7 +26,7 @@ function fixture({ internal = false, publicLink = false, other = false, member =
     if (p.endsWith('/preReleaseVersion')) return { data: { attributes: { version: '0.5.9', platform: 'IOS' } } };
     if (p.endsWith('/buildBetaDetail')) return { data: { type: 'buildBetaDetails', attributes: { internalBuildState: beta, externalBuildState: beta } } };
     if (p === '/v1/betaTesters') return { data: [{ id: TESTER, type: 'betaTesters', attributes: { email: EMAIL, state } }] };
-    if (p === '/v1/betaGroups') return { data: [{ id: GROUP, type: 'betaGroups', attributes: { name: groupName, isInternalGroup: internal, publicLinkEnabled: publicLink, hasAccessToAllBuilds: false } }] };
+    if (p === '/v1/betaGroups') return { data: [{ id: GROUP, type: 'betaGroups', attributes: { name: groupName, isInternalGroup: internal, publicLinkEnabled: publicLink, hasAccessToAllBuilds: allBuilds } }] };
     if (p.endsWith('/relationships/betaTesters')) return { data: [...(member ? [{ id: TESTER }] : []), ...(other ? [{ id: 'other' }] : [])] };
     if (p.endsWith('/relationships/builds')) return { data: [...(assigned ? [{ id: BUILD }] : []), ...(otherBuild ? [{ id: 'other-build' }] : [])] };
     if (p.endsWith('/relationships/individualTesters')) return { data: otherIndividual ? [{ id: 'other-tester' }] : [] };
@@ -179,4 +179,74 @@ test('metadata PATCH response cannot rebind the selected opaque resource ID', as
     return base.api(path, method, body);
   };
   await assert.rejects(operate({ api, email: EMAIL, action: 'metadata', metadata: { review_detail: { contactFirstName: 'Updated' } } }), /INVALID_METADATA_WRITE_RECEIPT/);
+});
+
+// Sanitized structural readback from run 34261330765 after group creation.
+// Apple returned null for hasAccessToAllBuilds on an empty external group.
+for (const groupId of [GROUP, 'new-private']) {
+  test(`external null group resumes empty-group setup via ${groupId}`, async () => {
+    const base = fixture({ allBuilds: null, member: false, assigned: false, beta: 'READY_FOR_BETA_SUBMISSION' });
+    let created = false;
+    const writes = [];
+    const api = async (path, method = 'GET', body) => {
+      const p = new URL(path, 'https://api.appstoreconnect.apple.com').pathname;
+      if (method !== 'GET') writes.push({ path: p, method, body });
+      if (p === '/v1/betaTesters') {
+        if (method === 'POST') {
+          created = true;
+          return { data: { type: 'betaTesters', id: TESTER } };
+        }
+        return { data: created ? [{ type: 'betaTesters', id: TESTER, attributes: { email: EMAIL, state: 'NOT_INVITED' } }] : [] };
+      }
+      if (p.endsWith('/relationships/betaTesters')) return { data: created ? [{ id: TESTER }] : [] };
+      if (p.endsWith('/betaAppReviewDetail')) return { data: { attributes: { demoAccountRequired: null } } };
+      if (p.endsWith('/betaAppLocalizations') || p.endsWith('/betaBuildLocalizations')) return { data: [] };
+      return base.api(path, method, body);
+    };
+    const result = await operate({ api, email: EMAIL, action: 'distribute', groupId });
+    assert.equal(result.status, 'BETA_REVIEW_METADATA_REQUIRED');
+    assert.equal(result.selected_group, GROUP);
+    assert.equal(result.build_available, false);
+    assert.equal(result.invitation, 'NOT_SENT_BUILD_UNAVAILABLE');
+    assert.equal(result.groups[0].all_builds, null);
+    assert.equal(result.groups[0].recipient_member, true);
+    assert.equal(result.groups[0].build_member, true);
+    assert.deepEqual(writes, [
+      { path: `/v1/betaGroups/${GROUP}/relationships/builds`, method: 'POST', body: { data: [{ type: 'builds', id: BUILD }] } },
+      { path: '/v1/betaTesters', method: 'POST', body: { data: { type: 'betaTesters', attributes: { email: EMAIL },
+        relationships: { betaGroups: { data: [{ type: 'betaGroups', id: GROUP }] } } } } },
+    ]);
+    assert.equal(JSON.stringify(result).includes(EMAIL), false);
+    await operate({ api, email: EMAIL, action: 'distribute', groupId });
+    assert.equal(writes.length, 2, 'retry must reuse group, build and recipient');
+  });
+}
+for (const [label, options, code] of [
+  ['internal null', { internal: true, allBuilds: null }, 'GROUP_NOT_PRIVATE_AND_SCOPED'],
+  ['external all builds', { allBuilds: true }, 'GROUP_NOT_PRIVATE_AND_SCOPED'],
+  ['internal all builds', { internal: true, allBuilds: true }, 'GROUP_NOT_PRIVATE_AND_SCOPED'],
+  ['malformed all builds', { allBuilds: 'false' }, 'GROUP_NOT_PRIVATE_AND_SCOPED'],
+  ['numeric all builds', { allBuilds: 0 }, 'GROUP_NOT_PRIVATE_AND_SCOPED'],
+  ['external null public link', { allBuilds: null, publicLink: true }, 'GROUP_NOT_PRIVATE_AND_SCOPED'],
+  ['external null with other builds', { allBuilds: null, member: false, otherBuild: true }, 'MEMBERSHIP_WOULD_GRANT_OTHER_BUILDS'],
+  ['external null with other testers', { allBuilds: null, assigned: false, other: true }, 'BUILD_WOULD_REACH_OTHER_TESTERS'],
+  ['external null with notification audience', { allBuilds: null, beta: 'READY_FOR_BETA_TESTING', otherIndividual: true }, 'NOTIFICATION_WOULD_REACH_OTHER_TESTERS'],
+]) {
+  test(`${label} still fails closed`, async () => {
+    const { api, writes } = fixture(options);
+    await assert.rejects(operate({ api, email: EMAIL, action: 'distribute', groupId: GROUP }), new RegExp(code));
+    assert.deepEqual(writes, []);
+  });
+}
+test('missing all-builds attribute still fails closed', async () => {
+  const base = fixture();
+  const api = async (path, ...args) => {
+    const result = await base.api(path, ...args);
+    if (new URL(path, 'https://api.appstoreconnect.apple.com').pathname === '/v1/betaGroups') {
+      delete result.data[0].attributes.hasAccessToAllBuilds;
+    }
+    return result;
+  };
+  await assert.rejects(operate({ api, email: EMAIL, action: 'distribute', groupId: GROUP }), /GROUP_NOT_PRIVATE_AND_SCOPED/);
+  assert.deepEqual(base.writes, []);
 });

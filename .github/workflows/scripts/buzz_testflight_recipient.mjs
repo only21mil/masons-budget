@@ -211,7 +211,10 @@ export async function operate({ api, email, action, groupId, metadata, record = 
     }
   } else group = before.receipt.groups.find(item => item.id === groupId);
   require(groupId !== 'new-private' || group?.internal === false, 'EXTERNAL_GROUP_REQUIRED');
-  require(group && group.public_link === false && group.all_builds === false, 'GROUP_NOT_PRIVATE_AND_SCOPED');
+  // Apple returns explicit null for this field on external groups. Keep internal
+  // groups strict and verify actual build/tester relationships below.
+  const scopedBuildAccess = group?.all_builds === false || (group?.internal === false && group.all_builds === null);
+  require(group && group.public_link === false && scopedBuildAccess, 'GROUP_NOT_PRIVATE_AND_SCOPED');
   // Existing internal access may be reused; this tool never grants team or app roles.
   require(!group.internal || group.recipient_member, 'INTERNAL_MEMBERSHIP_REQUIRED');
   require(group.recipient_member || !group.other_builds, 'MEMBERSHIP_WOULD_GRANT_OTHER_BUILDS');
