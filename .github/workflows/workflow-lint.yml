@@ -132,9 +132,11 @@ jobs:
           python3 .github/workflows/scripts/tests/test_mac_build_portability.py
           python3 .github/workflows/scripts/tests/test_mac_build_boundary.py
           python3 .github/workflows/scripts/tests/test_buzz_ios_release.py
+          python3 .github/workflows/scripts/tests/test_buzz_ios_hosted.py
+          node --test .github/workflows/scripts/tests/buzz_ios_asc.test.mjs
           python3 .github/workflows/scripts/tests/test_buzz_macos_build_supervisor.py
           python3 .github/workflows/scripts/tests/test_home_rmdir_diagnostic.py
-          shellcheck .github/workflows/scripts/buzz_macos_build.sh .github/workflows/scripts/buzz-verify-macos-entitlements.sh .github/workflows/scripts/buzz_ios_build.sh
+          shellcheck .github/workflows/scripts/buzz_macos_build.sh .github/workflows/scripts/buzz-verify-macos-entitlements.sh .github/workflows/scripts/buzz_ios_build.sh .github/workflows/scripts/buzz_ios_hosted_build.sh
 
       - name: Manual Apple release signing contract
         run: |
