@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 import plistlib
 import re
 import secrets
+import shlex
 import shutil
 import signal
 import subprocess
@@ -22,6 +23,8 @@ import sys
 import tarfile
 
 TEAM = "384ZGKG4GB"
+APPROVED_CERTIFICATE_SHA256 = "12b8d023db5e81dde29d53557e031803df5ee39067578d2b3996168bdb6c0805"
+APPROVED_IDENTITY_NAME = "Developer ID Application: Victor Vogel (384ZGKG4GB)"
 ENDPOINT = "https://github.com/only21mil/buzz/releases/download/buzz-desktop-latest/latest.json"
 SCRIPT = Path(__file__).resolve().parent
 ENTITLEMENTS = {
@@ -88,6 +91,7 @@ PHASES = {
     "unlock-keychain": "keychain-unlock", "import": "pkcs12-import",
     "set-key-partition-list": "keychain-partitions", "find-identity": "keychain-identities",
     "delete-keychain": "keychain-delete",
+    "list-keychains": "keychain-search-list-read", "find-certificate": "keychain-public-certificates",
     "codesign": "codesign", "lipo": "architecture-check", "openssl": "certificate-check",
     "ditto": "app-copy-or-zip", "hdiutil": "dmg-create", "tar": "updater-archive",
     "node": "updater-sign", "bash": "entitlements-check", "spctl": "gatekeeper-check",
@@ -162,6 +166,38 @@ def signing_targets(app: Path, targets: list[Path]) -> list[Path]:
 def signing_target_label(app: Path, path: Path) -> str:
     relative = "Buzz.app" if path == app else "Buzz.app/" + path.relative_to(app).as_posix()
     return relative if relative in SIGNING_TARGETS else "other-nested-code"
+
+
+def inspect_identity(keychain: Path, identity: str, name: str) -> None:
+    # Read metadata only. Raw keychain paths, other identities and certificates
+    # stay in memory; the sole retained receipt contains fixed fields/booleans.
+    search_output = run(["/usr/bin/security", "list-keychains", "-d", "user"])
+    require(len(search_output) <= 65536, "keychain search list exceeds bound")
+    search_list = shlex.split(search_output.decode("utf-8"))
+    require(len(search_list) <= 256 and all(Path(p).is_absolute() and
+            all(ord(c) >= 32 for c in p) for p in search_list), "invalid keychain search list")
+    default_output = run(["/usr/bin/security", "find-identity", "-v", "-p", "codesigning"])
+    require(len(default_output) <= 65536, "default identity list exceeds bound")
+    default_ids = re.findall(r'^\s*\d+\) ([0-9A-F]{40}) "[^"\r\n]+"\s*$',
+                             default_output.decode("utf-8"), flags=re.MULTILINE)
+    pem = run(["/usr/bin/security", "find-certificate", "-a", "-p", str(keychain)])
+    require(len(pem) <= 1024 * 1024, "public certificate output exceeds bound")
+    blocks = re.findall(rb"-----BEGIN CERTIFICATE-----\s*([A-Za-z0-9+/=\r\n]+)-----END CERTIFICATE-----", pem)
+    require(0 < len(blocks) <= 32, "invalid public certificate count")
+    certificates = [base64.b64decode(re.sub(rb"\s", b"", block), validate=True) for block in blocks]
+    selected = [cert for cert in certificates if hashlib.sha1(cert).hexdigest().upper() == identity]
+    data = {
+        "schema": "buzz-macos-identity-inspection-v1",
+        "temporary_keychain_in_user_search_list": any(Path(p).resolve() == keychain.resolve() for p in search_list),
+        "selected_identity_in_default_valid_list": identity in default_ids,
+        "selected_identity_default_valid_count": default_ids.count(identity),
+        "selected_name_matches_approved_identity": name == APPROVED_IDENTITY_NAME,
+        "public_certificate_count": len(certificates),
+        "selected_sha1_certificate_count": len(selected),
+        "selected_certificate_matches_approved_sha256": len(selected) == 1 and hashlib.sha256(selected[0]).hexdigest() == APPROVED_CERTIFICATE_SHA256,
+        "approved_sha256_certificate_present": any(hashlib.sha256(cert).hexdigest() == APPROVED_CERTIFICATE_SHA256 for cert in certificates),
+    }
+    print(json.dumps(data, sort_keys=True), flush=True)
 
 
 def run(argv: list[str], *, output: Path | None = None, input_data: bytes | None = None,
@@ -401,23 +437,29 @@ def sign(args: argparse.Namespace) -> None:
     require(root.is_dir() and not root.is_symlink() and output.is_dir(), "prepare must pass first")
     app = root / "extracted/Buzz.app"
     app_info(app, args.version)
+    inspection = getattr(args, "command", "sign") == "diagnose-identity"
     private = {k: os.environ.pop(k, "") for k in SECRET_NAMES}
-    require(all(private.values()), "missing protected Apple or updater credential")
+    required = SECRET_NAMES[:2] if inspection else SECRET_NAMES
+    require(all(private[k] for k in required), "missing protected Apple or updater credential")
     require(re.fullmatch(r"[A-Za-z0-9_-]{32,128}", private["BUZZ_DEVELOPER_ID_P12_PASSWORD"]) is not None, "p12 password violates bootstrap contract")
-    require(re.fullmatch(r"[A-Z0-9]{10}", private["ASC_KEY_ID"]) is not None, "invalid ASC key ID")
-    require(re.fullmatch(r"[0-9a-fA-F-]{36}", private["ASC_ISSUER_ID"]) is not None, "invalid ASC issuer")
+    if not inspection:
+        require(re.fullmatch(r"[A-Z0-9]{10}", private["ASC_KEY_ID"]) is not None, "invalid ASC key ID")
+        require(re.fullmatch(r"[0-9a-fA-F-]{36}", private["ASC_ISSUER_ID"]) is not None, "invalid ASC issuer")
     keychain = root / "signing.keychain-db"
     password = secrets.token_urlsafe(36)
-    for filename, data in (("developer-id.p12", base64.b64decode(private["BUZZ_DEVELOPER_ID_P12_B64"], validate=True)),
-                           ("updater.key", private["BUZZ_TAURI_SIGNING_PRIVATE_KEY"].encode())):
+    materials = [("developer-id.p12", base64.b64decode(private["BUZZ_DEVELOPER_ID_P12_B64"], validate=True))]
+    if not inspection:
+        materials.append(("updater.key", private["BUZZ_TAURI_SIGNING_PRIVATE_KEY"].encode()))
+    for filename, data in materials:
         (root/filename).write_bytes(data)
         (root/filename).chmod(0o600)
-    asc = private["ASC_API_KEY_P8"].strip().encode()
-    if not asc.startswith(b"-----BEGIN PRIVATE KEY-----"):
-        asc = base64.b64decode(asc, validate=True)
-    require(asc.startswith(b"-----BEGIN PRIVATE KEY-----"), "ASC key format invalid")
-    (root/"AuthKey.p8").write_bytes(asc)
-    (root/"AuthKey.p8").chmod(0o600)
+    if not inspection:
+        asc = private["ASC_API_KEY_P8"].strip().encode()
+        if not asc.startswith(b"-----BEGIN PRIVATE KEY-----"):
+            asc = base64.b64decode(asc, validate=True)
+        require(asc.startswith(b"-----BEGIN PRIVATE KEY-----"), "ASC key format invalid")
+        (root/"AuthKey.p8").write_bytes(asc)
+        (root/"AuthKey.p8").chmod(0o600)
     security_command(["create-keychain", "-p", password, str(keychain)])
     run(["/usr/bin/security", "set-keychain-settings", "-lut", "7200", str(keychain)])
     security_command(["unlock-keychain", "-p", password, str(keychain)])
@@ -427,6 +469,9 @@ def sign(args: argparse.Namespace) -> None:
     found = re.findall(r'\b([0-9A-F]{40}) "(Developer ID Application: [^"\n]+ \(' + TEAM + r'\))"', identities)
     require(len(found) == 1, "expected one valid Developer ID Application identity on approved team")
     identity, name = found[0]
+    if inspection:
+        inspect_identity(keychain, identity, name)
+        return
     entitlements = root/"entitlements.plist"
     entitlements.write_bytes(plistlib.dumps(ENTITLEMENTS))
     macho = []
@@ -512,7 +557,7 @@ def sign(args: argparse.Namespace) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("prepare", "sign", "cleanup"))
+    parser.add_argument("command", choices=("prepare", "sign", "diagnose-identity", "cleanup"))
     parser.add_argument("--source", default="")
     parser.add_argument("--version", default="")
     parser.add_argument("--arch", required=True, choices=("aarch64", "x86_64"))
@@ -524,7 +569,7 @@ def main() -> int:
     try:
         if args.command == "cleanup":
             cleanup(args.arch)
-        elif args.command == "sign":
+        elif args.command in ("sign", "diagnose-identity"):
             def interrupted(_sig, _frame):
                 raise RuntimeError("signing interrupted")
             signal.signal(signal.SIGTERM, interrupted)
