@@ -46,7 +46,7 @@ def phase(name):
     global PHASE
     PHASE = name
 
-def record_failure(error):
+def record_failure(error, *, operation=None, category=None):
     if any(error is previous for previous in RECORDED_ERRORS) or len(FAILURES) >= 4:
         return
     RECORDED_ERRORS.append(error)
@@ -59,7 +59,24 @@ def record_failure(error):
         value = getattr(error, key, None)
         if type(value) is int and -(2**31) <= value < 2**31:
             detail[key] = value
+    operations = {'ancestor_validation', 'directory_walk', 'acl_check', 'listdir',
+                  'stat', 'open', 'fstat', 'close', 'rmdir', 'unlink'}
+    categories = {'home', 'directory', 'regular_file', 'symlink', 'other_entry', 'unclassified_entry'}
+    if operation in operations and category in categories:
+        detail.update(operation=operation, category=category)
+        euid = os.geteuid()
+        if type(euid) is int and 0 <= euid < 2**32:
+            detail['euid'] = euid
     FAILURES.append(detail)
+
+
+def home_call(operation, category, function, *args, **kwargs):
+    """Record only fixed HOME operation labels; propagate the original error."""
+    try:
+        return function(*args, **kwargs)
+    except BaseException as error:
+        record_failure(error, operation=operation, category=category)
+        raise
 
 @contextlib.contextmanager
 def cleanup_signals():
@@ -192,46 +209,54 @@ def home_directory(expected):
     require(type(identity) is list and len(identity) == 6
             and all(type(value) is int for value in identity)
             and identity[2:] == [590, 590, 0o700, 0], 'invalid builder home identity')
-    root_path(BUILD_HOME.parent, True)
-    fd = open_directory(BUILD_HOME)
+    home_call('ancestor_validation', 'home', root_path, BUILD_HOME.parent, True)
+    fd = home_call('directory_walk', 'home', open_directory, BUILD_HOME)
     try:
-        no_acl(BUILD_HOME)
-        require(list(scratch_identity(os.fstat(fd))) == identity, 'builder home identity changed')
+        home_call('acl_check', 'home', no_acl, BUILD_HOME)
+        info = home_call('fstat', 'home', os.fstat, fd)
+        require(list(scratch_identity(info)) == identity, 'builder home identity changed')
         return fd
     except BaseException:
-        os.close(fd)
+        home_call('close', 'home', os.close, fd)
         raise
 
 def clear_builder_home(expected):
     """Called after UID drain under the lock; preserve the fixed home inode."""
     fd = home_directory(expected)
     device = expected['identity'][0]
-    def clear(directory, path):
-        for name in os.listdir(directory):
-            info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+    def clear(directory, path, category):
+        for name in home_call('listdir', category, os.listdir, directory):
+            info = home_call('stat', 'unclassified_entry', os.stat, name,
+                             dir_fd=directory, follow_symlinks=False)
             require(info.st_uid == info.st_gid == 590 and info.st_dev == device
                     and not getattr(info, 'st_flags', 0), 'unsafe builder home entry')
-            no_acl(path / name)
+            entry_category = ('directory' if stat.S_ISDIR(info.st_mode) else
+                              'symlink' if stat.S_ISLNK(info.st_mode) else
+                              'regular_file' if stat.S_ISREG(info.st_mode) else 'other_entry')
+            home_call('acl_check', entry_category, no_acl, path / name)
             if stat.S_ISDIR(info.st_mode):
-                child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                child = home_call('open', 'directory', os.open, name,
+                                  os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
                 try:
-                    require(scratch_identity(os.fstat(child)) == scratch_identity(info), 'builder home entry replaced')
-                    clear(child, path / name)
+                    opened = home_call('fstat', 'directory', os.fstat, child)
+                    require(scratch_identity(opened) == scratch_identity(info), 'builder home entry replaced')
+                    clear(child, path / name, 'directory')
                 finally:
-                    os.close(child)
-                os.rmdir(name, dir_fd=directory)
+                    home_call('close', 'directory', os.close, child)
+                home_call('rmdir', 'directory', os.rmdir, name, dir_fd=directory)
             else:
                 require(stat.S_ISLNK(info.st_mode) or (stat.S_ISREG(info.st_mode) and info.st_nlink == 1),
                         'special or multiply linked builder home entry')
-                os.unlink(name, dir_fd=directory)
-        require(not os.listdir(directory), 'incomplete builder home cleanup')
+                home_call('unlink', entry_category, os.unlink, name, dir_fd=directory)
+        require(not home_call('listdir', category, os.listdir, directory), 'incomplete builder home cleanup')
     try:
-        clear(fd, BUILD_HOME)
-        require(list(scratch_identity(os.fstat(fd))) == expected['identity'], 'builder home changed during cleanup')
+        clear(fd, BUILD_HOME, 'home')
+        info = home_call('fstat', 'home', os.fstat, fd)
+        require(list(scratch_identity(info)) == expected['identity'], 'builder home changed during cleanup')
         checked = home_directory(expected)
-        os.close(checked)
+        home_call('close', 'home', os.close, checked)
     finally:
-        os.close(fd)
+        home_call('close', 'home', os.close, fd)
 
 def scratch_snapshot(parent, uid, gid):
     """Attest the OS-owned ancestry and fixed, exclusively task-owned skeleton."""

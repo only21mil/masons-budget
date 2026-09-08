@@ -51,7 +51,12 @@ Decode that public tail locally to investigate Hermit/compiler failures. The
 boundary failure message itself is fixed and does not interpolate input values.
 A separate bounded metadata record reports fixed phase, exception class and
 numeric errno/return code. It retains the original and cleanup failure classes
-without raw exception text. Child privilege-drop or exec failure reports the
+without raw exception text. HOME filesystem failures also include a fixed operation
+label, entry category and numeric effective UID. Direct calls identify `listdir`,
+`stat`, `open`, `fstat`, `close`, `rmdir` or `unlink`; `ancestor_validation`,
+`directory_walk` and `acl_check` identify helper calls, not their internal syscall.
+These records contain no paths, entry names, contents or attribute values.
+Child privilege-drop or exec failure reports the
 same fixed metadata through the diagnostic pipe.
 
 Xcode also uses Darwin's per-user scratch independently of `HOME`. Under the

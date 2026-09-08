@@ -157,6 +157,134 @@ class HomeTests(unittest.TestCase):
                 s.clear_builder_home(self.expected)
         self.assertEqual(len(list(self.home.iterdir())), 1)
 
+    def test_home_failures_identify_operation_category_and_euid_without_private_values(self):
+        marker = 'PRIVATE_NAME_CONTENT_ATTRIBUTE_AND_EXCEPTION'
+        cases = [('listdir', 'home'), ('listdir', 'directory'),
+                 ('stat', 'unclassified_entry'), ('open', 'directory'),
+                 ('fstat', 'directory'), ('close', 'directory'),
+                 ('rmdir', 'directory'), ('unlink', 'regular_file'),
+                 ('unlink', 'symlink'), ('acl_check', 'regular_file')]
+        for operation, category in cases:
+            with self.subTest(operation=operation, category=category):
+                self.clear()
+                child = self.home / (marker + '_directory')
+                child.mkdir()
+                entry = child / (marker + '_entry')
+                if category == 'symlink':
+                    entry.symlink_to(self.outside / 'canary')
+                else:
+                    entry.write_text(marker)
+                child_inode = child.stat().st_ino
+                error = PermissionError(1, marker, str(entry))
+                error.filename2 = str(self.outside / marker)
+                error.xattr_value = marker
+                injected = False
+                s.FAILURES.clear(); s.RECORDED_ERRORS.clear()
+                s.phase('initial_home_clear')
+                with self.host_metadata(), patch.object(s.os, 'geteuid', return_value=0):
+                    owner, attribute = (s, 'no_acl') if operation == 'acl_check' else (s.os, operation)
+                    original = getattr(owner, attribute)
+
+                    def fail(*args, **kwargs):
+                        nonlocal injected
+                        selected = True
+                        if operation in ('listdir', 'fstat', 'close'):
+                            is_child = self.real_fstat(args[0]).st_ino == child_inode
+                            selected = is_child if category == 'directory' else not is_child
+                        elif operation == 'open':
+                            selected = args[0] == child.name
+                        elif operation == 'acl_check':
+                            selected = args[0] == entry
+                        if selected and not injected:
+                            injected = True
+                            if operation == 'close':
+                                original(*args, **kwargs)
+                            raise error
+                        return original(*args, **kwargs)
+
+                    with patch.object(owner, attribute, side_effect=fail), \
+                         contextlib.redirect_stdout(io.StringIO()) as stdout, \
+                         contextlib.redirect_stderr(io.StringIO()) as stderr:
+                        with self.assertRaises(PermissionError) as raised:
+                            s.clear_builder_home(self.expected)
+                        # The outer failure handler must retain the original attribution.
+                        s.phase('final_home_clear')
+                        s.record_failure(raised.exception)
+                self.assertIs(raised.exception, error)
+                self.assertTrue(injected)
+                self.assertEqual(s.FAILURES, [dict(phase='initial_home_clear',
+                    **{'class': 'PermissionError'}, errno=1, operation=operation,
+                    category=category, euid=0)])
+                exported = json.dumps(s.FAILURES) + stdout.getvalue() + stderr.getvalue()
+                for private in (marker, str(self.home), str(self.outside)):
+                    self.assertNotIn(private, exported)
+                self.assertEqual((self.outside / 'canary').read_text(), 'synthetic outside data')
+
+    def test_home_attestation_failures_use_fixed_helper_or_syscall_labels(self):
+        cases = [('ancestor_validation', s, 'root_path'),
+                 ('directory_walk', s, 'open_directory'),
+                 ('acl_check', s, 'no_acl'), ('fstat', s.os, 'fstat'),
+                 ('close', s.os, 'close')]
+        for operation, owner, attribute in cases:
+            with self.subTest(operation=operation):
+                error = PermissionError(1, 'PRIVATE_EXCEPTION', str(self.home))
+                s.FAILURES.clear(); s.RECORDED_ERRORS.clear()
+                s.phase('final_home_clear')
+                with self.host_metadata(), patch.object(s.os, 'geteuid', return_value=0):
+                    original = getattr(owner, attribute)
+
+                    def fail(*args, **kwargs):
+                        if operation == 'close':
+                            # Ignore ancestor descriptors closed by the directory walk.
+                            is_home = self.real_fstat(args[0]).st_ino == self.expected['identity'][1]
+                            result = original(*args, **kwargs)
+                            if not is_home:
+                                return result
+                        raise error
+
+                    with patch.object(owner, attribute, side_effect=fail):
+                        with self.assertRaises(PermissionError) as raised:
+                            s.clear_builder_home(self.expected)
+                self.assertIs(raised.exception, error)
+                self.assertEqual(s.FAILURES, [dict(phase='final_home_clear',
+                    **{'class': 'PermissionError'}, errno=1, operation=operation,
+                    category='home', euid=0)])
+
+    def test_cleanup_error_keeps_both_operations_and_original_exception_precedence(self):
+        child = self.home / 'directory'
+        child.mkdir()
+        child_inode = child.stat().st_ino
+        first = PermissionError(1, 'PRIVATE_FIRST')
+        cleanup = OSError(5, 'PRIVATE_CLEANUP')
+        original_close = os.close
+        s.FAILURES.clear(); s.RECORDED_ERRORS.clear()
+        s.phase('final_home_clear')
+
+        def close(fd):
+            is_child = self.real_fstat(fd).st_ino == child_inode
+            original_close(fd)
+            if is_child:
+                raise cleanup
+
+        def listdir(fd):
+            if self.real_fstat(fd).st_ino == child_inode:
+                raise first
+            return [child.name]
+
+        with self.host_metadata(), patch.object(s.os, 'geteuid', return_value=590), \
+             patch.object(s.os, 'listdir', side_effect=listdir), \
+             patch.object(s.os, 'close', side_effect=close):
+            with self.assertRaises(OSError) as raised:
+                s.clear_builder_home(self.expected)
+            s.record_failure(raised.exception)
+        self.assertIs(raised.exception, cleanup)
+        self.assertIs(raised.exception.__context__, first)
+        self.assertEqual(s.FAILURES, [
+            dict(phase='final_home_clear', **{'class': 'PermissionError'}, errno=1,
+                 operation='listdir', category='directory', euid=590),
+            dict(phase='final_home_clear', **{'class': 'OSError'}, errno=5,
+                 operation='close', category='directory', euid=590)])
+
 
 class LifecycleTests(unittest.TestCase):
     def test_failure_or_cancellation_drains_and_clears_home_without_export(self):
@@ -331,6 +459,17 @@ class LifecycleTests(unittest.TestCase):
         s.record_failure(first)
         self.assertEqual(s.FAILURES, [{'phase': 'post_payload_home_clear', 'class': 'PermissionError', 'errno': 13},
                                     {'phase': 'final_drain', 'class': 'BoundaryError'}])
+
+    def test_home_diagnostic_labels_reject_private_values_and_keep_failure_bound(self):
+        s.FAILURES.clear(); s.RECORDED_ERRORS.clear()
+        s.phase('initial_home_clear')
+        for operation, category in [('PRIVATE_OPERATION', 'home'), ('unlink', 'PRIVATE_CATEGORY')]:
+            s.record_failure(PermissionError(1, 'PRIVATE_EXCEPTION'),
+                             operation=operation, category=category)
+        for _ in range(5):
+            s.record_failure(PermissionError(1, 'PRIVATE_EXCEPTION'))
+        self.assertEqual(s.FAILURES, [dict(phase='initial_home_clear',
+            **{'class': 'PermissionError'}, errno=1)] * 4)
 
 
 class UpgradeTests(unittest.TestCase):
