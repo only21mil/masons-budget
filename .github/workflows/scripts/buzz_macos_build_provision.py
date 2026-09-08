@@ -181,8 +181,10 @@ def account_attributes():
     for name in ('UniqueID', 'PrimaryGroupID', 'UserShell', 'NFSHomeDirectory',
                  'AuthenticationAuthority', 'GeneratedUID', 'IsHidden'):
         raw = command(['/usr/bin/dscl', '.', '-read', '/Users/buzzbuild', name]).decode().strip()
-        prefix = name + ':'
-        require(raw.startswith(prefix), 'unexpected account attribute format')
+        prefix = ('dsAttrTypeNative:IsHidden:' if name == 'IsHidden'
+                  and raw.startswith('dsAttrTypeNative:IsHidden:') else name + ':')
+        require(raw.startswith(prefix) and len(raw.splitlines()) == 1,
+                'unexpected account attribute format')
         result[name] = raw[len(prefix):].strip()
     require(result['UniqueID'] == '590' and result['PrimaryGroupID'] == '590'
             and result['UserShell'] == '/usr/bin/false' and result['IsHidden'] == '1'
