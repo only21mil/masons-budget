@@ -128,6 +128,49 @@ class VisibilityTests(unittest.TestCase):
         self.assertEqual(self.current, self.before)
         self.assertFalse(self.root.exists())
 
+    def test_failed_deletion_retains_marker_until_clean_retry(self):
+        self.marker.write_text(json.dumps(driver.search_list_digest(self.before)))
+        preimage = self.marker.read_bytes()
+        for filename in ("developer-id.p12", "AuthKey.p8", "updater.key"):
+            (self.root / filename).write_text("SYNTHETIC-SECRET")
+        with patch.object(driver, "run", side_effect=RuntimeError("synthetic deletion failure")):
+            with self.assertRaisesRegex(ValueError, "could not delete temporary keychain"):
+                driver.cleanup("aarch64")
+        self.assertTrue(self.keychain.exists())
+        self.assertEqual(self.marker.read_bytes(), preimage)
+        self.assertNotIn('"status": "passed"', self.output.getvalue())
+        for filename in ("developer-id.p12", "AuthKey.p8", "updater.key"):
+            self.assertFalse((self.root / filename).exists())
+        with patch.object(driver, "run", side_effect=self.delete_keychain), patch.object(driver, "user_search_list", return_value=list(self.before)) as readback:
+            driver.cleanup("aarch64")
+        readback.assert_called_once_with()
+        self.assertFalse(self.root.exists())
+
+    def test_failed_deletion_retry_rejects_changed_list(self):
+        self.marker.write_text(json.dumps(driver.search_list_digest(self.before)))
+        preimage = self.marker.read_bytes()
+        with patch.object(driver, "run", side_effect=RuntimeError("synthetic deletion failure")):
+            with self.assertRaisesRegex(ValueError, "could not delete temporary keychain"):
+                driver.cleanup("aarch64")
+        self.assertTrue(self.keychain.exists())
+        self.assertEqual(self.marker.read_bytes(), preimage)
+        changed = ["/fixture/concurrent-keychain", *self.before]
+        self.current = list(changed)
+        with patch.object(driver, "run", side_effect=self.delete_keychain), patch.object(driver, "user_search_list", side_effect=lambda: list(self.current)) as readback:
+            with self.assertRaisesRegex(ValueError, "restoration unproven"):
+                driver.cleanup("aarch64")
+        readback.assert_called_once_with()
+        self.assertFalse(self.keychain.exists())
+        self.assertEqual(self.current, changed)
+        self.assertEqual(self.marker.read_bytes(), preimage)
+        # The marker still governs a later cleanup when the keychain is gone.
+        self.current = list(self.before)
+        with patch.object(driver, "run") as delete, patch.object(driver, "user_search_list", return_value=list(self.before)) as readback:
+            driver.cleanup("aarch64")
+        delete.assert_not_called()
+        readback.assert_called_once_with()
+        self.assertFalse(self.root.exists())
+
     def test_runner_signals_unwind_signing_and_cleanup(self):
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             self.addCleanup(signal.signal, sig, signal.getsignal(sig))

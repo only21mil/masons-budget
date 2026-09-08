@@ -476,8 +476,11 @@ def cleanup(arch: str) -> None:
     if marker.exists() or marker.is_symlink():
         try:
             verify_search_list_marker(marker, user_search_list())
-            marker.unlink()
-            phase_event("keychain-search-list-restoration", "passed")
+            # A failed deletion must leave the proof for the next cleanup,
+            # even when this attempt's search list already matches.
+            if not errors:
+                marker.unlink()
+                phase_event("keychain-search-list-restoration", "passed")
         except Exception:
             phase_event("keychain-search-list-restoration", "failed")
             errors.append("exact search-list restoration unproven")
