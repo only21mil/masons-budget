@@ -587,7 +587,7 @@ def sign(args: argparse.Namespace) -> None:
             run(["/usr/bin/codesign", "--force", "--sign", identity, "--keychain", str(keychain), "--timestamp", "--options", "runtime", "--entitlements", str(entitlements), str(path)],
                 signing_target=signing_target_label(app, path))
     cert_prefix = str(root/"certificate-")
-    run(["/usr/bin/codesign", "--display", "--extract-certificates", cert_prefix, str(app)])
+    run(["/usr/bin/codesign", "--display", "--extract-certificates=" + cert_prefix, str(app)])
     cert_hash = sha(Path(cert_prefix+"0"))
     cert_info = run(["/usr/bin/openssl", "x509", "-inform", "DER", "-in", cert_prefix+"0", "-noout", "-subject"]).decode()
     require(TEAM in cert_info and "Developer ID Application:" in cert_info, "signed certificate identity differs")
