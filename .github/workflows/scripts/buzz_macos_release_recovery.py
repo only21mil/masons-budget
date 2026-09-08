@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -108,7 +109,7 @@ def command_phase(argv: list[str]) -> str:
 def phase_event(phase: str, status: str, result=None) -> None:
     # Only constants and integer process metadata. Never argv, stdin, tool text,
     # exception messages, credential values, identity names or filesystem paths.
-    require(phase in set(PHASES.values()) | {"trusted-command"}, "unknown public phase")
+    require(phase in set(PHASES.values()) | {"trusted-command", "keychain-search-list-write", "keychain-search-list-restoration"}, "unknown public phase")
     require(status in ("started", "passed", "failed"), "unknown public status")
     data = {"schema": "buzz-macos-sign-phase-v1", "phase": phase, "status": status}
     if result is not None:
@@ -202,7 +203,7 @@ def inspect_identity(keychain: Path, identity: str, name: str) -> None:
 
 def run(argv: list[str], *, output: Path | None = None, input_data: bytes | None = None,
         extra: dict | None = None, confidential: bool = False, phase: str | None = None,
-        signing_target: str | None = None) -> bytes:
+        signing_target: str | None = None, require_empty_stderr: bool = False) -> bytes:
     require(not (confidential and output is not None), "confidential output cannot be retained")
     if signing_target is not None:
         require(argv[0] == "/usr/bin/codesign" and "--sign" in argv
@@ -222,6 +223,7 @@ def run(argv: list[str], *, output: Path | None = None, input_data: bytes | None
         # No subprocess exception or command/input interpolation: security -i may
         # echo its input, which must never reach logs or a retained receipt.
         raise RuntimeError("trusted signing command failed" if confidential else f"{Path(argv[0]).name} failed; exit {result.returncode}")
+    require(not require_empty_stderr or not result.stderr, "trusted metadata command reported a warning")
     return result.stdout
 
 
@@ -369,7 +371,90 @@ def security_command(words: list[str]) -> bytes:
     # URL-safe ASCII by bootstrap contract. No secret ever becomes an OS argv.
     require(all("\n" not in w and "\r" not in w and "\x00" not in w for w in words), "invalid security command token")
     command = " ".join('"' + w.replace("\\", "\\\\").replace('"', '\\"') + '"' for w in words)
-    return run(["/usr/bin/security", "-i"], input_data=(command + "\n").encode(), confidential=True, phase=PHASES[words[0]])
+    phase = "keychain-search-list-write" if words[0] == "list-keychains" and "-s" in words else PHASES[words[0]]
+    return run(["/usr/bin/security", "-i"], input_data=(command + "\n").encode(), confidential=True, phase=phase)
+
+
+def user_search_list() -> list[str]:
+    raw = run(["/usr/bin/security", "list-keychains", "-d", "user"], require_empty_stderr=True)
+    require(len(raw) <= 65536, "keychain search list exceeds bound")
+    # security prints one raw path in double quotes per line, not shell escapes.
+    # Preserve order, duplicates, spaces, quotes and backslashes exactly.
+    lines = raw.decode("utf-8").splitlines()
+    require(len(lines) <= 256, "keychain search list exceeds count bound")
+    result = []
+    for line in lines:
+        require(line.startswith('    "') and line.endswith('"'), "invalid keychain search list line")
+        path = line[5:-1]
+        require(Path(path).is_absolute() and all(ord(c) >= 32 and ord(c) != 127 for c in path),
+                "invalid keychain search path")
+        result.append(path)
+    return result
+
+
+def search_list_digest(paths: list[str]) -> dict:
+    return {"sha256": hashlib.sha256(json.dumps(paths, ensure_ascii=True, separators=(",", ":")).encode()).hexdigest(),
+            "count": len(paths)}
+
+
+def verify_search_list_marker(marker: Path, current: list[str]) -> None:
+    require(marker.is_file() and not marker.is_symlink() and marker.stat().st_size <= 256,
+            "unsafe search-list restoration marker")
+    require(json.loads(marker.read_text()) == search_list_digest(current), "exact search-list restoration unproven")
+
+
+@contextmanager
+def finish_cleanup():
+    # A repeated runner cancellation must not interrupt restoration halfway.
+    # Remember it and fail after cleanup, never turn cancellation into success.
+    interrupted = []
+    previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
+    try:
+        for sig in previous:
+            signal.signal(sig, lambda sig, _frame: interrupted.append(sig))
+        yield
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+    require(not interrupted, "signing interrupted during cleanup")
+
+
+@contextmanager
+def visible_signing_keychain(keychain: Path):
+    # Requires the workflow's exclusive Apple signing lease. security has no
+    # compare-and-swap operation; readback detects drift but cannot lock out GUI
+    # edits. Never overwrite a list that differs from our preimage/insertion.
+    marker = keychain.parent / "search-list-preimage.json"
+    before = user_search_list()
+    require(not any(Path(p).resolve() == keychain.resolve() for p in before), "temporary keychain already visible")
+    added = [*before, str(keychain)]
+    # Only a digest and count survive a killed process. No private paths go to
+    # disk or receipts. The always-cleanup process can verify exact restoration
+    # after deleting this run's keychain, without rewriting unrelated entries.
+    if marker.exists() or marker.is_symlink():
+        # A later DMG signing window must still match the first app window.
+        verify_search_list_marker(marker, before)
+    else:
+        with marker.open("x") as stream:
+            os.chmod(marker, 0o600)
+            stream.write(json.dumps(search_list_digest(before)))
+            stream.flush()
+            os.fsync(stream.fileno())
+    try:
+        require(user_search_list() == before, "keychain search list changed before insertion")
+        security_command(["list-keychains", "-d", "user", "-s", *added])
+        require(user_search_list() == added, "keychain search list insertion differs")
+        yield
+    finally:
+        with finish_cleanup():
+            current = user_search_list()
+            require(current in (before, added), "keychain search list changed concurrently; refusing overwrite")
+            if current == added:
+                security_command(["list-keychains", "-d", "user", "-s", *before])
+            require(user_search_list() == before, "keychain search list restoration differs")
+            # Retain the non-path digest until final keychain deletion is also
+            # verified, including cancellation during notarization between windows.
+            phase_event("keychain-search-list-restoration", "passed")
 
 
 def cleanup(arch: str) -> None:
@@ -387,6 +472,15 @@ def cleanup(arch: str) -> None:
     # Remove raw private material even if the temporary keychain cannot be deleted.
     for filename in ("developer-id.p12", "AuthKey.p8", "updater.key"):
         (root/filename).unlink(missing_ok=True)
+    marker = root / "search-list-preimage.json"
+    if marker.exists() or marker.is_symlink():
+        try:
+            verify_search_list_marker(marker, user_search_list())
+            marker.unlink()
+            phase_event("keychain-search-list-restoration", "passed")
+        except Exception:
+            phase_event("keychain-search-list-restoration", "failed")
+            errors.append("exact search-list restoration unproven")
     require(not errors, "; ".join(errors))
     shutil.rmtree(root)
 
@@ -485,9 +579,10 @@ def sign(args: argparse.Namespace) -> None:
         arches = run(["/usr/bin/lipo", "-archs", str(path)]).decode().split()
         require(("arm64" if args.arch == "aarch64" else "x86_64") in arches, "nested code lacks target architecture")
     targets = macho + [p for p in app.rglob("*") if p.is_dir() and not p.is_symlink() and p.suffix in (".framework", ".xpc", ".app", ".bundle")]
-    for path in signing_targets(app, targets):
-        run(["/usr/bin/codesign", "--force", "--sign", identity, "--keychain", str(keychain), "--timestamp", "--options", "runtime", "--entitlements", str(entitlements), str(path)],
-            signing_target=signing_target_label(app, path))
+    with visible_signing_keychain(keychain):
+        for path in signing_targets(app, targets):
+            run(["/usr/bin/codesign", "--force", "--sign", identity, "--keychain", str(keychain), "--timestamp", "--options", "runtime", "--entitlements", str(entitlements), str(path)],
+                signing_target=signing_target_label(app, path))
     cert_prefix = str(root/"certificate-")
     run(["/usr/bin/codesign", "--display", "--extract-certificates", cert_prefix, str(app)])
     cert_hash = sha(Path(cert_prefix+"0"))
@@ -521,7 +616,8 @@ def sign(args: argparse.Namespace) -> None:
     # Sleep during Apple's wait can lock this run-scoped keychain. Re-unlock
     # immediately before the next signing operation, using confidential stdin.
     security_command(["unlock-keychain", "-p", password, str(keychain)])
-    run(["/usr/bin/codesign", "--force", "--sign", identity, "--keychain", str(keychain), "--timestamp", str(dmg)])
+    with visible_signing_keychain(keychain):
+        run(["/usr/bin/codesign", "--force", "--sign", identity, "--keychain", str(keychain), "--timestamp", str(dmg)])
     dmg_notary = notarize(dmg, "dmg", args.arch, output, notary_auth)
     run(["/usr/bin/xcrun", "stapler", "staple", str(dmg)])
     staple_log = output/f"{args.arch}-verify-stapler_dmg.txt"
@@ -568,15 +664,18 @@ def main() -> int:
     os.umask(0o077)
     try:
         if args.command == "cleanup":
-            cleanup(args.arch)
+            with finish_cleanup():
+                cleanup(args.arch)
         elif args.command in ("sign", "diagnose-identity"):
             def interrupted(_sig, _frame):
                 raise RuntimeError("signing interrupted")
-            signal.signal(signal.SIGTERM, interrupted)
+            for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+                signal.signal(sig, interrupted)
             try:
                 sign(args)
             finally:
-                cleanup(args.arch)
+                with finish_cleanup():
+                    cleanup(args.arch)
         else:
             globals()[args.command](args)
     except Exception as error:
