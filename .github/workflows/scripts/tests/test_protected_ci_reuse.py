@@ -122,9 +122,15 @@ class LandingAPI:
         self.main = LANDED
         self.landed = {"sha": LANDED, "tree": {"sha": TREE}, "parents": [{"sha": BASE}, {"sha": SOURCE}]}
         self.candidate = {"sha": SOURCE, "tree": {"sha": TREE}, "parents": [{"sha": BASE}]}
-        self.pr = {"number": 42, "merged": True, "merged_at": "2026-09-07T00:00:00Z", "draft": False,
-                   "merged_by": {"id": 7}, "head": {"sha": SOURCE, "repo": {"full_name": reuse.REPO}},
-                   "base": {"ref": "main", "repo": {"full_name": reuse.REPO}}, "merge_commit_sha": LANDED}
+        self.pr = {"number": 42, "state": "closed", "merged": True, "merged_at": "2026-09-07T00:00:00Z", "draft": False,
+                   "updated_at": "2026-09-08T15:59:07Z", "merged_by": {"id": 7}, "labels": [],
+                   "head": {"sha": SOURCE, "ref": "feature", "repo": {"full_name": reuse.REPO, "updated_at": "2026-09-08T15:59:07Z"}},
+                   "base": {"sha": BASE, "ref": "main", "repo": {"full_name": reuse.REPO, "updated_at": "2026-09-08T15:59:07Z"}},
+                   "merge_commit_sha": LANDED}
+        # Snapshot returned by every read after the first, when set: the final
+        # readback sees a PR object that drifted during verification.
+        self.final_pr = None
+        self.pr_reads = 0
         self.protection = {"required_checks": [{"name": name, "integration_id": 15368}
                            for names in reuse.WORKFLOW_CHECKS.values() for name in names]}
         self.runs, self.jobs, self.checks, self.sources = {}, {}, [], {}
@@ -188,7 +194,11 @@ class LandingAPI:
         if suffix == f"/git/commits/{SOURCE}":
             return self.candidate
         if suffix == "/pulls/42":
-            return self.pr
+            self.pr_reads += 1
+            snapshot = self.final_pr if self.final_pr and self.pr_reads > 1 else self.pr
+            # The real API retains every response body; the receipt keeps both.
+            self.evidence.append({"endpoint": endpoint, "body": json.dumps(snapshot)})
+            return snapshot
         if suffix == f"/compare/{BASE}...{SOURCE}?per_page=1":
             return {"status": "ahead", "merge_base_commit": {"sha": BASE}}
         if suffix.startswith("/actions/runs/"):
@@ -588,6 +598,46 @@ class LandingTests(unittest.TestCase):
         self.refuse()
         self.api.sources["swift-routing-99"] = {**proof, "event_action": "edited", "base_changed": True}
         self.refuse()
+
+    def drifted_pr(self, **changes):
+        """Copy of the source PR snapshot with dotted-path fields replaced."""
+        final = copy.deepcopy(self.api.pr)
+        for path, value in changes.items():
+            target = final
+            keys = path.split(".")
+            for key in keys[:-1]:
+                target = target.setdefault(key, {})
+            target[keys[-1]] = value
+        return final
+
+    def test_nested_repository_metadata_drift_does_not_refuse(self):
+        # Budget PR316 landed verification at 1f9d3b5e5656590601898469563839d50b52b025:
+        # only base.repo.updated_at and head.repo.updated_at moved from
+        # 2026-09-08T15:59:07Z to 2026-09-08T16:33:22Z during verification.
+        later = "2026-09-08T16:33:22Z"
+        self.api.final_pr = self.drifted_pr(**{"base.repo.updated_at": later, "head.repo.updated_at": later,
+                                               "updated_at": later, "base.repo.pushed_at": later,
+                                               "head.repo.open_issues_count": 3, "comments": 4, "mergeable_state": "unknown"})
+        proof = self.verify()
+        self.assertEqual(proof["pull_request"], self.api.pr)
+        self.assertEqual(proof["pull_request"]["base"]["repo"]["updated_at"], "2026-09-08T15:59:07Z")
+        snapshots = [json.loads(item["body"]) for item in self.api.evidence if item["endpoint"].endswith("/pulls/42")]
+        self.assertEqual([snapshot["base"]["repo"]["updated_at"] for snapshot in snapshots],
+                         ["2026-09-08T15:59:07Z", later])
+
+    def test_pull_request_authority_drift_refuses(self):
+        cases = {"head.sha": "e" * 40, "head.ref": "other", "head.repo.full_name": "other/fork", "head.repo.id": 99,
+                 "base.sha": "e" * 40, "base.ref": "release", "base.repo.full_name": "other/fork", "base.repo.id": 99,
+                 "state": "open", "draft": True, "merged": False, "merged_at": None, "merge_commit_sha": "e" * 40,
+                 "merged_by.id": 8, "number": 43, "user.id": 5, "author_association": "NONE",
+                 "maintainer_can_modify": True, "locked": True, "labels": [{"name": "skip-ci"}]}
+        for path, value in cases.items():
+            with self.subTest(field=path):
+                self.api.pr_reads = 0
+                self.api.evidence.clear()
+                self.api.final_pr = self.drifted_pr(**{path: value})
+                with self.assertRaisesRegex(reuse.Refusal, "source PR changed during verification"):
+                    self.verify()
 
     def test_no_broad_workflow_has_a_main_push_trigger_or_step_reuse(self):
         for filename in reuse.WORKFLOW_CHECKS:

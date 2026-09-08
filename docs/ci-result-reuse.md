@@ -41,8 +41,11 @@ The landing verifier requires:
 - Equal candidate, tested and landed trees. A two-parent landing must have the
   exact tested base and candidate as its ordered parents. A fast-forward keeps
   the candidate SHA and must descend from the tested base.
-- Stable source workflows, PR, checks, protection and current main across the
-  final readback.
+- Stable source workflows, checks, protection and current main across the
+  final readback. The PR readback compares its authority fields (number, state,
+  draft, head/base/merge commits and repositories, author, permissions,
+  labels); nested repository metadata such as `updated_at` may drift, and both
+  complete snapshots remain in the receipt's API evidence.
 
 Checks are selected within the source suites. Later unrelated skipped checks on
 the same SHA do not replace the executed source result. A title/body-only Swift

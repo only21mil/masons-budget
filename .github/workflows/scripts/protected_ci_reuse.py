@@ -52,11 +52,37 @@ def workflow(job):
 
 
 MAX_AGE = 86400
+# Pull request fields the trust decision reads, or that would change who or
+# what is being landed: identity, head/base/merge commits and repositories,
+# state and draft, author and permissions, labels. The final readback compares
+# only these. Nested repository metadata such as base.repo.updated_at moves
+# whenever anything in the repository changes, and comparing whole snapshots
+# refused a correct landing (Budget PR316 at 1f9d3b5e5656590601898469563839d50b52b025;
+# Buzz issue ba7d755188733d2504a1000733e2fb21b144ded76fe5894bea19855ab3753d4b,
+# mirror only21mil/buzz#191). Both complete snapshots stay in api_evidence.
+PR_AUTHORITY_FIELDS = (
+    "number", "state", "draft", "locked", "merged", "merged_at", "merge_commit_sha",
+    "user.id", "user.login", "author_association", "maintainer_can_modify",
+    "head.sha", "head.ref", "head.label", "head.repo.id", "head.repo.full_name", "head.repo.fork",
+    "base.sha", "base.ref", "base.label", "base.repo.id", "base.repo.full_name", "base.repo.fork",
+    "merged_by.id", "merged_by.login",
+)
 LIMIT = 4 * 1024 * 1024
 
 
 class Refusal(Exception):
     pass
+
+
+def pr_authority(pr):
+    """Project a pull request snapshot onto its trust-relevant fields."""
+    def read(path):
+        value = pr
+        for key in path.split("."):
+            value = value.get(key) if isinstance(value, dict) else None
+        return value
+    return {**{path: read(path) for path in PR_AUTHORITY_FIELDS},
+            "labels": sorted(str((label or {}).get("name")) for label in pr.get("labels") or [])}
 
 
 def need(condition, message):
@@ -547,7 +573,7 @@ def verify_qualification(api, head, *, candidate_only=False):
         final_selected = select_checks([check for check in final_checks if (check.get("check_suite") or {}).get("id") == suite],
             [{"name": name, "integration_id": requirements.get(name, 15368)} for name in names], source_head, inapplicable)
         need(final_selected == [check for check in qualified_checks if check["name"] in names], "source checks changed during verification")
-    need(api.one(PREFIX + f"/pulls/{pr['number']}") == pr, "source PR changed during verification")
+    need(pr_authority(api.one(PREFIX + f"/pulls/{pr['number']}")) == pr_authority(pr), "source PR changed during verification")
     need(api.one(PREFIX + "/git/ref/heads/main")["object"]["sha"] == current_main, "main moved during verification")
     return {"schema_version": 2, "mode": "qualified-candidate" if candidate_only else "qualified-source-at-landing", "repository": REPO,
             **({} if candidate_only else {"landed_commit": landed}), "candidate_commit": candidate, "tested_base": base,
