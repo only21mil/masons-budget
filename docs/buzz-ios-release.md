@@ -107,3 +107,9 @@ inventory before recovery to prevent duplicate invitations. Apple beta review
 submission is limited to the fixed build and may leave a pending external
 approval. Missing beta metadata requires a separately reviewed factual update.
 A successful invitation does not prove a physical installation.
+
+Recipient membership also refuses access to older builds in the selected group.
+Group names never enter receipts. Apple Ready to Test is pending until a scoped
+build notification and live IN_BETA_TESTING readback succeed. Notifications and
+auto-notifying beta review submission refuse any unrelated build audience.
+API failures retain only bounded error codes and attribute pointers.

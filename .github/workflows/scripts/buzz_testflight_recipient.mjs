@@ -22,10 +22,18 @@ export function client(makeToken, fetcher = fetch) {
     const response = await fetcher(url, { method, redirect: 'error', signal: AbortSignal.timeout(30_000),
       headers: { Authorization: `Bearer ${makeToken()}`, 'Content-Type': 'application/json' },
       ...(body ? { body: JSON.stringify(body) } : {}) });
-    require(response.ok, `APPLE_HTTP_${response.status}`);
     const raw = await response.text();
     require(raw.length <= 2_000_000, 'APPLE_RESPONSE_TOO_LARGE');
-    return raw ? JSON.parse(raw) : {};
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!response.ok) {
+      const error = new Error(`APPLE_HTTP_${response.status}`);
+      error.apple = Array.isArray(parsed.errors) ? parsed.errors.slice(0, 20).map(item => ({
+        code: /^[A-Z0-9_.-]{1,120}$/.test(item.code ?? '') ? item.code : 'UNCLASSIFIED',
+        pointer: /^\/data(?:\/[A-Za-z0-9_]+){0,8}$/.test(item.source?.pointer ?? '') ? item.source.pointer : null,
+      })) : [];
+      throw error;
+    }
+    return parsed;
   };
 }
 
@@ -62,7 +70,7 @@ export async function inventory(api, email) {
   const { data: buildApp } = await api(`/v1/builds/${BUILD}/app`);
   const { data: version } = await api(`/v1/builds/${BUILD}/preReleaseVersion`);
   require(build?.id === BUILD && build.type === 'builds' && buildApp?.id === APP &&
-    build.attributes?.version === '1' && build.attributes.processingState === 'VALID' && !build.attributes.expired &&
+    build.attributes?.version === '1' && build.attributes.processingState === 'VALID' && build.attributes.expired === false &&
     version?.attributes?.version === '0.5.9' && version.attributes.platform === 'IOS', 'BUILD_MISMATCH');
   const { data: beta } = await api(`/v1/builds/${BUILD}/buildBetaDetail`);
   require(beta?.type === 'buildBetaDetails', 'INVALID_BETA_DETAIL');
@@ -73,14 +81,19 @@ export async function inventory(api, email) {
     require(group.type === 'betaGroups' && uuid(group.id), 'INVALID_GROUP');
     const testers = await list(api, `/v1/betaGroups/${group.id}/relationships/betaTesters`);
     const builds = await list(api, `/v1/betaGroups/${group.id}/relationships/builds`);
-    summaries.push({ id: group.id, name: group.attributes?.name, internal: group.attributes?.isInternalGroup,
+    require(typeof group.attributes?.isInternalGroup === 'boolean', 'INVALID_GROUP_KIND');
+    summaries.push({ id: group.id, private_group_name_match: group.attributes?.name === GROUP_NAME, internal: group.attributes.isInternalGroup,
       public_link: group.attributes?.publicLinkEnabled, all_builds: group.attributes?.hasAccessToAllBuilds,
       tester_count: testers.length, recipient_member: !!tester && testers.some(item => item.id === tester.id),
-      other_testers: testers.some(item => item.id !== tester?.id), build_member: builds.some(item => item.id === BUILD) });
+      other_testers: testers.some(item => item.id !== tester?.id), build_member: builds.some(item => item.id === BUILD),
+      other_builds: builds.some(item => item.id !== BUILD) });
   }
+  const individualTesters = await list(api, `/v1/builds/${BUILD}/relationships/individualTesters`);
+  const unrelatedAudience = individualTesters.some(item => item.id !== tester?.id) ||
+    summaries.some(group => group.build_member && group.other_testers);
   return { tester, receipt: { app: APP, build: BUILD, version: '0.5.9', build_number: '1', processing: 'VALID',
     internal_state: beta.attributes?.internalBuildState, external_state: beta.attributes?.externalBuildState,
-    recipient_exists: !!tester, recipient_state: tester?.attributes?.state ?? null, groups: summaries } };
+    unrelated_build_audience: unrelatedAudience, recipient_exists: !!tester, recipient_state: tester?.attributes?.state ?? null, groups: summaries } };
 }
 
 export async function operate({ api, email, action, groupId, record = async () => {} }) {
@@ -92,7 +105,7 @@ export async function operate({ api, email, action, groupId, record = async () =
   require(groupId === 'new-private' || uuid(groupId), 'EXPLICIT_GROUP_REQUIRED');
   let group;
   if (groupId === 'new-private') {
-    const existing = before.receipt.groups.filter(item => item.name === GROUP_NAME);
+    const existing = before.receipt.groups.filter(item => item.private_group_name_match);
     require(existing.length <= 1, 'AMBIGUOUS_PRIVATE_GROUP');
     group = existing[0];
     if (!group) {
@@ -104,9 +117,11 @@ export async function operate({ api, email, action, groupId, record = async () =
       await record('group-created', { id: data.id });
     }
   } else group = before.receipt.groups.find(item => item.id === groupId);
+  require(groupId !== 'new-private' || group?.internal === false, 'EXTERNAL_GROUP_REQUIRED');
   require(group && group.public_link === false && group.all_builds === false, 'GROUP_NOT_PRIVATE_AND_SCOPED');
   // Existing internal access may be reused; this tool never grants team or app roles.
   require(!group.internal || group.recipient_member, 'INTERNAL_MEMBERSHIP_REQUIRED');
+  require(group.recipient_member || !group.other_builds, 'MEMBERSHIP_WOULD_GRANT_OTHER_BUILDS');
   // Adding a build must not send it to an unrelated tester. Choose the dedicated group instead.
   require(group.build_member || !group.other_testers, 'BUILD_WOULD_REACH_OTHER_TESTERS');
   if (!group.build_member) {
@@ -128,14 +143,23 @@ export async function operate({ api, email, action, groupId, record = async () =
   }
   let current = await inventory(api, email);
   if (!group.internal && current.receipt.external_state === 'READY_FOR_BETA_SUBMISSION') {
+    require(!current.receipt.unrelated_build_audience, 'BETA_REVIEW_WOULD_NOTIFY_OTHER_TESTERS');
     const { data } = await api('/v1/betaAppReviewSubmissions', 'POST', { data: { type: 'betaAppReviewSubmissions',
       relationships: { build: relationship('builds', BUILD) } } });
     require(data?.type === 'betaAppReviewSubmissions', 'INVALID_BETA_REVIEW_RECEIPT');
     await record('beta-review-submitted', { id: data.id, state: data.attributes?.betaReviewState });
     current = await inventory(api, email);
   }
-  const ready = group.internal ? ['IN_BETA_TESTING', 'READY_FOR_BETA_TESTING'].includes(current.receipt.internal_state) :
-    ['IN_BETA_TESTING', 'READY_FOR_BETA_TESTING'].includes(current.receipt.external_state);
+  if (!group.internal && current.receipt.external_state === 'READY_FOR_BETA_TESTING') {
+    // This endpoint notifies every tester assigned to the build. Refuse a broader audience.
+    require(!current.receipt.unrelated_build_audience, 'NOTIFICATION_WOULD_REACH_OTHER_TESTERS');
+    const { data } = await api('/v1/buildBetaNotifications', 'POST', { data: { type: 'buildBetaNotifications',
+      relationships: { build: relationship('builds', BUILD) } } });
+    require(data?.type === 'buildBetaNotifications', 'INVALID_BUILD_NOTIFICATION_RECEIPT');
+    await record('build-notification', { accepted: true });
+    current = await inventory(api, email);
+  }
+  const ready = (group.internal ? current.receipt.internal_state : current.receipt.external_state) === 'IN_BETA_TESTING';
   let invitation = 'NOT_SENT_BUILD_UNAVAILABLE';
   if (ready) {
     // Re-read immediately before sending. Never resend INVITED/ACCEPTED/INSTALLED invitations.
@@ -154,9 +178,10 @@ export async function operate({ api, email, action, groupId, record = async () =
   }
   const final = (await inventory(api, email)).receipt;
   const finalGroup = final.groups.find(item => item.id === group.id);
+  const finalReady = (group.internal ? final.internal_state : final.external_state) === 'IN_BETA_TESTING';
   require(finalGroup?.recipient_member && finalGroup.build_member, 'MEMBERSHIP_READBACK_FAILED');
-  return { ...final, status: ready ? 'DISTRIBUTED' : 'APPLE_BETA_READINESS_PENDING', selected_group: group.id,
-    invitation, build_available: ready, physical_install_verified: false };
+  return { ...final, status: finalReady && ready ? 'DISTRIBUTED' : 'APPLE_BETA_READINESS_PENDING', selected_group: group.id,
+    invitation, build_available: finalReady && ready, physical_install_verified: false };
 }
 
 async function main() {
@@ -176,7 +201,7 @@ async function main() {
     console.log(`Buzz TestFlight operation: ${result.status}. Protected input and API responses omitted.`);
   } catch (error) {
     const code = /^[A-Z0-9_]+$/.test(error.message ?? '') ? error.message : 'OPERATION_FAILED';
-    await record('failure', { status: code });
+    await record('failure', { status: code, ...(error.apple ? { apple: error.apple } : {}) });
     throw new Error(code);
   }
 }
