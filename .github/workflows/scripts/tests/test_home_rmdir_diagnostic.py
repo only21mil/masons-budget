@@ -376,5 +376,64 @@ class DiagnosticTests(unittest.TestCase):
             self.assertNotIn(text, workflow)
 
 
+
+class AncestorFlagsTests(unittest.TestCase):
+    # Captured fixed host metadata, not a dynamically inferred flag allowlist.
+    observed = {'/': 1048576, '/private': 1081344, '/private/var': 1048576,
+                '/private/var/db': 1048576, '/usr': 557056, '/usr/local': 1048576,
+                '/usr/local/libexec': 0, '/private/etc': 0, '/private/etc/sudoers.d': 0}
+
+    def metadata(self, path):
+        return types.SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0, st_gid=0,
+                                     st_flags=self.observed.get(str(path), 0))
+
+    def test_observed_fixed_ancestors_and_zero_flag_task_paths_pass(self):
+        with patch.object(Path, 'lstat', lambda path: self.metadata(path)), patch.object(d, 'no_acl') as acl:
+            for path in (*self.observed, str(d.INSTALL), str(d.PACKET), str(d.STATE)):
+                d.protected(Path(path))
+            self.assertGreater(acl.call_count, len(self.observed))
+
+    def test_changed_ancestor_or_flagged_task_directory_refuses(self):
+        for path, flags in (('/', 0), ('/usr', 1048576), ('/usr/local', 1048577),
+                            (str(d.INSTALL), 1048576), (str(d.PACKET), 1081344)):
+            with self.subTest(path=path, flags=flags):
+                def metadata(item):
+                    info = self.metadata(item)
+                    if str(item) == path:
+                        info.st_flags = flags
+                    return info
+                with patch.object(Path, 'lstat', metadata), patch.object(d, 'no_acl'):
+                    with self.assertRaises(d.DiagnosticError):
+                        d.protected(Path(path))
+
+    def test_observed_flags_do_not_bypass_type_owner_mode_or_acl(self):
+        for field, value in (('st_mode', stat.S_IFLNK | 0o755), ('st_uid', 501),
+                             ('st_mode', stat.S_IFDIR | 0o777)):
+            def metadata(path):
+                info = self.metadata(path)
+                if str(path) == '/usr/local':
+                    setattr(info, field, value)
+                return info
+            with patch.object(Path, 'lstat', metadata), patch.object(d, 'no_acl'):
+                with self.assertRaises(d.DiagnosticError):
+                    d.protected(Path('/usr/local'))
+        with patch.object(Path, 'lstat', lambda path: self.metadata(path)), \
+             patch.object(d, 'no_acl', side_effect=d.DiagnosticError()):
+            with self.assertRaises(d.DiagnosticError):
+                d.protected(Path('/usr/local'))
+
+
+    def test_observed_ancestor_flag_is_still_rejected_on_task_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'task.py'
+            path.write_bytes(b'public fixture')
+            info = types.SimpleNamespace(st_mode=stat.S_IFREG | 0o644, st_uid=0, st_gid=0,
+                                         st_nlink=1, st_flags=1048576, st_size=14)
+            with patch.object(d, 'protected'), patch.object(d, 'no_acl'), \
+                 patch.object(d.os, 'fstat', return_value=info):
+                with self.assertRaises(d.DiagnosticError):
+                    d.read_file(path, 0o644)
+
+
 if __name__ == '__main__':
     unittest.main()

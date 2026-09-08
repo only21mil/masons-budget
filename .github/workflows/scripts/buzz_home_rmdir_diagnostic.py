@@ -37,6 +37,13 @@ RESTORED = False
 SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGALRM)
 ENV = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'LANG': 'en_US.UTF-8', 'LC_ALL': 'en_US.UTF-8'}
 
+# Exact flags observed on this host's fixed OS ancestors; task paths stay zero.
+OS_ANCESTOR_FLAGS = {
+    Path('/'): 1048576, Path('/private'): 1081344,
+    Path('/private/var'): 1048576, Path('/private/var/db'): 1048576,
+    Path('/usr'): 557056, Path('/usr/local'): 1048576,
+}
+
 
 class DiagnosticError(Exception):
     pass
@@ -62,7 +69,8 @@ def protected(path):
     for item in (path, *path.parents):
         info = item.lstat()
         require(stat.S_ISDIR(info.st_mode) and info.st_uid == 0
-                and not info.st_mode & 0o022 and not getattr(info, 'st_flags', 0))
+                and not info.st_mode & 0o022
+                and getattr(info, 'st_flags', 0) == OS_ANCESTOR_FLAGS.get(item, 0))
         no_acl(item)
 
 
