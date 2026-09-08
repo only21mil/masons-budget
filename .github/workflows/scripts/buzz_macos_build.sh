@@ -35,11 +35,27 @@ if [[ "$ARCH" == aarch64 ]]; then
   BUILD_ARGS+=(--features mesh-llm)
   cargo fetch --locked --manifest-path desktop/src-tauri/Cargo.toml
   MESH_ROOT=$(cargo metadata --locked --features mesh-llm --format-version 1 --manifest-path desktop/src-tauri/Cargo.toml | python3 -c '
-import json, sys
+import json, os, re, sys
 from pathlib import Path
 packages = [p for p in json.load(sys.stdin)["packages"] if p["name"] == "mesh-llm-sdk"]
-assert len(packages) == 1, "mesh checkout must resolve uniquely"
-print(Path(packages[0]["manifest_path"]).parent)
+if len(packages) != 1:
+    sys.exit("mesh checkout must resolve uniquely")
+package = packages[0]
+if not re.fullmatch(r"git\+https://github\.com/Mesh-LLM/mesh-llm\.git(?:\?[^#]+)?#[0-9a-f]{40}", package.get("source") or ""):
+    sys.exit("mesh SDK must come from the locked Mesh-LLM Git dependency")
+manifest = Path(package["manifest_path"])
+# The pinned dependency is a workspace: Cargo reports the SDK crate manifest,
+# while its llama preparation/build scripts belong to the repository root.
+if not manifest.is_absolute() or manifest.parts[-3:] != ("crates", "mesh-llm-sdk", "Cargo.toml"):
+    sys.exit("unsupported mesh SDK manifest layout")
+root = manifest.parents[2].resolve()
+required = [root / "crates/mesh-llm-sdk/Cargo.toml", root / "Cargo.toml",
+            root / "scripts/prepare-llama.sh", root / "scripts/build-llama.sh"]
+if any(not path.is_file() or path.resolve() != path for path in required):
+    sys.exit("mesh workspace requires regular manifests and scripts at the supported paths")
+if any(not os.access(path, os.X_OK) for path in required[2:]):
+    sys.exit("mesh workspace build scripts must be executable")
+print(root)
 ')
   export LLAMA_STAGE_BACKEND=metal
   export LLAMA_STAGE_BUILD_DIR="$GITHUB_WORKSPACE/buzz/.cache/mesh-llama/build-stage-abi-metal"
