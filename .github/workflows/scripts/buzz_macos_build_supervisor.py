@@ -245,8 +245,9 @@ def clear_builder_home(expected):
                     home_call('close', 'directory', os.close, child)
                 home_call('rmdir', 'directory', os.rmdir, name, dir_fd=directory)
             else:
-                require(stat.S_ISLNK(info.st_mode) or (stat.S_ISREG(info.st_mode) and info.st_nlink == 1),
-                        'special or multiply linked builder home entry')
+                # Remove only this HOME name; never open or change shared file contents or permissions.
+                require(stat.S_ISLNK(info.st_mode) or stat.S_ISREG(info.st_mode),
+                        'special builder home entry')
                 home_call('unlink', entry_category, os.unlink, name, dir_fd=directory)
         require(not home_call('listdir', category, os.listdir, directory), 'incomplete builder home cleanup')
     try:

@@ -131,12 +131,142 @@ class HomeTests(unittest.TestCase):
                 s.clear_builder_home(self.expected)
         self.assertTrue(child.exists())
 
-    def test_hardlinks_and_special_files_are_preserved_and_refused(self):
+    @contextlib.contextmanager
+    def unlink_only(self, directories):
+        """Allow metadata checks and directory opens, but no file access or mode changes."""
+        inodes = {path.stat().st_ino for path in directories}
+        original_open, original_unlink = os.open, os.unlink
+
+        def open_directory(path, flags, *args, **kwargs):
+            self.assertTrue(flags & os.O_DIRECTORY)
+            if path != '/':
+                self.assertTrue(flags & os.O_NOFOLLOW)
+            return original_open(path, flags, *args, **kwargs)
+
+        def unlink(name, *, dir_fd):
+            self.assertNotIn('/', name)
+            self.assertIn(self.real_fstat(dir_fd).st_ino, inodes)
+            return original_unlink(name, dir_fd=dir_fd)
+
+        with self.host_metadata(), contextlib.ExitStack() as stack:
+            stack.enter_context(patch.object(s.os, 'open', side_effect=open_directory))
+            stack.enter_context(patch.object(s.os, 'unlink', side_effect=unlink))
+            for name in ('chmod', 'chown', 'fchmod', 'fchown', 'read', 'readlink', 'truncate', 'ftruncate'):
+                stack.enter_context(patch.object(s.os, name, side_effect=AssertionError('unexpected file access')))
+            stack.enter_context(patch('builtins.open', side_effect=AssertionError('unexpected file open')))
+            stack.enter_context(patch.object(io, 'open', side_effect=AssertionError('unexpected file open')))
+            yield
+
+    def test_fourteen_readonly_toolchain_aliases_are_unlinked(self):
+        directory = self.home / 'toolchain'
+        directory.mkdir()
+        original = directory / 'rustup'
+        original.write_bytes(b'synthetic toolchain')
+        original.chmod(0o500)
+        for index in range(13):
+            os.link(original, directory / ('alias-' + str(index)))
+        self.assertEqual(original.stat().st_nlink, 14)
+        with self.unlink_only((self.home, directory)):
+            s.clear_builder_home(self.expected)
+        self.assertEqual(list(self.home.iterdir()), [])
+        self.assertEqual(self.home.stat().st_ino, self.expected['identity'][1])
+
+    def test_home_hardlink_unlink_preserves_external_inode_permissions_and_contents(self):
+        outside = self.outside / 'canary'
+        outside.chmod(0o500)
+        os.link(outside, self.home / 'alias')
+        before = outside.stat()
+        contents = outside.read_bytes()
+        self.assertEqual(before.st_nlink, 2)
+        with self.unlink_only((self.home,)):
+            s.clear_builder_home(self.expected)
+        after = outside.stat()
+        self.assertEqual(list(self.home.iterdir()), [])
+        self.assertEqual(outside.read_bytes(), contents)
+        self.assertEqual((after.st_dev, after.st_ino, after.st_uid, after.st_gid,
+                          after.st_mode, after.st_size, after.st_mtime_ns),
+                         (before.st_dev, before.st_ino, before.st_uid, before.st_gid,
+                          before.st_mode, before.st_size, before.st_mtime_ns))
+        self.assertEqual(after.st_nlink, 1)
+
+    def test_hardlinks_still_require_home_entry_metadata_and_acl_checks(self):
+        child = self.home / 'alias'
+        outside = self.outside / 'canary'
+        os.link(outside, child)
+        cases = [('st_uid', 501), ('st_gid', 20), ('st_dev', self.expected['identity'][0] + 1),
+                 ('st_flags', 1), ('acl', None)]
+        for attribute, value in cases:
+            with self.subTest(attribute=attribute):
+                def metadata(*args, **kwargs):
+                    info = self.numeric(self.real_stat(*args, **kwargs))
+                    if attribute != 'acl':
+                        setattr(info, attribute, value)
+                    return info
+
+                def acl(path):
+                    s.require(attribute != 'acl' or path != child, 'synthetic ACL drift')
+
+                with self.host_metadata(acl), patch.object(s.os, 'stat', side_effect=metadata), \
+                     patch.object(s.os, 'unlink', side_effect=AssertionError('unsafe entry unlinked')):
+                    with self.assertRaises(s.BoundaryError):
+                        s.clear_builder_home(self.expected)
+                self.assertTrue(child.exists())
+                self.assertEqual(outside.stat().st_nlink, 2)
+        self.assertEqual(outside.read_text(), 'synthetic outside data')
+
+    def test_cancellation_during_hardlink_cleanup_finishes_before_failing(self):
+        outside = self.outside / 'canary'
+        for name in ('first', 'second'):
+            os.link(outside, self.home / name)
+        original_unlink = os.unlink
+        removed = []
+
+        def unlink(name, **kwargs):
+            original_unlink(name, **kwargs)
+            removed.append(name)
+            if len(removed) == 1:
+                signal.raise_signal(signal.SIGTERM)
+
+        with self.host_metadata(), patch.object(s.os, 'unlink', side_effect=unlink):
+            with self.assertRaisesRegex(s.BoundaryError, 'supervisor interrupted'):
+                with s.cleanup_signals():
+                    s.clear_builder_home(self.expected)
+        self.assertEqual(len(removed), 2)
+        self.assertEqual(list(self.home.iterdir()), [])
+        self.assertEqual(outside.stat().st_nlink, 1)
+        self.assertEqual(outside.read_text(), 'synthetic outside data')
+
+    def test_partial_hardlink_unlink_failure_preserves_original_error_and_remaining_links(self):
+        outside = self.outside / 'canary'
+        for name in ('first', 'second'):
+            os.link(outside, self.home / name)
+        original_unlink = os.unlink
+        removed = []
+        failure = PermissionError(1, 'PRIVATE_UNLINK_FAILURE')
+        s.FAILURES.clear(); s.RECORDED_ERRORS.clear()
+        s.phase('final_home_clear')
+
+        def unlink(name, **kwargs):
+            if removed:
+                raise failure
+            original_unlink(name, **kwargs)
+            removed.append(name)
+            signal.raise_signal(signal.SIGTERM)
+
+        with self.host_metadata(), patch.object(s.os, 'unlink', side_effect=unlink):
+            with self.assertRaises(PermissionError) as raised:
+                with s.cleanup_signals():
+                    s.clear_builder_home(self.expected)
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(len(list(self.home.iterdir())), 1)
+        self.assertEqual(outside.stat().st_nlink, 2)
+        self.assertEqual(outside.read_text(), 'synthetic outside data')
+        self.assertEqual(s.FAILURES[0]['operation'], 'unlink')
+        self.assertEqual(s.FAILURES[0]['category'], 'regular_file')
+        self.assertNotIn('PRIVATE_UNLINK_FAILURE', json.dumps(s.FAILURES))
+
+    def test_special_files_are_preserved_and_refused(self):
         child = self.home / 'bad'
-        os.link(self.outside / 'canary', child)
-        with self.assertRaises(s.BoundaryError):
-            self.clear()
-        child.unlink()
         os.mkfifo(child)
         with self.assertRaises(s.BoundaryError):
             self.clear()

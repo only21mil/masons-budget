@@ -77,8 +77,13 @@ and free of symlinks or extended ACLs. The registered account home, `HOME`,
 home. The supervisor opens it without following links and rejects metadata or
 ACL drift. After retiring UID590/user590, it clears task contents by directory
 descriptors before source execution, before export, and during failure cleanup.
-The home inode survives. Symlink children are unlinked; hardlinks, special files,
-foreign ownership, mount/device changes, ACLs and unexpected flags fail closed.
+The home inode survives. Symlink and regular-file children, including hardlinked
+toolchain aliases, are unlinked only by their HOME directory descriptors. Cleanup
+does not open file contents or change their ownership or permissions. External
+hardlinks retain their inode and contents; unlink reduces the shared link count
+and can update inode change time. Special files, foreign ownership, mount/device
+changes, ACLs and unexpected flags fail closed. Exported and installed files keep
+their separate link-count requirements.
 Ordinary cancellation cannot interrupt the final drain/cleanup attempt.
 
 The shared Mac/iOS unsigned policy permits the single named
