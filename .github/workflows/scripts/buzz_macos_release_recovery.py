@@ -112,14 +112,74 @@ def phase_event(phase: str, status: str, result=None) -> None:
     print(json.dumps(data, sort_keys=True), flush=True)
 
 
+SIGNING_TARGETS = frozenset({
+    "Buzz.app", "other-nested-code",
+    *("Buzz.app/Contents/MacOS/" + name for name in (
+        "buzz", "buzz-acp", "buzz-agent", "buzz-backend-kubernetes",
+        "buzz-desktop", "buzz-dev-mcp", "git-credential-nostr",
+    )),
+})
+
+
+def codesign_error_class(argv: list[str], result: subprocess.CompletedProcess) -> str:
+    # Compare complete, bounded known messages. Never return any tool text,
+    # certificate identity, path, or arbitrary matched substring.
+    if len(result.stderr) > 65536:
+        return "unclassified"
+    identity = argv[argv.index("--sign") + 1]
+    target = argv[-1].encode()
+    stderr = result.stderr
+    replacement = target + b": replacing existing signature\n"
+    if stderr.startswith(replacement):
+        stderr = stderr[len(replacement):]
+    if re.fullmatch(r"[0-9A-F]{40}", identity) and stderr == identity.encode() + b": no identity found\n":
+        return "identity-not-found"
+    for message, classification in (
+        (b"errSecInternalComponent", "security-internal-component"),
+        (b"User interaction is not allowed.", "interaction-not-allowed"),
+    ):
+        if stderr == target + b": " + message + b"\n":
+            return classification
+    return "unclassified"
+
+
+def codesign_event(target: str, status: str, argv: list[str], result=None) -> None:
+    require(target in SIGNING_TARGETS, "unknown public signing target")
+    require(status in ("started", "passed", "failed"), "unknown signing status")
+    data = {"schema": "buzz-macos-codesign-diagnostic-v1", "target": target, "status": status}
+    if result is not None and result.returncode:
+        data["error_class"] = codesign_error_class(argv, result)
+        data["scan_truncated"] = len(result.stderr) > 65536
+    print(json.dumps(data, sort_keys=True), flush=True)
+
+
+def signing_targets(app: Path, targets: list[Path]) -> list[Path]:
+    # Depth alone leaves equal-depth set iteration dependent on Python's hash
+    # seed. Break ties by the public bundle-relative path, keeping parents last.
+    return sorted(set(targets), key=lambda p: (-len(p.parts), p.relative_to(app).as_posix())) + [app]
+
+
+def signing_target_label(app: Path, path: Path) -> str:
+    relative = "Buzz.app" if path == app else "Buzz.app/" + path.relative_to(app).as_posix()
+    return relative if relative in SIGNING_TARGETS else "other-nested-code"
+
+
 def run(argv: list[str], *, output: Path | None = None, input_data: bytes | None = None,
-        extra: dict | None = None, confidential: bool = False, phase: str | None = None) -> bytes:
+        extra: dict | None = None, confidential: bool = False, phase: str | None = None,
+        signing_target: str | None = None) -> bytes:
     require(not (confidential and output is not None), "confidential output cannot be retained")
+    if signing_target is not None:
+        require(argv[0] == "/usr/bin/codesign" and "--sign" in argv
+                and argv.index("--sign") + 1 < len(argv) - 1
+                and output is None and not confidential, "invalid signing diagnostic invocation")
+        codesign_event(signing_target, "started", argv)
     phase = phase or command_phase(argv)
     phase_event(phase, "started")
     result = subprocess.run(argv, input=input_data, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, env=clean_env(extra), check=False)
     phase_event(phase, "passed" if result.returncode == 0 else "failed", result)
+    if signing_target is not None:
+        codesign_event(signing_target, "passed" if result.returncode == 0 else "failed", argv, result)
     if output is not None:
         output.write_bytes(result.stdout + result.stderr + (b"\nPASS\n" if result.returncode == 0 else b"\nFAIL\n"))
     if result.returncode:
@@ -380,8 +440,9 @@ def sign(args: argparse.Namespace) -> None:
         arches = run(["/usr/bin/lipo", "-archs", str(path)]).decode().split()
         require(("arm64" if args.arch == "aarch64" else "x86_64") in arches, "nested code lacks target architecture")
     targets = macho + [p for p in app.rglob("*") if p.is_dir() and not p.is_symlink() and p.suffix in (".framework", ".xpc", ".app", ".bundle")]
-    for path in sorted(set(targets), key=lambda p: len(p.parts), reverse=True) + [app]:
-        run(["/usr/bin/codesign", "--force", "--sign", identity, "--keychain", str(keychain), "--timestamp", "--options", "runtime", "--entitlements", str(entitlements), str(path)])
+    for path in signing_targets(app, targets):
+        run(["/usr/bin/codesign", "--force", "--sign", identity, "--keychain", str(keychain), "--timestamp", "--options", "runtime", "--entitlements", str(entitlements), str(path)],
+            signing_target=signing_target_label(app, path))
     cert_prefix = str(root/"certificate-")
     run(["/usr/bin/codesign", "--display", "--extract-certificates", cert_prefix, str(app)])
     cert_hash = sha(Path(cert_prefix+"0"))
