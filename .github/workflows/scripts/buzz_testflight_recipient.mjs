@@ -13,6 +13,7 @@ const ORIGIN = 'https://api.appstoreconnect.apple.com';
 const require = (ok, code) => { if (!ok) throw new Error(code); };
 const resource = (type, id) => ({ type, id });
 const relationship = (type, id) => ({ data: resource(type, id) });
+const metadataId = value => /^[A-Za-z0-9_-]{1,128}$/.test(value ?? '');
 const uuid = value => /^[0-9a-f-]{36}$/i.test(value ?? '');
 
 export function client(makeToken, fetcher = fetch) {
@@ -151,13 +152,13 @@ async function updateBetaMetadata(api, input, record) {
   const changes = [];
   const update = async (type, item, attrs, binding) => {
     if (item && equal(item, attrs)) return;
-    if (item) require(item.type === type && uuid(item.id), 'METADATA_RESOURCE_MISMATCH');
+    if (item) require(item.type === type && metadataId(item.id), 'METADATA_RESOURCE_MISMATCH');
     const writeAttrs = { ...attrs };
     if (item) delete writeAttrs.locale; // Locale selects an existing resource; PATCH cannot change it.
     const body = { data: { type, ...(item ? { id: item.id } : {}), attributes: writeAttrs,
       ...(!item ? { relationships: binding } : {}) } };
     const { data } = await api(`/v1/${type}${item ? '/' + item.id : ''}`, item ? 'PATCH' : 'POST', body);
-    require(data?.type === type && uuid(data.id), 'INVALID_METADATA_WRITE_RECEIPT');
+    require(data?.type === type && metadataId(data.id) && (!item || data.id === item.id), 'INVALID_METADATA_WRITE_RECEIPT');
     const { data: check } = await api(`/v1/${type}/${data.id}?fields%5B${type}%5D=${Object.keys(attrs).join(',')}`);
     require(check?.id === data.id && equal(check, attrs), 'METADATA_WRITE_READBACK_MISMATCH');
     changes.push({ resource: type, verified: true });
@@ -165,7 +166,7 @@ async function updateBetaMetadata(api, input, record) {
   };
   if (input.review_detail) {
     const { data } = await api(`/v1/apps/${APP}/betaAppReviewDetail?fields%5BbetaAppReviewDetails%5D=contactFirstName,contactLastName,contactPhone,contactEmail,demoAccountRequired,notes`);
-    require(data?.type === 'betaAppReviewDetails' && uuid(data.id), 'BETA_REVIEW_DETAIL_MISSING');
+    require(data?.type === 'betaAppReviewDetails' && metadataId(data.id), 'BETA_REVIEW_DETAIL_MISSING');
     await update('betaAppReviewDetails', data, input.review_detail);
   }
   for (const [key, type, parent, binding] of [
@@ -237,10 +238,17 @@ export async function operate({ api, email, action, groupId, metadata, record = 
   if (!group.internal && current.receipt.external_state === 'READY_FOR_BETA_SUBMISSION') {
     require(!current.receipt.unrelated_build_audience, 'BETA_REVIEW_WOULD_NOTIFY_OTHER_TESTERS');
     const metadata = current.receipt.beta_metadata;
-    require(metadata.review_detail_exists && metadata.missing_contact_fields.length === 0 &&
+    const metadataComplete = metadata.review_detail_exists && metadata.missing_contact_fields.length === 0 &&
       metadata.app_localization_count > 0 && metadata.missing_description_count === 0 &&
-      metadata.feedback_email_present && metadata.build_test_notes_present, 'BETA_REVIEW_METADATA_INCOMPLETE');
-    require(metadata.demo_account_required === false, 'BETA_REVIEW_DEMO_ACCOUNT_REQUIRES_SEPARATE_VERIFICATION');
+      metadata.feedback_email_present && metadata.build_test_notes_present;
+    if (!metadataComplete || metadata.demo_account_required !== false) {
+      const membership = current.receipt.groups.find(item => item.id === group.id);
+      require(membership?.recipient_member && membership.build_member, 'MEMBERSHIP_READBACK_FAILED');
+      return { ...current.receipt,
+        status: metadataComplete ? 'BETA_REVIEW_DEMO_ACCOUNT_REQUIRES_VERIFICATION' : 'BETA_REVIEW_METADATA_REQUIRED',
+        selected_group: group.id, invitation: 'NOT_SENT_BUILD_UNAVAILABLE', build_available: false,
+        physical_install_verified: false };
+    }
     const { data } = await api('/v1/betaAppReviewSubmissions', 'POST', { data: { type: 'betaAppReviewSubmissions',
       relationships: { build: relationship('builds', BUILD) } } });
     require(data?.type === 'betaAppReviewSubmissions', 'INVALID_BETA_REVIEW_RECEIPT');

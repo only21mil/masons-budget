@@ -127,3 +127,8 @@ out of dispatch inputs and receipts; every write receives an exact-value
 readback. It cannot set demo-account credentials or submit review. Metadata
 values must come from the operator and require a concrete reviewed plan. Remove
 this temporary input after its terminal run and verify name absence.
+
+Metadata IDs are opaque strings obtained from the fixed app/build. A PATCH
+response must preserve its selected ID. If tester setup succeeds but review
+metadata is missing, distribution retains verified membership and reports
+BETA_REVIEW_METADATA_REQUIRED; it does not submit review or claim availability.

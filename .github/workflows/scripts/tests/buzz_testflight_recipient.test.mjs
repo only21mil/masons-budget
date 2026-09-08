@@ -134,7 +134,10 @@ test('absent beta review detail is reported and submission refuses missing metad
   const result = await operate({ api, email: EMAIL, action: 'inventory' });
   assert.equal(result.beta_metadata.review_detail_exists, false);
   assert.equal(result.beta_metadata.missing_contact_fields.length, 4);
-  await assert.rejects(operate({ api, email: EMAIL, action: 'distribute', groupId: GROUP }), /BETA_REVIEW_METADATA_INCOMPLETE/);
+  const pending = await operate({ api, email: EMAIL, action: 'distribute', groupId: GROUP });
+  assert.equal(pending.status, 'BETA_REVIEW_METADATA_REQUIRED');
+  assert.equal(pending.build_available, false);
+  assert.equal(pending.groups[0].recipient_member, true);
   assert.deepEqual(base.writes, []);
 });
 
@@ -147,13 +150,13 @@ test('metadata action rejects credential fields and arbitrary sections before wr
 });
 test('review contact update uses current app resource, verifies exact values and is idempotent', async () => {
   const base = fixture();
-  const detail = { type: 'betaAppReviewDetails', id: '33333333-3333-3333-3333-333333333333', attributes: {
+  const detail = { type: 'betaAppReviewDetails', id: APP, attributes: {
     contactFirstName: 'Prior', contactLastName: 'Fixture', contactEmail: EMAIL, contactPhone: '+15555555555', demoAccountRequired: false,
   } };
   const writes = [];
   const api = async (path, method = 'GET', body) => {
     const url = new URL(path, 'https://api.appstoreconnect.apple.com');
-    if (url.pathname.endsWith('/betaAppReviewDetail') || url.pathname.endsWith('/' + detail.id)) {
+    if (url.pathname.endsWith('/betaAppReviewDetail') || url.pathname === '/v1/betaAppReviewDetails/' + detail.id) {
       if (method === 'PATCH') { writes.push(body); Object.assign(detail.attributes, body.data.attributes); }
       return { data: detail };
     }
@@ -165,4 +168,15 @@ test('review contact update uses current app resource, verifies exact values and
   assert.equal(writes[0].data.id, detail.id); assert.equal(detail.attributes.contactFirstName, 'Updated');
   assert.equal(JSON.stringify(result).includes('Updated'), false);
   await operate({ api, email: EMAIL, action: 'metadata', metadata }); assert.equal(writes.length, 1);
+});
+
+test('metadata PATCH response cannot rebind the selected opaque resource ID', async () => {
+  const base = fixture();
+  const api = async (path, method = 'GET', body) => {
+    const p = new URL(path, 'https://api.appstoreconnect.apple.com').pathname;
+    if (p.endsWith('/betaAppReviewDetail')) return { data: { type: 'betaAppReviewDetails', id: APP, attributes: { contactFirstName: 'Prior' } } };
+    if (method === 'PATCH') return { data: { ...body.data, id: APP + '1' } };
+    return base.api(path, method, body);
+  };
+  await assert.rejects(operate({ api, email: EMAIL, action: 'metadata', metadata: { review_detail: { contactFirstName: 'Updated' } } }), /INVALID_METADATA_WRITE_RECEIPT/);
 });
