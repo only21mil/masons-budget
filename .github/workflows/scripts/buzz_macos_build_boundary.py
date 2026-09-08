@@ -19,6 +19,7 @@ import sys
 
 SCRIPT = Path(__file__).resolve().parent
 INSTALLED = Path('/usr/local/libexec/buzz-macos-build')
+BUILD_HOME = Path('/private/var/db/buzz-macos-build-home')
 PAYLOAD_FILES = ('buzz_macos_build_boundary.py', 'buzz_macos_build_supervisor.py',
                  'buzz_macos_build.sh', 'buzz_macos_build.sb', 'buzz_macos_release.py',
                  'buzz-verify-macos-entitlements.sh', 'buzz_ios_build.sh', 'buzz_ios_release.py')
@@ -37,11 +38,11 @@ def request_env(arch):
 
 def build_env(root: Path, request: dict) -> dict[str, str]:
     env = {env_key: request[key] for key, env_key in request_env(request['arch']).items()}
-    env.update(HOME=str(root / 'home'), CFFIXED_USER_HOME=str(root / 'home'), TMPDIR=str(root / 'tmp') + '/',
+    env.update(HOME=str(BUILD_HOME), CFFIXED_USER_HOME=str(BUILD_HOME), TMPDIR=str(root / 'tmp') + '/',
                PATH='/usr/bin:/bin:/usr/sbin:/sbin', LANG='en_US.UTF-8', SHELL='/bin/bash',
                GITHUB_WORKSPACE=str(root), BUZZ_CONTROLLER=str(SCRIPT),
-               CARGO_HOME=str(root / 'home/.cargo'), RUSTUP_HOME=str(root / 'home/.rustup'),
-               XDG_CACHE_HOME=str(root / 'home/.cache'), CMAKE_POLICY_VERSION_MINIMUM='3.5',
+               CARGO_HOME=str(BUILD_HOME / '.cargo'), RUSTUP_HOME=str(BUILD_HOME / '.rustup'),
+               XDG_CACHE_HOME=str(BUILD_HOME / '.cache'), CMAKE_POLICY_VERSION_MINIMUM='3.5',
                MACOSX_DEPLOYMENT_TARGET='10.15', CMAKE_OSX_DEPLOYMENT_TARGET='10.15')
     # Avoid CoreFoundation consulting the real user's text-encoding preference.
     env['__CF_USER_TEXT_ENCODING'] = f'0x{os.getuid():X}:0:0'
@@ -55,6 +56,7 @@ def build_env(root: Path, request: dict) -> dict[str, str]:
 
 def sandbox_command(root: Path, command: list[str]) -> list[str]:
     return ['/usr/bin/sandbox-exec', '-D', 'BUILD_ROOT=' + str(root),
+            '-D', 'BUILD_HOME=' + str(BUILD_HOME),
             '-D', 'CONTROLLER=' + str(SCRIPT),
             '-D', 'DARWIN_ROOT=' + os.environ['BUZZ_DARWIN_ROOT'], '-f', str(SCRIPT / 'buzz_macos_build.sb'),
             *command]

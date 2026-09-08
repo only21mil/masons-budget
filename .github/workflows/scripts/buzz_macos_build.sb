@@ -6,7 +6,7 @@
 (allow process-info* (target same-sandbox))
 (allow file-read-metadata)
 (allow file-read* (literal "/"))
-; System tools and SDKs are readable, never writable. No real user HOME access.
+; System tools and SDKs are readable, never writable. No signing/operator HOME access.
 (allow file-read* file-map-executable
     (subpath "/System") (subpath "/usr") (subpath "/bin") (subpath "/sbin")
     (literal "/Library/Preferences/com.apple.dt.Xcode.plist")
@@ -16,6 +16,8 @@
     (literal "/private/var/select/sh")
     (subpath (param "CONTROLLER")))
 (allow file* (subpath (param "BUILD_ROOT")))
+; Fixed registered UID590 home, inode-attested and cleared before/after each job.
+(allow file* (subpath (param "BUILD_HOME")))
 ; Only the dedicated build UID Darwin scratch, attested and cleared under lock.
 (allow file* (subpath (string-append (param "DARWIN_ROOT") "/T"))
              (subpath (string-append (param "DARWIN_ROOT") "/C")))
@@ -37,6 +39,9 @@
 ; UniformTypeIdentifiers needs the named database mapping endpoint.
 ; LaunchServices open and database modification endpoints remain unavailable.
 (allow mach-lookup
+    ; This is a named endpoint grant, not a method or serving-peer restriction.
+    ; Production use requires the dedicated-home/service lifecycle acceptance.
+    (global-name "com.apple.CoreSimulator.CoreSimulatorService")
     (global-name "com.apple.lsd.mapdb")
     (global-name "com.apple.bsd.dirhelper")
     (global-name "com.apple.system.opendirectoryd.libinfo")

@@ -24,8 +24,8 @@ class BoundaryTests(unittest.TestCase):
                         'PATH': '/evil', 'HOME': '/real-home', 'PYTHONPATH': '/evil',
                         'NODE_OPTIONS': '--require /evil', 'GITHUB_ENV': '/runner-command'}, clear=True):
             env = boundary.build_env(Path('/scratch'), request)
-        self.assertEqual(env['HOME'], '/scratch/home')
-        self.assertEqual(env['CFFIXED_USER_HOME'], '/scratch/home')
+        self.assertEqual(env['HOME'], str(boundary.BUILD_HOME))
+        self.assertEqual(env['CFFIXED_USER_HOME'], str(boundary.BUILD_HOME))
         self.assertNotIn('private-canary', str(env))
         for key in ('NODE_OPTIONS', 'PYTHONPATH', 'GITHUB_ENV'):
             self.assertNotIn(key, env)
@@ -39,6 +39,7 @@ class BoundaryTests(unittest.TestCase):
         with patch.dict(os.environ, BUZZ_DARWIN_ROOT='/owned/darwin'):
             argv = boundary.sandbox_command(Path('/owned/build'), ['/usr/bin/true'])
         self.assertIn('DARWIN_ROOT=/owned/darwin', argv)
+        self.assertIn('BUILD_HOME=' + str(boundary.BUILD_HOME), argv)
 
     def test_payload_refuses_signing_uid_before_execution(self):
         with patch.object(boundary.pwd, 'getpwuid') as user, patch.object(boundary, 'confined') as run:
@@ -129,7 +130,7 @@ for command in [['/usr/bin/git', '--version'], ['/usr/bin/xcrun', '--find', 'cla
     assert subprocess.run(command).returncode == 0
 '''
             request = {key: 'public-only' for key in boundary.REQUEST_ENV}
-            with patch.dict(os.environ, BUZZ_DARWIN_ROOT=str(root / 'darwin')):
+            with patch.dict(os.environ, BUZZ_DARWIN_ROOT=str(root / 'darwin')), patch.object(boundary, 'BUILD_HOME', root / 'home'):
                 boundary.confined(root, request, ["/usr/bin/python3", "-I", "-c", code, str(root),
                                     str(canary), str(SCRIPT), str(os.getpid()), str(parent / "ipc.sock")], cwd=root)
             self.assertTrue((root / "allowed").is_file())

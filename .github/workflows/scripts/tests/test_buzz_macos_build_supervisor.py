@@ -268,8 +268,8 @@ class ProcessTests(unittest.TestCase):
 
     def test_preexisting_uid_process_refuses_build_and_export(self):
         caller = types.SimpleNamespace(pw_uid=501, pw_gid=20)
-        builder = types.SimpleNamespace(pw_uid=590, pw_gid=590, pw_shell='/usr/bin/false')
-        manifest = dict(builder_uid=590, builder_gid=590, caller_uid=501, workflow_sha='b' * 40)
+        builder = types.SimpleNamespace(pw_uid=590, pw_gid=590, pw_shell='/usr/bin/false', pw_dir=str(s.BUILD_HOME))
+        manifest = dict(builder_uid=590, builder_gid=590, caller_uid=501, workflow_sha='b' * 40, builder_home={})
         request = RequestTests().request()
         lock_info = types.SimpleNamespace(st_uid=0, st_mode=stat.S_IFREG | 0o600, st_nlink=1)
         with patch.object(s.sys, 'platform', 'darwin'), patch.object(s.sys, 'argv', ['supervisor']), \
@@ -288,8 +288,8 @@ class ProcessTests(unittest.TestCase):
 
     def test_scratch_failure_prevents_export_and_cleanup_follows_uid_drain(self):
         caller = types.SimpleNamespace(pw_uid=501, pw_gid=20)
-        builder = types.SimpleNamespace(pw_uid=590, pw_gid=590, pw_shell='/usr/bin/false')
-        manifest = dict(builder_uid=590, builder_gid=590, caller_uid=501, workflow_sha='b' * 40)
+        builder = types.SimpleNamespace(pw_uid=590, pw_gid=590, pw_shell='/usr/bin/false', pw_dir=str(s.BUILD_HOME))
+        manifest = dict(builder_uid=590, builder_gid=590, caller_uid=501, workflow_sha='b' * 40, builder_home={})
         lock_info = types.SimpleNamespace(st_uid=0, st_mode=stat.S_IFREG | 0o600, st_nlink=1)
         for failed in (False, True):
             events = []
@@ -310,6 +310,8 @@ class ProcessTests(unittest.TestCase):
                  patch.object(s.os, 'fstat', return_value=lock_info), patch.object(s.os, 'close'),
                  patch.object(s.fcntl, 'flock'), patch.object(s, 'uid_processes', return_value=[]),
                  patch.object(s, 'darwin_scratch_parent', return_value=Path('/owned/darwin')),
+                 patch.object(s, 'home_directory', return_value=102),
+                 patch.object(s, 'clear_builder_home', side_effect=lambda *_: events.append('home_clear')),
                  patch.object(s, 'scratch_snapshot', return_value={}),
                  patch.object(s, 'clear_darwin_scratch', side_effect=clear),
                  patch.object(s, 'stop_builder', side_effect=lambda *_: events.append('drain')),
@@ -326,10 +328,10 @@ class ProcessTests(unittest.TestCase):
                         s.main()
                 else:
                     s.main()
-            expected = ['drain', 'clear', 'execute', 'drain', 'clear']
+            expected = ['drain', 'home_clear', 'clear', 'execute', 'drain', 'home_clear', 'clear']
             if not failed:
                 expected.append('export')
-            self.assertEqual(events, expected + ['drain', 'clear', 'remove'])
+            self.assertEqual(events, expected + ['drain', 'home_clear', 'clear', 'remove'])
 
     def test_diagnostic_tail_is_bounded_and_cannot_inject_workflow_commands(self):
         dangerous = b'::add-mask::value\n\x1b[31m'
@@ -385,7 +387,7 @@ class ProvisionTests(unittest.TestCase):
             data = b'reviewed payload'
             for name in p.FILES:
                 (bundle / name).write_bytes(data)
-            manifest = {'schema': 1, 'workflow_sha': 'b' * 40, 'files': {name: p.digest(data) for name in p.FILES}}
+            manifest = {'schema': 2, 'workflow_sha': 'b' * 40, 'files': {name: p.digest(data) for name in p.FILES}}
             raw = json.dumps(manifest).encode()
             (bundle / 'bundle.json').write_bytes(raw)
             _, payload = p.load_bundle(bundle, p.digest(raw))

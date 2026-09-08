@@ -2,6 +2,7 @@
 """Fixed sudo entrypoint. Never imports or executes workflow-controlled code as root."""
 import base64
 import ctypes
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -19,6 +20,7 @@ import time
 
 INSTALL = Path('/usr/local/libexec/buzz-macos-build')
 STATE = Path('/private/var/db/buzz-macos-build')
+BUILD_HOME = Path('/private/var/db/buzz-macos-build-home')
 CALLER = 'm5mbp'
 BUILDER = 'buzzbuild'
 FILES = ('buzz_macos_build_supervisor.py', 'buzz_macos_build_boundary.py',
@@ -29,6 +31,9 @@ FIELDS = {'source_sha', 'version', 'arch', 'updater_public_key', 'updater_endpoi
 IOS_FIELDS = (FIELDS - {'updater_public_key', 'updater_endpoint'}) | {'build_number'}
 ENV = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'LANG': 'en_US.UTF-8',
        'LC_ALL': 'en_US.UTF-8'}
+PHASE = 'entry'
+FAILURES = []
+RECORDED_ERRORS = []
 
 class BoundaryError(Exception):
     pass
@@ -36,6 +41,38 @@ class BoundaryError(Exception):
 def require(ok, message):
     if not ok:
         raise BoundaryError(message)
+
+def phase(name):
+    global PHASE
+    PHASE = name
+
+def record_failure(error):
+    if any(error is previous for previous in RECORDED_ERRORS) or len(FAILURES) >= 4:
+        return
+    RECORDED_ERRORS.append(error)
+    allowed = {'BoundaryError', 'PermissionError', 'FileNotFoundError', 'FileExistsError',
+               'BlockingIOError', 'OSError', 'CalledProcessError', 'TimeoutExpired',
+               'ValueError', 'KeyError', 'TypeError', 'JSONDecodeError', 'InterruptedError'}
+    name = type(error).__name__
+    detail = {'phase': PHASE, 'class': name if name in allowed else 'other_exception'}
+    for key in ('errno', 'returncode'):
+        value = getattr(error, key, None)
+        if type(value) is int and -(2**31) <= value < 2**31:
+            detail[key] = value
+    FAILURES.append(detail)
+
+@contextlib.contextmanager
+def cleanup_signals():
+    # Once cleanup begins, ordinary cancellation cannot interrupt the UID drain.
+    signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGALRM)
+    previous = {sig: signal.getsignal(sig) for sig in signals}
+    try:
+        for sig in signals:
+            signal.signal(sig, signal.SIG_IGN)
+        yield
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
 
 def kernel_groups():
     # On macOS Python getgroups() returns directory-service access groups, not
@@ -138,6 +175,55 @@ def scratch_identity(info):
     return (info.st_dev, info.st_ino, info.st_uid, info.st_gid,
             stat.S_IMODE(info.st_mode), getattr(info, 'st_flags', 0))
 
+def home_directory(expected):
+    """Open only the installed home inode beneath root-controlled ancestors."""
+    require(type(expected) is dict and set(expected) == {'path', 'identity'}
+            and expected['path'] == str(BUILD_HOME), 'invalid builder home receipt')
+    identity = expected['identity']
+    require(type(identity) is list and len(identity) == 6
+            and all(type(value) is int for value in identity)
+            and identity[2:] == [590, 590, 0o700, 0], 'invalid builder home identity')
+    root_path(BUILD_HOME.parent, True)
+    fd = open_directory(BUILD_HOME)
+    try:
+        no_acl(BUILD_HOME)
+        require(list(scratch_identity(os.fstat(fd))) == identity, 'builder home identity changed')
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+def clear_builder_home(expected):
+    """Called after UID drain under the lock; preserve the fixed home inode."""
+    fd = home_directory(expected)
+    device = expected['identity'][0]
+    def clear(directory, path):
+        for name in os.listdir(directory):
+            info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            require(info.st_uid == info.st_gid == 590 and info.st_dev == device
+                    and not getattr(info, 'st_flags', 0), 'unsafe builder home entry')
+            no_acl(path / name)
+            if stat.S_ISDIR(info.st_mode):
+                child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                try:
+                    require(scratch_identity(os.fstat(child)) == scratch_identity(info), 'builder home entry replaced')
+                    clear(child, path / name)
+                finally:
+                    os.close(child)
+                os.rmdir(name, dir_fd=directory)
+            else:
+                require(stat.S_ISLNK(info.st_mode) or (stat.S_ISREG(info.st_mode) and info.st_nlink == 1),
+                        'special or multiply linked builder home entry')
+                os.unlink(name, dir_fd=directory)
+        require(not os.listdir(directory), 'incomplete builder home cleanup')
+    try:
+        clear(fd, BUILD_HOME)
+        require(list(scratch_identity(os.fstat(fd))) == expected['identity'], 'builder home changed during cleanup')
+        checked = home_directory(expected)
+        os.close(checked)
+    finally:
+        os.close(fd)
+
 def scratch_snapshot(parent, uid, gid):
     """Attest the OS-owned ancestry and fixed, exclusively task-owned skeleton."""
     require(uid == gid == 590, 'scratch requires dedicated UID/GID')
@@ -202,8 +288,8 @@ def installed_manifest():
     root_path(STATE, True)
     root_path(INSTALL / 'installation.json')
     manifest = json.loads((INSTALL / 'installation.json').read_text())
-    require(set(manifest) == {'schema', 'workflow_sha', 'files', 'builder_uid', 'builder_gid', 'caller_uid'}, 'invalid installation receipt')
-    require(manifest['schema'] == 1 and set(manifest['files']) == set(FILES), 'invalid installed file list')
+    require(set(manifest) == {'schema', 'workflow_sha', 'files', 'builder_uid', 'builder_gid', 'caller_uid', 'builder_home'}, 'invalid installation receipt')
+    require(manifest['schema'] == 2 and set(manifest['files']) == set(FILES), 'invalid installed file list')
     for name in FILES:
         root_path(INSTALL / name)
         require(hashlib.sha256((INSTALL / name).read_bytes()).hexdigest() == manifest['files'][name], 'installed payload hash mismatch')
@@ -322,6 +408,7 @@ def execute(root, request, builder, darwin_parent):
     pid = os.fork()
     if pid == 0:
         try:
+            phase('child_descriptors')
             os.close(write_fd)
             os.dup2(read_fd, 0)
             os.close(read_fd)
@@ -330,6 +417,7 @@ def execute(root, request, builder, darwin_parent):
             os.dup2(log_write, 1)
             os.dup2(log_write, 2)
             os.closerange(3, max(256, *map(int, os.listdir('/dev/fd'))) + 1)
+            phase('child_privilege_drop')
             os.setsid()
             os.setgroups([])
             os.setgid(builder.pw_gid)
@@ -337,11 +425,14 @@ def execute(root, request, builder, darwin_parent):
             require(os.getuid() == builder.pw_uid and os.geteuid() == builder.pw_uid
                     and set(kernel_groups()) <= {builder.pw_gid}, 'failed privilege drop')
             os.chdir(root)
-            env = dict(ENV, HOME=str(root / 'home'), TMPDIR=str(root / 'tmp') + '/',
+            env = dict(ENV, HOME=str(BUILD_HOME), CFFIXED_USER_HOME=str(BUILD_HOME), TMPDIR=str(root / 'tmp') + '/',
                        USER=BUILDER, LOGNAME=BUILDER, BUZZ_DARWIN_ROOT=str(darwin_parent))
+            phase('child_fixed_exec')
             os.execve('/usr/bin/python3', ['/usr/bin/python3', '-I', str(INSTALL / 'buzz_macos_build_boundary.py'),
                                         '--payload', str(root)], env)
-        except BaseException:
+        except BaseException as error:
+            record_failure(error)
+            print('Buzz unsigned child metadata: ' + json.dumps(FAILURES, sort_keys=True), file=sys.stderr, flush=True)
             os._exit(125)
     os.close(read_fd)
     os.close(log_write)
@@ -362,21 +453,28 @@ def execute(root, request, builder, darwin_parent):
                 return
             time.sleep(0.25)
         raise BoundaryError('unsigned build timed out')
-    except BaseException:
+    except BaseException as error:
+        record_failure(error)
         drain_log(log_read, tail)
         report_log(tail)
         raise
     finally:
         try:
-            stop_builder(builder.pw_uid, pid)
-            try:
-                os.waitpid(pid, os.WNOHANG)
-            except ChildProcessError:
-                pass
+            with cleanup_signals():
+                phase('child_cleanup_drain')
+                stop_builder(builder.pw_uid, pid)
+                try:
+                    os.waitpid(pid, os.WNOHANG)
+                except ChildProcessError:
+                    pass
+        except BaseException as error:
+            record_failure(error)
+            raise
         finally:
             os.close(log_read)
 
 def main():
+    phase('entry')
     require(sys.platform == 'darwin' and os.geteuid() == 0 and len(sys.argv) == 1, 'fixed macOS root entrypoint only')
     os.umask(0o077)
     # Sudo is the sole attestation source; no caller identity comes from JSON.
@@ -384,55 +482,97 @@ def main():
     require(os.environ.get('SUDO_UID') == str(caller.pw_uid) and caller.pw_uid != 0, 'unauthorized caller')
     os.environ.clear()
     os.environ.update(ENV)
+    phase('manifest')
     manifest = installed_manifest()
+    phase('account_identity')
     builder = pwd.getpwnam(BUILDER)
     require(builder.pw_uid == manifest['builder_uid'] and builder.pw_gid == manifest['builder_gid']
             and caller.pw_uid == manifest['caller_uid'] and builder.pw_uid >= 500
-            and builder.pw_uid != caller.pw_uid and builder.pw_shell == '/usr/bin/false', 'host identity changed')
+            and builder.pw_uid != caller.pw_uid and builder.pw_shell == '/usr/bin/false'
+            and builder.pw_dir == str(BUILD_HOME), 'host identity changed')
+    phase('request')
     signal.alarm(10)
     try:
         request = request_from(sys.stdin.buffer)
     finally:
         signal.alarm(0)
+    phase('workflow_identity')
     require(request['workflow_sha'] == manifest['workflow_sha'], 'workflow/host installation mismatch')
+    phase('output_directory')
     output_fd = caller_output(request['output_dir'], caller.pw_uid)
+    phase('lock_open')
     lock_fd = os.open(STATE / 'supervisor.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     root = None
     darwin_parent = None
     scratch = None
     scratch_started = False
+    home_started = False
     try:
+        phase('lock_identity')
         lock_info = os.fstat(lock_fd)
         require(lock_info.st_uid == 0 and stat.S_IMODE(lock_info.st_mode) == 0o600
                 and stat.S_ISREG(lock_info.st_mode) and lock_info.st_nlink == 1, 'unsafe lock')
+        phase('lock_acquire')
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        phase('uid_empty')
         require(not uid_processes(builder.pw_uid), 'dedicated build UID already active; operator recovery required')
+        phase('home_identity')
+        home_fd = home_directory(manifest['builder_home'])
+        os.close(home_fd)
+        home_started = True
         scratch_started = True
+        phase('scratch_discovery')
         darwin_parent = darwin_scratch_parent(builder)
         # getconf can activate task-owned system services; drain before touching caches.
+        phase('initial_drain')
         stop_builder(builder.pw_uid)
+        phase('initial_home_clear')
+        clear_builder_home(manifest['builder_home'])
+        phase('scratch_snapshot')
         scratch = scratch_snapshot(darwin_parent, builder.pw_uid, builder.pw_gid)
+        phase('initial_scratch_clear')
         scratch = clear_darwin_scratch(darwin_parent, scratch, builder.pw_uid, builder.pw_gid)
+        phase('root_prepare')
         root = Path(tempfile.mkdtemp(prefix='build-', dir=STATE))
-        for directory in (root, root / 'home', root / 'tmp'):
+        for directory in (root, root / 'tmp'):
             if directory != root:
                 directory.mkdir(mode=0o700)
             os.chown(directory, builder.pw_uid, builder.pw_gid)
+        phase('payload_execution')
         execute(root, request, builder, darwin_parent)
         # No source descendants or cache state may survive into artifact export.
+        phase('post_payload_home_clear')
+        clear_builder_home(manifest['builder_home'])
+        phase('post_payload_scratch_clear')
         scratch = clear_darwin_scratch(darwin_parent, scratch, builder.pw_uid, builder.pw_gid)
+        phase('export')
         export_files(root, output_fd, builder.pw_uid, caller.pw_uid, caller.pw_gid, request['arch'])
+    except BaseException as error:
+        record_failure(error)
+        raise
     finally:
-        if scratch_started:
-            # A failed drain/cleanup preserves the build root and prohibits export.
-            stop_builder(builder.pw_uid)
-            if scratch is not None:
-                clear_darwin_scratch(darwin_parent, scratch, builder.pw_uid, builder.pw_gid)
-        if root is not None:
-            require(shutil.rmtree.avoids_symlink_attacks, 'safe tree cleanup unavailable')
-            shutil.rmtree(root)
-        os.close(lock_fd)
-        os.close(output_fd)
+        try:
+            with cleanup_signals():
+                if scratch_started or home_started:
+                    # Failed cleanup preserves owned state and prohibits success.
+                    phase('final_drain')
+                    stop_builder(builder.pw_uid)
+                    if home_started:
+                        phase('final_home_clear')
+                        clear_builder_home(manifest['builder_home'])
+                    if scratch is not None:
+                        phase('final_scratch_clear')
+                        clear_darwin_scratch(darwin_parent, scratch, builder.pw_uid, builder.pw_gid)
+                if root is not None:
+                    phase('final_root_clear')
+                    require(shutil.rmtree.avoids_symlink_attacks, 'safe tree cleanup unavailable')
+                    shutil.rmtree(root)
+        except BaseException as error:
+            record_failure(error)
+            raise
+        finally:
+            os.close(lock_fd)
+            os.close(output_fd)
 
 def interrupted(_signum, _frame):
     raise BoundaryError('supervisor interrupted')
@@ -442,7 +582,9 @@ if __name__ == '__main__':
         signal.signal(sig, interrupted)
     try:
         main()
-    except BaseException:
+    except BaseException as error:
         # Never echo attacker-controlled values, process arguments, or inherited secrets.
+        record_failure(error)
         print('Buzz unsigned build boundary failed; no signing is authorized.', file=sys.stderr)
+        print('Buzz unsigned boundary metadata: ' + json.dumps(FAILURES, sort_keys=True), file=sys.stderr)
         sys.exit(1)

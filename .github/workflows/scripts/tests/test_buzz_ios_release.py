@@ -190,8 +190,8 @@ class IosReleaseTests(unittest.TestCase):
         self.assertNotIn('private-fixture', str(environment))
         self.assertNotIn('MACOSX_DEPLOYMENT_TARGET', environment)
         self.assertNotIn('BUZZ_UPDATER_PUBLIC_KEY', environment)
-        self.assertEqual(environment['HOME'], '/owned/build/home')
-        self.assertEqual(environment['CFFIXED_USER_HOME'], '/owned/build/home')
+        self.assertEqual(environment['HOME'], '/private/var/db/buzz-macos-build-home')
+        self.assertEqual(environment['CFFIXED_USER_HOME'], '/private/var/db/buzz-macos-build-home')
 
     def test_fixed_override_matches_recipe(self):
         recipe = (SCRIPT / 'buzz_ios_build.sh').read_text()
