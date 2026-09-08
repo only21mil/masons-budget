@@ -113,6 +113,24 @@ class RecoveryTests(unittest.TestCase):
         self.assertIn('security.import', stream.getvalue())
         self.assertIn('assertion_id', stream.getvalue())
 
+    def test_failed_keychain_deletion_still_unlinks_raw_credentials_and_fails(self):
+        with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()):
+            root = Path(temp)
+            keychain = root / 'signing.keychain-db'
+            p12 = root / 'distribution.p12'
+            p8 = root / 'AuthKey_TEST.p8'
+            for path in [keychain, p12, p8]:
+                path.write_bytes(b'synthetic-fixture')
+            with patch.object(recovery.ios, 'paths', return_value=(root, root)), \
+                 patch.object(recovery.ios, 'run', recovery.traced_run), \
+                 patch.object(recovery.ios, 'require', recovery.checked), \
+                 patch.object(recovery.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, b'', b'')):
+                with self.assertRaises(recovery.RecoveryError):
+                    recovery.ios.cleanup()
+            self.assertFalse(p12.exists())
+            self.assertFalse(p8.exists())
+            self.assertTrue(keychain.exists())
+
     def test_workflow_never_builds_and_always_retains_diagnostics(self):
         import yaml
         workflow = yaml.safe_load((SCRIPTS.parent / 'buzz-ios-signing-recovery.yml').read_text())

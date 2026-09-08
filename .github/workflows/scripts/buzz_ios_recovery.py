@@ -43,7 +43,7 @@ NATIVE_FAILURES = {
 }
 
 
-class RecoveryError(Exception):
+class RecoveryError(RuntimeError):
     pass
 
 
