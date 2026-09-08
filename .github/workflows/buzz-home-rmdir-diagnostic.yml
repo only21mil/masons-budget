@@ -1,0 +1,20 @@
+name: One-use Buzz HOME rmdir diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: buzz-apple-release
+  cancel-in-progress: false
+
+jobs:
+  diagnostic:
+    if: github.repository == 'only21mil/masons-budget' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, macOS, ARM64, macbook-pro-m5]
+    timeout-minutes: 2
+    steps:
+      - name: Run the operator-armed fixed diagnostic and restore the carrier
+        shell: bash
+        run: /usr/bin/sudo -n /usr/bin/python3 -I /usr/local/libexec/buzz-macos-build/buzz_macos_build_supervisor.py </dev/null
