@@ -86,3 +86,24 @@ checks. It never logs command arguments, raw native output, secrets or private
 paths. Existing ASC inventory, IPA retention, upload and processing checks run
 in the same recovery when signing succeeds. Public recovery receipts survive
 failures and temporary signing material is always cleaned up.
+
+## Invite one recipient to the preserved TestFlight build
+
+`buzz-testflight-recipient.yml` operates only on Buzz 0.5.9 build 1, already
+uploaded and VALID. It creates no build, signing artifact, App Store version,
+team user, or account role. The operator must first run `inventory`, then
+review the fresh group and build beta state before selecting `distribute`.
+The selected group must have no public link or all-build access. A new build
+assignment refuses to reach unrelated testers. `new-private` creates or reuses
+only `Buzz private beta`; internal groups require existing recipient membership.
+
+The approved recipient travels through the temporary Actions secret
+`BUZZ_TESTFLIGHT_RECIPIENT_20260908`, never through workflow inputs or source.
+Check that the name is absent before creation, supply its value through stdin,
+and remove it after the terminal operation. Existing ASC secrets stay in their
+current GitHub custody. Artifacts retain redacted provider state and mutation
+receipts. A failed request is never retried automatically; inspect fresh
+inventory before recovery to prevent duplicate invitations. Apple beta review
+submission is limited to the fixed build and may leave a pending external
+approval. Missing beta metadata requires a separately reviewed factual update.
+A successful invitation does not prove a physical installation.

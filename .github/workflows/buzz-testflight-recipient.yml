@@ -1,0 +1,50 @@
+name: Buzz scoped TestFlight recipient
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Read inventory or distribute the existing Buzz build
+        type: choice
+        options: [inventory, distribute]
+        default: inventory
+      group:
+        description: Explicit existing group ID or new-private after inventory review
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: buzz-ios-testflight-release
+  cancel-in-progress: false
+
+jobs:
+  recipient:
+    if: github.repository == 'only21mil/masons-budget'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: .github/workflows/scripts
+      - name: Inspect or distribute only the preserved Buzz build
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          BUZZ_TESTFLIGHT_RECIPIENT_EMAIL: ${{ secrets.BUZZ_TESTFLIGHT_RECIPIENT_20260908 }}
+          TESTFLIGHT_ACTION: ${{ inputs.action }}
+          TESTFLIGHT_GROUP: ${{ inputs.group }}
+        run: node .github/workflows/scripts/buzz_testflight_recipient.mjs
+      - name: Preserve redacted provider receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: buzz-testflight-recipient-${{ github.run_id }}
+          path: testflight-receipts/*.json
+          if-no-files-found: error
+          retention-days: 30
