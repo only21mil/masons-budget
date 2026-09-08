@@ -234,7 +234,7 @@ def sign(args):
         for target, ent_file in ((nse, root / 'nse-entitlements.plist'), (app, root / 'runner-entitlements.plist')):
             run(['/usr/bin/codesign', '--force', '--sign', identity, '--keychain', str(keychain), '--timestamp=none', '--entitlements', str(ent_file), str(target)])
             run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(target)])
-            actual = plistlib.loads(run(['/usr/bin/codesign', '--display', '--entitlements', '-', str(target)]))
+            actual = plistlib.loads(run(['/usr/bin/codesign', '--display', '--entitlements', '-', '--xml', str(target)]))
             require(actual == plistlib.loads(ent_file.read_bytes()), 'signed entitlements differ')
     ipa = output / f'Buzz_{args.version}_{args.build_number}.ipa'
     run(['/usr/bin/ditto', '-c', '-k', '--keepParent', str(root / 'Payload'), str(ipa)])
