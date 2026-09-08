@@ -58,8 +58,10 @@ export async function check({ action, version, number, makeToken, request = requ
     if (attempt && attempt % 8 === 0) token = makeToken();
     const items = await builds(version, token, request);
     if (action === 'available') {
-      available(items, number);
-      return { available: true, existing_builds: items };
+      let isAvailable = true;
+      try { available(items, number); } catch { isAvailable = false; }
+      return { available: isAvailable, classification: isAvailable ? 'BUILD_NUMBER_AVAILABLE' : 'BUILD_NUMBER_UNAVAILABLE',
+        existing_builds: items };
     }
     const matches = items.filter(item => item.number === number);
     require(matches.length <= 1, 'ambiguous ASC build identity');
@@ -72,6 +74,15 @@ export async function check({ action, version, number, makeToken, request = requ
     await sleep(30_000);
   }
   throw new Error('Apple processing timeout');
+}
+
+export async function retainReceipt(action, receipt, output = 'signed-ios') {
+  const info = await lstat(output);
+  require(info.isDirectory() && !info.isSymbolicLink(), 'prepare must pass');
+  await writeFile(`${output}/asc-${action}.json`, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  // Persist collision inventory before failing the job, so the next number can
+  // be chosen from actual ASC evidence without guessing or rebuilding blindly.
+  require(action !== 'available' || receipt.available, 'ASC build number unavailable; inventory retained');
 }
 
 async function main() {
@@ -87,9 +98,7 @@ async function main() {
   const receipt = await check({ action, version, number, makeToken: () => createToken(credentials) });
   Object.assign(receipt, { app: APP, source: process.env.SOURCE_SHA, version, build_number: number,
     run_id: process.env.GITHUB_RUN_ID, run_attempt: process.env.GITHUB_RUN_ATTEMPT, workflow_sha: process.env.GITHUB_SHA });
-  const output = await lstat('signed-ios');
-  require(output.isDirectory() && !output.isSymbolicLink(), 'prepare must pass');
-  await writeFile(`signed-ios/asc-${action}.json`, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  await retainReceipt(action, receipt);
   console.log(`Buzz ASC ${action} check passed.`);
 }
 

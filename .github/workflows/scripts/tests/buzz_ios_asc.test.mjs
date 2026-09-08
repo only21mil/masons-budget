@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ascUrl, available, builds, check } from '../buzz_ios_asc.mjs';
+import { mkdtemp, readFile, rm, mkdir, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { ascUrl, available, builds, check, retainReceipt } from '../buzz_ios_asc.mjs';
 
 const app = { data: { type: 'apps', id: '6809565361', attributes: { bundleId: 'com.sats21m.buzz' } } };
 const row = (number, state) => ({ type: 'builds', id: `id-${number}`, attributes: { version: number, processingState: state } });
@@ -60,4 +64,47 @@ test('different app identity stops before build inventory', async () => {
   await assert.rejects(check({ action: 'available', version: '0.5.9', number: '1', makeToken: () => 'fixture',
     request: async () => { calls++; return { data: { ...app.data, attributes: { bundleId: 'com.other.app' } } }; } }), /identity/);
   assert.equal(calls, 1);
+});
+
+test('collision fails only after its exact inventory is retained', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'buzz-asc-public-fixture-'));
+  try {
+    const pages = [app, { data: [row('3', 'VALID'), row('4', 'PROCESSING')] }];
+    const receipt = await check({ action: 'available', version: '0.5.9', number: '3',
+      makeToken: () => 'private-token-fixture', request: async () => pages.shift() });
+    assert.equal(receipt.available, false);
+    assert.equal(receipt.classification, 'BUILD_NUMBER_UNAVAILABLE');
+    await assert.rejects(retainReceipt('available', receipt, directory), /inventory retained/);
+    const bytes = await readFile(join(directory, 'asc-available.json'), 'utf8');
+    assert.deepEqual(JSON.parse(bytes).existing_builds, [
+      { id: 'id-3', number: '3', state: 'VALID' }, { id: 'id-4', number: '4', state: 'PROCESSING' },
+    ]);
+    assert.equal(bytes.includes('private-token-fixture'), false);
+  } finally { await rm(directory, { recursive: true }); }
+});
+
+test('actual collision CLI exits nonzero after writing inventory without secrets', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'buzz-asc-cli-public-fixture-'));
+  try {
+    // Execute the unchanged CLI bytes, replacing only its network/crypto client
+    // with deterministic public fixtures. This checks the real exit boundary.
+    await writeFile(join(directory, 'buzz_ios_asc.mjs'), await readFile(new URL('../buzz_ios_asc.mjs', import.meta.url)));
+    await writeFile(join(directory, 'app_store_connect_preflight.mjs'), `
+      export const parsePrivateKey = () => 'private-key-fixture';
+      export const createToken = () => 'private-token-fixture';
+      export const requestJson = async url => url.pathname.includes('/apps/')
+        ? ${JSON.stringify(app)} : { data: [${JSON.stringify(row('1', 'VALID'))}] };
+    `);
+    await mkdir(join(directory, 'signed-ios'));
+    const result = spawnSync(process.execPath, [join(directory, 'buzz_ios_asc.mjs'), 'available',
+      '--version', '0.5.9', '--build-number', '1'], { cwd: directory, encoding: 'utf8',
+      env: { PATH: process.env.PATH, RUNNER_ENVIRONMENT: 'github-hosted', ASC_API_KEY_P8: 'private-key-fixture',
+        ASC_KEY_ID: 'private-id-fixture', ASC_ISSUER_ID: 'private-issuer-fixture' } });
+    assert.equal(result.status, 1);
+    const bytes = await readFile(join(directory, 'signed-ios/asc-available.json'), 'utf8');
+    assert.equal(JSON.parse(bytes).classification, 'BUILD_NUMBER_UNAVAILABLE');
+    for (const field of ['private-key-fixture', 'private-id-fixture', 'private-issuer-fixture', 'private-token-fixture']) {
+      assert.equal((result.stdout + result.stderr + bytes).includes(field), false);
+    }
+  } finally { await rm(directory, { recursive: true }); }
 });

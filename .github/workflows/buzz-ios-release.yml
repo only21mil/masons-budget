@@ -33,7 +33,7 @@ jobs:
       SOURCE_SHA: ${{ inputs.source_sha }}
       VERSION: ${{ inputs.version }}
       BUILD_NUMBER: ${{ inputs.build_number }}
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,7 +62,7 @@ jobs:
       SOURCE_SHA: ${{ inputs.source_sha }}
       VERSION: ${{ inputs.version }}
       BUILD_NUMBER: ${{ inputs.build_number }}
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - name: Require a separate GitHub-hosted signing VM
         run: test "$RUNNER_ENVIRONMENT" = github-hosted
@@ -125,11 +125,12 @@ jobs:
           /usr/bin/python3 -I .github/workflows/scripts/buzz_ios_release.py cleanup
           --source "$SOURCE_SHA" --version "$VERSION" --build-number "$BUILD_NUMBER"
       - name: Preserve upload receipt after cleanup
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: buzz-ios-upload-${{ inputs.source_sha }}
           path: |
             signed-ios/upload.json
             signed-ios/asc-*.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 30

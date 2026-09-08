@@ -4,7 +4,7 @@ set -euo pipefail
 : "${SOURCE_SHA:?}" "${VERSION:?}" "${BUILD_NUMBER:?}" "${GITHUB_WORKSPACE:?}"
 test "$RUNNER_ENVIRONMENT" = github-hosted
 test "$(uname -m)" = arm64
-test "$(/usr/bin/xcodebuild -version)" = $'Xcode 26.3\nBuild version 17C529'
+test "$(/usr/bin/xcodebuild -version)" = $'Xcode 26.6\nBuild version 17F113'
 controller="$GITHUB_WORKSPACE/controller/.github/workflows/scripts"
 cd "$GITHUB_WORKSPACE"
 mkdir buzz

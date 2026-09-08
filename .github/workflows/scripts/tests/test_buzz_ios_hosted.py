@@ -55,6 +55,19 @@ class HostedSigningTests(unittest.TestCase):
         self.assertNotIn('buzz_macos_build_boundary', json.dumps(workflow))
         self.assertNotIn('buzz-apple-release', workflow['concurrency']['group'])
 
+    def test_receipt_retention_survives_processing_or_cleanup_failure(self):
+        import yaml
+        workflow = yaml.safe_load((SCRIPTS.parent / 'buzz-ios-release.yml').read_text())
+        steps = workflow['jobs']['sign-upload']['steps']
+        retention = steps[-1]
+        self.assertEqual(retention['name'], 'Preserve upload receipt after cleanup')
+        self.assertEqual(retention['if'], 'always()')
+        self.assertIn('signed-ios/upload.json', retention['with']['path'])
+        self.assertIn('signed-ios/asc-*.json', retention['with']['path'])
+        # A pre-prepare failure has no receipt. It must keep the original failure
+        # without requiring a nonexistent successful-upload file for recovery.
+        self.assertEqual(retention['with']['if-no-files-found'], 'warn')
+
 
 if __name__ == '__main__':
     unittest.main()

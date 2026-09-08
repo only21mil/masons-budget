@@ -14,7 +14,7 @@ capabilities must already match those fixed values before signing.
 
 The iOS carrier uses two separate GitHub-hosted `macos-26` VMs. Its unsigned
 job fetches the explicit immutable Buzz commit, activates that source's pinned
-Flutter 3.41.7 Hermit tool, and builds with Xcode 26.3 build 17C529. It uses the
+Flutter 3.41.7 Hermit tool, and builds with Xcode 26.6 build 17F113. It uses the
 normal iOS resource compiler and never receives Distribution or ASC credentials.
 The existing installed MBP sandbox remains unchanged. Its deferred native
 resource work does not gate this hosted delivery path.
@@ -51,7 +51,7 @@ marketing version and increasing build number. After inert preparation, the
 trusted signer reads ASC app 6809565361, requires bundle com.sats21m.buzz, and
 rejects any requested number already used or superseded in that iOS marketing
 version. This check uses the existing ASC environment credentials and retains a
-public inventory receipt. Uploads not yet visible in ASC remain subject to
+public inventory receipt before rejecting an unavailable number. Uploads not yet visible in ASC remain subject to
 Apple's own collision rejection. The signed IPA and source receipt are retained
 before upload.
 Upload uses the retained App Store Connect credential and a private run-scoped
@@ -59,7 +59,8 @@ key file through Apple's existing altool route.
 
 The upload receipt records transport success. A separate read-only ASC step
 polls for the exact version/build for up to 20 minutes, fails on FAILED or INVALID,
-and retains `asc-processed.json` only after VALID. Token signing uses the existing Node crypto client in memory and writes no
+and retains `asc-processed.json` only after VALID. The final receipt artifact
+runs after failures too, retaining any existing upload and ASC inventory receipts. Token signing uses the existing Node crypto client in memory and writes no
 private key file. Processing success leaves group assignment and
 installation unverified. Assign the valid build to the approved Buzz internal
 group. Tester identity/access and any invitation are separately scoped; never broaden unrelated app access or
