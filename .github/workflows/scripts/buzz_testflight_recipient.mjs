@@ -56,7 +56,7 @@ async function list(api, path, query = {}) {
 }
 
 async function recipient(api, email) {
-  const matches = await list(api, '/v1/betaTesters', { 'filter[email]': email, 'fields[betaTesters]': 'email,state' });
+  const matches = await list(api, '/v1/betaTesters', { 'filter[email]': email, 'filter[apps]': APP, 'fields[betaTesters]': 'email,state' });
   require(matches.length <= 1, 'AMBIGUOUS_RECIPIENT');
   if (!matches.length) return null;
   const tester = matches[0];
@@ -65,7 +65,7 @@ async function recipient(api, email) {
   return tester;
 }
 
-export async function internalAccess(api, email) {
+export async function internalAccess(api, email, addBuzzVisibility = false) {
   const users = await list(api, '/v1/users', {
     'filter[username]': email, 'fields[users]': 'username,roles,allAppsVisible' });
   require(users.length <= 1, 'AMBIGUOUS_ASC_USER');
@@ -75,9 +75,25 @@ export async function internalAccess(api, email) {
     'ASC_USER_IDENTITY_MISMATCH');
   const eligible = ['ACCOUNT_HOLDER', 'ADMIN', 'APP_MANAGER', 'DEVELOPER', 'MARKETING'];
   const role = Array.isArray(user.attributes.roles) && user.attributes.roles.some(value => eligible.includes(value));
-  const visible = user.attributes.allAppsVisible === true ||
-    (await list(api, `/v1/users/${user.id}/visibleApps`, { 'fields[apps]': 'bundleId' }))
-      .some(app => app.type === 'apps' && app.id === APP && app.attributes?.bundleId === 'com.sats21m.buzz');
+  const apps = user.attributes.allAppsVisible === true ? [] :
+    await list(api, `/v1/users/${user.id}/visibleApps`, { 'fields[apps]': 'bundleId' });
+  let visible = user.attributes.allAppsVisible === true ||
+    apps.some(app => app.type === 'apps' && app.id === APP && app.attributes?.bundleId === 'com.sats21m.buzz');
+  if (addBuzzVisibility && role && !visible) {
+    require(user.attributes.allAppsVisible === false && apps.every(app => app.type === 'apps' && metadataId(app.id)),
+      'ASC_VISIBILITY_UNCONFIRMED');
+    await api(`/v1/users/${user.id}/relationships/visibleApps`, 'POST', { data: [resource('apps', APP)] });
+    const { data: saved } = await api(`/v1/users/${user.id}?fields%5Busers%5D=username,roles,allAppsVisible`);
+    const after = await list(api, `/v1/users/${user.id}/visibleApps`, { 'fields[apps]': 'bundleId' });
+    const expected = [...new Set([...apps.map(app => app.id), APP])].sort();
+    require(saved?.type === 'users' && saved.id === user.id && saved.attributes?.username?.toLowerCase() === email &&
+      saved.attributes.allAppsVisible === false && Array.isArray(saved.attributes.roles) &&
+      JSON.stringify([...saved.attributes.roles].sort()) === JSON.stringify([...user.attributes.roles].sort()) &&
+      after.every(app => app.type === 'apps') && JSON.stringify(after.map(app => app.id).sort()) === JSON.stringify(expected) &&
+      after.some(app => app.id === APP && app.attributes?.bundleId === 'com.sats21m.buzz'),
+    'ASC_APP_ACCESS_READBACK_MISMATCH');
+    visible = true;
+  }
   return { user_exists: true, eligible_role: role, app_visible: visible };
 }
 
@@ -241,9 +257,11 @@ async function updateBetaMetadata(api, input, record) {
 export async function operate({ api, email, action, groupId, metadata, record = async () => {} }) {
   require(['inventory', 'metadata', 'distribute'].includes(action), 'INVALID_ACTION');
   require(typeof email === 'string' && email === email.trim().toLowerCase() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'INVALID_RECIPIENT');
+  const access = action === 'inventory' ? await internalAccess(api, email) : undefined;
+  if (access) await record('internal-access', access);
   const before = await inventory(api, email);
   await record('before', before.receipt);
-  if (action === 'inventory') return { status: 'INVENTORY_ONLY', ...before.receipt, internal_access: await internalAccess(api, email) };
+  if (action === 'inventory') return { status: 'INVENTORY_ONLY', ...before.receipt, internal_access: access };
   if (action === 'metadata') {
     require(!groupId, 'METADATA_GROUP_MUST_BE_EMPTY');
     const changes = await updateBetaMetadata(api, metadata, record);
@@ -252,7 +270,7 @@ export async function operate({ api, email, action, groupId, metadata, record = 
   require(['new-private', 'new-internal'].includes(groupId) || uuid(groupId), 'EXPLICIT_GROUP_REQUIRED');
   const internal = groupId === 'new-internal' || before.receipt.groups.some(item => item.id === groupId && item.internal);
   if (internal) {
-    const access = await internalAccess(api, email);
+    const access = await internalAccess(api, email, groupId === 'new-internal');
     await record('internal-access', access);
     if (!access.user_exists && groupId === 'new-internal') return {
       status: await internalInvitation(api, email, metadata, record), ...before.receipt, internal_access: access,
@@ -282,7 +300,7 @@ export async function operate({ api, email, action, groupId, metadata, record = 
   const scopedBuildAccess = group?.all_builds === false || (group?.internal === false && group.all_builds === null);
   require(group && group.public_link === false && scopedBuildAccess, 'GROUP_NOT_PRIVATE_AND_SCOPED');
   // Internal membership is limited to the exact existing ASC user with Buzz access.
-  // This operation never creates users, changes roles, or expands app visibility.
+  // This operation never changes roles or grants visibility beyond the fixed Buzz app.
   require(group.recipient_member || !group.other_builds, 'MEMBERSHIP_WOULD_GRANT_OTHER_BUILDS');
   // Adding a build must not send it to an unrelated tester. Choose the dedicated group instead.
   require(group.build_member || !group.other_testers, 'BUILD_WOULD_REACH_OTHER_TESTERS');

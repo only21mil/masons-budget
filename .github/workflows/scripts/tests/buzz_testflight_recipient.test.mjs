@@ -358,3 +358,64 @@ test('absent ASC user cannot be invited without explicit private name input', as
   await assert.rejects(operate({ api, email: EMAIL, action: 'distribute', groupId: 'new-internal' }), /INTERNAL_USER_NAME_REQUIRED/);
   assert.deepEqual(base.writes, []);
 });
+
+test('tester lookup scopes repeated email records to the fixed Buzz app', async () => {
+  const base = fixture();
+  const api = async (path, ...args) => {
+    const url = new URL(path, 'https://fixture.test');
+    if (url.pathname === '/v1/betaTesters') {
+      assert.equal(url.searchParams.get('filter[email]'), EMAIL);
+      if (url.searchParams.get('filter[apps]') !== APP) return { data: [
+        { type: 'betaTesters', id: TESTER, attributes: { email: EMAIL, state: 'INVITED' } },
+        { type: 'betaTesters', id: GROUP, attributes: { email: EMAIL, state: 'INSTALLED' } },
+      ] };
+      return base.api(path, ...args);
+    }
+    return base.api(path, ...args);
+  };
+  const result = await operate({ api, email: EMAIL, action: 'inventory' });
+  assert.equal(result.recipient_exists, true); assert.deepEqual(base.writes, []);
+});
+
+test('same-app ambiguity still refuses while retaining independent ASC access readback', async () => {
+  const base = fixture(); const records = [];
+  const api = async (path, ...args) => new URL(path, 'https://fixture.test').pathname === '/v1/betaTesters'
+    ? { data: [{ id: TESTER }, { id: GROUP }] } : base.api(path, ...args);
+  await assert.rejects(operate({ api, email: EMAIL, action: 'inventory', record: async (name, value) => records.push({ name, value }) }), /AMBIGUOUS_RECIPIENT/);
+  assert.deepEqual(records, [{ name: 'internal-access', value: { user_exists: true, eligible_role: true, app_visible: true } }]);
+  assert.deepEqual(base.writes, []);
+});
+
+test('first Buzz access adds only Buzz and preserves existing apps and role', async () => {
+  const user = { type: 'users', id: 'fixture-user', attributes: { username: EMAIL, roles: ['MARKETING'], allAppsVisible: false } };
+  let apps = [{ type: 'apps', id: 'existing-app', attributes: { bundleId: 'existing.bundle' } }]; const writes = [];
+  const api = async (path, method = 'GET', body) => {
+    const p = new URL(path, 'https://fixture.test').pathname;
+    if (method === 'POST') {
+      assert.equal(p, '/v1/users/fixture-user/relationships/visibleApps');
+      assert.deepEqual(body, { data: [{ type: 'apps', id: APP }] });
+      writes.push(body); apps = [...apps, { type: 'apps', id: APP, attributes: { bundleId: 'com.sats21m.buzz' } }]; return {};
+    }
+    return { data: p === '/v1/users' ? [user] : p.endsWith('/visibleApps') ? apps : user };
+  };
+  assert.equal((await internalAccess(api, EMAIL)).app_visible, false); assert.equal(writes.length, 0);
+  assert.deepEqual(await internalAccess(api, EMAIL, true), { user_exists: true, eligible_role: true, app_visible: true });
+  assert.equal(writes.length, 1);
+  await internalAccess(api, EMAIL, true); assert.equal(writes.length, 1);
+});
+
+test('Buzz visibility grant refuses ineligible roles and detects broadened readback', async () => {
+  const user = { type: 'users', id: 'fixture-user', attributes: { username: EMAIL, roles: ['SALES'], allAppsVisible: false } };
+  let writes = 0;
+  const api = async (path, method = 'GET') => {
+    const p = new URL(path, 'https://fixture.test').pathname;
+    if (method === 'POST') { writes++; return {}; }
+    if (p === '/v1/users') return { data: [user] };
+    if (p.endsWith('/visibleApps')) return { data: [] };
+    return { data: { ...user, attributes: { ...user.attributes, allAppsVisible: true } } };
+  };
+  assert.equal((await internalAccess(api, EMAIL, true)).eligible_role, false); assert.equal(writes, 0);
+  user.attributes.roles = ['MARKETING'];
+  await assert.rejects(internalAccess(api, EMAIL, true), /ASC_APP_ACCESS_READBACK_MISMATCH/);
+  assert.equal(writes, 1);
+});
