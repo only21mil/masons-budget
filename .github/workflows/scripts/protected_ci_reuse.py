@@ -380,7 +380,7 @@ def attempt_finished(api, run):
 
 
 def qualification_runs(api, head):
-    selected, ignored = {}, []
+    selected, ignored, previous = {}, [], {}
     for filename in WORKFLOW_CHECKS:
         rows = api.pages(PREFIX + f"/actions/workflows/{filename}/runs?head_sha={head}&event=pull_request", "runs")
         ordered, identities = [], set()
@@ -403,16 +403,22 @@ def qualification_runs(api, head):
         for index, (started, run) in enumerate(ordered):
             need(run["conclusion"] == "success", "latest source workflow did not succeed")
             attempt_finished(api, run)
-            for older_started, older_run in ordered[index + 1:]:
-                need(older_started < started and attempt_finished(api, older_run) < started,
-                     "source workflow execution order is ambiguous")
             if unchanged_apple_edit(api, run):
                 ignored.append(run)
                 continue
             selected[filename] = run
+            previous[filename] = []
+            for older_started, older_run in ordered[index + 1:]:
+                finished = attempt_finished(api, older_run)
+                previous[filename].append((older_started, finished, older_run))
+                # The separate title/body-edit lane can overlap real Apple
+                # work in either direction. Its full proof must pass below
+                # before it can be excluded from execution ordering.
+                if finished >= started and unchanged_apple_edit(api, older_run):
+                    ignored.append(older_run)
             break
         need(filename in selected, "source qualification workflow missing")
-    return selected, ignored
+    return selected, ignored, previous
 
 
 def validate_qualification(source, *, job, run, execution, source_head, pr, landed, protection):
@@ -458,7 +464,7 @@ def verify_qualification(api, head, *, candidate_only=False):
     candidate = api.one(PREFIX + f"/git/commits/{source_head}")
     need(candidate["sha"] == source_head and candidate["tree"]["sha"] == landed["tree"]["sha"], "candidate/landing trees differ")
     protection = authority(api)
-    runs, ignored = qualification_runs(api, source_head)
+    runs, ignored, previous = qualification_runs(api, source_head)
     checks = api.pages(PREFIX + f"/commits/{source_head}/check-runs?filter=all", "checks")
     # The always-executed shared contract proof pins the source base used by
     # every applicability decision. Other job proofs must name this same base.
@@ -525,8 +531,16 @@ def verify_qualification(api, head, *, candidate_only=False):
             need([parent["sha"] for parent in tested["parents"]] == [base, source_head], "ignored event tested different parents")
         ignored_proofs.append({"run": ignored_run, "job": execution, "artifact": artifact,
                                "source_proof": source, "tested_commit": tested})
+    proved_ignored_ids = {proof["run"]["id"] for proof in ignored_proofs}
+    for filename, older_runs in previous.items():
+        started = execution_time(runs[filename]["run_started_at"])
+        for older_started, finished, older_run in older_runs:
+            if older_run["id"] in proved_ignored_ids:
+                continue
+            need(older_started < started and finished < started,
+                 "source workflow execution order is ambiguous")
     need(authority(api) == protection, "protection moved during verification")
-    need(qualification_runs(api, source_head) == (runs, ignored), "source workflows changed during verification")
+    need(qualification_runs(api, source_head) == (runs, ignored, previous), "source workflows changed during verification")
     final_checks = api.pages(PREFIX + f"/commits/{source_head}/check-runs?filter=all", "checks")
     for filename, names in WORKFLOW_CHECKS.items():
         suite = runs[filename]["check_suite_id"]

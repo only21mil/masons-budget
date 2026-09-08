@@ -389,6 +389,98 @@ class LandingTests(unittest.TestCase):
         self.assertEqual(result["source_workflows"]["swift.yml"]["id"], 2)
         self.assertEqual(result["ignored_unchanged_edit_runs"], [run])
 
+    def overlapping_apple_edit(self, *, started=10):
+        run = self.api.add_run(99, original=2, started=started)
+        self.api.jobs[99][0]["steps"] = [{"name": "Recognize a base-unchanged PR edit", "conclusion": "success"}]
+        for job in self.api.jobs[99][1:]:
+            job["conclusion"] = "skipped"
+        for identity, completed in ((2, 5), (99, 9)):
+            for job in self.api.jobs[identity]:
+                job["completed_at"] = ago(completed)
+        self.api.sources["swift-routing-99"].update(event_action="edited", base_changed=False)
+        return run
+
+    def test_proved_noop_overlap_in_either_direction_preserves_real_apple_execution(self):
+        for candidate_only in (False, True):
+            for started in (10, 25):
+                with self.subTest(candidate_only=candidate_only, noop_started=started):
+                    self.api = LandingAPI()
+                    run = self.overlapping_apple_edit(started=started)
+                    if candidate_only:
+                        self.api.main = BASE
+                        self.api.pr.update(merged=False, merged_at=None, merge_commit_sha=None)
+                    result = self.verify(candidate_only=candidate_only)
+                    self.assertEqual(result["source_workflows"]["swift.yml"]["id"], 2)
+                    self.assertEqual(result["ignored_unchanged_edit_runs"], [run])
+                    proof = result["ignored_event_proofs"][0]
+                    self.assertEqual(proof["run"]["id"], 99)
+                    self.assertEqual(proof["source_proof"]["job"], "swift-routing")
+                    self.assertEqual(proof["source_proof"]["base_sha"], BASE)
+                    self.assertEqual(proof["tested_commit"]["tree"]["sha"], TREE)
+                    apple = [item for item in result["source_executions"] if item["run_id"] == 2]
+                    self.assertEqual(len(apple), 3)
+                    self.assertTrue(all(item["job"]["conclusion"] == "success" for item in apple))
+                    self.assertFalse(any(item["run_id"] == 99 for item in result["source_executions"]))
+
+    def test_overlapping_noop_requires_complete_unchanged_source_proof(self):
+        invalid = [("qualification_version", None), ("event_action", "synchronize"), ("base_changed", True),
+                   ("head_sha", LANDED), ("run_attempt", 2), ("base_sha", "f" * 40),
+                   ("tree_sha", "f" * 40), ("workflow_sha256", "0" * 64),
+                   ("policy_sha256", "0" * 64), ("authority", {}), ("context", {})]
+        for started in (10, 25):
+            for field, value in [(None, None), *invalid]:
+                with self.subTest(noop_started=started, field=field):
+                    self.api = LandingAPI()
+                    self.overlapping_apple_edit(started=started)
+                    if field is None:
+                        del self.api.sources["swift-routing-99"]
+                    else:
+                        self.api.sources["swift-routing-99"][field] = value
+                    self.refuse()
+
+    def test_pending_failed_and_unproved_overlapping_edits_refuse(self):
+        for started in (10, 25):
+            for status, conclusion in (("completed", "failure"), ("completed", "cancelled"),
+                                       ("in_progress", None), ("queued", None)):
+                with self.subTest(noop_started=started, status=status, conclusion=conclusion):
+                    self.api = LandingAPI()
+                    self.overlapping_apple_edit(started=started).update(status=status, conclusion=conclusion)
+                    self.refuse()
+            for defect in ("guard", "detector", "downstream", "pending_job", "missing_jobs"):
+                with self.subTest(noop_started=started, defect=defect):
+                    self.api = LandingAPI()
+                    self.overlapping_apple_edit(started=started)
+                    if defect == "guard":
+                        self.api.jobs[99][0]["steps"][0]["conclusion"] = "skipped"
+                    elif defect == "detector":
+                        self.api.jobs[99][0]["conclusion"] = "failure"
+                    elif defect == "downstream":
+                        self.api.jobs[99][1]["conclusion"] = "success"
+                    elif defect == "pending_job":
+                        self.api.jobs[99][0]["status"] = "in_progress"
+                    else:
+                        self.api.jobs[99] = []
+                    self.refuse()
+
+    def test_proved_noop_does_not_hide_overlapping_real_apple_runs(self):
+        for conclusion in ("success", "failure", "cancelled"):
+            with self.subTest(conclusion=conclusion):
+                self.api = LandingAPI()
+                self.overlapping_apple_edit()
+                self.api.add_run(88, original=2, started=7)
+                self.api.runs[2]["conclusion"] = conclusion
+                with self.assertRaisesRegex(reuse.Refusal, "execution order is ambiguous"):
+                    self.verify()
+
+    def test_completed_historical_noop_does_not_need_new_source_proof(self):
+        self.overlapping_apple_edit(started=60 * 50)
+        for job in self.api.jobs[99]:
+            job["completed_at"] = ago(60 * 50 - 1)
+        del self.api.sources["swift-routing-99"]
+        result = self.verify()
+        self.assertEqual(result["source_workflows"]["swift.yml"]["id"], 2)
+        self.assertEqual(result["ignored_unchanged_edit_runs"], [])
+
     def test_older_run_noop_rerun_preserves_the_later_created_successful_suite(self):
         self.api.add_run(99, original=2)
         self.api.runs[2].update(run_attempt=2, run_started_at=ago(5), updated_at=ago(4))
