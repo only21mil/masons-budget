@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 from contextlib import contextmanager
+from collections import namedtuple
 import datetime
 import importlib.util
 import json
@@ -35,6 +36,11 @@ OVERRIDES = ('BUNDLE_IDENTIFIER = ' + BUNDLE + '\nAPP_DISPLAY_NAME = Buzz\n'
              'BUZZ_IOS_PUSH_ENVIRONMENT = production\nBUZZ_APP_ATTEST_ENVIRONMENT = production\n')
 
 
+# Original unsigned execution, supplied only by a trusted recovery caller. The
+# ordinary CLI has no origin override and continues binding its current run.
+BuildOrigin = namedtuple('BuildOrigin', ['run_id', 'run_attempt', 'workflow_sha'])
+
+
 def inputs(args):
     require(re.fullmatch(r'[0-9a-f]{40}', args.source), 'invalid source SHA')
     require(re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', args.version), 'invalid iOS version')
@@ -56,11 +62,17 @@ def app_info(app, args):
 
 
 def binding(args):
+    origin = getattr(args, 'build_origin', None)
+    if origin is None:
+        origin = BuildOrigin(os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT'], os.environ['GITHUB_SHA'])
+    require(isinstance(origin, BuildOrigin) and re.fullmatch(r'[1-9][0-9]{0,19}', origin.run_id)
+            and re.fullmatch(r'[1-9][0-9]{0,19}', origin.run_attempt)
+            and re.fullmatch(r'[0-9a-f]{40}', origin.workflow_sha), 'invalid original build identity')
     return {'schema': 'buzz-ios-build-v1', 'source': args.source, 'version': args.version,
             'build_number': args.build_number, 'bundle': BUNDLE, 'extension': NSE, 'team': TEAM,
             'overrides_sha256': common.hashlib.sha256(OVERRIDES.encode()).hexdigest(),
-            'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
-            'workflow_sha': os.environ['GITHUB_SHA']}
+            'run_id': origin.run_id, 'run_attempt': origin.run_attempt,
+            'workflow_sha': origin.workflow_sha}
 
 
 def pack(args):

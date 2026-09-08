@@ -133,6 +133,7 @@ jobs:
           python3 .github/workflows/scripts/tests/test_mac_build_boundary.py
           python3 .github/workflows/scripts/tests/test_buzz_ios_release.py
           python3 .github/workflows/scripts/tests/test_buzz_ios_hosted.py
+          python3 .github/workflows/scripts/tests/test_buzz_ios_recovery.py
           node --test .github/workflows/scripts/tests/buzz_ios_asc.test.mjs
           python3 .github/workflows/scripts/tests/test_buzz_macos_build_supervisor.py
           python3 .github/workflows/scripts/tests/test_home_rmdir_diagnostic.py
