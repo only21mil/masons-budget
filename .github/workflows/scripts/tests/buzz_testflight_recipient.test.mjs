@@ -141,7 +141,7 @@ test('absent beta review detail is reported and submission refuses missing metad
   assert.deepEqual(base.writes, []);
 });
 
-test('metadata action rejects credential fields and arbitrary sections before writes', async () => {
+test('metadata action rejects incomplete credentials and arbitrary sections before writes', async () => {
   for (const metadata of [{ review_detail: { demoAccountPassword: 'fixture' } }, { review_detail: { demoAccountRequired: true } }, { arbitrary: 'fixture' }, { review_detail: null }]) {
     const { api, writes } = fixture();
     await assert.rejects(operate({ api, email: EMAIL, action: 'metadata', metadata }));
@@ -249,4 +249,37 @@ test('missing all-builds attribute still fails closed', async () => {
   };
   await assert.rejects(operate({ api, email: EMAIL, action: 'distribute', groupId: GROUP }), /GROUP_NOT_PRIVATE_AND_SCOPED/);
   assert.deepEqual(base.writes, []);
+});
+
+const PAIRING = 'buzz://' + Buffer.from(JSON.stringify({ relayUrl: 'https://buzz-review.only21mil.xyz', pubkey: 'a'.repeat(64), nsec: 'nsec1' + 'q'.repeat(58) })).toString('base64url');
+for (const truncated of [false, true]) test(`private pairing update verifies full password, truncated=${truncated}`, async () => {
+  const base = fixture();
+  const detail = { type: 'betaAppReviewDetails', id: APP, attributes: { demoAccountRequired: false } };
+  const writes = [], records = [];
+  const api = async (path, method = 'GET', body) => {
+    const p = new URL(path, 'https://api.appstoreconnect.apple.com').pathname;
+    if (p.endsWith('/betaAppReviewDetail') || p === '/v1/betaAppReviewDetails/' + APP) {
+      if (method === 'PATCH') { writes.push(body); Object.assign(detail.attributes, body.data.attributes); if (truncated) detail.attributes.demoAccountPassword = PAIRING.slice(0, 100); }
+      return { data: detail };
+    }
+    return base.api(path, method, body);
+  };
+  const args = { api, email: EMAIL, action: 'metadata', metadata: { review_detail: { demoAccountRequired: true, demoAccountName: 'Apple reviewer', demoAccountPassword: PAIRING } }, record: async (name, value) => records.push({ name, value }) };
+  if (truncated) await assert.rejects(operate(args), /METADATA_WRITE_READBACK_MISMATCH/);
+  else {
+    const result = await operate(args);
+    assert.equal(result.status, 'METADATA_UPDATED');
+    assert.equal(JSON.stringify(result).includes(PAIRING), false);
+    await operate(args); // Exact input is idempotent.
+  }
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].data.attributes.demoAccountPassword, PAIRING);
+  assert.equal(JSON.stringify(records).includes(PAIRING), false);
+});
+test('private pairing rejects wrong deployment and malformed payload before writes', async () => {
+  for (const password of ['buzz://e30', PAIRING.replace('buzz://', 'https://'), 'x'.repeat(4001), 'buzz://' + Buffer.from(JSON.stringify({ relayUrl: 'https://private.example', pubkey: 'a'.repeat(64), nsec: 'nsec1' + 'q'.repeat(58) })).toString('base64url')]) {
+    const { api, writes } = fixture();
+    await assert.rejects(operate({ api, email: EMAIL, action: 'metadata', metadata: { review_detail: { demoAccountRequired: true, demoAccountName: 'Apple reviewer', demoAccountPassword: password } } }));
+    assert.deepEqual(writes, []);
+  }
 });

@@ -125,12 +125,21 @@ function metadataInput(input) {
   const textFields = (value, fields) => {
     require(plain(value) && Object.keys(value).length > 0 && Object.keys(value).every(key => fields.includes(key)), 'INVALID_METADATA_FIELDS');
     for (const [key, field] of Object.entries(value)) {
-      if (key === 'demoAccountRequired') require(field === false, 'DEMO_CREDENTIALS_NOT_SUPPORTED');
+      if (key === 'demoAccountRequired') require(typeof field === 'boolean', 'INVALID_METADATA_VALUE');
       else require(typeof field === 'string' && field.trim().length > 0 && field.length <= 4000, 'INVALID_METADATA_VALUE');
     }
   };
   if (Object.hasOwn(input, 'review_detail')) textFields(input.review_detail,
-    ['contactFirstName', 'contactLastName', 'contactPhone', 'contactEmail', 'demoAccountRequired', 'notes']);
+    ['contactFirstName', 'contactLastName', 'contactPhone', 'contactEmail', 'demoAccountRequired', 'demoAccountName', 'demoAccountPassword', 'notes']);
+  const detail = input.review_detail;
+  if (detail && (detail.demoAccountRequired === true || Object.hasOwn(detail, 'demoAccountName') || Object.hasOwn(detail, 'demoAccountPassword'))) {
+    require(detail.demoAccountRequired === true && typeof detail.demoAccountName === 'string' && typeof detail.demoAccountPassword === 'string', 'COMPLETE_DEMO_CREDENTIALS_REQUIRED');
+    require(/^buzz:\/\/[A-Za-z0-9_-]+={0,2}$/.test(detail.demoAccountPassword), 'INVALID_PAIRING_CREDENTIAL');
+    let payload;
+    try { payload = JSON.parse(Buffer.from(detail.demoAccountPassword.slice(7), 'base64url').toString('utf8')); } catch { throw new Error('INVALID_PAIRING_CREDENTIAL'); }
+    require(payload && payload.relayUrl === 'https://buzz-review.only21mil.xyz' && /^[0-9a-f]{64}$/.test(payload.pubkey ?? '') && /^nsec1[023456789acdefghjklmnpqrstuvwxyz]{58}$/.test(payload.nsec ?? ''), 'INVALID_PAIRING_CREDENTIAL');
+    require(Object.keys(payload).every(key => ['relayUrl', 'pubkey', 'nsec'].includes(key)), 'INVALID_PAIRING_CREDENTIAL');
+  }
   for (const [key, fields] of [['localizations', ['locale', 'description', 'feedbackEmail']], ['test_notes', ['locale', 'whatsNew']]]) {
     if (!Object.hasOwn(input, key)) continue;
     require(Array.isArray(input[key]) && input[key].length > 0 && input[key].length <= 40, 'INVALID_METADATA_LIST');
@@ -165,7 +174,7 @@ async function updateBetaMetadata(api, input, record) {
     await record('metadata-change-' + changes.length, { resource: type, verified: true });
   };
   if (input.review_detail) {
-    const { data } = await api(`/v1/apps/${APP}/betaAppReviewDetail?fields%5BbetaAppReviewDetails%5D=contactFirstName,contactLastName,contactPhone,contactEmail,demoAccountRequired,notes`);
+    const { data } = await api(`/v1/apps/${APP}/betaAppReviewDetail?fields%5BbetaAppReviewDetails%5D=contactFirstName,contactLastName,contactPhone,contactEmail,demoAccountRequired,demoAccountName,demoAccountPassword,notes`);
     require(data?.type === 'betaAppReviewDetails' && metadataId(data.id), 'BETA_REVIEW_DETAIL_MISSING');
     await update('betaAppReviewDetails', data, input.review_detail);
   }
