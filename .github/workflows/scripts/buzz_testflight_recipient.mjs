@@ -65,7 +65,7 @@ async function recipient(api, email) {
 
 async function betaMetadata(api) {
   const present = value => typeof value === 'string' && value.trim().length > 0;
-  // Request only these current-app fields. Never retrieve demo-account passwords.
+  // Request only these current-app fields. Never request demo-account credential fields.
   let detail;
   try {
     ({ data: detail } = await api(`/v1/apps/${APP}/betaAppReviewDetail?fields%5BbetaAppReviewDetails%5D=contactFirstName,contactLastName,contactPhone,contactEmail,demoAccountRequired`));
@@ -118,12 +118,82 @@ export async function inventory(api, email) {
     beta_metadata: await betaMetadata(api), unrelated_build_audience: unrelatedAudience, recipient_exists: !!tester, recipient_state: tester?.attributes?.state ?? null, groups: summaries } };
 }
 
-export async function operate({ api, email, action, groupId, record = async () => {} }) {
-  require(['inventory', 'distribute'].includes(action), 'INVALID_ACTION');
+function metadataInput(input) {
+  const plain = value => value && typeof value === 'object' && !Array.isArray(value);
+  require(plain(input) && Object.keys(input).every(key => ['review_detail', 'localizations', 'test_notes'].includes(key)), 'INVALID_METADATA_INPUT');
+  const textFields = (value, fields) => {
+    require(plain(value) && Object.keys(value).length > 0 && Object.keys(value).every(key => fields.includes(key)), 'INVALID_METADATA_FIELDS');
+    for (const [key, field] of Object.entries(value)) {
+      if (key === 'demoAccountRequired') require(field === false, 'DEMO_CREDENTIALS_NOT_SUPPORTED');
+      else require(typeof field === 'string' && field.trim().length > 0 && field.length <= 4000, 'INVALID_METADATA_VALUE');
+    }
+  };
+  if (Object.hasOwn(input, 'review_detail')) textFields(input.review_detail,
+    ['contactFirstName', 'contactLastName', 'contactPhone', 'contactEmail', 'demoAccountRequired', 'notes']);
+  for (const [key, fields] of [['localizations', ['locale', 'description', 'feedbackEmail']], ['test_notes', ['locale', 'whatsNew']]]) {
+    if (!Object.hasOwn(input, key)) continue;
+    require(Array.isArray(input[key]) && input[key].length > 0 && input[key].length <= 40, 'INVALID_METADATA_LIST');
+    const seen = new Set();
+    for (const item of input[key]) {
+      textFields(item, fields);
+      require(/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$/.test(item.locale ?? '') && !seen.has(item.locale), 'INVALID_METADATA_LOCALE');
+      seen.add(item.locale);
+      require(Object.keys(item).length > 1, 'EMPTY_METADATA_UPDATE');
+    }
+  }
+  require(Object.keys(input).length > 0, 'EMPTY_METADATA_UPDATE');
+  return input;
+}
+
+async function updateBetaMetadata(api, input, record) {
+  metadataInput(input); // Validate the entire private plan before its first mutation.
+  const equal = (item, attrs) => Object.entries(attrs).every(([key, value]) => item.attributes?.[key] === value);
+  const changes = [];
+  const update = async (type, item, attrs, binding) => {
+    if (item && equal(item, attrs)) return;
+    if (item) require(item.type === type && uuid(item.id), 'METADATA_RESOURCE_MISMATCH');
+    const writeAttrs = { ...attrs };
+    if (item) delete writeAttrs.locale; // Locale selects an existing resource; PATCH cannot change it.
+    const body = { data: { type, ...(item ? { id: item.id } : {}), attributes: writeAttrs,
+      ...(!item ? { relationships: binding } : {}) } };
+    const { data } = await api(`/v1/${type}${item ? '/' + item.id : ''}`, item ? 'PATCH' : 'POST', body);
+    require(data?.type === type && uuid(data.id), 'INVALID_METADATA_WRITE_RECEIPT');
+    const { data: check } = await api(`/v1/${type}/${data.id}?fields%5B${type}%5D=${Object.keys(attrs).join(',')}`);
+    require(check?.id === data.id && equal(check, attrs), 'METADATA_WRITE_READBACK_MISMATCH');
+    changes.push({ resource: type, verified: true });
+    await record('metadata-change-' + changes.length, { resource: type, verified: true });
+  };
+  if (input.review_detail) {
+    const { data } = await api(`/v1/apps/${APP}/betaAppReviewDetail?fields%5BbetaAppReviewDetails%5D=contactFirstName,contactLastName,contactPhone,contactEmail,demoAccountRequired,notes`);
+    require(data?.type === 'betaAppReviewDetails' && uuid(data.id), 'BETA_REVIEW_DETAIL_MISSING');
+    await update('betaAppReviewDetails', data, input.review_detail);
+  }
+  for (const [key, type, parent, binding] of [
+    ['localizations', 'betaAppLocalizations', `/v1/apps/${APP}/betaAppLocalizations`, { app: relationship('apps', APP) }],
+    ['test_notes', 'betaBuildLocalizations', `/v1/builds/${BUILD}/betaBuildLocalizations`, { build: relationship('builds', BUILD) }],
+  ]) {
+    if (!input[key]) continue;
+    const existing = await list(api, parent);
+    for (const attrs of input[key]) {
+      const matches = existing.filter(item => item.attributes?.locale === attrs.locale);
+      require(matches.length <= 1, 'AMBIGUOUS_METADATA_LOCALE');
+      await update(type, matches[0], attrs, binding);
+    }
+  }
+  return changes;
+}
+
+export async function operate({ api, email, action, groupId, metadata, record = async () => {} }) {
+  require(['inventory', 'metadata', 'distribute'].includes(action), 'INVALID_ACTION');
   require(typeof email === 'string' && email === email.trim().toLowerCase() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'INVALID_RECIPIENT');
   const before = await inventory(api, email);
   await record('before', before.receipt);
   if (action === 'inventory') return { status: 'INVENTORY_ONLY', ...before.receipt };
+  if (action === 'metadata') {
+    require(!groupId, 'METADATA_GROUP_MUST_BE_EMPTY');
+    const changes = await updateBetaMetadata(api, metadata, record);
+    return { status: 'METADATA_UPDATED', ...(await inventory(api, email)).receipt, metadata_changes: changes };
+  }
   require(groupId === 'new-private' || uuid(groupId), 'EXPLICIT_GROUP_REQUIRED');
   let group;
   if (groupId === 'new-private') {
@@ -214,6 +284,8 @@ export async function operate({ api, email, action, groupId, record = async () =
 async function main() {
   require(process.env.RUNNER_ENVIRONMENT === 'github-hosted', 'HOSTED_RUNNER_REQUIRED');
   const email = process.env.BUZZ_TESTFLIGHT_RECIPIENT_EMAIL;
+  const metadataRaw = process.env.BUZZ_TESTFLIGHT_REVIEW_METADATA;
+  delete process.env.BUZZ_TESTFLIGHT_REVIEW_METADATA;
   const credentials = { keyId: process.env.ASC_KEY_ID, issuerId: process.env.ASC_ISSUER_ID,
     privateKey: parsePrivateKey(process.env.ASC_API_KEY_P8) };
   for (const key of ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_API_KEY_P8', 'BUZZ_TESTFLIGHT_RECIPIENT_EMAIL']) delete process.env[key];
@@ -223,7 +295,8 @@ async function main() {
   { flag: 'wx', mode: 0o600 });
   try {
     const result = await operate({ api: client(() => createToken(credentials)), email,
-      action: process.env.TESTFLIGHT_ACTION, groupId: process.env.TESTFLIGHT_GROUP, record });
+      action: process.env.TESTFLIGHT_ACTION, groupId: process.env.TESTFLIGHT_GROUP,
+      metadata: process.env.TESTFLIGHT_ACTION === 'metadata' ? JSON.parse(metadataRaw ?? 'null') : undefined, record });
     await record('result', result);
     console.log(`Buzz TestFlight operation: ${result.status}. Protected input and API responses omitted.`);
   } catch (error) {

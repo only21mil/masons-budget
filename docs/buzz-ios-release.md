@@ -115,5 +115,15 @@ auto-notifying beta review submission refuse any unrelated build audience.
 API failures retain only bounded error codes and attribute pointers.
 
 Inventory reports presence-only beta review contact, description, feedback email
-and test notes for the fixed app/build. It never retrieves demo-account passwords.
+and test notes for the fixed app/build. It never requests or retains demo-account credential fields.
 Submission refuses missing required metadata or unverified demo-account access.
+
+The separate `metadata` action accepts only a reviewed JSON object in temporary
+`BUZZ_TESTFLIGHT_REVIEW_20260908` Actions input. Allowed sections are
+`review_detail`, `localizations`, and `test_notes`. It patches existing review
+contact fields, creates or patches explicitly supplied locale descriptions and
+feedback addresses, and creates or patches exact-build test notes. Values stay
+out of dispatch inputs and receipts; every write receives an exact-value
+readback. It cannot set demo-account credentials or submit review. Metadata
+values must come from the operator and require a concrete reviewed plan. Remove
+this temporary input after its terminal run and verify name absence.

@@ -6,7 +6,7 @@ on:
       action:
         description: Read inventory or distribute the existing Buzz build
         type: choice
-        options: [inventory, distribute]
+        options: [inventory, metadata, distribute]
         default: inventory
       group:
         description: Explicit existing group ID or new-private after inventory review
@@ -37,6 +37,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           BUZZ_TESTFLIGHT_RECIPIENT_EMAIL: ${{ secrets.BUZZ_TESTFLIGHT_RECIPIENT_20260908 }}
+          BUZZ_TESTFLIGHT_REVIEW_METADATA: ${{ secrets.BUZZ_TESTFLIGHT_REVIEW_20260908 }}
           TESTFLIGHT_ACTION: ${{ inputs.action }}
           TESTFLIGHT_GROUP: ${{ inputs.group }}
         run: node .github/workflows/scripts/buzz_testflight_recipient.mjs

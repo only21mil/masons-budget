@@ -137,3 +137,32 @@ test('absent beta review detail is reported and submission refuses missing metad
   await assert.rejects(operate({ api, email: EMAIL, action: 'distribute', groupId: GROUP }), /BETA_REVIEW_METADATA_INCOMPLETE/);
   assert.deepEqual(base.writes, []);
 });
+
+test('metadata action rejects credential fields and arbitrary sections before writes', async () => {
+  for (const metadata of [{ review_detail: { demoAccountPassword: 'fixture' } }, { review_detail: { demoAccountRequired: true } }, { arbitrary: 'fixture' }, { review_detail: null }]) {
+    const { api, writes } = fixture();
+    await assert.rejects(operate({ api, email: EMAIL, action: 'metadata', metadata }));
+    assert.deepEqual(writes, []);
+  }
+});
+test('review contact update uses current app resource, verifies exact values and is idempotent', async () => {
+  const base = fixture();
+  const detail = { type: 'betaAppReviewDetails', id: '33333333-3333-3333-3333-333333333333', attributes: {
+    contactFirstName: 'Prior', contactLastName: 'Fixture', contactEmail: EMAIL, contactPhone: '+15555555555', demoAccountRequired: false,
+  } };
+  const writes = [];
+  const api = async (path, method = 'GET', body) => {
+    const url = new URL(path, 'https://api.appstoreconnect.apple.com');
+    if (url.pathname.endsWith('/betaAppReviewDetail') || url.pathname.endsWith('/' + detail.id)) {
+      if (method === 'PATCH') { writes.push(body); Object.assign(detail.attributes, body.data.attributes); }
+      return { data: detail };
+    }
+    return base.api(path, method, body);
+  };
+  const metadata = { review_detail: { contactFirstName: 'Updated' } };
+  const result = await operate({ api, email: EMAIL, action: 'metadata', metadata });
+  assert.equal(result.status, 'METADATA_UPDATED'); assert.equal(writes.length, 1);
+  assert.equal(writes[0].data.id, detail.id); assert.equal(detail.attributes.contactFirstName, 'Updated');
+  assert.equal(JSON.stringify(result).includes('Updated'), false);
+  await operate({ api, email: EMAIL, action: 'metadata', metadata }); assert.equal(writes.length, 1);
+});
