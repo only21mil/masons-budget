@@ -243,6 +243,9 @@ SIGKILL or power loss may interrupt publication or any other mutation. Preserve
 actual state and revoke entry through reviewed recovery before reuse; this tool
 is not a crash-atomic transaction. Failed final cleanup prevents supervisor
 success and signing even if inert output was already copied before that failure.
+SIGTERM, SIGINT, SIGHUP and SIGALRM received during guarded child or final
+cleanup are deferred until cleanup finishes, then reported as failure. Deferred
+cancellation preserves an original or cleanup exception already propagating.
 
 ## Recovery and removal
 

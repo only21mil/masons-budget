@@ -63,16 +63,25 @@ def record_failure(error):
 
 @contextlib.contextmanager
 def cleanup_signals():
-    # Once cleanup begins, ordinary cancellation cannot interrupt the UID drain.
+    # Finish mandatory cleanup before reporting cancellation. Do not replace an
+    # error already unwinding through the caller's finally block.
+    unwinding = sys.exc_info()[0] is not None
+    cancelled = False
+    def defer_cancellation(_signum, _frame):
+        nonlocal cancelled
+        cancelled = True
     signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGALRM)
     previous = {sig: signal.getsignal(sig) for sig in signals}
     try:
         for sig in signals:
-            signal.signal(sig, signal.SIG_IGN)
+            signal.signal(sig, defer_cancellation)
         yield
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
+    # A cleanup error propagates past this point without being replaced.
+    if cancelled and not unwinding:
+        raise BoundaryError('supervisor interrupted')
 
 def kernel_groups():
     # On macOS Python getgroups() returns directory-service access groups, not

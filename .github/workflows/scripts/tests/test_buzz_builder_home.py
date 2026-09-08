@@ -5,11 +5,12 @@ import io
 import json
 import os
 from pathlib import Path
+import signal
 import stat
 import tempfile
 import types
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 
@@ -234,13 +235,93 @@ class LifecycleTests(unittest.TestCase):
         self.assertIn('"errno": 13', stderr.getvalue())
 
     def test_cleanup_guard_restores_handlers_even_when_cleanup_fails(self):
-        import signal
         previous = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGALRM)}
-        with self.assertRaises(PermissionError):
+        failure = PermissionError('cleanup failed')
+        with self.assertRaises(PermissionError) as error:
             with s.cleanup_signals():
-                self.assertTrue(all(signal.getsignal(sig) == signal.SIG_IGN for sig in previous))
-                raise PermissionError()
+                signal.raise_signal(signal.SIGTERM)
+                raise failure
+        self.assertIs(error.exception, failure)
         self.assertEqual({sig: signal.getsignal(sig) for sig in previous}, previous)
+
+    def test_cleanup_guard_defers_each_signal_and_restores_handlers(self):
+        signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGALRM)
+        previous = {sig: signal.getsignal(sig) for sig in signals}
+        for sig in signals:
+            events = []
+            with self.subTest(signal=sig), self.assertRaisesRegex(s.BoundaryError, 'supervisor interrupted'):
+                with s.cleanup_signals():
+                    signal.raise_signal(sig)
+                    signal.raise_signal(sig)
+                    events.append('cleanup finished')
+            self.assertEqual(events, ['cleanup finished'])
+            self.assertEqual({sig: signal.getsignal(sig) for sig in signals}, previous)
+
+    def test_cleanup_guard_preserves_original_unwinding_error(self):
+        failure = PermissionError('original failure')
+        events = []
+        with self.assertRaises(PermissionError) as error:
+            try:
+                raise failure
+            finally:
+                with s.cleanup_signals():
+                    signal.raise_signal(signal.SIGTERM)
+                    events.append('cleanup finished')
+        self.assertIs(error.exception, failure)
+        self.assertEqual(events, ['cleanup finished'])
+
+    def test_first_cancellation_during_child_or_final_cleanup_fails_after_cleanup(self):
+        caller = types.SimpleNamespace(pw_uid=501, pw_gid=20)
+        builder = types.SimpleNamespace(pw_uid=590, pw_gid=590, pw_shell='/usr/bin/false', pw_dir=str(s.BUILD_HOME))
+        manifest = dict(builder_uid=590, builder_gid=590, caller_uid=501, workflow_sha='a' * 40, builder_home={})
+        lock = types.SimpleNamespace(st_uid=0, st_mode=stat.S_IFREG | 0o600, st_nlink=1)
+        for cancelled_phase in ('child_cleanup_drain', 'final_drain', None):
+            events = []
+            s.FAILURES.clear(); s.RECORDED_ERRORS.clear()
+            def stop(*_):
+                events.append(s.PHASE)
+                if cancelled_phase is not None and s.PHASE == cancelled_phase:
+                    signal.raise_signal(signal.SIGTERM)
+                    events.append('cancellation deferred')
+            def clear_home(*_):
+                events.append(s.PHASE)
+            def clear_scratch(*_):
+                events.append(s.PHASE)
+                return {}
+            patches = [
+                patch.object(s.sys, 'platform', 'darwin'), patch.object(s.sys, 'argv', ['supervisor']),
+                patch.object(s.os, 'geteuid', return_value=0), patch.object(s.os, 'umask'),
+                patch.dict(s.os.environ, SUDO_UID='501'), patch.object(s.pwd, 'getpwnam', side_effect=[caller, builder]),
+                patch.object(s, 'installed_manifest', return_value=manifest), patch.object(s.signal, 'alarm'),
+                patch.object(s, 'request_from', return_value={'workflow_sha': 'a' * 40, 'output_dir': '/public', 'arch': 'ios'}),
+                patch.object(s, 'caller_output', return_value=100), patch.object(s.os, 'open', return_value=101),
+                patch.object(s.os, 'fstat', return_value=lock), patch.object(s.os, 'close'), patch.object(s.fcntl, 'flock'),
+                patch.object(s, 'uid_processes', return_value=[]), patch.object(s, 'home_directory', return_value=102),
+                patch.object(s, 'darwin_scratch_parent', return_value=Path('/fixed/scratch')),
+                patch.object(s, 'scratch_snapshot', return_value={}), patch.object(s, 'clear_darwin_scratch', side_effect=clear_scratch),
+                patch.object(s, 'clear_builder_home', side_effect=clear_home), patch.object(s, 'stop_builder', side_effect=stop),
+                patch.object(s.tempfile, 'mkdtemp', return_value='/fixed/build'), patch.object(s.Path, 'mkdir'),
+                patch.object(s.os, 'chown'), patch.object(s.os, 'pipe', side_effect=[(10, 11), (12, 13)]),
+                patch.object(s.os, 'fork', return_value=123), patch.object(s.os, 'set_blocking'),
+                patch.object(s.os, 'fdopen', return_value=io.BytesIO()), patch.object(s, 'drain_log'),
+                patch.object(s.os, 'waitpid', side_effect=[(123, 0), ChildProcessError()]),
+                patch.object(s, 'export_files', side_effect=lambda *_: events.append('export')),
+                patch.object(s.shutil, 'rmtree', side_effect=lambda *_: events.append('root cleared')),
+            ]
+            with self.subTest(cancelled_phase=cancelled_phase), contextlib.ExitStack() as stack:
+                for item in patches:
+                    stack.enter_context(item)
+                if cancelled_phase is None:
+                    s.main()
+                    self.assertFalse(s.FAILURES)
+                else:
+                    with self.assertRaisesRegex(s.BoundaryError, 'supervisor interrupted'):
+                        s.main()
+                    self.assertEqual(len(s.FAILURES), 1)
+                s.os.waitpid.assert_has_calls([call(123, os.WNOHANG)] * 2)
+                s.os.close.assert_has_calls([call(101), call(100)])
+                self.assertEqual(events[-3:], ['final_home_clear', 'final_scratch_clear', 'root cleared'])
+                self.assertEqual('export' in events, cancelled_phase != 'child_cleanup_drain')
 
     def test_safe_diagnostics_keep_original_and_cleanup_classes_not_values(self):
         s.FAILURES.clear(); s.RECORDED_ERRORS.clear()
