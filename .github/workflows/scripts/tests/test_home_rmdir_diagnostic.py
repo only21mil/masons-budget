@@ -337,6 +337,34 @@ class DiagnosticTests(unittest.TestCase):
             os.waitpid(children[0], os.WNOHANG)
         self.assertTrue(self.leaf.exists())
 
+    def test_cancellation_immediately_after_real_reap_never_signals_reaped_pid(self):
+        d.install(self.base, self.wrapper)
+        previous = signal.signal(signal.SIGTERM, d.interrupted)
+        self.addCleanup(signal.signal, signal.SIGTERM, previous)
+        real_waitpid = os.waitpid
+        reaped = []
+        def waitpid(pid, options):
+            found, status = real_waitpid(pid, options)
+            if found and options == os.WNOHANG:
+                reaped.append(found)
+                # This signal must remain pending until the caller records reaped=True.
+                signal.raise_signal(signal.SIGTERM)
+            return found, status
+        def result(_base, parent, uid):
+            os.rmdir('Preferences', dir_fd=parent)
+            return dict(uid=uid, euid=uid, pid=os.getpid(), ppid=os.getppid(),
+                        operation='rmdir', category='fixed_empty_home_leaf', errno=0)
+        with patch.object(d, 'child_result', side_effect=result), \
+             patch.object(d.os, 'waitpid', side_effect=waitpid), \
+             patch.object(d.os, 'kill', side_effect=AssertionError('signal after reap')) as kill:
+            with self.assertRaises(d.DiagnosticError):
+                d.diagnostic(self.base)
+        self.assertEqual(len(reaped), 1)
+        kill.assert_not_called()
+        self.assertTrue(d.RESTORED and d.ATTEMPT.exists())
+        self.assertFalse(self.leaf.exists())
+        self.assertEqual(self.target.read_bytes(), self.original)
+
     def test_manual_workflow_uses_only_existing_fixed_entrypoint(self):
         workflow = (SCRIPTS.parent / 'buzz-home-rmdir-diagnostic.yml').read_text()
         self.assertIn('workflow_dispatch:', workflow)

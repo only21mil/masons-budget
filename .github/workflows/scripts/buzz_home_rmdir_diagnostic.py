@@ -238,9 +238,15 @@ def attempt(base, parent, uid):
         signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
-            found, status = os.waitpid(pid, os.WNOHANG)
+            # Keep cancellation from losing ownership state after waitpid reaps.
+            previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)
+            try:
+                found, status = os.waitpid(pid, os.WNOHANG)
+                if found:
+                    reaped = True
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
             if found:
-                reaped = True
                 require(os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0)
                 break
             time.sleep(0.02)
