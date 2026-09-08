@@ -113,6 +113,39 @@ runs:
             && git cat-file -e "${sha}^{commit}"
         }
 
+        # Resolve a pull request base branch to a local ref. The full-history
+        # checkout already fetched every branch head into refs/remotes/origin/*
+        # with the job token, so the common case needs no network at all.
+        # Before this, every Clients CI pull request run fetched the base ref
+        # through a checkout made with persist-credentials: false, failed with
+        # "could not read Username for 'https://github.com'", and verified
+        # every tree (run 34251050185, job 102145270638; Buzz issue
+        # bbb8ed64db7407247318597e8613ca2e989404fafd1f1438c554bd78610d6020,
+        # mirror only21mil/buzz#190). A ref the checkout did not bring in is
+        # fetched with a bounded backoff; exhausting it still verifies all.
+        base_tip=""
+        resolve_base_ref() {
+          local ref="$1" remote_ref="refs/remotes/origin/$1" attempt delay=2
+          if git rev-parse -q --verify "${remote_ref}^{commit}" > /dev/null; then
+            echo "::notice::Base ref $ref resolved from the checkout without a fetch."
+            base_tip="$remote_ref"
+            return 0
+          fi
+          for attempt in 1 2 3; do
+            if git fetch -q origin "+refs/heads/$ref:$remote_ref"; then
+              echo "::notice::Base ref $ref fetched on attempt $attempt."
+              base_tip="$remote_ref"
+              return 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Base ref $ref fetch attempt $attempt failed; retrying in ${delay}s."
+              sleep "$delay"
+              delay=$((delay * 2))
+            fi
+          done
+          return 1
+        }
+
         case "$EVENT_NAME" in
           workflow_dispatch)
             verify_all "Manual dispatch requested full verification."
@@ -144,13 +177,12 @@ runs:
                 verify_all "Pull request merge base could not be determined."
               fi
             elif [ -n "$BASE_REF" ]; then
-              # The checkout may run with persist-credentials: false, so this
-              # fetch can fail on auth. verify-all is the conservative
-              # direction: a failed fetch must degrade, never die under -e.
-              if ! git fetch -q origin "$BASE_REF"; then
-                verify_all "Base ref fetch failed; verifying every tree."
+              # verify-all is the conservative direction: an unavailable base
+              # must degrade, never die under -e.
+              if ! resolve_base_ref "$BASE_REF"; then
+                verify_all "Base ref $BASE_REF is unavailable after 3 fetch attempts; verifying every tree."
               fi
-              if ! diff_base="$(git merge-base HEAD "origin/$BASE_REF")"; then
+              if ! diff_base="$(git merge-base HEAD "$base_tip")"; then
                 verify_all "Pull request merge base could not be determined."
               fi
             else
