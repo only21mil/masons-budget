@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { APP, BUILD, client, operate } from '../buzz_testflight_recipient.mjs';
+import { APP, BUILD, client, operate, internalAccess } from '../buzz_testflight_recipient.mjs';
 const EMAIL = 'fixture@example.test';
 const GROUP = '11111111-1111-1111-1111-111111111111';
 const TESTER = '22222222-2222-2222-2222-222222222222';
@@ -12,12 +12,14 @@ function fixture({ internal = false, publicLink = false, allBuilds = false, othe
     if (method !== 'GET') {
       writes.push({ path: url.pathname, method, body });
       if (url.pathname.endsWith('/relationships/builds')) assigned = true;
+      else if (url.pathname.endsWith('/relationships/betaTesters')) member = true;
       else if (url.pathname === '/v1/betaTesterInvitations') { state = 'INVITED'; return { data: { type: 'betaTesterInvitations', id: 'receipt' } }; }
       else if (url.pathname === '/v1/buildBetaNotifications') { if (notificationActivates) beta = 'IN_BETA_TESTING'; return { data: { type: 'buildBetaNotifications' } }; }
       else throw new Error('UNEXPECTED_MUTATION');
       return {};
     }
     const p = url.pathname;
+    if (p === '/v1/users') return { data: [{ type: 'users', id: 'fixture-user', attributes: { username: EMAIL, roles: ['MARKETING'], allAppsVisible: true } }] };
     if (p.endsWith('/betaAppReviewDetail')) return { data: { attributes: { contactFirstName: EMAIL, contactLastName: EMAIL, contactPhone: EMAIL, contactEmail: EMAIL, demoAccountRequired: false } } };
     if (p.endsWith('/betaAppLocalizations')) return { data: [{ attributes: { description: EMAIL, feedbackEmail: EMAIL, locale: 'en-US' } }] };
     if (p.endsWith('/betaBuildLocalizations')) return { data: [{ attributes: { whatsNew: EMAIL, locale: 'en-US' } }] };
@@ -56,10 +58,11 @@ test('unrelated testers block new build assignment', async () => {
   await assert.rejects(operate({ api, email: EMAIL, action: 'distribute', groupId: GROUP }), /BUILD_WOULD_REACH_OTHER_TESTERS/);
   assert.deepEqual(writes, []);
 });
-test('internal group cannot grant missing membership', async () => {
+test('qualified existing internal user can join only the selected build group', async () => {
   const { api, writes } = fixture({ internal: true, member: false });
-  await assert.rejects(operate({ api, email: EMAIL, action: 'distribute', groupId: GROUP }), /INTERNAL_MEMBERSHIP_REQUIRED/);
-  assert.deepEqual(writes, []);
+  const result = await operate({ api, email: EMAIL, action: 'distribute', groupId: GROUP });
+  assert.equal(result.status, 'DISTRIBUTED');
+  assert.deepEqual(writes.map(item => item.path), [`/v1/betaGroups/${GROUP}/relationships/betaTesters`]);
 });
 test('public link group cannot receive private recipient', async () => {
   const { api, writes } = fixture({ publicLink: true });
@@ -282,4 +285,76 @@ test('private pairing rejects wrong deployment and malformed payload before writ
     await assert.rejects(operate({ api, email: EMAIL, action: 'metadata', metadata: { review_detail: { demoAccountRequired: true, demoAccountName: 'Apple reviewer', demoAccountPassword: password } } }));
     assert.deepEqual(writes, []);
   }
+});
+
+test('internal access checks exact identity, role and Buzz app visibility', async () => {
+  const user = { type: 'users', id: 'fixture-user', attributes: { username: EMAIL, roles: ['MARKETING'], allAppsVisible: false } };
+  let apps = [{ type: 'apps', id: APP, attributes: { bundleId: 'com.sats21m.buzz' } }];
+  const api = async path => ({ data: new URL(path, 'https://fixture.test').pathname === '/v1/users' ? [user] : apps });
+  assert.deepEqual(await internalAccess(api, EMAIL), { user_exists: true, eligible_role: true, app_visible: true });
+  apps = [];
+  assert.equal((await internalAccess(api, EMAIL)).app_visible, false);
+  user.attributes.roles = ['SALES'];
+  assert.equal((await internalAccess(api, EMAIL)).eligible_role, false);
+  user.attributes.username = 'someoneelse@example.test';
+  await assert.rejects(internalAccess(api, EMAIL), /ASC_USER_IDENTITY_MISMATCH/);
+});
+
+test('missing internal app access causes no group, membership or invitation mutation', async () => {
+  const base = fixture({ internal: true });
+  const api = async (path, ...args) => {
+    const p = new URL(path, 'https://fixture.test').pathname;
+    if (p === '/v1/users') return { data: [{ type: 'users', id: 'fixture-user', attributes: { username: EMAIL, roles: ['MARKETING'], allAppsVisible: false } }] };
+    if (p.endsWith('/visibleApps')) return { data: [] };
+    return base.api(path, ...args);
+  };
+  const result = await operate({ api, email: EMAIL, action: 'distribute', groupId: GROUP });
+  assert.equal(result.status, 'INTERNAL_ASC_ACCESS_REQUIRED'); assert.deepEqual(base.writes, []);
+});
+
+test('new internal group uses only qualified user and retained build without beta review', async () => {
+  const base = fixture({ internal: true, groupName: 'Buzz private internal beta' });
+  let created = false;
+  const api = async (path, method = 'GET', body) => {
+    const p = new URL(path, 'https://fixture.test').pathname;
+    if (p === '/v1/betaGroups' && method === 'GET' && !created) return { data: [] };
+    if (p === '/v1/betaGroups' && method === 'POST') {
+      assert.deepEqual(body.data.attributes, { name: 'Buzz private internal beta', isInternalGroup: true, publicLinkEnabled: false, hasAccessToAllBuilds: false });
+      assert.deepEqual(body.data.relationships, { app: { data: { type: 'apps', id: APP } } });
+      created = true; return { data: { type: 'betaGroups', id: GROUP } };
+    }
+    return base.api(path, method, body);
+  };
+  const result = await operate({ api, email: EMAIL, action: 'distribute', groupId: 'new-internal' });
+  assert.equal(result.status, 'DISTRIBUTED'); assert.equal(created, true); assert.deepEqual(base.writes, []);
+});
+
+test('absent ASC user gets one Buzz-only Marketing invitation then acceptance hold', async () => {
+  const base = fixture(); let invitation; const writes = [];
+  const api = async (path, method = 'GET', body) => {
+    const p = new URL(path, 'https://fixture.test').pathname;
+    if (p === '/v1/users') return { data: [] };
+    if (p === '/v1/userInvitations' && method === 'GET') return { data: invitation ? [invitation] : [] };
+    if (p === '/v1/userInvitations' && method === 'POST') {
+      writes.push(body); invitation = { ...body.data, id: 'invitation-id' }; return { data: invitation };
+    }
+    if (p === '/v1/userInvitations/invitation-id') return { data: invitation };
+    if (p === '/v1/userInvitations/invitation-id/visibleApps') return { data: [{ type: 'apps', id: APP }] };
+    return base.api(path, method, body);
+  };
+  const args = { api, email: EMAIL, action: 'distribute', groupId: 'new-internal', metadata: { internal_user: { firstName: 'Fixture', lastName: 'Tester' } } };
+  const result = await operate(args);
+  assert.equal(result.status, 'ASC_INVITATION_SENT_REQUIRES_ACCEPTANCE');
+  assert.equal(result.build_available, false); assert.equal(JSON.stringify(result).includes(EMAIL), false);
+  assert.deepEqual(writes[0].data.attributes, { email: EMAIL, firstName: 'Fixture', lastName: 'Tester', roles: ['MARKETING'], allAppsVisible: false, provisioningAllowed: false });
+  assert.deepEqual(writes[0].data.relationships, { visibleApps: { data: [{ type: 'apps', id: APP }] } });
+  assert.equal((await operate(args)).status, 'EXISTING_ASC_INVITATION_REQUIRES_ACCEPTANCE');
+  assert.equal(writes.length, 1); assert.deepEqual(base.writes, []);
+});
+
+test('absent ASC user cannot be invited without explicit private name input', async () => {
+  const base = fixture();
+  const api = async (path, ...args) => ['/v1/users', '/v1/userInvitations'].includes(new URL(path, 'https://fixture.test').pathname) ? { data: [] } : base.api(path, ...args);
+  await assert.rejects(operate({ api, email: EMAIL, action: 'distribute', groupId: 'new-internal' }), /INTERNAL_USER_NAME_REQUIRED/);
+  assert.deepEqual(base.writes, []);
 });

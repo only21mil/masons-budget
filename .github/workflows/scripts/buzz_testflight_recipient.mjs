@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 export const APP = '6809565361';
 export const BUILD = '590b0858-0d5c-4deb-9163-66fc5137f02c';
 const GROUP_NAME = 'Buzz private beta';
+const INTERNAL_GROUP_NAME = 'Buzz private internal beta';
 const ORIGIN = 'https://api.appstoreconnect.apple.com';
 const require = (ok, code) => { if (!ok) throw new Error(code); };
 const resource = (type, id) => ({ type, id });
@@ -64,6 +65,49 @@ async function recipient(api, email) {
   return tester;
 }
 
+export async function internalAccess(api, email) {
+  const users = await list(api, '/v1/users', {
+    'filter[username]': email, 'fields[users]': 'username,roles,allAppsVisible' });
+  require(users.length <= 1, 'AMBIGUOUS_ASC_USER');
+  if (!users.length) return { user_exists: false, eligible_role: false, app_visible: false };
+  const user = users[0];
+  require(user.type === 'users' && metadataId(user.id) && user.attributes?.username?.toLowerCase() === email,
+    'ASC_USER_IDENTITY_MISMATCH');
+  const eligible = ['ACCOUNT_HOLDER', 'ADMIN', 'APP_MANAGER', 'DEVELOPER', 'MARKETING'];
+  const role = Array.isArray(user.attributes.roles) && user.attributes.roles.some(value => eligible.includes(value));
+  const visible = user.attributes.allAppsVisible === true ||
+    (await list(api, `/v1/users/${user.id}/visibleApps`, { 'fields[apps]': 'bundleId' }))
+      .some(app => app.type === 'apps' && app.id === APP && app.attributes?.bundleId === 'com.sats21m.buzz');
+  return { user_exists: true, eligible_role: role, app_visible: visible };
+}
+
+async function internalInvitation(api, email, input, record) {
+  const existing = await list(api, '/v1/userInvitations', {
+    'filter[email]': email, 'fields[userInvitations]': 'email,roles,allAppsVisible,provisioningAllowed,expirationDate' });
+  require(existing.length <= 1, 'AMBIGUOUS_ASC_INVITATION');
+  if (existing.length) {
+    require(existing[0].type === 'userInvitations' && existing[0].attributes?.email?.toLowerCase() === email,
+      'ASC_INVITATION_IDENTITY_MISMATCH');
+    return 'EXISTING_ASC_INVITATION_REQUIRES_ACCEPTANCE';
+  }
+  const name = input?.internal_user;
+  require(name && typeof name === 'object' && Object.keys(name).length === 2 &&
+    ['firstName', 'lastName'].every(key => typeof name[key] === 'string' && name[key].trim() === name[key] && name[key].length > 0 && name[key].length <= 100),
+  'INTERNAL_USER_NAME_REQUIRED');
+  const { data } = await api('/v1/userInvitations', 'POST', { data: { type: 'userInvitations',
+    attributes: { email, ...name, roles: ['MARKETING'], allAppsVisible: false, provisioningAllowed: false },
+    relationships: { visibleApps: { data: [resource('apps', APP)] } } } });
+  require(data?.type === 'userInvitations' && metadataId(data.id), 'INVALID_ASC_INVITATION_RECEIPT');
+  const { data: saved } = await api(`/v1/userInvitations/${data.id}`);
+  const apps = await list(api, `/v1/userInvitations/${data.id}/visibleApps`, { 'fields[apps]': 'bundleId' });
+  require(saved?.id === data.id && saved.type === 'userInvitations' && saved.attributes?.email?.toLowerCase() === email &&
+    JSON.stringify(saved.attributes.roles) === '["MARKETING"]' && saved.attributes.allAppsVisible === false &&
+    saved.attributes.provisioningAllowed === false && apps.length === 1 && apps[0].id === APP && apps[0].type === 'apps',
+  'ASC_INVITATION_READBACK_MISMATCH');
+  await record('asc-invitation', { status: 'PROVIDER_ACCEPTED', role: 'MARKETING', app: APP, all_apps: false, provisioning: false });
+  return 'ASC_INVITATION_SENT_REQUIRES_ACCEPTANCE';
+}
+
 async function betaMetadata(api) {
   const present = value => typeof value === 'string' && value.trim().length > 0;
   // Request only these current-app fields. Never request demo-account credential fields.
@@ -105,7 +149,8 @@ export async function inventory(api, email) {
     const testers = await list(api, `/v1/betaGroups/${group.id}/relationships/betaTesters`);
     const builds = await list(api, `/v1/betaGroups/${group.id}/relationships/builds`);
     require(typeof group.attributes?.isInternalGroup === 'boolean', 'INVALID_GROUP_KIND');
-    summaries.push({ id: group.id, private_group_name_match: group.attributes?.name === GROUP_NAME, internal: group.attributes.isInternalGroup,
+    summaries.push({ id: group.id, private_group_name_match: group.attributes?.name === GROUP_NAME,
+      internal_group_name_match: group.attributes?.name === INTERNAL_GROUP_NAME, internal: group.attributes.isInternalGroup,
       public_link: group.attributes?.publicLinkEnabled, all_builds: group.attributes?.hasAccessToAllBuilds,
       tester_count: testers.length, recipient_member: !!tester && testers.some(item => item.id === tester.id),
       other_testers: testers.some(item => item.id !== tester?.id), build_member: builds.some(item => item.id === BUILD),
@@ -198,21 +243,32 @@ export async function operate({ api, email, action, groupId, metadata, record = 
   require(typeof email === 'string' && email === email.trim().toLowerCase() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), 'INVALID_RECIPIENT');
   const before = await inventory(api, email);
   await record('before', before.receipt);
-  if (action === 'inventory') return { status: 'INVENTORY_ONLY', ...before.receipt };
+  if (action === 'inventory') return { status: 'INVENTORY_ONLY', ...before.receipt, internal_access: await internalAccess(api, email) };
   if (action === 'metadata') {
     require(!groupId, 'METADATA_GROUP_MUST_BE_EMPTY');
     const changes = await updateBetaMetadata(api, metadata, record);
     return { status: 'METADATA_UPDATED', ...(await inventory(api, email)).receipt, metadata_changes: changes };
   }
-  require(groupId === 'new-private' || uuid(groupId), 'EXPLICIT_GROUP_REQUIRED');
+  require(['new-private', 'new-internal'].includes(groupId) || uuid(groupId), 'EXPLICIT_GROUP_REQUIRED');
+  const internal = groupId === 'new-internal' || before.receipt.groups.some(item => item.id === groupId && item.internal);
+  if (internal) {
+    const access = await internalAccess(api, email);
+    await record('internal-access', access);
+    if (!access.user_exists && groupId === 'new-internal') return {
+      status: await internalInvitation(api, email, metadata, record), ...before.receipt, internal_access: access,
+      invitation: 'TESTFLIGHT_NOT_SENT_ASC_ACCEPTANCE_REQUIRED', build_available: false, physical_install_verified: false };
+    if (!access.user_exists || !access.eligible_role || !access.app_visible) return {
+      status: 'INTERNAL_ASC_ACCESS_REQUIRED', ...before.receipt, internal_access: access,
+      invitation: 'NOT_SENT_ASC_ACCESS_REQUIRED', build_available: false, physical_install_verified: false };
+  }
   let group;
-  if (groupId === 'new-private') {
-    const existing = before.receipt.groups.filter(item => item.private_group_name_match);
+  if (['new-private', 'new-internal'].includes(groupId)) {
+    const existing = before.receipt.groups.filter(item => internal ? item.internal_group_name_match : item.private_group_name_match);
     require(existing.length <= 1, 'AMBIGUOUS_PRIVATE_GROUP');
     group = existing[0];
     if (!group) {
       const { data } = await api('/v1/betaGroups', 'POST', { data: { type: 'betaGroups',
-        attributes: { name: GROUP_NAME, isInternalGroup: false, publicLinkEnabled: false, hasAccessToAllBuilds: false },
+        attributes: { name: internal ? INTERNAL_GROUP_NAME : GROUP_NAME, isInternalGroup: internal, publicLinkEnabled: false, hasAccessToAllBuilds: false },
         relationships: { app: relationship('apps', APP) } } });
       require(data?.type === 'betaGroups' && uuid(data.id), 'INVALID_CREATED_GROUP');
       group = (await inventory(api, email)).receipt.groups.find(item => item.id === data.id);
@@ -220,12 +276,13 @@ export async function operate({ api, email, action, groupId, metadata, record = 
     }
   } else group = before.receipt.groups.find(item => item.id === groupId);
   require(groupId !== 'new-private' || group?.internal === false, 'EXTERNAL_GROUP_REQUIRED');
+  require(groupId !== 'new-internal' || group?.internal === true, 'INTERNAL_GROUP_REQUIRED');
   // Apple returns explicit null for this field on external groups. Keep internal
   // groups strict and verify actual build/tester relationships below.
   const scopedBuildAccess = group?.all_builds === false || (group?.internal === false && group.all_builds === null);
   require(group && group.public_link === false && scopedBuildAccess, 'GROUP_NOT_PRIVATE_AND_SCOPED');
-  // Existing internal access may be reused; this tool never grants team or app roles.
-  require(!group.internal || group.recipient_member, 'INTERNAL_MEMBERSHIP_REQUIRED');
+  // Internal membership is limited to the exact existing ASC user with Buzz access.
+  // This operation never creates users, changes roles, or expands app visibility.
   require(group.recipient_member || !group.other_builds, 'MEMBERSHIP_WOULD_GRANT_OTHER_BUILDS');
   // Adding a build must not send it to an unrelated tester. Choose the dedicated group instead.
   require(group.build_member || !group.other_testers, 'BUILD_WOULD_REACH_OTHER_TESTERS');
@@ -235,7 +292,6 @@ export async function operate({ api, email, action, groupId, metadata, record = 
   }
   let tester = before.tester;
   if (!tester) {
-    require(!group.internal, 'EXTERNAL_GROUP_REQUIRED');
     const { data } = await api('/v1/betaTesters', 'POST', { data: { type: 'betaTesters', attributes: { email },
       relationships: { betaGroups: { data: [resource('betaGroups', group.id)] } } } });
     require(data?.type === 'betaTesters' && uuid(data.id), 'INVALID_CREATED_TESTER');
@@ -316,7 +372,7 @@ async function main() {
   try {
     const result = await operate({ api: client(() => createToken(credentials)), email,
       action: process.env.TESTFLIGHT_ACTION, groupId: process.env.TESTFLIGHT_GROUP,
-      metadata: process.env.TESTFLIGHT_ACTION === 'metadata' ? JSON.parse(metadataRaw ?? 'null') : undefined, record });
+      metadata: metadataRaw ? JSON.parse(metadataRaw) : undefined, record });
     await record('result', result);
     console.log(`Buzz TestFlight operation: ${result.status}. Protected input and API responses omitted.`);
   } catch (error) {
