@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from contextlib import contextmanager
 import datetime
 import importlib.util
 import json
@@ -142,7 +143,31 @@ def profile_check(profile, identifier, certificate):
     return wanted
 
 
+@contextmanager
+def hosted_keychain(keychain):
+    # Each job has its own VM. No source process ever runs on the signing VM.
+    require(os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted', 'hosted signing VM required')
+    def current():
+        raw = run(['/usr/bin/security', 'list-keychains', '-d', 'user'])
+        require(len(raw) <= 65536, 'keychain list exceeds bound')
+        paths = []
+        for line in raw.decode().splitlines():
+            require(line.startswith('    "') and line.endswith('"'), 'invalid keychain list')
+            paths.append(line[5:-1])
+        return paths
+    before = current()
+    added = [*before, str(keychain)] if str(keychain) not in before else before
+    try:
+        common.security_command(['list-keychains', '-d', 'user', '-s', *added])
+        require(current() == added, 'signing keychain visibility differs')
+        yield
+    finally:
+        common.security_command(['list-keychains', '-d', 'user', '-s', *before])
+        require(current() == before, 'keychain restoration differs')
+
+
 def sign(args):
+    require(os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted', 'hosted signing VM required')
     archive, receipt = check_build(args)
     root, output = paths()
     app = root / 'Payload/Buzz.app'
@@ -191,13 +216,14 @@ def sign(args):
         require(run(['/usr/bin/lipo', '-archs', str(path)]).decode().split() == ['arm64'], 'unexpected device architecture')
     nse = app / 'PlugIns/NotificationService.appex'
     targets = set(macho + [p for p in app.rglob('*') if p.is_dir() and not p.is_symlink() and p.suffix in ('.framework', '.bundle')])
-    for path in sorted(targets, key=lambda p: len(p.parts), reverse=True):
-        run(['/usr/bin/codesign', '--force', '--sign', identity, '--keychain', str(keychain), '--timestamp=none', str(path)])
-    for target, ent_file in ((nse, root / 'nse-entitlements.plist'), (app, root / 'runner-entitlements.plist')):
-        run(['/usr/bin/codesign', '--force', '--sign', identity, '--keychain', str(keychain), '--timestamp=none', '--entitlements', str(ent_file), str(target)])
-        run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(target)])
-        actual = plistlib.loads(run(['/usr/bin/codesign', '--display', '--entitlements', '-', str(target)]))
-        require(actual == plistlib.loads(ent_file.read_bytes()), 'signed entitlements differ')
+    with hosted_keychain(keychain):
+        for path in sorted(targets, key=lambda p: len(p.parts), reverse=True):
+            run(['/usr/bin/codesign', '--force', '--sign', identity, '--keychain', str(keychain), '--timestamp=none', str(path)])
+        for target, ent_file in ((nse, root / 'nse-entitlements.plist'), (app, root / 'runner-entitlements.plist')):
+            run(['/usr/bin/codesign', '--force', '--sign', identity, '--keychain', str(keychain), '--timestamp=none', '--entitlements', str(ent_file), str(target)])
+            run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(target)])
+            actual = plistlib.loads(run(['/usr/bin/codesign', '--display', '--entitlements', '-', str(target)]))
+            require(actual == plistlib.loads(ent_file.read_bytes()), 'signed entitlements differ')
     ipa = output / f'Buzz_{args.version}_{args.build_number}.ipa'
     run(['/usr/bin/ditto', '-c', '-k', '--keepParent', str(root / 'Payload'), str(ipa)])
     common.write_json(output / 'ios-release.json', {'schema': 'buzz-ios-release-v1', 'build': receipt,

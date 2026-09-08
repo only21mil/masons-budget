@@ -19,21 +19,21 @@ on:
 permissions:
   contents: read
 
-# Same fixed UID, supervisor lock and signing host as the Mac carrier.
+# Hosted jobs use fresh VMs; serialize only Buzz iOS numbering and uploads.
 concurrency:
-  group: buzz-apple-release
+  group: buzz-ios-testflight-release
   cancel-in-progress: false
 
 jobs:
   build:
     if: github.repository == 'only21mil/masons-budget'
-    runs-on: [self-hosted, macOS, ARM64, macbook-pro-m5]
+    runs-on: macos-26
     timeout-minutes: 120
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}
       VERSION: ${{ inputs.version }}
       BUILD_NUMBER: ${{ inputs.build_number }}
-      ARCH: ios
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,26 +45,27 @@ jobs:
         run: >-
           /usr/bin/python3 -I controller/.github/workflows/scripts/buzz_ios_release.py inputs
           --source "$SOURCE_SHA" --version "$VERSION" --build-number "$BUILD_NUMBER"
-      - name: Build immutable source through the installed dedicated UID boundary
-        run: /usr/bin/python3 -I controller/.github/workflows/scripts/buzz_macos_build_boundary.py
+      - name: Build immutable source without signing credentials on a disposable VM
+        run: /bin/bash controller/.github/workflows/scripts/buzz_ios_hosted_build.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: buzz-ios-unsigned-${{ inputs.source_sha }}
-          path: unsigned-${{ github.run_id }}-${{ github.run_attempt }}-ios/*
+          path: unsigned/*
           if-no-files-found: error
           retention-days: 7
 
   sign-upload:
     needs: build
-    runs-on: [self-hosted, macOS, ARM64, macbook-pro-m5]
+    runs-on: macos-26
     timeout-minutes: 120
     env:
       SOURCE_SHA: ${{ inputs.source_sha }}
       VERSION: ${{ inputs.version }}
       BUILD_NUMBER: ${{ inputs.build_number }}
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
-      - name: Require approved signing account
-        run: test "$(/usr/bin/id -un)" = m5mbp
+      - name: Require a separate GitHub-hosted signing VM
+        run: test "$RUNNER_ENVIRONMENT" = github-hosted
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
@@ -78,6 +79,14 @@ jobs:
         run: >-
           /usr/bin/python3 -I .github/workflows/scripts/buzz_ios_release.py prepare
           --source "$SOURCE_SHA" --version "$VERSION" --build-number "$BUILD_NUMBER"
+      - name: Check the exact ASC app and reject used build numbers
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: >-
+          node .github/workflows/scripts/buzz_ios_asc.mjs available
+          --version "$VERSION" --build-number "$BUILD_NUMBER"
       - name: Sign parent and extension with their exact App Store profiles
         env:
           APPLE_DISTRIBUTION_CERTIFICATE_P12: ${{ secrets.APPLE_DISTRIBUTION_CERTIFICATE_P12 }}
@@ -102,6 +111,14 @@ jobs:
         run: >-
           /usr/bin/python3 -I .github/workflows/scripts/buzz_ios_release.py upload
           --source "$SOURCE_SHA" --version "$VERSION" --build-number "$BUILD_NUMBER"
+      - name: Verify Apple processing for the exact uploaded build
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: >-
+          node .github/workflows/scripts/buzz_ios_asc.mjs processed
+          --version "$VERSION" --build-number "$BUILD_NUMBER"
       - name: Always remove temporary signing material and keychain
         if: always()
         run: >-
@@ -111,6 +128,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: buzz-ios-upload-${{ inputs.source_sha }}
-          path: signed-ios/upload.json
+          path: |
+            signed-ios/upload.json
+            signed-ios/asc-*.json
           if-no-files-found: error
           retention-days: 30
