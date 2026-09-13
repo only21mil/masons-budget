@@ -133,6 +133,20 @@ class UnfoldedLayoutTest {
         assertTrue(fab.left >= upper.left && fab.right <= upper.right, "FAB stays within inset list width: $fab")
     }
 
+    @Test fun `horizontal list tail stays above the quick add button`() {
+        safeInsets = WindowInsets(left = 24.dp, top = 28.dp, right = 16.dp, bottom = 0.dp)
+        hinge = LedgerHinge(470.dp, 475.dp, true)
+        render(Destination.ACTIVITY)
+        val merchant = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE).transactions.value.last().merchant
+        val list = compose.onNode(hasScrollToIndexAction() and hasAnyAncestor(hasTestTag("vault-list-pane")))
+        list.performScrollToNode(hasContentDescription(merchant, substring = true))
+        val tail = compose.onNode(hasContentDescription(merchant, substring = true) and hasClickAction())
+        tail.assertIsDisplayed()
+        val fab = compose.onNodeWithTag("quick-add-fab").fetchSemanticsNode().boundsInRoot
+        assertTrue(list.fetchSemanticsNode().boundsInRoot.bottom <= fab.top, "list viewport must clear FAB: $fab")
+        assertTrue(tail.fetchSemanticsNode().boundsInRoot.bottom <= fab.top, "tail row must remain unobscured: $fab")
+    }
+
     @Test fun `selecting a smart list replaces the previous task detail`() = taskParentReplacesDetail("Inbox")
     @Test fun `selecting a project replaces the previous task detail`() = taskParentReplacesDetail("Tax Prep")
     @Test fun `selecting an area replaces the previous task detail`() = taskParentReplacesDetail("Finance")

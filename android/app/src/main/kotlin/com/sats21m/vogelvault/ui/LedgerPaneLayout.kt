@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -45,6 +46,7 @@ internal data class LedgerPanePlan(
 }
 
 internal val LocalLedgerPanePlan = staticCompositionLocalOf { LedgerPanePlan(0.dp) }
+internal val LocalLedgerListBottomClearance = staticCompositionLocalOf { 0.dp }
 
 /** The audited inner display retains 72dp of rail plus a cover-width list. */
 internal fun ledgerPanePlan(width: Dp, height: Dp, expanded: Boolean, hasDetail: Boolean, hinge: LedgerHinge?): LedgerPanePlan {
@@ -95,6 +97,7 @@ internal fun LedgerPanes(
     detail: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current
+    val listBottomClearance = LocalLedgerListBottomClearance.current
     var originY by remember { mutableStateOf(0.dp) }
     Layout(
         modifier = modifier.onGloballyPositioned { coordinates ->
@@ -103,7 +106,7 @@ internal fun LedgerPanes(
         content = {
             Box(Modifier.fillMaxSize()
                 .then(if (!plan.split && showCompactDetail) Modifier.clearAndSetSemantics { } else Modifier)
-                .testTag("vault-list-pane")) { list() }
+                .testTag("vault-list-pane").padding(bottom = listBottomClearance)) { list() }
             Box(Modifier.fillMaxSize()
                 .then(if (!plan.split && !showCompactDetail) Modifier.clearAndSetSemantics { } else Modifier)
                 .testTag("vault-detail-pane")) { detail() }

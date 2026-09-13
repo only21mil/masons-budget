@@ -347,6 +347,7 @@ private fun VaultScreenContent(
             // The cap goes on the screen, not the notices: a warning banner spans
             // the column, the ledger column does not.
             Box(Modifier.weight(1f).fillMaxWidth()) {
+                CompositionLocalProvider(LocalLedgerListBottomClearance provides 80.dp) {
                 ScreenHost(
                     destination = current,
                     quickAddRequested = quickAddRequested,
@@ -367,9 +368,9 @@ private fun VaultScreenContent(
                     modifier = Modifier
                         .fillMaxHeight()
                         .then(if (contentMaxWidth != null) Modifier.widthIn(max = contentMaxWidth) else Modifier)
-                        .padding(bottom = 80.dp)
                         .testTag(VAULT_SCREEN_CONTENT_TEST_TAG),
                 )
+                }
             }
         }
         // The shell already applied the rail and leading/top insets. Keep the
