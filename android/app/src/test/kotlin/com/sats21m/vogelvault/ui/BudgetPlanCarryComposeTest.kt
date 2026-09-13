@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
@@ -19,6 +20,8 @@ import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexDeviceCredential
 import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
+import com.sats21m.vogelvault.data.DeviceCapabilities
+import com.sats21m.vogelvault.data.DeviceCapability
 import com.sats21m.vogelvault.data.HttpPoster
 import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
@@ -98,8 +101,8 @@ class BudgetPlanCarryComposeTest {
     fun `a plan behind the current month offers the copy, a current plan does not`() {
         application.currentMonth = "2026-08"
         show(liveState())
-        compose.onNodeWithText("Copy July plan to August").assertIsDisplayed()
-        compose.onNodeWithText("August has no budget plan yet").assertIsDisplayed()
+        compose.onNodeWithText("Copy July plan to August").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("August has no budget plan yet").performScrollTo().assertIsDisplayed()
 
         application.currentMonth = "2026-07"
         show(liveState())
@@ -118,7 +121,7 @@ class BudgetPlanCarryComposeTest {
         application.currentMonth = "2026-08"
         show(liveState())
 
-        compose.onNodeWithText("Copy July plan to August").performClick()
+        compose.onNodeWithText("Copy July plan to August").performScrollTo().performClick()
         settle()
         compose.onNodeWithText("Confirm copy to August").assertIsDisplayed()
         compose.onNodeWithText("Keep July").assertIsDisplayed()
@@ -145,12 +148,12 @@ class BudgetPlanCarryComposeTest {
         application.currentMonth = "2026-08"
         show(liveState())
 
-        compose.onNodeWithText("Copy July plan to August").performClick()
+        compose.onNodeWithText("Copy July plan to August").performScrollTo().performClick()
         settle()
         compose.onNodeWithText("Keep July").performClick()
         settle()
 
-        compose.onNodeWithText("Copy July plan to August").assertIsDisplayed()
+        compose.onNodeWithText("Copy July plan to August").performScrollTo().assertIsDisplayed()
         assertEquals(0, nodesWithText("Confirm copy to August"))
         assertEquals(0, application.poster.bodies.size)
     }
@@ -164,7 +167,7 @@ class BudgetPlanCarryComposeTest {
         )
         show(liveState())
 
-        compose.onNodeWithText("Copy July plan to August").performClick()
+        compose.onNodeWithText("Copy July plan to August").performScrollTo().performClick()
         settle()
         compose.onNodeWithText("Confirm copy to August").performClick()
         settle()
@@ -216,6 +219,9 @@ class SwappableRecordingPoster : HttpPoster {
 }
 
 class BudgetPlanCarryTestApplication : VaultApplication() {
+    override val deviceCapabilities = DeviceCapabilities(
+        FamilyMember.VICTOR, setOf(DeviceCapability.BUDGET.wire),
+    )
     val poster = SwappableRecordingPoster()
     var currentMonth: String = "2026-08"
 
@@ -226,7 +232,10 @@ class BudgetPlanCarryTestApplication : VaultApplication() {
                     ConvexConfig("https://budget-carry-compose-test.convex.cloud"),
                 ),
                 credentialSource = ConvexDeviceCredentialSource {
-                    ConvexDeviceCredential("compose-device", "t".repeat(43))
+                    ConvexDeviceCredential(
+                        "compose-device", "t".repeat(43), FamilyMember.VICTOR,
+                        setOf(DeviceCapability.BUDGET.wire),
+                    )
                 },
                 http = poster,
             ),
