@@ -34,6 +34,7 @@ struct MoreMenuView: View {
 }
 
 struct SyncSetupView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) var theme
     @State private var pairingURL = ""
     @State private var baseURL = AppWritebackConfig.baseURL?.absoluteString ?? ""
@@ -84,7 +85,7 @@ struct SyncSetupView: View {
                     .disabled(!canClaim)
                 }
                 .glassCard(padding: 14, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 VStack(spacing: 14) {
                     field("Writeback URL", text: $baseURL)
@@ -102,7 +103,7 @@ struct SyncSetupView: View {
                     secureField("Paste device token", text: $deviceTokenEntry)
                 }
                 .glassCard(padding: 14, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 HStack(spacing: 12) {
                     Button("Clear") {
@@ -123,17 +124,17 @@ struct SyncSetupView: View {
                         deviceTokenEntry = ""
                         hasDeviceToken = AppWritebackConfig.hasDeviceToken
                         statusMessage = saved && hasDeviceToken
-                            ? "Writeback settings saved."
+                            ? "Connection settings saved."
                             : "Could not save the device token."
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(!canSave)
                 }
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 convexReadTokenCard
                     .glassCard(padding: 14, radius: AppLayout.radiusMedium)
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 DisclosureGroup("Diagnostics") {
                     Text("Device pairing handles everyday changes. The administrator credential is retained here for compatibility.")
@@ -141,13 +142,13 @@ struct SyncSetupView: View {
                     ConvexSyncTokenCard()
                 }
                 .glassCard(padding: 14, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 if let statusMessage {
                     Text(statusMessage)
                         .ledgerType(.body)
                         .foregroundStyle(theme.textMuted)
-                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                 }
             }
             .padding(.bottom, 100)
@@ -199,7 +200,7 @@ struct SyncSetupView: View {
     private var deviceTokenStatusText: String {
         hasDeviceToken
             ? "A device token is stored on this device."
-            : "No device token. App writeback is not configured."
+            : "Connect this device to save changes."
     }
 
     /// Convex reads are fail-closed as of 2026-07-26, and the token they need lived in a
@@ -209,7 +210,7 @@ struct SyncSetupView: View {
     private var convexReadTokenCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Convex Read Token")
+                Text("Read access token")
                     .ledgerType(.sectionLabel)
                     .foregroundStyle(theme.text)
                 // The deployment host, never the token. The host is already public in the
@@ -271,7 +272,7 @@ struct SyncSetupView: View {
     private var readTokenStatusText: String {
         hasReadToken
             ? "A read token is stored on this device."
-            : "No read token. Reads fail once the deployment enforces."
+            : "No read token. Connect this device to load your data."
     }
 
     private func saveReadToken() {
@@ -306,7 +307,11 @@ struct SyncSetupView: View {
                 .autocorrectionDisabled()
                 .ledgerType(.textInput)
                 .foregroundStyle(theme.text)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .padding(12)
+                .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                .background(theme.surface2)
+                .overlay(RoundedRectangle(cornerRadius: LedgerMetrics.cardRadius).stroke(theme.border, lineWidth: 1))
         }
     }
 
@@ -319,7 +324,11 @@ struct SyncSetupView: View {
                 .autocorrectionDisabled()
                 .ledgerType(.textInput)
                 .foregroundStyle(theme.text)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .padding(12)
+                .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                .background(theme.surface2)
+                .overlay(RoundedRectangle(cornerRadius: LedgerMetrics.cardRadius).stroke(theme.border, lineWidth: 1))
         }
     }
 
@@ -346,7 +355,7 @@ struct ConvexSyncTokenCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Convex Sync Token")
+                Text("Administrator sync token")
                     .ledgerType(.sectionLabel)
                     .foregroundStyle(theme.text)
                 Text(ConvexConfig.deploymentURL.host ?? "no deployment host")
@@ -374,7 +383,11 @@ struct ConvexSyncTokenCard: View {
                     .autocorrectionDisabled()
                     .ledgerType(.textInput)
                     .foregroundStyle(theme.text)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                .padding(12)
+                .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                .background(theme.surface2)
+                .overlay(RoundedRectangle(cornerRadius: LedgerMetrics.cardRadius).stroke(theme.border, lineWidth: 1))
             }
 
             HStack(spacing: 12) {

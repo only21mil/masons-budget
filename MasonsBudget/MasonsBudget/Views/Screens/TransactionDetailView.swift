@@ -2,6 +2,8 @@ import SwiftData
 import SwiftUI
 
 struct TransactionDetailView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
+    @ScaledMetric(relativeTo: .body) private var labelWidth = 78.0
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -37,13 +39,7 @@ struct TransactionDetailView: View {
     }
 
     static func categoryPredicate(for owner: FamilyMember) -> Predicate<BudgetCategory> {
-        let ownerRaw = owner.rawValue
-        if owner.isAdult {
-            let victorRaw = FamilyMember.victor.rawValue
-            let rachelRaw = FamilyMember.rachel.rawValue
-            return #Predicate { $0.owner == victorRaw || $0.owner == rachelRaw }
-        }
-        return #Predicate { $0.owner == ownerRaw }
+        BudgetCategory.predicate(for: owner)
     }
 
     var body: some View {
@@ -51,7 +47,7 @@ struct TransactionDetailView: View {
             VStack(spacing: AppLayout.cardSpacing) {
                 ScreenHeader(title: "Transaction", eyebrow: transaction.createdBy.uppercased())
                 if let writeMessage {
-                    Text(writeMessage).foregroundStyle(theme.warn).padding(.horizontal, AppLayout.sectionPadding)
+                    Text(writeMessage).foregroundStyle(theme.warn).padding(.horizontal, ledgerTokens.metrics.screenGutter)
                 }
 
                 VStack(spacing: 0) {
@@ -116,14 +112,14 @@ struct TransactionDetailView: View {
                         .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.text)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, ledgerTokens.metrics.rowVerticalPadding)
                     Hairline()
                     editRow("Note") {
                         TextField("Optional", text: $note)
                     }
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 Button(role: .destructive) {
                     showingDeleteConfirmation = true
@@ -137,7 +133,7 @@ struct TransactionDetailView: View {
                 .foregroundStyle(theme.danger)
                 .background(theme.dangerSoft)
                 .clipShape(RoundedRectangle(cornerRadius: AppLayout.radiusSmall))
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
             }
             .padding(.bottom, 100)
         }
@@ -202,13 +198,13 @@ struct TransactionDetailView: View {
             Text(label)
                 .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.textMuted)
-                .frame(width: 78, alignment: .leading)
+                .frame(width: labelWidth, alignment: .leading)
             content()
                 .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.text)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, ledgerTokens.metrics.rowVerticalPadding)
     }
 
     private func deleteTransaction() {

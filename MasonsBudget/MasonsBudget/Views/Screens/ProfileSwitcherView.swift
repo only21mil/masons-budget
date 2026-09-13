@@ -1,17 +1,12 @@
-import LocalAuthentication
 import SwiftUI
 
 struct ProfileSwitcherView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
-    @AppStorage("appearance_mode") private var appearanceModeRaw = AppearanceMode.system.rawValue
 
-    @State private var authError: String?
-
-    private var appearanceMode: AppearanceMode {
-        AppearanceMode(rawValue: appearanceModeRaw) ?? .system
-    }
+    @EnvironmentObject private var authentication: AppAuthenticationSession
 
     private var activeMember: FamilyMember {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
@@ -32,16 +27,15 @@ struct ProfileSwitcherView: View {
                         }
                     }
                     .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
-                    appearanceSection
 
-                    if let authError {
+                    if let authError = authentication.error {
                         Text(authError)
                             .ledgerType(.body)
                             .foregroundStyle(theme.danger)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, AppLayout.sectionPadding)
+                            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     }
                 }
                 .padding(.bottom, 100)
@@ -53,55 +47,15 @@ struct ProfileSwitcherView: View {
             #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { dismiss() }
+                        Button("Close") {
+                            authentication.cancelPendingAuthentication()
+                            dismiss()
+                        }
                             .foregroundStyle(theme.accent)
                     }
                 }
         }
-    }
-
-    private var appearanceSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("APPEARANCE")
-                .ledgerType(.sectionLabel)
-                .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
-
-            HStack(spacing: 6) {
-                ForEach(AppearanceMode.allCases) { mode in
-                    let isSelected = mode == appearanceMode
-                    Button {
-                        appearanceModeRaw = mode.rawValue
-                    } label: {
-                        VStack(spacing: 6) {
-                            Image(systemName: iconForMode(mode))
-                                .font(AppFont.iconSmall)
-                            Text(mode.label)
-                                .ledgerType(.chip)
-                        }
-                        .foregroundStyle(isSelected ? theme.onAccent : theme.text)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(isSelected ? theme.accentFill : theme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(isSelected ? theme.accentFill : theme.border, lineWidth: 1),
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, AppLayout.sectionPadding)
-        }
-    }
-
-    private func iconForMode(_ mode: AppearanceMode) -> String {
-        switch mode {
-        case .system: "circle.lefthalf.filled"
-        case .light: "sun.max.fill"
-        case .dark: "moon.fill"
-        }
+        .onDisappear { authentication.cancelPendingAuthentication() }
     }
 
     private func profileRow(_ member: FamilyMember) -> some View {
@@ -146,37 +100,13 @@ struct ProfileSwitcherView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.vertical, ledgerTokens.metrics.rowVerticalPadding)
         }
         .buttonStyle(.plain)
-        .disabled(!isAllowed || isSelected)
+        .disabled(!isAllowed || isSelected || authentication.isAuthenticating || !authentication.isActive)
     }
 
     private func select(_ member: FamilyMember) {
-        guard activeMember.allowedSwitchTargets.contains(member), member != activeMember else { return }
-        guard activeMember.requiresAuthToSwitch else {
-            selectedMemberRaw = member.rawValue
-            dismiss()
-            return
-        }
-
-        let context = LAContext()
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            authError = "Authentication is required before switching profiles."
-            return
-        }
-
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Switch Vogel Vault profile") { success, _ in
-            DispatchQueue.main.async {
-                if success {
-                    selectedMemberRaw = member.rawValue
-                    authError = nil
-                    dismiss()
-                } else {
-                    authError = "Authentication failed. Try again to switch profiles."
-                }
-            }
-        }
+        authentication.select(member) { dismiss() }
     }
 }

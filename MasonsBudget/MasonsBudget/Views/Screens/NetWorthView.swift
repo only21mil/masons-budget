@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct NetWorthView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage(MarketQuoteService.cacheKey) private var quoteCache = Data()
@@ -89,12 +90,12 @@ struct NetWorthView: View {
                     ScreenHeader(title: "Net Worth", eyebrow: "Recorded history")
 
                     quoteStatus
-                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                         .padding(.bottom, 12)
 
                     if canonicalBTC != nil, btcPrice > 0 {
                         totalCard
-                            .padding(.horizontal, AppLayout.sectionPadding)
+                            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                             .padding(.bottom, AppLayout.cardSpacing)
 
                         timelineSection
@@ -106,7 +107,7 @@ struct NetWorthView: View {
                             title: "Net Worth",
                             message: "A Bitcoin balance and an available Bitcoin price are needed to calculate net worth.",
                         )
-                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     }
 
                     if !myRetirementAccounts.isEmpty, btcPrice > 0 {
@@ -157,6 +158,7 @@ struct NetWorthView: View {
                 .padding(.top, 4)
         }
         .glassCard(padding: 18, radius: 22)
+        .accessibilityElement(children: .combine)
     }
 
     private var monthlyBtcStackUsd: [Decimal] { timelineData.map(\.btc) }
@@ -241,7 +243,7 @@ struct NetWorthView: View {
             Text("TIMELINE")
                 .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter + 4)
 
             VStack(alignment: .leading, spacing: 12) {
                 Text(AppFormatter.formatCurrency(timelineMaximum))
@@ -257,7 +259,7 @@ struct NetWorthView: View {
                 timelineLegend
             }
             .glassCard()
-            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
         }
     }
 
@@ -342,7 +344,7 @@ struct NetWorthView: View {
             Text("BITCOIN")
                 .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter + 4)
 
             VStack(spacing: 0) {
                 NavigationLink {
@@ -360,7 +362,7 @@ struct NetWorthView: View {
                 .buttonStyle(.plain)
             }
             .glassCard(padding: 0, radius: 18)
-            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
         }
     }
 
@@ -393,7 +395,7 @@ struct NetWorthView: View {
             Text("RETIREMENT")
                 .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter + 4)
 
             VStack(spacing: 0) {
                 ForEach(Array(myRetirementAccounts.enumerated()), id: \.element.name) { idx, acct in
@@ -404,7 +406,7 @@ struct NetWorthView: View {
                 }
             }
             .glassCard(padding: 0, radius: 18)
-            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
         }
     }
 

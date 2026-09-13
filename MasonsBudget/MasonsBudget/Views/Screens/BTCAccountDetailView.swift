@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct BTCAccountDetailView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
@@ -38,16 +39,16 @@ struct BTCAccountDetailView: View {
                         }
                     }
                     .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                 } else if case .loading = canonicalFinancials.btcBalance {
                     LedgerSkeletonRows()
-                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                 } else {
                     RequiredFinancialSourceView(
                         title: title,
-                        message: "The required Bitcoin balance document is empty or unavailable.",
+                        message: "Your Bitcoin balance is empty or unavailable.",
                     )
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                 }
             }
             .padding(.bottom, 100)

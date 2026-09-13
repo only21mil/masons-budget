@@ -1,10 +1,9 @@
-import LocalAuthentication
 import SwiftUI
 
 struct LockScreenView: View {
-    @Binding var isUnlocked: Bool
+    @EnvironmentObject private var authentication: AppAuthenticationSession
     @Environment(\.theme) var theme
-    @State private var authError: String?
+    @State private var attemptedAutomaticUnlock = false
 
     var body: some View {
         ZStack {
@@ -16,7 +15,11 @@ struct LockScreenView: View {
                 Text("Vogel Vault")
                     .ledgerType(.screenTitle)
                     .foregroundStyle(theme.text)
-                Button("Unlock") { authenticate() }
+                Button("Unlock") {
+                    attemptedAutomaticUnlock = true
+                    authentication.unlock()
+                }
+                    .disabled(authentication.isAuthenticating || !authentication.isActive)
                     .ledgerType(.button)
                     .foregroundStyle(theme.onAccent)
                     .padding(.horizontal, 32)
@@ -24,7 +27,7 @@ struct LockScreenView: View {
                     .background(theme.accentFill)
                     .clipShape(Capsule())
 
-                if let authError {
+                if let authError = authentication.error {
                     Text(authError)
                         .ledgerType(.body)
                         .foregroundStyle(theme.danger)
@@ -33,30 +36,16 @@ struct LockScreenView: View {
                 }
             }
         }
-        .onAppear { authenticate() }
+        .onAppear { unlockOnFirstActiveAppearance() }
+        .onChange(of: authentication.isActive) { _, active in
+            if active { unlockOnFirstActiveAppearance() }
+        }
+        .onDisappear { authentication.cancelPendingAuthentication() }
     }
 
-    private func authenticate() {
-        let context = LAContext()
-        var error: NSError?
-
-        // Fail closed: a device with no passcode/biometrics configured (or an
-        // LA lockdown) must stay locked, matching ProfileSwitcherView's
-        // convention — unlocking here would expose every credential surface.
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            authError = "This device has no screen lock configured. Set a passcode or biometrics in Settings to unlock Vogel Vault."
-            return
-        }
-
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock Vogel Vault") { success, _ in
-            DispatchQueue.main.async {
-                if success {
-                    authError = nil
-                    isUnlocked = true
-                } else {
-                    authError = "Authentication failed. Tap unlock to try again."
-                }
-            }
-        }
+    private func unlockOnFirstActiveAppearance() {
+        guard authentication.isActive, !attemptedAutomaticUnlock else { return }
+        attemptedAutomaticUnlock = true
+        authentication.unlock()
     }
 }

@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct BudgetView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
@@ -111,15 +112,15 @@ struct BudgetView: View {
                     }
                 }
                 .id(activeMember)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                 .padding(.bottom, AppLayout.cardSpacing)
 
                 incomeSection
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     .padding(.bottom, AppLayout.cardSpacing)
 
                 spentCard
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     .padding(.bottom, AppLayout.cardSpacing)
 
                 categoriesSection
@@ -201,7 +202,7 @@ struct BudgetView: View {
                     monthChip(offset: offset)
                 }
             }
-            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
         }
     }
 
@@ -237,7 +238,7 @@ struct BudgetView: View {
             .foregroundStyle(isSelected ? theme.onAccent : theme.text)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .frame(minWidth: 64, alignment: .leading)
+            .frame(minWidth: 64, minHeight: LedgerMetrics.minimumHitTarget, alignment: .leading)
             .background(isSelected ? theme.accentFill : theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
@@ -247,6 +248,9 @@ struct BudgetView: View {
             .ledgerAnimation(.chipAndNavigation, value: isSelected)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(date.formatted(.dateTime.month(.wide).year()))
+        .accessibilityValue(rate.map { "Savings rate \($0) percent" } ?? "Savings rate unavailable")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Spent / Limit Card
@@ -289,6 +293,7 @@ struct BudgetView: View {
             }
         }
         .glassCard()
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Budget vs Actual
@@ -300,7 +305,7 @@ struct BudgetView: View {
             Text("CATEGORIES")
                 .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter + 4)
 
             VStack(spacing: 10) {
                 if myCategories.isEmpty {
@@ -318,7 +323,7 @@ struct BudgetView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
         }
     }
 
