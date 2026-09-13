@@ -305,11 +305,12 @@ internal class ConvexReadBootstrapClient(
                 ?: return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
             if (
                 returnedDeviceId != requestedDeviceCredential.deviceId ||
-                capabilities != listOf(TODO_WRITE_CAPABILITY)
+                capabilities.distinct().size != capabilities.size ||
+                capabilities.any { it !in DeviceCapabilities.supported }
             ) {
                 return BootstrapClientResult.Failure(ReadBootstrapStatus.INVALID_RESPONSE)
             }
-            requestedDeviceCredential.copy(profile = profile)
+            requestedDeviceCredential.copy(profile = profile, capabilities = capabilities.toSet())
         }
         return BootstrapClientResult.Success(
             BootstrapCredential(token, boundDeviceCredential),
