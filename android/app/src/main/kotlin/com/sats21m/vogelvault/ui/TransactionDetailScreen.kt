@@ -265,11 +265,10 @@ fun TransactionDetailScreen(
                     )
                 }
                 item {
-                    LedgerTextField(
+                    LedgerDateField(
                         value = date,
                         onValueChange = { date = it },
                         label = stringResource(R.string.transaction_date),
-                        supporting = stringResource(R.string.transaction_date_help),
                         enabled = !working && canWrite,
                         modifier = Modifier.fillMaxWidth(),
                     )
