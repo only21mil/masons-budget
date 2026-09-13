@@ -88,8 +88,10 @@ class RefreshAfterWriteSurfaceTest {
             )
         }
         val interact = {
-            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
             compose.onNodeWithText("Amount").performTextInput("14.18")
+            compose.onNodeWithText("Next").assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
             compose.onNode(hasText("Save") and hasClickAction()).assertIsDisplayed()
                 .performSemanticsAction(SemanticsActions.OnClick)
             Unit
@@ -343,14 +345,15 @@ class RefreshAfterWriteSurfaceTest {
             ScreenHost(
                 destination = Destination.ACTIVITY,
                 state = state,
+                quickAddRequested = true,
                 onWriteSucceeded = onWriteSucceeded,
             )
         }
         val interact = {
-            compose.onNodeWithText("+ Add").performClick()
-            settle()
-            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
             compose.onNodeWithText("Amount").performTextInput("14.18")
+            compose.onNodeWithText("Next").assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
             compose.onNode(hasText("Save") and hasClickAction()).assertIsDisplayed()
                 .performSemanticsAction(SemanticsActions.OnClick)
             Unit
