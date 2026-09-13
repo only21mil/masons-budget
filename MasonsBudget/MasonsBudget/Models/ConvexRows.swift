@@ -712,6 +712,13 @@ struct CanonicalBTCBillPayLedger: Sendable {
 }
 
 struct CanonicalIncomeSummary: Sendable {
+    let rows: [ConvexIncomeRow]
+
+    func amount(forMonth month: String, emptyLedgerFallback: Decimal?) -> Decimal? {
+        if rows.isEmpty { return emptyLedgerFallback }
+        return Decimal(monthCents[month, default: 0]) / 100
+    }
+
     let monthCents: [String: Int64]
     let yearCents: [Int: Int64]
 
@@ -797,8 +804,6 @@ enum CanonicalFinancialProjection {
         complete: Bool,
     ) throws -> RequiredFinancialSource<CanonicalIncomeSummary> {
         guard complete else { throw ConvexRowDecodeError.incompleteSnapshot }
-        guard !rows.isEmpty else { return .unavailable }
-
         var monthCents: [String: Int64] = [:]
         var yearCents: [Int: Int64] = [:]
         for row in rows {
@@ -816,7 +821,7 @@ enum CanonicalFinancialProjection {
             guard !yearOverflow else { return .unavailable }
             yearCents[year] = nextYear
         }
-        return .available(CanonicalIncomeSummary(monthCents: monthCents, yearCents: yearCents))
+        return .available(CanonicalIncomeSummary(rows: rows.sorted { $0.date > $1.date }, monthCents: monthCents, yearCents: yearCents))
     }
 
     private static func validateIncomeDateMonth(date: String, month: String) throws {
