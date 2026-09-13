@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import XCTest
 
 final class AppAuthenticationStateTests: XCTestCase {
@@ -216,5 +217,81 @@ final class AppAuthenticationStateTests: XCTestCase {
         state.profileChanged(to: "unknown")
         XCTAssertNil(state.begin(.unlock))
         XCTAssertNil(state.begin(.switchProfile(.victor)))
+    }
+}
+
+@MainActor
+final class AppAuthenticationSessionLifecycleTests: XCTestCase {
+    private func activeSession() -> AppAuthenticationSession {
+        let defaults = UserDefaults(suiteName: "auth-lifecycle-\(UUID().uuidString)")!
+        let session = AppAuthenticationSession(defaults: defaults)
+        session.transition(to: .active)
+        return session
+    }
+
+    func testExplicitSessionLockPreservesUnlockAvailability() {
+        let session = activeSession()
+        session.lock()
+        XCTAssertTrue(session.isActive)
+        XCTAssertFalse(session.isUnlocked)
+        var state = session.state
+        XCTAssertNotNil(state.begin(.unlock))
+    }
+
+    func testEachPlatformResumeRestoresAnUnchangedActiveScene() {
+        for reason in [AppAuthenticationSession.Suspension.screenSleep, .inactiveSession, .protectedData] {
+            let session = activeSession()
+            session.suspend(for: reason)
+            XCTAssertFalse(session.isActive)
+            XCTAssertFalse(session.isUnlocked)
+            // An active scene callback alone must not bypass the platform lock.
+            session.transition(to: .active)
+            XCTAssertFalse(session.isActive)
+            session.resume(from: reason, scenePhase: .active)
+            XCTAssertTrue(session.isActive)
+            XCTAssertFalse(session.isUnlocked)
+            var state = session.state
+            XCTAssertNotNil(state.begin(.unlock))
+        }
+    }
+
+    func testResumeWhileSceneIsInactiveOrBackgroundCannotAuthenticate() {
+        for phase in [ScenePhase.inactive, .background] {
+            let session = activeSession()
+            session.suspend(for: .screenSleep)
+            session.transition(to: phase)
+            session.resume(from: .screenSleep, scenePhase: phase)
+            XCTAssertFalse(session.isActive)
+            var state = session.state
+            XCTAssertNil(state.begin(.unlock))
+            session.transition(to: .active)
+            XCTAssertTrue(session.isActive)
+            XCTAssertFalse(session.isUnlocked)
+        }
+    }
+
+    func testOverlappingAndRepeatedNotificationsRequireBothMatchingReturns() {
+        for first in [AppAuthenticationSession.Suspension.screenSleep, .inactiveSession] {
+            let second: AppAuthenticationSession.Suspension = first == .screenSleep ? .inactiveSession : .screenSleep
+            let session = activeSession()
+            // Unmatched returns and duplicate notifications can arrive across windows.
+            session.resume(from: first, scenePhase: .background)
+            XCTAssertTrue(session.isActive)
+            session.suspend(for: first)
+            session.suspend(for: first)
+            session.suspend(for: second)
+            session.resume(from: .protectedData, scenePhase: .active)
+            session.resume(from: first, scenePhase: .active)
+            session.resume(from: first, scenePhase: .active)
+            session.transition(to: .active)
+            XCTAssertFalse(session.isActive)
+            session.resume(from: second, scenePhase: .active)
+            XCTAssertTrue(session.isActive)
+            XCTAssertFalse(session.isUnlocked)
+            // A late duplicate return must not override a newer scene transition.
+            session.transition(to: .background)
+            session.resume(from: second, scenePhase: .active)
+            XCTAssertFalse(session.isActive)
+        }
     }
 }

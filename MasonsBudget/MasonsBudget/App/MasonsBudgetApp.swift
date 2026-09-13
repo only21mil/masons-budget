@@ -136,14 +136,23 @@ struct MasonsBudgetApp: App {
                 Task { await syncIfChanged() }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
-                authentication.lock()
+                authentication.suspend(for: .protectedData)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+                authentication.resume(from: .protectedData, scenePhase: scenePhase)
             }
             #elseif os(macOS)
             .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidResignActiveNotification)) { _ in
-                authentication.lock()
+                authentication.suspend(for: .inactiveSession)
             }
             .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidSleepNotification)) { _ in
-                authentication.lock()
+                authentication.suspend(for: .screenSleep)
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidBecomeActiveNotification)) { _ in
+                authentication.resume(from: .inactiveSession, scenePhase: scenePhase)
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidWakeNotification)) { _ in
+                authentication.resume(from: .screenSleep, scenePhase: scenePhase)
             }
             #endif
             .onChange(of: selectedMember) { _, member in

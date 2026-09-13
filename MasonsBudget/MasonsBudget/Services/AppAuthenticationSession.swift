@@ -5,11 +5,14 @@ import SwiftUI
 /// Owns LAContext so a dismissed view or interrupted scene cannot commit a late result.
 @MainActor
 final class AppAuthenticationSession: ObservableObject {
+    enum Suspension: Hashable { case protectedData, screenSleep, inactiveSession }
+
     @Published private(set) var state: AppAuthenticationState
     @Published private(set) var error: String?
     private var context: LAContext?
     private var completion: (() -> Void)?
     private let defaults: UserDefaults
+    private var suspensions: Set<Suspension> = []
 
     var isUnlocked: Bool { state.isUnlocked }
     var isAuthenticating: Bool { state.attempt != nil }
@@ -37,13 +40,19 @@ final class AppAuthenticationSession: ObservableObject {
 
     func transition(to phase: ScenePhase) {
         reconcileProfile()
+        guard suspensions.isEmpty else {
+            cancelAuthentication()
+            _ = state.transition(to: .background)
+            return
+        }
         let outcome: AppAuthenticationState.Outcome?
         switch phase {
         case .active: outcome = state.transition(to: .active)
         case .inactive: outcome = state.transition(to: .inactive)
         case .background: outcome = state.transition(to: .background)
         @unknown default:
-            lock()
+            cancelAuthentication()
+            _ = state.transition(to: .background)
             return
         }
         if phase == .background { cancelAuthentication() }
@@ -52,7 +61,20 @@ final class AppAuthenticationSession: ObservableObject {
 
     func lock() {
         cancelAuthentication()
+        state.lock()
+    }
+
+    func suspend(for reason: Suspension) {
+        suspensions.insert(reason)
+        cancelAuthentication()
         _ = state.transition(to: .background)
+    }
+
+    func resume(from reason: Suspension, scenePhase: ScenePhase) {
+        // Workspace/protected-data activity is independent of aggregate scene
+        // activity. A return notification removes only its matching suspension.
+        guard suspensions.remove(reason) != nil else { return }
+        transition(to: scenePhase)
     }
 
     func cancelAuthentication() {
