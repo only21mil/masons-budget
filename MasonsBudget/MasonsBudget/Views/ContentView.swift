@@ -220,19 +220,22 @@ struct ContentView: View {
         private var iOSBody: some View {
             TabView(selection: $selectedTab) {
                 ForEach(AppTab.allCases) { tab in
-                    NavigationStack {
-                        screenForTab(tab)
-                            .environment(\.ledgerRootTitle, tab.label)
-                            .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
-                                avatarButton
-                                syncStatusGlyph
-                                addButton
-                            }))
-                            .toolbar(.hidden, for: .navigationBar)
-                            // Reserve status space on the root content inside NavigationStack.
-                            .safeAreaInset(edge: .top, spacing: 0) { syncBanner }
+                    VStack(spacing: 0) {
+                        // Keep status above both roots and destinations without relying on
+                        // NavigationStack to forward a safe-area inset to its scroll content.
+                        syncBanner
+                        NavigationStack {
+                            screenForTab(tab)
+                                .environment(\.ledgerRootTitle, tab.label)
+                                .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
+                                    avatarButton
+                                    syncStatusGlyph
+                                    addButton
+                                }))
+                                .toolbar(.hidden, for: .navigationBar)
+                        }
+                        .safeAreaInset(edge: .bottom) { undoBanner }
                     }
-                    .safeAreaInset(edge: .bottom) { undoBanner }
                     .tabItem {
                         Image(systemName: tab.icon)
                         Text(tab.tabTitle)
