@@ -108,7 +108,7 @@ internal fun LedgerTabItem(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Icon(glyph, contentDescription = null, tint = tint, modifier = Modifier.size(TAB_GLYPH_SIZE))
-        if (showLabel) Text(label.uppercase(), style = tokens.type.tabLabel, color = tint, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        if (showLabel) Text(label.uppercase(), modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, style = tokens.type.tabLabel, color = tint, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 
