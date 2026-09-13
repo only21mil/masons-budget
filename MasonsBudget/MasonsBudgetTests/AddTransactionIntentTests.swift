@@ -2,6 +2,30 @@ import Foundation
 import XCTest
 
 final class AddTransactionIntentTests: XCTestCase {
+    func testDefaultsShareAdultsButIsolateChildrenAndPaymentMethods() throws {
+        let suite = "entry-default-tests.\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { store.removePersistentDomain(forName: suite) }
+        let adult = EntryFormDefaults(category: "Groceries", merchant: "Market")
+        adult.save(owner: .rachel, method: "sofi_card", store: store)
+        XCTAssertEqual(EntryFormDefaults.load(owner: .victor, method: "sofi_card", store: store), adult)
+        XCTAssertEqual(EntryFormDefaults.load(owner: .mason, method: "sofi_card", store: store), EntryFormDefaults())
+        XCTAssertEqual(EntryFormDefaults.load(owner: .rachel, method: "river", store: store), EntryFormDefaults())
+        let child = EntryFormDefaults(category: "Lunch", merchant: "Cafeteria")
+        child.save(owner: .mason, method: "sofi_card", store: store)
+        XCTAssertEqual(EntryFormDefaults.load(owner: .mason, method: "sofi_card", store: store), child)
+        XCTAssertEqual(EntryFormDefaults.load(owner: .maddox, method: "sofi_card", store: store), EntryFormDefaults())
+        XCTAssertEqual(EntryFormDefaults.load(owner: .victor, method: "sofi_card", store: store), adult)
+    }
+
+    func testInvalidSavedDefaultsDoNotPopulateEntry() throws {
+        let suite = "entry-default-invalid-tests.\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { store.removePersistentDomain(forName: suite) }
+        store.set(Data("invalid".utf8), forKey: EntryFormDefaults.key(owner: .mason, method: "sofi_card"))
+        XCTAssertEqual(EntryFormDefaults.load(owner: .mason, method: "sofi_card", store: store), EntryFormDefaults())
+    }
+
     func testUSDIncomeOmitsBitcoinMarkerAndSats() {
         let intent = AddTransactionAmountIntent.make(
             isIncome: true,

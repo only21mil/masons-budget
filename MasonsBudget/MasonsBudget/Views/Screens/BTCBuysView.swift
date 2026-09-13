@@ -6,6 +6,10 @@ struct BTCBuysView: View {
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
+    @State private var showingAdd = false
+    @AppStorage(ConvexSyncService.versionsMemberKey) private var syncedMember = ""
+    @AppStorage(ConvexSyncService.lastSyncKey) private var lastSync = 0.0
+
     @Query(sort: \BTCBuy.date, order: .reverse) private var allBuys: [BTCBuy]
 
     private var unit: DisplayUnit {
@@ -17,7 +21,7 @@ struct BTCBuysView: View {
     }
 
     private var btcPrice: Decimal {
-        BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
+        BTCPriceService.storedPrice ?? 0
     }
 
     private var visibleBuys: [BTCBuy] {
@@ -50,7 +54,19 @@ struct BTCBuysView: View {
                     ScreenHeader(title: "Bitcoin Buys", eyebrow: "DCA Log")
                 #endif
 
-                summaryCard
+                if visibleBuys.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "bitcoinsign.circle").font(AppFont.iconLarge)
+                        Text(hasLoaded ? "No Bitcoin buys yet" : "Bitcoin buys unavailable").ledgerType(.rowPrimary)
+                        if hasLoaded {
+                            if activeMember.isAdult && AppWritebackConfig.canWriteBitcoin {
+                                Button("Add Bitcoin buy") { showingAdd = true }.frame(minHeight: 44)
+                            } else { DeviceWriteSetupPrompt() }
+                        } else { Text("Pull to refresh your buys.").ledgerType(.rowMeta) }
+                    }
+                    .foregroundStyle(theme.text)
+                    .frame(maxWidth: .infinity).padding(AppLayout.sectionPadding)
+                } else { summaryCard }
                     .padding(.horizontal, AppLayout.sectionPadding)
                     .padding(.bottom, AppLayout.cardSpacing)
 
@@ -63,7 +79,10 @@ struct BTCBuysView: View {
 
                         VStack(spacing: 0) {
                             ForEach(Array(buys.enumerated()), id: \.element.id) { idx, buy in
-                                buyRow(buy)
+                                NavigationLink {
+                                    BTCBuyReadDetail(buy: buy)
+                                } label: { buyRow(buy) }
+                                .buttonStyle(.plain)
                                 if idx < buys.count - 1 {
                                     Hairline(indent: 56)
                                 }
@@ -75,15 +94,30 @@ struct BTCBuysView: View {
                     .padding(.bottom, AppLayout.cardSpacing)
                 }
             }
-            .padding(.bottom, 160)
+            .padding(.bottom, AppLayout.cardSpacing)
         }
         .background(theme.bg)
         .navigationTitle("Bitcoin Buys")
+        .modifier(LedgerListRefresh())
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if activeMember.isAdult && AppWritebackConfig.canWriteBitcoin {
+                    Button("Add Bitcoin buy", systemImage: "plus") { showingAdd = true }
+                }
+            }
+        }
+        .sheet(isPresented: $showingAdd) { AddTransactionView(initialType: .btcBuy) }
         #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(theme.bg, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         #endif
+    }
+
+    private var hasLoaded: Bool {
+        _ = lastSync
+        let source = activeMember.hasDedicatedChildFinanceFiles ? "mason-bitcoin-buys" : "bitcoin-buys"
+        return syncedMember == activeMember.rawValue && UserDefaults.standard.dictionary(forKey: ConvexSyncService.dataVersionsKey)?[source] != nil
     }
 
     private var summaryCard: some View {
@@ -92,14 +126,16 @@ struct BTCBuysView: View {
                 Text("TOTAL BOUGHT")
                     .ledgerType(.sectionLabel)
                     .foregroundStyle(theme.onAccent)
-                AmountView(sats: totalBtc * 100_000_000, unit: unit, role: .kpiValue, color: theme.onAccent, btcPrice: btcPrice)
+                if unit != .usd || btcPrice > 0 {
+                    AmountView(sats: totalBtc * 100_000_000, unit: unit, role: .kpiValue, color: theme.onAccent, btcPrice: btcPrice)
+                } else { Text("USD value unavailable").ledgerType(.rowMeta) }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
                 Text("TOTAL INVESTED")
                     .ledgerType(.sectionLabel)
                     .foregroundStyle(theme.onAccent)
-                AmountView(sats: btcPrice > 0 ? (totalUsd / btcPrice) * 100_000_000 : 0, unit: unit, role: .kpiValue, color: theme.onAccent, btcPrice: btcPrice)
+                Text(AppFormatter.formatCurrency(totalUsd)).ledgerType(.kpiValue).foregroundStyle(theme.onAccent)
             }
         }
         .padding(20)
@@ -128,12 +164,33 @@ struct BTCBuysView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                AmountView(sats: buy.amountBTC * 100_000_000, unit: unit, role: .rowFigure, btcPrice: btcPrice)
+                if unit != .usd || btcPrice > 0 {
+                    AmountView(sats: buy.amountBTC * 100_000_000, unit: unit, role: .rowFigure, btcPrice: btcPrice)
+                } else { Text("USD value unavailable").ledgerType(.rowMeta) }
                 Text("@ \(AppFormatter.formatCurrency(buy.priceUSD))")
                     .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
             }
         }
         .padding(14)
+    }
+}
+
+private struct BTCBuyReadDetail: View {
+    let buy: BTCBuy
+    var body: some View {
+        Form {
+            LabeledContent("Account", value: buy.source)
+            LabeledContent("Date", value: buy.date.formatted(date: .abbreviated, time: .omitted))
+            LabeledContent("Bitcoin", value: AppFormatter.formatAmount(sats: buy.amountBTC * 100_000_000, unit: .btc, btcPrice: 0))
+            LabeledContent("Paid", value: AppFormatter.formatCurrency(buy.usd))
+            LabeledContent("Price per BTC", value: AppFormatter.formatCurrency(buy.priceUSD))
+            if let note = buy.note { LabeledContent("Note", value: note) }
+        }
+        .navigationTitle("Bitcoin buy")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        #endif
     }
 }

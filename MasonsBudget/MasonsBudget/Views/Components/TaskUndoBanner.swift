@@ -60,7 +60,7 @@ struct TaskUndoBanner: View {
             )
             .shadow(color: Color.black.opacity(0.12), radius: 8, y: 4)
             .transition(.move(edge: .bottom).combined(with: .opacity))
-            .animation(.easeOut(duration: 0.2), value: todo.id)
+            .ledgerAnimation(.chipAndNavigation, value: todo.id)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Task deleted, undo")
         }

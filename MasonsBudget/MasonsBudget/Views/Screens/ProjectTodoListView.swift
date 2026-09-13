@@ -44,31 +44,29 @@ struct ProjectTodoListView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: AppLayout.cardSpacing) {
-                ScreenHeader(title: normalizedProjectName, eyebrow: "PROJECT")
+        List {
+            ScreenHeader(title: normalizedProjectName, eyebrow: "PROJECT")
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
 
-                if pending.isEmpty, done.isEmpty {
-                    Text("No tasks in this project")
-                        .ledgerType(.rowPrimary)
-                        .foregroundStyle(theme.textMuted)
-                        .frame(maxWidth: .infinity)
-                        .padding(20)
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(listedTodos.enumerated()), id: \.element.id) { idx, todo in
-                            TaskRowView(todo: todo)
-                            if idx < listedTodos.count - 1 {
-                                Hairline(indent: 46)
-                            }
-                        }
-                    }
-                    .glassCard(padding: 0)
-                    .padding(.horizontal, AppLayout.sectionPadding)
+            if listedTodos.isEmpty {
+                Text("No tasks in this project")
+                    .ledgerType(.rowPrimary)
+                    .foregroundStyle(theme.textMuted)
+                    .frame(maxWidth: .infinity)
+                    .padding(20)
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(listedTodos) { todo in
+                    TaskRowView(todo: todo)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(theme.surface)
                 }
             }
-            .padding(.bottom, 100)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .background(theme.bg)
+        .modifier(LedgerListRefresh())
     }
 }
