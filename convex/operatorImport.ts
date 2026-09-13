@@ -314,9 +314,7 @@ function entityType(kind: ImportKind) {
   if (kind === "transaction") return "transaction" as const;
   if (kind === "btc_buy") return "btcBuy" as const;
   if (kind === "btc_bill_pay") return "btcBillPay" as const;
-  // Income has no runtime delete surface or tombstone entity in the existing
-  // schema. Its stable-id conflict and semantic-duplicate checks still apply.
-  return undefined;
+  return "income" as const;
 }
 
 function putUnique(

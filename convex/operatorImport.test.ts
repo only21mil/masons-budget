@@ -588,6 +588,14 @@ describe("operator import internal backend", () => {
     );
   });
 
+  it("blocks reimport of standalone income deleted by a device", async () => {
+    await t.run((ctx) => ctx.db.insert("rowTombstones", {
+      entityType: "income", sourceFile: "income", entityId: "income-record-0",
+      owner: "victor", deletedAtMs: 1, deletedFromUpdatedAtMs: 0,
+    }));
+    await expectCode(preflight(t, smallManifest([income(0)])), "TOMBSTONED_RECORD");
+  });
+
   it("an invalid final operation leaves no partial rows, receipt, lock, or budget change", async () => {
     const ops = Array.from({ length: 91 }, (_, index) => transaction(index));
     ops.push(transaction(91, { amount_cents: "not-an-integer" }));

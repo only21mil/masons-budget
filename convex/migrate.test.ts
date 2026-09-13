@@ -1369,6 +1369,18 @@ describe("migrating every file", () => {
     ).not.toContain(deletedId);
   });
 
+  test("income tombstones suppress legacy projection on every rerun", async () => {
+    const t = harness();
+    await seedBlob(t, "income", [{ id: "deleted-income", date: "2026-08-01", amount: 100, source: "Salary", owner: "victor" }]);
+    await t.run((ctx) => ctx.db.insert("rowTombstones", {
+      entityType: "income", sourceFile: "income", entityId: "deleted-income",
+      owner: "victor", deletedAtMs: 1,
+    }));
+    await applyFile(t, { file: "income" });
+    await applyFile(t, { file: "income" });
+    expect(await rowsIn(t, "income")).toEqual([]);
+  });
+
   test("budget and BTC document projections honor revisioned tombstones on every rerun", async () => {
     const t = harness();
     await seedBlob(t, "budget", ADULT_BUDGET);

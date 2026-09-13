@@ -46,6 +46,16 @@ Zeus Lightning, Zeus On-chain, and Strike store their wire value in `card`. They
 
 `tables:upsertTransactionFromDevice` always requires `transactions:write`. It additionally requires `bitcoin:write` when the submitted row carries `amountSats` or the existing row carries `balancePostingVersion: 1`. This covers Bitcoin-native spend and Income creation, edits, transitions, deletion, and balance reversal. No transfer-specific capability authorizes a transaction write. The backend must be deployed before clients send these rows.
 
+## Standalone income
+
+`tables:upsertIncomeFromDevice` accepts `{deviceId, deviceToken, owner, sourceFile: "income", baseUpdatedAtMs?, income: {id, owner, date, amountCents, source, note?}}`. `amountCents` is a positive Convex int64; `date` is a real ISO calendar date under the same future-date limit as device transactions. It returns `{ok: true, entityId, outcome: "inserted" | "updated"}`. The transport attaches credentials to the request returned by `buildIncomeWriteRequest` in `shared/domain/src/incomeWriteContract.ts`.
+
+`tables:deleteIncomeFromDevice` accepts `{deviceId, deviceToken, owner, sourceFile: "income", entityId, baseUpdatedAtMs}` and returns `{ok: true, entityId, removed}`. Both routes require `transactions:write`. The server derives ownership from the bound device profile. Victor and Rachel share the canonical Victor ledger; children can write only their own income. Existing row ownership cannot change, even when a caller reuses another owner's ID. `listIncome` retains its visibility rules.
+
+Create uses a stable caller-generated ID, persisted across retries. Canonical rows use `sourceKey: "id:<id>"`. Exact upsert retries are no-ops. Corrections send the read row's `updatedAtMs` as `baseUpdatedAtMs`; stale corrections fail with `ENTITY_CONFLICT`. Every delete requires that revision. A matching delete retry returns `removed: false`; a never-seen ID fails. Tombstones prevent a deleted income row returning through standalone writes, linked-buy writes, or legacy projection. Standalone income does not create a transaction or Bitcoin posting. Income belonging to a linked buy requires the future paired correction/deletion flow.
+
+Legacy category-Income transaction rows remain visible through a separate legacy filter. These mutations do not migrate those rows or change their decoding contract. A production deploy covering the additive income tombstone schema and both device routes requires the approved Convex preflight before clients can use the new endpoints.
+
 ## Income entered as a Bitcoin buy
 
 `tables:upsertBtcBuyFromDevice` and `tables:upsertBtcBuy` accept an optional `linkedIncome` object:

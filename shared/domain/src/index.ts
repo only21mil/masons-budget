@@ -22,3 +22,5 @@ export {
   type TodoOwned,
 } from "./todo.ts"
 export * from "./writeContract.ts"
+
+export * from "./incomeWriteContract.ts"

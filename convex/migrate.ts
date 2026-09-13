@@ -1702,6 +1702,7 @@ function migrationTargets(
 const MAX_TOMBSTONES_PER_SOURCE = 256;
 
 type SuppressedEntityType =
+  | "income"
   | "transaction"
   | "todo"
   | "budgetCategory"
@@ -1734,6 +1735,8 @@ function projectedEntityId(
   document: Record<string, unknown>,
 ): string | null {
   switch (source.kind) {
+    case "income":
+      return String(document.incomeId);
     case "transaction":
       return String(document.txId);
     case "todo":
@@ -1751,6 +1754,8 @@ function entityTypeForSource(
   source: MigrationSource,
 ): SuppressedEntityType | null {
   switch (source.kind) {
+    case "income":
+      return "income";
     case "transaction":
       return "transaction";
     case "todo":
