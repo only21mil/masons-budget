@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.performScrollToNode
@@ -140,7 +141,7 @@ class VaultRailReachabilityTest {
 
     private fun railDestination(destination: Destination) =
         compose.onNode(
-            hasText(destination.label, ignoreCase = true) and
+            hasContentDescription(destination.label, ignoreCase = true) and
                 hasAnyAncestor(hasTestTag(VAULT_RAIL_TEST_TAG)),
         )
 }

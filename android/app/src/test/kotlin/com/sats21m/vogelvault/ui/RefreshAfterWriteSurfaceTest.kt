@@ -6,6 +6,9 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -310,11 +313,9 @@ class RefreshAfterWriteSurfaceTest {
             )
         }
         val interact = {
-            compose.onNodeWithContentDescription(
-                application.getString(R.string.todo_edit_named, todo.title),
-            )
-                .performScrollTo()
-                .performClick()
+            val editDescription = application.getString(R.string.todo_edit_named, todo.title)
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription(editDescription))
+            compose.onNodeWithContentDescription(editDescription).performClick()
             compose.onNodeWithText(application.getString(R.string.todo_title))
                 .performTextReplacement("Reconcile all receipts")
             compose.onNode(hasText(application.getString(R.string.todo_save)) and hasClickAction())
