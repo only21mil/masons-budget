@@ -38,6 +38,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -230,7 +231,7 @@ fun VaultApp(
                     VerticalHairline(Modifier.fillMaxHeight())
                     Column(Modifier.weight(1f)) {
                         VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile) {
-                            onSwitchProfile(state.activeProfile)
+                            onWriteSucceeded()
                         }
                         HorizontalHairline()
                         Row(Modifier.weight(1f)) {
@@ -259,7 +260,7 @@ fun VaultApp(
             } else {
                 Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                     VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile) {
-                        onSwitchProfile(state.activeProfile)
+                        onWriteSucceeded()
                     }
                     HorizontalHairline()
                     VaultScreenContent(
@@ -310,8 +311,8 @@ private fun VaultScreenContent(
         Column(Modifier.fillMaxSize()) {
             ProfileSwitchRefusalNotice(refusal)
             AuthorizationNotice(state)
-            RowReadFailureNotice(state)
-            RefreshFailureNotice(state)
+            RowReadFailureNotice(state, onWriteSucceeded)
+            RefreshFailureNotice(state, onWriteSucceeded)
             // The cap goes on the screen, not the notices: a warning banner spans
             // the column, the ledger column does not.
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -365,7 +366,7 @@ private fun AuthorizationNotice(state: VaultUiState) {
 }
 
 @Composable
-private fun RowReadFailureNotice(state: VaultUiState) {
+private fun RowReadFailureNotice(state: VaultUiState, onRetry: () -> Unit) {
     val titleRes = state.rowReadFailureTitleRes ?: return
     val detailRes = state.rowReadFailureDetailRes ?: return
     val projectionRes = state.rowReadFailureProjectionRes ?: return
@@ -374,10 +375,11 @@ private fun RowReadFailureNotice(state: VaultUiState) {
         detail = stringResource(detailRes, stringResource(projectionRes)),
         tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
     )
+    TextButton(onClick = onRetry) { Text("Retry") }
 }
 
 @Composable
-private fun RefreshFailureNotice(state: VaultUiState) {
+private fun RefreshFailureNotice(state: VaultUiState, onRetry: () -> Unit) {
     if (
         state.staleAuthorization ||
         state.primaryRowReadFailure != null ||
@@ -390,6 +392,7 @@ private fun RefreshFailureNotice(state: VaultUiState) {
         detail = stringResource(R.string.refresh_failed_detail),
         tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
     )
+    TextButton(onClick = onRetry) { Text("Retry") }
 }
 
 /**

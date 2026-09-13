@@ -201,8 +201,15 @@ class ReadModelTest {
             btcBillPays = base.btcBillPays.copy(value = emptyList()),
         )
 
-        assertTrue(model.billPayLedgerUnavailable)
+        assertFalse(model.billPayLedgerUnavailable)
         assertFalse(model.budgetActualsUnavailable)
+    }
+
+    @Test
+    fun `complete empty income is an authoritative zero`() {
+        val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        assertFalse(base.copy(income = base.income.copy(value = emptyList())).incomeFiguresUnavailable)
+        assertTrue(base.copy(income = base.income.copy(status = Freshness.ERROR)).incomeFiguresUnavailable)
     }
 
     @Test
