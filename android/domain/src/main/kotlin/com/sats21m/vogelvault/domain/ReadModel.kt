@@ -369,7 +369,7 @@ data class ReadModel(
         Slice(Freshness.EMPTY, emptyList(), null, "Convex rows · bitcoin bill pays"),
 ) {
     val incomeFiguresUnavailable: Boolean
-        get() = income.requiredProjectionUnavailable || income.value.isEmpty()
+        get() = income.requiredProjectionUnavailable
 
     val netWorthFiguresUnavailable: Boolean
         get() = btcBalance.requiredProjectionUnavailable || btcBalance.value == null
@@ -378,7 +378,7 @@ data class ReadModel(
         get() = netWorthFiguresUnavailable || btcBalance.value?.fiatFiguresUnavailable != false
 
     val billPayLedgerUnavailable: Boolean
-        get() = btcBillPays.requiredProjectionUnavailable || btcBillPays.value.isEmpty()
+        get() = btcBillPays.requiredProjectionUnavailable
 
     /**
      * Budget actuals require every ledger that can contribute to monthly spend.
