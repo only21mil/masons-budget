@@ -53,6 +53,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -325,6 +327,7 @@ private fun VaultScreenContent(
     /** Null lets the screen fill its column; folded screens do. */
     contentMaxWidth: Dp? = null,
 ) {
+    var quickAddRequested by rememberSaveable(state.activeProfile) { mutableStateOf(false) }
     Box(modifier) {
         Column(Modifier.fillMaxSize()) {
             ProfileSwitchRefusalNotice(refusal)
@@ -336,6 +339,8 @@ private fun VaultScreenContent(
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 ScreenHost(
                     destination = current,
+                    quickAddRequested = quickAddRequested,
+                    onQuickAddConsumed = { quickAddRequested = false },
                     state = state,
                     profileSwitcher = profileSwitcher,
                     onNavigate = onNavigate,
@@ -352,10 +357,16 @@ private fun VaultScreenContent(
                     modifier = Modifier
                         .fillMaxHeight()
                         .then(if (contentMaxWidth != null) Modifier.widthIn(max = contentMaxWidth) else Modifier)
+                        .padding(bottom = 80.dp)
                         .testTag(VAULT_SCREEN_CONTENT_TEST_TAG),
                 )
             }
         }
+        androidx.compose.material3.FloatingActionButton(
+            onClick = { quickAddRequested = true },
+            containerColor = LocalLedgerTheme.current.colors.bitcoin,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(VaultSpace.md).testTag("quick-add-fab"),
+        ) { Text("+", modifier = Modifier.semantics { contentDescription = "Add transaction" }) }
         LedgerAtmosphere()
     }
 }

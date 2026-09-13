@@ -177,6 +177,8 @@ fun ScreenHost(
     onNavigate: (Destination) -> Unit = {},
     onBack: (() -> Unit)? = null,
     primaryReset: String = "",
+    quickAddRequested: Boolean = false,
+    onQuickAddConsumed: () -> Unit = {},
     onEnableRemoteRows: (String) -> Unit = {},
     onRemoteRowsConnected: () -> Unit = {},
     onWriteSucceeded: () -> Unit = {},
@@ -198,6 +200,13 @@ fun ScreenHost(
     val ledgerTokens = LocalLedgerTheme.current
     var addingTransaction by rememberSaveable { mutableStateOf(false) }
     var addingIncome by rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(quickAddRequested) {
+        if (quickAddRequested) {
+            addingIncome = false
+            addingTransaction = true
+            onQuickAddConsumed()
+        }
+    }
     var incomeBitcoinBuySeed by remember(state.activeProfile) { mutableStateOf<IncomeEntry?>(null) }
     var selectedTransactionKey by rememberSaveable(state.activeProfile, primaryReset) {
         mutableStateOf<String?>(null)
@@ -344,27 +353,51 @@ fun ScreenHost(
     if (showBtcAccountEditor) {
         BtcAccountEntrySheet(state.activeProfile, state.data.btcBalance, state.data.btcBalanceReadOwner, { showBtcAccountEditor = false }, onWriteSucceeded)
     }
-    if (addingTransaction) {
-        AddTransactionSheet(
-            state = state,
-            onDismiss = { addingTransaction = false },
-            initialType = if (addingIncome) AddTransactionType.INCOME else AddTransactionType.SPEND,
-            allowIncomeBitcoinBuy = destination == Destination.BUDGET && capabilities.allows(profile, DeviceCapability.BITCOIN),
-            onOpenIncomeBitcoinBuy = { income ->
-                addingTransaction = false
-                incomeBitcoinBuySeed = income
+    if (showBtcBillPayEditor) {
+        BtcBillPayEntrySheet(
+            owner = state.activeProfile,
+            budgetCategories = state.data.budget.value?.categories?.map { it.name }.orEmpty(),
+            prefill = btcBillPayPrefill,
+            onDismiss = {
+                showBtcBillPayEditor = false
+                btcBillPayPrefill = null
             },
-            onStartRiverBillPay = { prefill ->
-                addingTransaction = false
-                btcBillPayPrefill = prefill
-                showBtcBillPayEditor = true
-                onStartRiverBillPay(prefill)
-            },
+            onWriteSucceeded = onWriteSucceeded,
         )
+    }
+    if (showBtcBuyEditor) {
+        BtcBuyEntrySheet(
+            owner = state.activeProfile,
+            quoteCents = state.liveBitcoinQuote()?.priceCents ?: 0L,
+            onDismiss = { showBtcBuyEditor = false },
+            onWriteSucceeded = onWriteSucceeded,
+        )
+    }
+    if (addingTransaction) {
+        key(state.activeProfile) {
+            AddTransactionSheet(
+                state = state,
+                onDismiss = { addingTransaction = false },
+                onOpenBitcoinBuy = { addingTransaction = false; showBtcBuyEditor = true },
+                initialType = if (addingIncome) AddTransactionType.INCOME else AddTransactionType.SPEND,
+                allowIncomeBitcoinBuy = destination == Destination.BUDGET && capabilities.allows(profile, DeviceCapability.BITCOIN),
+                onOpenIncomeBitcoinBuy = { income ->
+                    addingTransaction = false
+                    incomeBitcoinBuySeed = income
+                },
+                onStartRiverBillPay = { prefill ->
+                    addingTransaction = false
+                    btcBillPayPrefill = prefill
+                    showBtcBillPayEditor = true
+                    onStartRiverBillPay(prefill)
+                },
+            )
+        }
     }
     incomeBitcoinBuySeed?.let { income ->
         BtcBuyFromIncomeEntrySheet(
             viewer = state.activeProfile,
+            quoteCents = state.liveBitcoinQuote()?.priceCents ?: 0L,
             income = income,
             onDismiss = { incomeBitcoinBuySeed = null },
             onWriteSucceeded = onWriteSucceeded,
@@ -414,8 +447,6 @@ fun ScreenHost(
             destination = destination,
             displayUnit = displayUnit,
             onDisplayUnitChange = onDisplayUnitChange,
-            onAddTransaction = { addingIncome = false; addingTransaction = true },
-            addUnavailableReason = capabilities.unavailableReason(profile, DeviceCapability.TRANSACTIONS),
         )
         LazyColumn(
             state = listState,
@@ -566,25 +597,6 @@ fun ScreenHost(
             onWriteSucceeded = onWriteSucceeded,
         )
     }
-    if (showBtcBuyEditor) {
-        BtcBuyEntrySheet(
-            owner = state.activeProfile,
-            onDismiss = { showBtcBuyEditor = false },
-            onWriteSucceeded = onWriteSucceeded,
-        )
-    }
-    if (showBtcBillPayEditor) {
-        BtcBillPayEntrySheet(
-            owner = state.activeProfile,
-            budgetCategories = state.data.budget.value?.categories?.map { it.name }.orEmpty(),
-            prefill = btcBillPayPrefill,
-            onDismiss = {
-                showBtcBillPayEditor = false
-                btcBillPayPrefill = null
-            },
-            onWriteSucceeded = onWriteSucceeded,
-        )
-    }
     if (showBtcTransferEditor) {
         BtcTransferEntrySheet(
             viewer = state.activeProfile,
@@ -610,22 +622,17 @@ fun ScreenHost(
 }
 
 /**
- * The action row under the top bar: unit chips and the one primary action,
- * once per screen. Screens with neither draw nothing here, so the first data
- * is never more than the title and one subtitle line away.
+ * Financial display units. The shell owns the fixed quick-add action.
  */
 @Composable
 private fun ScreenActionBar(
     destination: Destination,
     displayUnit: DisplayUnit,
     onDisplayUnitChange: (DisplayUnit) -> Unit,
-    onAddTransaction: () -> Unit,
-    addUnavailableReason: String? = null,
 ) {
     val tokens = LocalLedgerTheme.current
-    val canAdd = destination in ADD_TRANSACTION_DESTINATIONS
     val showsUnit = destination.supportsFinancialDisplayUnit
-    if (!canAdd && !showsUnit) return
+    if (!showsUnit) return
     Column {
         Row(
             Modifier
@@ -642,22 +649,10 @@ private fun ScreenActionBar(
                     modifier = Modifier.weight(1f, fill = false).widthIn(max = 200.dp),
                 )
             }
-            if (canAdd) {
-                VaultButton(label = stringResource(R.string.add_transaction_action), onClick = onAddTransaction, enabled = addUnavailableReason == null)
-            }
-        }
-        if (canAdd && addUnavailableReason != null) {
-            Text(addUnavailableReason, modifier = Modifier.padding(horizontal = tokens.density.screenGutter), style = MaterialTheme.typography.bodySmall)
         }
         HorizontalHairline()
     }
 }
-
-private val ADD_TRANSACTION_DESTINATIONS = setOf(
-    Destination.DASHBOARD,
-    Destination.ACTIVITY,
-    Destination.BUDGET,
-)
 
 /** Two lines: the screen title and one tracked subtitle. Nothing else sits above the first data. */
 @Composable
