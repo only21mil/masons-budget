@@ -536,7 +536,7 @@ internal fun AddTransactionSheet(
         current = PaymentSource.fromWireOrDefault(paymentSourceWire),
     )
     val writeUnavailableReason = transactionRouteUnavailableReason(
-        application?.deviceCapabilities ?: DeviceCapabilities(), state.activeProfile, paymentSource,
+        application?.deviceCapabilities ?: DeviceCapabilities(), state.activeProfile, paymentSource, type,
     )
     val inputUnit = if (paymentSource.route == PaymentSourceRoute.BILL_PAY) {
         DisplayUnit.USD
@@ -821,7 +821,7 @@ internal fun AddTransactionSheet(
                     ),
                     onClick = {
                         transactionRouteUnavailableReason(
-                            application?.deviceCapabilities ?: DeviceCapabilities(), state.activeProfile, paymentSource,
+                            application?.deviceCapabilities ?: DeviceCapabilities(), state.activeProfile, paymentSource, type,
                         )?.let { refuse(it); return@VaultButton }
                         val selectedDate = runCatching { LocalDate.parse(dateIso) }.getOrElse {
                             refuse("Enter a valid date")
@@ -1035,12 +1035,13 @@ internal fun amountPrefix(unit: DisplayUnit): String = when (unit) {
     DisplayUnit.SATS -> "SATS"
 }
 
-/** Fiat transactions need no Bitcoin grant; any Bitcoin posting needs both. */
+/** Standalone income and fiat transactions need no Bitcoin grant; Bitcoin postings need both. */
 internal fun transactionRouteUnavailableReason(
     capabilities: DeviceCapabilities,
     viewer: FamilyMember,
     source: PaymentSource,
+    type: AddTransactionType = AddTransactionType.SPEND,
 ): String? = capabilities.unavailableReason(viewer, DeviceCapability.TRANSACTIONS)
-    ?: if (source.route != PaymentSourceRoute.CARD_TRANSACTION) {
+    ?: if (type != AddTransactionType.INCOME && source.route != PaymentSourceRoute.CARD_TRANSACTION) {
         capabilities.unavailableReason(viewer, DeviceCapability.BITCOIN)
     } else null

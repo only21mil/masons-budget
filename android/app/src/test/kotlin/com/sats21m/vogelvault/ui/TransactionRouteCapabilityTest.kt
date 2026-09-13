@@ -31,6 +31,29 @@ import org.robolectric.annotation.Config
 class TransactionRouteCapabilityTest {
     @get:Rule val compose = createEmptyComposeRule()
 
+    @Test fun `income keeps one source field and save with a transactions only pairing`() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java)
+        controller.get().setTheme(R.style.Theme_VogelVault)
+        controller.setup()
+        try {
+            PaymentSourceStore(controller.get()).select(PaymentSource.entries.first { it.isBitcoinTransaction })
+            controller.get().setContent {
+                VogelVaultTheme {
+                    AddTransactionSheet(VaultUiState(activeProfile = FamilyMember.VICTOR,
+                        data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)),
+                        onDismiss = {}, initialType = AddTransactionType.INCOME)
+                }
+            }
+            compose.onNodeWithText("Income source").assertExists()
+            compose.onNodeWithText(controller.get().getString(R.string.add_transaction_merchant)).assertDoesNotExist()
+            compose.onNodeWithText(controller.get().getString(R.string.add_transaction_save)).assertExists()
+            compose.onNodeWithTag(PAYMENT_SOURCE_SELECTOR_TEST_TAG).assertDoesNotExist()
+            compose.onNodeWithText("This phone has read-only access to Bitcoin records.").assertDoesNotExist()
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
     @Test fun `transactions only pairing can return to fiat after refused Bitcoin selection`() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java)
         controller.get().setTheme(R.style.Theme_VogelVault)
