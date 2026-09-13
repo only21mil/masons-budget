@@ -6,6 +6,7 @@ struct NetWorthView: View {
     @Environment(\.theme) var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage(MarketQuoteService.cacheKey) private var quoteCache = Data()
+    @AppStorage(ConvexSyncService.lastSyncErrorKey) private var lastReadError = ""
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
@@ -106,6 +107,7 @@ struct NetWorthView: View {
                         RequiredFinancialSourceView(
                             title: "Net Worth",
                             message: "A Bitcoin balance and an available Bitcoin price are needed to calculate net worth.",
+                            showsSyncSetupGuidance: ContentView.readSyncMessage(hasReadToken: ConvexConfig.hasReadToken, lastError: lastReadError) == nil,
                         )
                         .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     }
@@ -169,8 +171,16 @@ struct NetWorthView: View {
 
     private var quoteStatus: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
+            let availableSymbols = MarketQuote.Symbol.allCases.filter {
+                MarketQuoteService.quote($0, now: context.date) != nil
+            }
             VStack(alignment: .leading, spacing: 3) {
-                ForEach(MarketQuote.Symbol.allCases, id: \.rawValue) { symbol in
+                if availableSymbols.count < MarketQuote.Symbol.allCases.count {
+                    Text("Prices unavailable")
+                        .ledgerType(.rowMeta)
+                        .foregroundStyle(theme.textMuted)
+                }
+                ForEach(availableSymbols, id: \.rawValue) { symbol in
                     Text(MarketQuoteService.label(symbol, now: context.date))
                         .ledgerType(.rowMeta)
                         .foregroundStyle(theme.textMuted)

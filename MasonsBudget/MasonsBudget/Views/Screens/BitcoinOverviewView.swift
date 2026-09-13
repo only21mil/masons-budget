@@ -532,7 +532,14 @@ struct AddBitcoinAccountView: View {
                 VStack(spacing: AppLayout.cardSpacing) {
                     ScreenHeader(title: existing == nil ? "Add account" : "Edit account", eyebrow: "Bitcoin accounts")
                     DeviceWriteSetupPrompt()
-                    if !didLoadDocument { Button("Load account details") { Task { await loadDocument() } } }
+                        .ledgerType(.button)
+                        .tint(theme.accent)
+                    if !didLoadDocument {
+                        Button("Load account details") { Task { await loadDocument() } }
+                            .ledgerType(.button)
+                            .tint(theme.accent)
+                            .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                    }
                     VStack(spacing: 14) {
                         TextField("Coldcard, River, Phoenix", text: $label).ledgerType(.textInput)
                         HStack(spacing: LedgerMetrics.siblingChipSpacing) {
@@ -546,19 +553,35 @@ struct AddBitcoinAccountView: View {
                     .glassCard(padding: 14, radius: AppLayout.radiusMedium)
                     if let validationMessage { Text(validationMessage).foregroundStyle(theme.warn).ledgerType(.rowMeta) }
                     if let message { Text(message).foregroundStyle(theme.warn) }
-                    if existing != nil { Button("Delete account", role: .destructive) { showingDelete = true } }
+                    if existing != nil {
+                        Button("Delete account", role: .destructive) { showingDelete = true }
+                            .ledgerType(.button)
+                            .tint(theme.danger)
+                    }
                 }
                 .padding(.horizontal, ledgerTokens.metrics.screenGutter)
             }
             .background(theme.bg)
             .disabled(isSaving)
-            .navigationTitle(existing == nil ? "Add account" : "Edit account")
+            #if os(iOS)
+                .toolbar(.hidden, for: .navigationBar)
+            #endif
             .interactiveDismissDisabled(isSaving)
             .safeAreaInset(edge: .bottom) {
                 HStack {
-                    Button("Cancel") { dismiss() }.disabled(isSaving)
+                    Button("Cancel") { dismiss() }
+                        .ledgerType(.button)
+                        .tint(theme.accent)
+                        .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                        .disabled(isSaving)
                     Spacer()
-                    Button(isSaving ? "Saving" : "Save account", action: save).buttonStyle(.borderedProminent).disabled(!canSave)
+                    Button(isSaving ? "Saving" : "Save account", action: save)
+                        .ledgerType(.button)
+                        .buttonStyle(.borderedProminent)
+                        .tint(theme.accentFill)
+                        .foregroundStyle(theme.onAccent)
+                        .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                        .disabled(!canSave)
                 }
                 .padding(ledgerTokens.metrics.screenGutter).background(theme.surface)
             }
@@ -567,6 +590,9 @@ struct AddBitcoinAccountView: View {
                 Button("Delete account", role: .destructive) { remove() }
             } message: { Text("Removes \(trimmedLabel) from the Bitcoin ledger. This cannot be undone.") }
         }
+        // This sheet owns its header rather than inheriting the presenting tab's title.
+        .environment(\.ledgerRootTitle, nil)
+        .environment(\.ledgerRootAccessory, nil)
     }
 
     private func loadDocument() async {
@@ -629,10 +655,10 @@ struct AddBitcoinAccountView: View {
 struct DeviceWriteSetupPrompt: View {
     var body: some View {
         if !AppWritebackConfig.canWriteLedger {
-            NavigationLink("Pair this device in Sync Setup") { SyncSetupView() }
+            NavigationLink("Pair this device in Sync Setup") { LedgerDrilldown(title: "Sync Setup") { SyncSetupView() } }
         } else if !AppWritebackConfig.canWriteBitcoin {
             Text("This device does not have permission to change Bitcoin entries.").ledgerType(.rowMeta)
-            NavigationLink("Open Sync Setup") { SyncSetupView() }
+            NavigationLink("Open Sync Setup") { LedgerDrilldown(title: "Sync Setup") { SyncSetupView() } }
         }
     }
 }

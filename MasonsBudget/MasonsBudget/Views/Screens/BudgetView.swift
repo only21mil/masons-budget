@@ -153,6 +153,9 @@ struct BudgetView: View {
                 Text("INCOME").ledgerType(.sectionLabel)
                 Spacer()
                 Button("+ Income") { showingIncome = true }
+                    .ledgerType(.button)
+                    .foregroundStyle(theme.accent)
+                    .frame(minHeight: LedgerMetrics.minimumHitTarget)
             }
             Text("MTD: \(incomeForOffset(selectedMonthOffset).map(AppFormatter.formatCurrency) ?? "Unavailable")")
                 .ledgerType(.rowPrimary)
@@ -450,8 +453,11 @@ struct BudgetPlanCarryAction: View {
                     .ledgerType(.rowMeta)
                     .accessibilityIdentifier("budget.copyPlan.feedback")
             }
-            if message != nil, !submitting, !loading {
+            if message != nil, ConvexConfig.hasReadToken, !submitting, !loading {
                 Button("Refresh budget plan") { Task { await loadPlan() } }
+                    .ledgerType(.button)
+                    .foregroundStyle(theme.accent)
+                    .frame(minHeight: LedgerMetrics.minimumHitTarget)
             }
         }
         .foregroundStyle(theme.text)
@@ -519,7 +525,9 @@ struct BudgetPlanCarryAction: View {
         } catch {
             guard isActive, generation == requestGeneration, !Task.isCancelled else { return }
             message = acceptedIntent == nil
-                ? "The budget plan could not be loaded. Refresh to try again."
+                ? (ConvexConfig.hasReadToken
+                    ? "The budget plan could not be loaded. Refresh to try again."
+                    : "Unavailable until this device is connected.")
                 : "The plan was copied, but refresh failed. Refresh before copying again."
         }
     }
