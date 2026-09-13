@@ -78,11 +78,12 @@ All of these must hold before any command in the next section runs.
 
 2. **The deployed code is the reviewed checkout.** Work from a clean, pinned
    worktree of the merge commit that contains the canonicalizing projection, run
-   `npm ci`, and confirm generated types are not stale:
-
-   ```bash
-   scripts/verify-convex-generated-freshness.sh
-   ```
+   `npm ci`, and run `npm run codegen` for local schema-checksum and module
+   inventory checks. Full generation requires the separately approved remote
+   preparation procedure in [Convex codegen safety](convex-codegen-safety.md).
+   It can persist pending schemas and index work. Obtain approval for that
+   exact revision and target before the freshness script; an acknowledgement
+   flag cannot grant approval. Missing approved credential injection is a stop.
 
    Then deploy that exact commit per `docs/convex-migration-runbook.md` §4. A
    repair applied against an older deployed projection writes the *old* text
