@@ -401,7 +401,7 @@ fun ScreenHost(
         key(state.activeProfile) {
             Column(modifier) {
                 TextButton(onClick = { onNavigate(Destination.TASKS) }) { Text("Task lists") }
-                TodoScreen(state = state, onWriteSucceeded = onWriteSucceeded, modifier = Modifier.weight(1f))
+                TodoScreen(state = state, onWriteSucceeded = onWriteSucceeded, modifier = Modifier.weight(1f), listState = listState)
             }
         }
         return
@@ -426,7 +426,14 @@ fun ScreenHost(
                 ScreenHeader(destination, state, budgetSelectedMonth)
             }
             when (destination) {
-                Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit, onNavigate) { selectedTransactionKey = it.selectionKey }
+                Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit, { target ->
+                    if (target == Destination.BUDGET) {
+                        picked = dashboardMonth
+                        budgetDrilldownMonth = null
+                        budgetDrilldownCategory = null
+                    }
+                    onNavigate(target)
+                }) { selectedTransactionKey = it.selectionKey }
                 Destination.ACTIVITY -> {
                     activity(state, checkNotNull(activitySearch), displayUnit) {
                         selectedTransactionKey = it.selectionKey

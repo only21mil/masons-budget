@@ -8,6 +8,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.performScrollToNode
@@ -31,6 +37,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
+import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 
 @RunWith(RobolectricTestRunner::class)
@@ -45,14 +52,19 @@ class NavigationBackTest {
         controller.setup()
     }
     @After fun stop() { controller.pause().stop().destroy() }
-    private fun render(initial: Destination) {
+    private fun render(initial: Destination, longToday: Boolean = false) {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val data = if (longToday) fixture.copy(todos = fixture.todos.copy(value = (1..40).map {
+            com.sats21m.vogelvault.domain.TodoItem(id = "task-$it", title = "Task $it",
+                owner = FamilyMember.VICTOR, due = "2026-07-26")
+        })) else fixture
         destination = initial
         controller.get().setContent {
             LedgerTheme {
                 Box(Modifier.size(411.dp, 891.dp)) {
                     VaultApp(
                         state = VaultUiState(activeProfile = FamilyMember.VICTOR, destination = destination,
-                            data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)),
+                            data = data),
                         onNavigate = { destination = it }, onSwitchProfile = {},
                     )
                 }
@@ -63,6 +75,34 @@ class NavigationBackTest {
     private fun back() {
         compose.runOnIdle { controller.get().onBackPressedDispatcher.onBackPressed() }
         compose.waitForIdle()
+    }
+    @Test fun `dashboard Budget link replaces a previous month selection`() {
+        render(Destination.BUDGET)
+        compose.onNodeWithContentDescription("Jun 2026 budget month").performClick().assertIsSelected()
+        compose.onNode(hasText("Dashboard") and hasClickAction()).performClick()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Budget") and hasClickAction())
+        // The dashboard link is inside the scrolling content, unlike the primary tab.
+        compose.onNode(hasText("Budget") and hasClickAction() and androidx.compose.ui.test.hasAnyAncestor(hasScrollToIndexAction())).performClick()
+        compose.onNodeWithContentDescription("Jul 2026 budget month").assertIsSelected()
+        back()
+        assertEquals(Destination.DASHBOARD, destination)
+    }
+    @Test fun `Today offset survives task list detail and both Back steps`() {
+        render(Destination.TODAY, longToday = true)
+        val list = compose.onNode(hasScrollToIndexAction())
+        list.performScrollToIndex(12).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 27f) }
+        compose.waitForIdle()
+        val before = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        assertTrue(before > 0f)
+        compose.onNodeWithText("Task lists").performClick()
+        compose.onNode(hasText("Inbox") and hasClickAction()).performScrollTo().performClick()
+        back()
+        assertEquals(Destination.TASKS, destination)
+        back()
+        assertEquals(Destination.TODAY, destination)
+        val after = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode()
+            .config[SemanticsProperties.VerticalScrollAxisRange].value()
+        assertEquals(before, after)
     }
     @Test fun `Bitcoin drilldown returns to the originating Bitcoin screen`() {
         render(Destination.BITCOIN)
