@@ -132,7 +132,8 @@ class BudgetCategoryProgressTest {
             .assertCountEquals(0)
         compose.onAllNodesWithText("CLOSE").assertCountEquals(0)
         compose.onAllNodesWithText("15% left").assertCountEquals(0)
-        compose.onNodeWithText("OF $100.00", useUnmergedTree = true).fetchSemanticsNode()
+        compose.onNodeWithText("OF $100.00 planned", useUnmergedTree = true).fetchSemanticsNode()
+        compose.onNodeWithText("$15.00 left", useUnmergedTree = true).fetchSemanticsNode()
     }
 
     private fun progress(

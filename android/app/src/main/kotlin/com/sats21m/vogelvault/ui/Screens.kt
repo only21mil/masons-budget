@@ -1090,19 +1090,19 @@ private fun VaultLazyListScope.budget(
     // its own actuals. The banner below says so rather than letting the planned
     // column imply Convex stored a June budget.
     if (budget == null) {
-        val readable = slice.status == Freshness.LIVE || slice.status == Freshness.DEMO
+        val readable = slice.status == Freshness.LIVE || slice.status == Freshness.DEMO || slice.status == Freshness.EMPTY
         item {
             Panel {
                 StateBlock(
                     if (readable) Freshness.EMPTY else slice.status,
                     title = if (readable) "No budget for this profile" else null,
-                    detail = if (slice.status == Freshness.DEMO) {
+                    detail = if (readable && state.activeProfile == FamilyMember.MADDOX) {
+                        "Victor or Rachel can create Maddox's budget."
+                    } else if (slice.status == Freshness.DEMO) {
                         "This demo profile has no sample budget."
-                    } else if (slice.status == Freshness.LIVE) {
-                        "This profile has no dedicated budget file in the remote data."
-                    } else {
-                        null
-                    },
+                    } else if (readable) {
+                        "Victor or Rachel can create a budget for this profile."
+                    } else null,
                 )
             }
         }
@@ -1265,6 +1265,20 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
             }
         }
         return
+    }
+
+    val category = state.data.budget.value?.let { budget ->
+        deriveBudgetSpend(budget.copy(month = scope.month), transactions, billPays)
+            ?.categories?.firstOrNull { it.name == scope.category }
+    }
+    if (category != null) {
+        item {
+            KpiStrip(listOf(
+                Kpi("Remaining", Money.formatUsd(category.remainingCents),
+                    hint = "OF ${Money.formatUsd(category.budgetCents)} planned"),
+                Kpi("Spent", Money.formatUsd(category.spentCents)),
+            ))
+        }
     }
 
     if (transactions.isEmpty() && billPays.isEmpty()) {
@@ -1904,6 +1918,7 @@ private fun VaultLazyListScope.settings(
                     "Income" to state.data.income.status,
                     "Bitcoin balance" to state.data.btcBalance.status,
                     "Bitcoin bill pays" to state.data.btcBillPays.status,
+                    "Bitcoin transfers" to state.data.btcTransfers.status,
                     "Finances" to state.financeStatus,
                     "Market prices" to state.marketQuoteStatus,
                 ).forEachIndexed { index, (name, status) ->
