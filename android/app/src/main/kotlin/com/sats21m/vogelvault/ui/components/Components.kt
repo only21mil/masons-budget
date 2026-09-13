@@ -155,6 +155,7 @@ class VaultLazyListScope internal constructor(
         rowKey: (T) -> String,
         /** The slice revision the rows came from; a change reveals them. Null prints cold. */
         revealKey: Any? = null,
+        onHeaderClick: (() -> Unit)? = null,
         rowContent: @Composable (T) -> Unit,
     ) {
         separateFromPreviousSection()
@@ -162,7 +163,9 @@ class VaultLazyListScope internal constructor(
             key = "$sectionKey:header",
             contentType = "vault-panel-header",
         ) {
-            LazyPanelHeader(title, source)
+            Box(Modifier.then(if (onHeaderClick != null) Modifier.clickable(role = Role.Button, onClick = onHeaderClick) else Modifier)) {
+                LazyPanelHeader(title, source)
+            }
         }
         delegate.itemsIndexed(
             items = rows,
