@@ -34,6 +34,7 @@ import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.components.LedgerTextField
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.domain.BtcAccount
 import java.time.LocalDate
@@ -198,6 +199,9 @@ internal fun BtcAccountEntrySheet(
             return@LedgerSheet
         }
         LedgerTextField(value = pending?.label ?: label, onValueChange = { label = it }, label = "Account name", placeholder = "Coldcard, River, Phoenix", enabled = !working && pending == null)
+        validation?.let {
+            Text(it, style = LocalLedgerTheme.current.type.rowMeta, color = LocalLedgerTheme.current.colors.loss)
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
             Custody.entries.forEach { custody ->
                 SelectionChip(label = custody.label, semanticLabel = custody.label,
@@ -208,7 +212,6 @@ internal fun BtcAccountEntrySheet(
             }
         }
         Text("Starts at 0 sats. Buys, bill pays, and transfers change the balance.")
-        validation?.let { Text(it) }
         com.sats21m.vogelvault.ui.components.WriteRefusalLine(
             failure, retry = retrySave, enabled = !working, accepted = writeAccepted,
         )
