@@ -1,5 +1,7 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -167,10 +169,14 @@ internal fun ReadModel.netWorthBalanceForDisplay(): BtcBalance? =
 internal fun ReadModel.billPaysAvailableTo(viewer: FamilyMember): Boolean =
     !billPayLedgerUnavailable && btcBillPays.value.visibleTo(viewer).isNotEmpty()
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
+    onNavigate: (Destination) -> Unit = {},
+    onBack: (() -> Unit)? = null,
+    primaryReset: String = "",
     onEnableRemoteRows: (String) -> Unit = {},
     onRemoteRowsConnected: () -> Unit = {},
     onWriteSucceeded: () -> Unit = {},
@@ -192,7 +198,7 @@ fun ScreenHost(
     var addingTransaction by rememberSaveable { mutableStateOf(false) }
     var addingIncome by rememberSaveable { mutableStateOf(false) }
     var incomeBitcoinBuySeed by remember(state.activeProfile) { mutableStateOf<IncomeEntry?>(null) }
-    var selectedTransactionKey by rememberSaveable(state.activeProfile) {
+    var selectedTransactionKey by rememberSaveable(state.activeProfile, primaryReset) {
         mutableStateOf<String?>(null)
     }
     // The write surface owns its own client, per the house write pattern: nothing
@@ -236,8 +242,13 @@ fun ScreenHost(
         mutableStateOf(initialMonth)
     }
     var budgetEditor by remember(state.activeProfile) { mutableStateOf<BudgetCategoryEditorSeed?>(null) }
-    var budgetDrilldownMonth by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
-    var budgetDrilldownCategory by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
+    var budgetDrilldownMonth by rememberSaveable(state.activeProfile, primaryReset) { mutableStateOf<String?>(null) }
+    var budgetDrilldownCategory by rememberSaveable(state.activeProfile, primaryReset) { mutableStateOf<String?>(null) }
+    BackHandler(destination == Destination.BUDGET && budgetDrilldownCategory != null) {
+        budgetDrilldownMonth = null
+        budgetDrilldownCategory = null
+    }
+    var showBitcoinAdd by rememberSaveable { mutableStateOf(false) }
     var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
     var showBtcBillPayEditor by rememberSaveable { mutableStateOf(false) }
     var showBtcTransferEditor by rememberSaveable { mutableStateOf(false) }
@@ -359,22 +370,45 @@ fun ScreenHost(
         )
     }
 
+    if (showBitcoinAdd) {
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showBitcoinAdd = false }) {
+            LedgerMenuItem("Buy BTC", enabled = state.data.btcBuys.status == Freshness.LIVE,
+                onClick = { showBitcoinAdd = false; showBtcBuyEditor = true })
+            LedgerMenuItem("Bill Pay", enabled = !state.data.billPayLedgerUnavailable && canAddBtcBillPay(state.data.btcBillPays.status, profile),
+                onClick = { showBitcoinAdd = false; btcBillPayPrefill = null; showBtcBillPayEditor = true })
+            LedgerMenuItem("Transfer", enabled = state.data.btcAccounts.status == Freshness.LIVE && bitcoinProjection.transferAccounts.count { it.owner == profile.ledgerOwner } >= 2,
+                onClick = { showBitcoinAdd = false; showBtcTransferEditor = true })
+        }
+    }
+
+    // Every route retains its own offset for Back. A deliberate tab selection
+    // creates a fresh state only for its destination.
+    val listStates = Destination.entries.associateWith { route ->
+        key(route) {
+            val reset = primaryReset.takeIf { it.substringBefore(":") == route.name }
+            rememberSaveable(state.activeProfile, reset, saver = androidx.compose.foundation.lazy.LazyListState.Saver) {
+                androidx.compose.foundation.lazy.LazyListState()
+            }
+        }
+    }
+    val listState = listStates.getValue(destination)
+
     // Today is the one destination that edits rows rather than listing them, so it
     // owns its own scaffold, snackbar and scrolling list, and renders instead of the
     // shared ledger column rather than inside it. It reaches the write transport
     // itself; nothing about writing passes through this shell.
     if (destination == Destination.TODAY) {
         key(state.activeProfile) {
-            TodoScreen(
-                state = state,
-                onWriteSucceeded = onWriteSucceeded,
-                modifier = modifier,
-            )
+            Column(modifier) {
+                TextButton(onClick = { onNavigate(Destination.TASKS) }) { Text("Task lists") }
+                TodoScreen(state = state, onWriteSucceeded = onWriteSucceeded, modifier = Modifier.weight(1f))
+            }
         }
         return
     }
 
     Column(modifier.fillMaxWidth()) {
+        onBack?.let { back -> TextButton(onClick = back) { Text("Back") } }
         ScreenActionBar(
             destination = destination,
             displayUnit = displayUnit,
@@ -383,6 +417,7 @@ fun ScreenHost(
             addUnavailableReason = capabilities.unavailableReason(profile, DeviceCapability.TRANSACTIONS),
         )
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter),
         ) {
@@ -391,7 +426,7 @@ fun ScreenHost(
                 ScreenHeader(destination, state, budgetSelectedMonth)
             }
             when (destination) {
-                Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
+                Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit, onNavigate) { selectedTransactionKey = it.selectionKey }
                 Destination.ACTIVITY -> {
                     activity(state, checkNotNull(activitySearch), displayUnit) {
                         selectedTransactionKey = it.selectionKey
@@ -473,12 +508,8 @@ fun ScreenHost(
                         state,
                         bitcoinProjection,
                         displayUnit,
-                        onAddBuy = { showBtcBuyEditor = true },
-                        onAddBillPay = {
-                            btcBillPayPrefill = null
-                            showBtcBillPayEditor = true
-                        },
-                        onAddTransfer = { showBtcTransferEditor = true },
+                        onAdd = { showBitcoinAdd = true },
+                        onNavigate = onNavigate,
                         capabilities = capabilities,
                         onAddAccount = { showBtcAccountEditor = true },
                         onWriteSucceeded = onWriteSucceeded,
@@ -514,6 +545,7 @@ fun ScreenHost(
                     onEnableRemoteRows,
                     ledgerSettings,
                     onLedgerSettingsChange,
+                    onNavigate,
                 )
             }
             }
@@ -729,6 +761,8 @@ private fun VaultLazyListScope.dashboard(
     state: VaultUiState,
     projection: DashboardProjection,
     displayUnit: DisplayUnit,
+    onNavigate: (Destination) -> Unit,
+    onSelectTransaction: (Transaction) -> Unit,
 ) {
     val incomeUnavailable = projection.incomeCents == null
     val balanceUnavailable = projection.balance == null
@@ -785,6 +819,15 @@ private fun VaultLazyListScope.dashboard(
             ),
         )
     }
+    item {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = { onNavigate(Destination.NET_WORTH) }) { Text("Net Worth") }
+            TextButton(onClick = { onNavigate(Destination.BUDGET) }) { Text("Budget") }
+            TextButton(onClick = { onNavigate(Destination.TODAY) }) { Text("Today") }
+        }
+        TextButton(onClick = { onNavigate(Destination.RETIREMENT) }) { Text("Retirement") }
+        TextButton(onClick = { onNavigate(Destination.ACTIVITY) }) { Text("Recent activity · See all") }
+    }
     item { StaleNotice(state.data.transactions.status) }
     if (state.data.transactions.suppressFigures) {
         item {
@@ -806,7 +849,10 @@ private fun VaultLazyListScope.dashboard(
             rows = projection.activity,
             rowKey = Transaction::id,
             revealKey = state.data.transactions.updatedAt,
-            rowContent = { TransactionRow(it, displayUnit, quote) },
+            onHeaderClick = { onNavigate(Destination.ACTIVITY) },
+            rowContent = { transaction ->
+                Box(Modifier.clickable(role = Role.Button) { onSelectTransaction(transaction) }) { TransactionRow(transaction, displayUnit, quote) }
+            },
         )
     }
     if (incomeUnavailable) {
@@ -1426,9 +1472,8 @@ private fun VaultLazyListScope.bitcoin(
     state: VaultUiState,
     projection: BitcoinProjection,
     displayUnit: DisplayUnit,
-    onAddBuy: () -> Unit,
-    onAddBillPay: () -> Unit,
-    onAddTransfer: () -> Unit,
+    onAdd: () -> Unit,
+    onNavigate: (Destination) -> Unit,
     capabilities: DeviceCapabilities,
     onAddAccount: () -> Unit,
     onWriteSucceeded: () -> Unit,
@@ -1492,21 +1537,12 @@ private fun VaultLazyListScope.bitcoin(
         displayUnit = displayUnit,
         quote = quote,
     )
-    if (state.data.btcBuys.status == Freshness.LIVE) {
-        item { BtcBuyEntryAction(onAddBuy, enabled = canWriteBitcoin) }
-    }
-    if (!state.data.billPayLedgerUnavailable && canAddBtcBillPay(state.data.btcBillPays.status, state.activeProfile)) {
-        item { BtcBillPayEntryAction(onAddBillPay, enabled = canWriteBitcoin) }
-    }
-    val transferAccounts = projection.transferAccounts.filter {
-        it.owner == state.activeProfile.ledgerOwner
-    }
-    if (
-        state.activeProfile.isAdult &&
-        state.data.btcAccounts.status == Freshness.LIVE &&
-        transferAccounts.size >= 2
-    ) {
-        item { BtcTransferEntryAction(onAddTransfer, enabled = canWriteBitcoin) }
+    item {
+        if (state.activeProfile.isAdult) VaultButton("+ Add", onClick = onAdd, enabled = canWriteBitcoin)
+        TextButton(onClick = { onNavigate(Destination.BTC_BUYS) }) { Text("Buys · See all") }
+        TextButton(onClick = { onNavigate(Destination.BTC_BILL_PAYS) }) { Text("Bill Pays · See all") }
+        TextButton(onClick = { onNavigate(Destination.NET_WORTH) }) { Text("Net Worth") }
+        TextButton(onClick = { onNavigate(Destination.RETIREMENT) }) { Text("Retirement") }
     }
     if (state.data.btcBuys.suppressFigures) {
         item {
@@ -1863,7 +1899,12 @@ private fun VaultLazyListScope.settings(
     onEnableRemoteRows: (String) -> Unit,
     ledgerSettings: LedgerUiSettings,
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit,
+    onNavigate: (Destination) -> Unit,
 ) {
+    item {
+        TextButton(onClick = { onNavigate(Destination.FAMILY) }) { Text("Family") }
+        TextButton(onClick = { onNavigate(Destination.EXPORT) }) { Text("Export") }
+    }
     item {
         if (remoteReadReady) {
             StatusBanner(

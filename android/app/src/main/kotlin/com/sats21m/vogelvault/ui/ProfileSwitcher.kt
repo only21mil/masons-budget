@@ -60,6 +60,7 @@ fun ProfileSwitcher(
     onAuthenticationRequired: (ProfileSwitchRequest) -> Unit,
     onAuthorizedSwitch: (FamilyMember) -> Unit,
     modifier: Modifier = Modifier,
+    onSettings: (() -> Unit)? = null,
 ) {
     val colors = LocalLedgerTheme.current.colors
     if (!activeProfile.isAdult) {
@@ -85,14 +86,12 @@ fun ProfileSwitcher(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
+            onSettings?.let { open ->
+                LedgerMenuItem("Settings", onClick = { expanded = false; open() })
+            }
             activeProfile.allowedSwitchTargets.forEach { target ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            target.displayName,
-                            color = if (target == activeProfile) colors.foregroundTertiary else colors.foreground,
-                        )
-                    },
+                LedgerMenuItem(
+                    label = target.displayName,
                     enabled = target != activeProfile,
                     onClick = {
                         expanded = false

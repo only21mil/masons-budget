@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -138,6 +139,7 @@ private fun ProfileTaskListsScreen(
     var routeName by rememberSaveable(state.activeProfile) {
         mutableStateOf(TaskListRoute.HUB.name)
     }
+    BackHandler(routeName != TaskListRoute.HUB.name) { routeName = TaskListRoute.HUB.name }
     var selectedKind by rememberSaveable(state.activeProfile) {
         mutableStateOf(TaskSmartList.TODAY.name)
     }

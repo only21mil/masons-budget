@@ -209,12 +209,12 @@ class LedgerAdoptionLogicTest {
     }
 
     @Test
-    fun `onboarding and More expose their exact counts`() {
+    fun `onboarding and shared navigation expose their exact counts`() {
         assertEquals(3, OnboardingStep.entries.size)
         assertEquals("Step 1 of 3", onboardingProgressLabel(0))
         assertEquals("Step 3 of 3", onboardingProgressLabel(2))
         val overflow = foldedOverflowDestinations(Destination.entries.toList())
-        assertEquals(9, overflow.size)
-        assertEquals("More (9)", moreNavigationLabel(overflow.size))
+        assertEquals(0, overflow.size)
+        assertEquals(5, foldedPrimaryDestinations(Destination.entries.toList()).size)
     }
 }
