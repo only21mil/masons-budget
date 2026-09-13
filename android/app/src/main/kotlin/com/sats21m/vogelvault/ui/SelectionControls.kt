@@ -75,6 +75,7 @@ internal fun SelectionChip(
     actionLabel: String,
     selected: Boolean,
     compact: Boolean = false,
+    wrapLabel: Boolean = false,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
     onSelect: () -> Unit,
@@ -107,7 +108,7 @@ internal fun SelectionChip(
             label,
             style = tokens.type.chip,
             color = if (selected) tokens.colors.foreground else tokens.colors.foregroundSecondary,
-            maxLines = 1,
+            maxLines = if (wrapLabel) Int.MAX_VALUE else 1,
         )
     }
 }
