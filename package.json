@@ -16,6 +16,8 @@
     "dev": "npx convex dev",
     "deploy": "npx convex deploy",
     "codegen": "node scripts/convex-codegen.mjs",
+    "codegen:remote": "node scripts/convex-codegen-remote.mjs",
+    "codegen:test": "node --test scripts/tests/convex-codegen.test.mjs scripts/tests/check-convex-generated-change.test.mjs scripts/tests/verify-convex-generated-freshness.test.mjs",
     "ledger-batch:test": "node --test scripts/tests/vv-ledger-batch.test.mjs",
     "mobile-pairing:create": "node scripts/mint-mobile-pairing-slots.mjs",
     "linux-pairing:create": "node scripts/mint-linux-device-pairing.mjs",

@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
 
-# Authenticated pre-deploy freshness check. The caller must load the approved
-# local Convex deploy credential before invoking this script.
-#
-# Starting clean matters: otherwise a pre-existing hand edit can be mistaken for
-# codegen output. From a clean tree, a successful command that leaves no diff is
-# direct evidence that this checkout matches the invoked codegen tool.
-#
-# Honest limit: this does not establish who approved the revision or credential,
-# and it cannot make the credential-free CI check prove codegen ran. It proves
-# only that the configured npm codegen command exited successfully here and left
-# the committed generated tree byte-identical.
+# Remote preparation plus generated-file comparison. Requires separate Victor
+# approval for the exact revision, target and possible persistent schema/index
+# effects. The acknowledgement argument does not establish that approval.
+# See docs/convex-codegen-safety.md for the pre-existing injection requirement.
+# This is never an ordinary local/static check, including with --dry-run.
+# Starting with a clean generated tree lets the comparison attribute changes
+# to this invocation. The result does not prove approval or no remote effects.
 
 set -euo pipefail
 
@@ -29,7 +25,7 @@ EOF
   exit 1
 fi
 
-npm run codegen
+node scripts/convex-codegen-remote.mjs "$@"
 
 untracked_generated="$(
   git ls-files --others --exclude-standard -- convex/_generated
@@ -58,4 +54,4 @@ EOF
 fi
 
 echo "Convex generated declarations match authenticated codegen from a clean generated tree."
-echo "LIMITATION: this local result does not make the credential-free CI attestation unforgeable."
+echo "LIMITATION: remote preparation may persist schema/index work; repository checks cannot prove approval or freshness."
