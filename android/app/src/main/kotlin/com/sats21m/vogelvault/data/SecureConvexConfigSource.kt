@@ -102,7 +102,7 @@ internal class SecureConvexConfigSource internal constructor(
                 editor.remove(KEY_DEVICE_ID)
                 editor.remove(KEY_DEVICE_TOKEN)
                 editor.remove(KEY_DEVICE_PROFILE)
-            editor.remove(KEY_DEVICE_CAPABILITIES)
+                editor.remove(KEY_DEVICE_CAPABILITIES)
             }
             if (!editor.commit()) throw IOException("encrypted Convex bootstrap was not persisted")
 

@@ -501,7 +501,12 @@ internal fun BudgetCategoryEditorSheet(
     val mutationClient = remember(application) { application?.deviceMutationClient }
     if (WriteAccessBlockedSheet(seed.viewer, com.sats21m.vogelvault.data.DeviceCapability.BUDGET, onDismiss)) return
     if (seed.budget == null || seed.sourceFile == null || seed.budget.updatedAtMs <= 0L) {
-        Text("Refresh the budget before editing this category.")
+        ModalBottomSheet(onDismissRequest = onDismiss) {
+            Column(Modifier.padding(VaultSpace.md)) {
+                Text("Refresh the budget before editing this category.")
+                TextButton(onClick = onDismiss) { Text("Close") }
+            }
+        }
         return
     }
     var dollars by remember(seed) {
@@ -532,8 +537,6 @@ internal fun BudgetCategoryEditorSheet(
             message?.let { Text(it) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 if (
-                    seed.budget != null &&
-                    seed.sourceFile != null &&
                     seed.displayedMonth == seed.budgetDocumentMonth &&
                     seed.budget.updatedAtMs > 0L
                 ) {

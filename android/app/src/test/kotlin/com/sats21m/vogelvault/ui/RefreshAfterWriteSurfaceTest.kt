@@ -188,6 +188,7 @@ class RefreshAfterWriteSurfaceTest {
 
     @Test
     fun `bitcoin buy refreshes after success and not after rejection`() {
+        application.moneyCredentialProfile = FamilyMember.MASON
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
             BtcBuyEntrySheet(
                 owner = FamilyMember.MASON,
@@ -737,9 +738,11 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
         )
     }
 
+    var moneyCredentialProfile = FamilyMember.RACHEL
+
     override val deviceCapabilities: com.sats21m.vogelvault.data.DeviceCapabilities
         get() = com.sats21m.vogelvault.data.DeviceCapabilities(
-            FamilyMember.RACHEL, com.sats21m.vogelvault.data.DeviceCapabilities.supported,
+            moneyCredentialProfile, com.sats21m.vogelvault.data.DeviceCapabilities.supported,
         )
 
     override val deviceMutationClient: ConvexDeviceMutationClient by lazy {

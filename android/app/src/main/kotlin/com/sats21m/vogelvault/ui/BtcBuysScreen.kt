@@ -68,6 +68,7 @@ internal fun VaultLazyListScope.btcBuysScreen(
     state: VaultUiState,
     displayUnit: DisplayUnit,
     title: String,
+    onWriteSucceeded: () -> Unit = {},
 ) {
     val slice = state.data.btcBuys
     if (slice.suppressFigures) {
@@ -117,6 +118,14 @@ internal fun VaultLazyListScope.btcBuysScreen(
             figure = formatBtcBuyAmount(buy, displayUnit),
             figureColor = VaultCream,
             badge = buy.costBasisStatus,
+        )
+        BitcoinDeleteAction(
+            viewer = state.activeProfile,
+            kind = com.sats21m.vogelvault.data.BitcoinDeleteKind.BUY,
+            entityId = buy.id,
+            owner = buy.owner,
+            updatedAtMs = buy.updatedAtMs,
+            onWriteSucceeded = onWriteSucceeded,
         )
     }
 }

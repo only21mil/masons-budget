@@ -47,6 +47,22 @@ class SecureConvexConfigSourceTest {
     }
 
     @Test
+    fun `all grants and empty grants survive encrypted restart without widening`() {
+        for (grants in listOf(DeviceCapabilities.supported, emptySet())) {
+            val credential = ConvexDeviceCredential("android-device", "d".repeat(43), FamilyMember.RACHEL, grants)
+            source.updateDeviceCredential(credential)
+            assertEquals(grants, reconstructedSource().currentDeviceCredential()?.capabilities)
+        }
+    }
+
+    @Test
+    fun `legacy stored credentials retain only task access`() {
+        source.updateDeviceCredential(ConvexDeviceCredential("android-device", "d".repeat(43), FamilyMember.MASON))
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).edit().remove("device_capabilities").commit()
+        assertEquals(DeviceCapabilities.legacy, reconstructedSource().currentDeviceCredential()?.capabilities)
+    }
+
+    @Test
     fun `encrypted source round trips without storing plaintext`() {
         val token = "vv-test-${UUID.randomUUID()}"
         source.update(

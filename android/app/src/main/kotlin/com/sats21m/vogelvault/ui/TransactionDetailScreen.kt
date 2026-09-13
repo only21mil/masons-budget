@@ -155,7 +155,10 @@ fun TransactionDetailScreen(
         ?: if (transaction.amountSats != null || transaction.bitcoinAccountKey != null) {
             access.unavailableReason(viewer, DeviceCapability.BITCOIN)
         } else null
-    val canWrite = writeReason == null && viewer.ledgerOwner == transaction.owner.ledgerOwner
+    val unavailableReason = writeReason
+        ?: if (transaction.updatedAtMs <= 0L) "Refresh this transaction before editing it." else null
+        ?: if (viewer.ledgerOwner != transaction.owner.ledgerOwner) "Switch to this record's profile to make changes." else null
+    val canWrite = unavailableReason == null && viewer.ledgerOwner == transaction.owner.ledgerOwner
     val stateKeys = arrayOf(transaction.owner.key, transaction.id)
     var merchant by rememberSaveable(*stateKeys) { mutableStateOf(transaction.merchant) }
     var category by rememberSaveable(*stateKeys) { mutableStateOf(transaction.category) }
@@ -206,7 +209,7 @@ fun TransactionDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
             ) {
                 item {
-                    writeReason?.let { Text(it) }
+                    unavailableReason?.let { Text(it) }
                     Text(
                         stringResource(R.string.transaction_detail_title),
                         style = MaterialTheme.typography.headlineMedium,
