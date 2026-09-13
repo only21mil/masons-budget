@@ -152,6 +152,7 @@ class RowReadModelLoader(
             RowReadProjection.INCOME.sourceName,
             stamp,
             IncomeRow::toDomain,
+            completeEmptyIsLive = true,
         )
         val billPaySlice = btcBillPays.await().toMappedSlice(
             emptyList(),
@@ -207,6 +208,7 @@ private fun BtcBillPayRow.toDomain(): BtcBillPay = BtcBillPay(
     note = note,
     reference = reference,
     owner = owner,
+    updatedAtMs = updatedAtMs,
 )
 
 private fun BtcBalanceDocumentRow.toDomain(): BtcBalance = BtcBalance(
