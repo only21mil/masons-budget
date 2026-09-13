@@ -655,7 +655,7 @@ struct BitcoinEntryHistoryView: View {
                 } label: {
                     VStack(alignment: .leading) {
                         Text(entry.title)
-                        Text("\(entry.sats) sats · \(entry.date ?? "")").font(.caption)
+                        Text("\(entry.sats) sats · \(entry.date ?? "")").ledgerType(.rowMeta)
                     }
                 }
                 .disabled(isDeleting)
