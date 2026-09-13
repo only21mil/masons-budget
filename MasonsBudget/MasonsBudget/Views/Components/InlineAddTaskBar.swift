@@ -19,7 +19,8 @@ struct InlineAddTaskBar: View {
     var onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)?
 
     @Binding var isExpanded: Bool
-    @State private var draftText = ""
+    @State private var draft = InlineTaskDraft()
+    @State private var showSetup = false
     @FocusState private var draftFocused: Bool
 
     private var activeMember: FamilyMember {
@@ -33,16 +34,23 @@ struct InlineAddTaskBar: View {
                     Image(systemName: AppIcon.checkOpen)
                         .font(AppFont.iconSmall)
                         .foregroundStyle(theme.borderStrong)
-                    TextField("New task", text: $draftText)
+                    TextField("New task", text: $draft.text)
                         .textFieldStyle(.plain)
                         .ledgerType(.textInput)
                         .foregroundStyle(theme.text)
                         .focused($draftFocused)
+                        .disabled(draft.isSaving || draft.pendingTodo != nil)
                         .onSubmit(addTask)
-                    Button("Add", action: addTask)
-                        .ledgerType(.button)
-                        .foregroundStyle(theme.accent)
-                        .buttonStyle(.plain)
+                    if AppWritebackConfig.canWriteTasks {
+                        Button(draft.isSaving ? "Saving" : "Add", action: addTask)
+                            .ledgerType(.button)
+                            .foregroundStyle(theme.accent)
+                            .buttonStyle(.plain)
+                            .disabled(draft.isSaving || draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    } else {
+                        Button("Open Sync Setup") { showSetup = true }
+                            .ledgerType(.button)
+                    }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -72,6 +80,14 @@ struct InlineAddTaskBar: View {
                 )
             }
         }
+        .sheet(isPresented: $showSetup) { NavigationStack { SyncSetupView() } }
+        .overlay(alignment: .bottomLeading) {
+            if let message = draft.message { Text(message).ledgerType(.rowMeta).foregroundStyle(theme.warn).offset(y: 22) }
+        }
+        .onChange(of: selectedMemberRaw) { _, _ in
+            draft.reset()
+            isExpanded = false
+        }
         .onChange(of: isExpanded) { _, expanded in
             if expanded { draftFocused = true }
         }
@@ -79,9 +95,14 @@ struct InlineAddTaskBar: View {
 
     @MainActor
     private func addTask() {
-        let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let todo = TodoItem(
+        let trimmed = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !draft.isSaving else { return }
+        guard AppWritebackConfig.canWriteTasks else {
+            draft.message = ConvexWriteResult.notConfigured.userMessage(operation: "Task")
+            return
+        }
+        let attemptMemberRaw = selectedMemberRaw
+        let todo = draft.pendingTodo ?? TodoItem(
             id: UUID().uuidString,
             title: trimmed,
             dueDate: defaultDueDate,
@@ -89,17 +110,69 @@ struct InlineAddTaskBar: View {
             owner: activeMember,
             createdBy: "app",
         )
-        modelContext.insert(todo)
-        if TaskMutationSave.perform(operation: "Todo", in: modelContext, rollbackMutation: {
+        if draft.pendingTodo == nil { modelContext.insert(todo) }
+        let requestID = draft.begin(todo: todo)
+        let started = TaskMutationSave.perform(operation: "Todo", in: modelContext, rollbackMutation: {
             modelContext.delete(todo)
         }, remoteWrite: { completion in
             AppWriteSyncService.pushTodo(todo) { result in
-                onResult?(result)
                 completion(result)
+                guard selectedMemberRaw == attemptMemberRaw,
+                      draft.finish(result, requestID: requestID) else { return }
+                if result.isOk, draft.text.isEmpty { isExpanded = false }
+                onResult?(result)
             }
-        }) {
-            draftText = ""
-            isExpanded = false
+        })
+        if !started {
+            draft.preparationFailed(requestID: requestID)
         }
+    }
+}
+
+/// Owns each inline draft and its request across profile visits. Resetting a
+/// visit invalidates every callback, even when the next visit has the same title.
+@MainActor
+struct InlineTaskDraft {
+    var text = ""
+    var message: String?
+    private(set) var pendingTodo: TodoItem?
+    private var request: (id: UUID, title: String)?
+    private(set) var isSaving = false
+
+    mutating func reset() {
+        self = Self()
+    }
+
+    mutating func begin(todo: TodoItem) -> UUID {
+        let id = UUID()
+        request = (id, text.trimmingCharacters(in: .whitespacesAndNewlines))
+        isSaving = true
+        pendingTodo = todo
+        message = nil
+        return id
+    }
+
+    /// False means a previous request completed after its draft was reset.
+    @discardableResult
+    mutating func finish(_ result: ConvexWriteResult, requestID: UUID) -> Bool {
+        guard let current = request, current.id == requestID else { return false }
+        isSaving = false
+        if !result.isRetryable {
+            request = nil
+            pendingTodo = nil
+        }
+        if result.isOk {
+            if text.trimmingCharacters(in: .whitespacesAndNewlines) == current.title { text = "" }
+        } else {
+            message = result.userMessage(operation: "Task")
+        }
+        return true
+    }
+
+    mutating func preparationFailed(requestID: UUID) {
+        guard request?.id == requestID else { return }
+        request = nil
+        isSaving = false
+        pendingTodo = nil
     }
 }

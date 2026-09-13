@@ -120,11 +120,11 @@ enum ConvexWriteFailure: Sendable, Equatable {
         case .profileBindingRequired:
             "the device credential must be paired to this profile"
         case .revisionRequired:
-            "the task must refresh before it can be changed"
+            "refresh this entry before changing it"
         case .staleWrite:
-            "the task changed on another device"
+            "the entry changed on another device"
         case .entityUnavailable:
-            "the task is no longer available"
+            "the entry is no longer available"
         case let .http(status):
             "HTTP \(status)"
         }
@@ -188,9 +188,9 @@ extension ConvexWriteResult {
 
         case let writeback as AppWritebackError:
             switch writeback {
-            case .notConfigured, .invalidPairingURL:
-                // No paired-device credential exists, or the one we have can no
-                // longer be claimed. Android refuses the same state up front.
+            case .notConfigured:
+                return .notConfigured
+            case .invalidPairingURL:
                 return .unauthorized
             case .invalidBaseURL:
                 return .notConfigured
@@ -217,7 +217,7 @@ extension ConvexWriteResult {
                 case .entityDeleted, .entityNotFound:
                     return .failed(.entityUnavailable)
                 case .ownerMismatch, .ownerSourceMismatch:
-                    return .failed(.ownerMismatch(field: "todo"))
+                    return .failed(.ownerMismatch(field: "entry"))
                 case .validationFailed:
                     return .failed(.serverRejected)
                 }
@@ -308,9 +308,9 @@ extension ConvexWriteResult {
         case .ok:
             nil
         case .unauthorized:
-            "The sync credential is missing or was rejected"
+            "This device is not allowed to save this change. Open Sync Setup."
         case .notConfigured:
-            "\(operation) writing is not configured"
+            "Pair this device in Sync Setup before saving."
         case .disabled:
             "\(operation) writing is disabled"
         case .missing:

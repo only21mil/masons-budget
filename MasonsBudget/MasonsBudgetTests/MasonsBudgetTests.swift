@@ -448,11 +448,11 @@ final class MasonsBudgetTests: XCTestCase {
     func testWriteCauseCopyMatchesAndroid() {
         XCTAssertEqual(
             ConvexWriteResult.unauthorized.userMessage(operation: "Transaction"),
-            "The sync credential is missing or was rejected",
+            "This device is not allowed to save this change. Open Sync Setup.",
         )
         XCTAssertEqual(
             ConvexWriteResult.notConfigured.userMessage(operation: "Transaction"),
-            "Transaction writing is not configured",
+            "Pair this device in Sync Setup before saving.",
         )
         XCTAssertEqual(
             ConvexWriteResult.disabled.userMessage(operation: "Transaction"),
@@ -508,7 +508,7 @@ final class MasonsBudgetTests: XCTestCase {
             ConvexWriteResult.classify(TransactionWriteValidationError.incomeMustBePositive(owner: .victor)),
             .failed(.invalidAmount(field: "transaction.amount")),
         )
-        XCTAssertEqual(ConvexWriteResult.classify(AppWritebackError.notConfigured), .unauthorized)
+        XCTAssertEqual(ConvexWriteResult.classify(AppWritebackError.notConfigured), .notConfigured)
         XCTAssertEqual(
             ConvexWriteResult.classify(AppWritebackError.credentialStorageFailed),
             .failed(.credentialStorage),
@@ -543,7 +543,7 @@ final class MasonsBudgetTests: XCTestCase {
         let id = store.begin("Save transaction")
         store.complete("Save transaction", id: id, result: .unauthorized, retry: { didRetry = true })
 
-        XCTAssertEqual(store.lastError, "The sync credential is missing or was rejected")
+        XCTAssertEqual(store.lastError, "This device is not allowed to save this change. Open Sync Setup.")
         XCTAssertFalse(store.canRetry)
 
         store.retry()
@@ -562,7 +562,7 @@ final class MasonsBudgetTests: XCTestCase {
         XCTAssertEqual(tally.failed, 1)
         XCTAssertEqual(
             tally.summary(operation: "Transaction"),
-            "1 of 3 did not sync — The sync credential is missing or was rejected",
+            "1 of 3 did not sync — This device is not allowed to save this change. Open Sync Setup.",
         )
     }
 

@@ -16,6 +16,8 @@ struct TransactionDetailView: View {
     @State private var note: String
     @State private var date: Date
     @State private var showingDeleteConfirmation = false
+    @State private var isSaving = false
+    @State private var writeMessage: String?
 
     init(transaction: Transaction) {
         _categories = Query(
@@ -48,6 +50,9 @@ struct TransactionDetailView: View {
         ScrollView {
             VStack(spacing: AppLayout.cardSpacing) {
                 ScreenHeader(title: "Transaction", eyebrow: transaction.createdBy.uppercased())
+                if let writeMessage {
+                    Text(writeMessage).foregroundStyle(theme.warn).padding(.horizontal, AppLayout.sectionPadding)
+                }
 
                 VStack(spacing: 0) {
                     editRow("Merchant") {
@@ -148,6 +153,8 @@ struct TransactionDetailView: View {
                         .foregroundStyle(theme.accent)
                 }
             }
+            .disabled(isSaving)
+            .interactiveDismissDisabled(isSaving)
             .confirmationDialog(
                 "Delete \(transaction.merchant)?",
                 isPresented: $showingDeleteConfirmation,
@@ -205,22 +212,23 @@ struct TransactionDetailView: View {
     }
 
     private func deleteTransaction() {
-        let owner = transaction.ownerMember
-        let id = transaction.id
-        let baseUpdatedAtMs = transaction.updatedAtMs
-        modelContext.delete(transaction)
-        guard LocalMutationSave.perform(operation: "Delete transaction", in: modelContext, rollbackMutation: {
-            modelContext.insert(transaction)
-        }, remoteWrite: {
-            AppWriteSyncService.deleteTransaction(
-                id: id,
-                owner: owner,
-                baseUpdatedAtMs: baseUpdatedAtMs
-            )
-        }) else {
-            return
+        guard !isSaving else { return }
+        isSaving = true
+        writeMessage = nil
+        AppWriteSyncService.deleteTransaction(transaction, owner: transaction.ownerMember) { result in
+            isSaving = false
+            guard result.isOk else {
+                writeMessage = result.userMessage(operation: "Delete transaction")
+                return
+            }
+            modelContext.delete(transaction)
+            do {
+                try modelContext.save()
+                dismiss()
+            } catch {
+                writeMessage = "Deleted online. Refresh to update this device."
+            }
         }
-        dismiss()
     }
 
     private func save() {
@@ -231,49 +239,61 @@ struct TransactionDetailView: View {
         // Write-path parse: pinned POSIX locale so dot-decimal entry can't
         // inflate in comma-decimal device regions.
         guard let amount = Decimal(string: cleanAmount, locale: Locale(identifier: "en_US_POSIX")) else { return }
-        let previousMerchant = transaction.merchant
-        let previousCategory = transaction.category
-        let previousAmount = transaction.amount
-        let previousCard = transaction.card
-        let previousBitcoinAccountKey = transaction.bitcoinAccountKey
-        let previousNote = transaction.note
-        let previousDate = transaction.date
-        let previousOwner = transaction.owner
-
-        transaction.merchant = merchant.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? transaction.merchant : merchant
-        transaction.category = category.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Other" : category
-        transaction.amount = amount
-        // No longer unconditional: it used to stamp retired values onto
-        // untagged rows on every save. Only a real selection writes, and a
-        // cleared selection (None) writes nil so the row becomes untagged.
-        if let method {
-            if methodOptions.contains(where: { $0.wire == method }) {
-                transaction.card = method
+        guard !isSaving else { return }
+        // Keep the persisted row unchanged while the edited draft is pending.
+        let candidate = Transaction(
+            id: transaction.id, date: date,
+            merchant: merchant.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? transaction.merchant : merchant,
+            amount: amount, category: category.isEmpty ? "Other" : category,
+            amountSats: transaction.amountSats, enteredInBitcoin: transaction.enteredInBitcoin,
+            card: method, bitcoinAccountKey: transaction.bitcoinAccountKey,
+            note: note.isEmpty ? nil : note, owner: transaction.ownerMember.ledgerOwner,
+            createdBy: transaction.createdBy, createdAt: transaction.createdAt,
+            sourceFile: transaction.sourceFile, updatedAtMs: transaction.updatedAtMs,
+        )
+        isSaving = true
+        writeMessage = nil
+        TransactionDetailWriteFlow.save(transaction, candidate: candidate) { result in
+            isSaving = false
+            guard result.isOk else {
+                writeMessage = result.userMessage(operation: "Transaction")
+                return
             }
-        } else {
-            transaction.card = nil
+            do {
+                try modelContext.save()
+                dismiss()
+            } catch {
+                writeMessage = "Saved online. Refresh to update this device."
+            }
         }
-        // The stored Bitcoin account round-trips untouched: the picker fence
-        // keeps Bitcoin-native wires to rows that already carry one, and a
-        // posted sat movement cannot change accounts on an edit.
-        transaction.bitcoinAccountKey = previousBitcoinAccountKey
-        transaction.note = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : note
-        transaction.date = date
-        transaction.ownerMember = transaction.ownerMember.ledgerOwner
-        guard LocalMutationSave.perform(operation: "Transaction", in: modelContext, rollbackMutation: {
-            transaction.merchant = previousMerchant
-            transaction.category = previousCategory
-            transaction.amount = previousAmount
-            transaction.card = previousCard
-            transaction.bitcoinAccountKey = previousBitcoinAccountKey
-            transaction.note = previousNote
-            transaction.date = previousDate
-            transaction.owner = previousOwner
-        }, remoteWrite: {
-            AppWriteSyncService.pushTransaction(transaction, owner: transaction.ownerMember)
-        }) else {
-            return
+    }
+}
+
+/// The persisted row changes only after the remote draft has been accepted.
+@MainActor
+enum TransactionDetailWriteFlow {
+    typealias Writer = @MainActor (Transaction, @escaping @MainActor @Sendable (ConvexWriteResult) -> Void) -> Void
+
+    static func save(
+        _ transaction: Transaction,
+        candidate: Transaction,
+        writer: Writer? = nil,
+        onResult: @escaping @MainActor @Sendable (ConvexWriteResult) -> Void,
+    ) {
+        let complete: @MainActor @Sendable (ConvexWriteResult) -> Void = { result in
+            if result.isOk {
+                transaction.merchant = candidate.merchant
+                transaction.category = candidate.category
+                transaction.amount = candidate.amount
+                transaction.card = candidate.card
+                transaction.note = candidate.note
+                transaction.date = candidate.date
+                transaction.owner = candidate.owner
+                transaction.updatedAtMs = candidate.updatedAtMs
+            }
+            onResult(result)
         }
-        dismiss()
+        if let writer { writer(candidate, complete) }
+        else { AppWriteSyncService.pushTransaction(candidate, owner: candidate.ownerMember, onResult: complete) }
     }
 }
