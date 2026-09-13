@@ -419,6 +419,8 @@ struct BitcoinTransferView: View {
             VStack(spacing: AppLayout.cardSpacing) {
                 ScreenHeader(title: "Transfer", eyebrow: "Between Bitcoin accounts")
                 DeviceWriteSetupPrompt()
+                    .ledgerType(.button)
+                    .tint(theme.accent)
                 VStack(spacing: 0) {
                     accountPicker("FROM", selection: $sourceKey)
                     Hairline()
@@ -429,7 +431,14 @@ struct BitcoinTransferView: View {
                     satsField("Network fee (sats)", text: $fee)
                     Text("Charged to the From account.").ledgerType(.rowMeta).foregroundStyle(theme.textMuted).padding(.horizontal, 14)
                     Hairline()
-                    DatePicker("Date", selection: $date, displayedComponents: .date).padding(14)
+                    HStack {
+                        Text("DATE").ledgerType(.kpiLabel).foregroundStyle(theme.textMuted)
+                        Spacer()
+                        DatePicker("Date", selection: $date, displayedComponents: .date)
+                            .labelsHidden()
+                            .tint(theme.accent)
+                    }
+                    .padding(14)
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                 .padding(.horizontal, ledgerTokens.metrics.screenGutter)
@@ -443,16 +452,31 @@ struct BitcoinTransferView: View {
         }
         .background(theme.bg)
         .disabled(isSaving)
-        .navigationTitle("Transfer")
+        #if os(iOS)
+            .toolbar(.hidden, for: .navigationBar)
+        #endif
         .interactiveDismissDisabled(isSaving)
         .safeAreaInset(edge: .bottom) {
             HStack {
-                Button("Cancel") { dismiss() }.disabled(isSaving)
+                Button("Cancel") { dismiss() }
+                    .ledgerType(.button)
+                    .tint(theme.accent)
+                    .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                    .disabled(isSaving)
                 Spacer()
-                Button(isSaving ? "Saving" : "Save transfer", action: save).buttonStyle(.borderedProminent).disabled(!canSave)
+                Button(isSaving ? "Saving" : "Save transfer", action: save)
+                    .ledgerType(.button)
+                    .buttonStyle(.borderedProminent)
+                    .tint(theme.accentFill)
+                    .foregroundStyle(theme.onAccent)
+                    .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                    .disabled(!canSave)
             }
             .padding(ledgerTokens.metrics.screenGutter).background(theme.surface)
         }
+        // This sheet owns its header rather than inheriting the presenting tab's title.
+        .environment(\.ledgerRootTitle, nil)
+        .environment(\.ledgerRootAccessory, nil)
     }
 
     private func accountPicker(_ label: String, selection: Binding<String>) -> some View {
@@ -464,6 +488,9 @@ struct BitcoinTransferView: View {
                 ForEach(accounts, id: \.key) { Text("\($0.label) · \($0.sats) sats").tag($0.key) }
             }
             .labelsHidden()
+            .ledgerType(.button)
+            .tint(theme.accent)
+            .frame(minHeight: LedgerMetrics.minimumHitTarget)
         }
         .padding(14)
     }
