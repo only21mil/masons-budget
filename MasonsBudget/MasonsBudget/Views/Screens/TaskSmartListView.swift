@@ -274,6 +274,11 @@ struct TaskSmartListView: View {
     @Query(sort: \TodoItem.dueDate) private var allTodos: [TodoItem]
     @State private var showingDraft = false
 
+    init(filter: SmartListFilter, initiallyAdding: Bool = false) {
+        self.filter = filter
+        _showingDraft = State(initialValue: initiallyAdding)
+    }
+
     private var activeMember: FamilyMember {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
     }
