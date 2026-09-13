@@ -29,14 +29,21 @@ final class ConvexSyncServiceTests: XCTestCase {
     func testAdultNetWorthSnapshotExcludesChildBalance() throws {
         let defaults = UserDefaults.standard
         let previousMember = defaults.object(forKey: ConvexSyncService.selectedMemberKey)
-        let previousBTCPrice = defaults.object(forKey: BTCPriceService.priceKey)
+        let previousQuoteSnapshot = defaults.object(forKey: MarketQuoteService.cacheKey)
         defer {
             restore(previousMember, forKey: ConvexSyncService.selectedMemberKey, in: defaults)
-            restore(previousBTCPrice, forKey: BTCPriceService.priceKey, in: defaults)
+            restore(previousQuoteSnapshot, forKey: MarketQuoteService.cacheKey, in: defaults)
         }
 
         defaults.set(FamilyMember.rachel.rawValue, forKey: ConvexSyncService.selectedMemberKey)
-        defaults.set(100_000, forKey: BTCPriceService.priceKey)
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let quoteSnapshot = MarketQuoteSnapshot(quotes: [
+            MarketQuote(symbol: .btc, priceCents: 10_000_000, source: "Unit test", fetchedAt: timestamp, status: .live),
+            MarketQuote(symbol: .voo, priceCents: nil, source: "Unit test", fetchedAt: nil, status: .unavailable),
+            MarketQuote(symbol: .ibit, priceCents: nil, source: "Unit test", fetchedAt: nil, status: .unavailable),
+        ], complete: true)
+        defaults.set(try JSONEncoder().encode(quoteSnapshot), forKey: MarketQuoteService.cacheKey)
+        XCTAssertEqual(try XCTUnwrap(BTCPriceService.storedPrice), 100_000)
 
         let schema = Schema([
             BTCAccount.self,
