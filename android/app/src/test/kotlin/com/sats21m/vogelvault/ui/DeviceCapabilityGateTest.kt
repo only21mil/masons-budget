@@ -46,6 +46,30 @@ class DeviceCapabilityGateTest {
     }
 
     @Test
+    fun `task-only phone disables pinned transaction save and preserves close`() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java)
+        controller.get().setTheme(R.style.Theme_VogelVault)
+        controller.setup()
+        try {
+            PaymentSourceStore(controller.get()).select(PaymentSource.DEFAULT)
+            controller.get().setContent {
+                VogelVaultTheme {
+                    AddTransactionSheet(VaultUiState(
+                        activeProfile = FamilyMember.RACHEL,
+                        data = Fixtures.envelope(FamilyMember.RACHEL, Freshness.LIVE),
+                    ), onDismiss = {})
+                }
+            }
+            compose.onNodeWithText("This phone has read-only access to transactions.").assertExists()
+            compose.onNodeWithText(controller.get().getString(R.string.add_transaction_save)).assertIsNotEnabled()
+            compose.onNodeWithText(controller.get().getString(R.string.add_transaction_merchant)).assertDoesNotExist()
+            compose.onNodeWithText("Close").assertExists()
+        } finally {
+            controller.pause().stop().destroy()
+        }
+    }
+
+    @Test
     fun `task-only phone explains refused buy before showing editable fields`() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java)
         controller.get().setTheme(R.style.Theme_VogelVault)

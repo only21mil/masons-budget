@@ -5,22 +5,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -34,8 +32,6 @@ import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
-import com.sats21m.vogelvault.ui.theme.VaultSpace
-import java.time.LocalDate
 import java.util.UUID
 
 internal const val BTC_TRANSFER_ACTION_TEST_TAG = "btc-transfer-action"
@@ -77,7 +73,7 @@ internal fun BtcTransferEntrySheet(
     val transferId = remember(BTC_TRANSFER_SOURCE_FILE) {
         transferDraftIds?.currentId(BTC_TRANSFER_SOURCE_FILE) ?: "android-${UUID.randomUUID()}"
     }
-    var date by rememberSaveable(viewer) { mutableStateOf(LocalDate.now().toString()) }
+    var date by rememberSaveable(viewer) { mutableStateOf(ledgerToday().toString()) }
     var fromAccountKey by rememberSaveable(viewer, accountKeys) {
         mutableStateOf(accountKeys.firstOrNull().orEmpty())
     }
@@ -90,62 +86,10 @@ internal fun BtcTransferEntrySheet(
     var message by remember { mutableStateOf<String?>(null) }
     var submitting by remember { mutableStateOf(false) }
 
-    ModalBottomSheet(
+    LedgerSheet(
+        title = stringResource(R.string.btc_transfer_editor_title),
         onDismissRequest = { if (!submitting) onDismiss() },
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
-        ) {
-            Text(
-                stringResource(R.string.btc_transfer_editor_title),
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(stringResource(R.string.btc_transfer_editor_detail))
-            TransferEditorField(
-                value = date,
-                onValueChange = { date = it },
-                label = stringResource(R.string.btc_transfer_date_label),
-            )
-            if (eligibleAccounts.size < 2) {
-                Text(
-                    stringResource(R.string.btc_transfer_accounts_unavailable),
-                    color = LocalLedgerTheme.current.colors.loss,
-                )
-            } else {
-                BtcAccountPicker(
-                    label = stringResource(R.string.btc_transfer_from_account_label),
-                    selected = eligibleAccounts.firstOrNull { it.key == fromAccountKey },
-                    accounts = eligibleAccounts,
-                    onSelected = { fromAccountKey = it.key },
-                )
-                BtcAccountPicker(
-                    label = stringResource(R.string.btc_transfer_to_account_label),
-                    selected = eligibleAccounts.firstOrNull { it.key == toAccountKey },
-                    accounts = eligibleAccounts,
-                    onSelected = { toAccountKey = it.key },
-                )
-                TransferEditorField(
-                    value = sats,
-                    onValueChange = { sats = it },
-                    label = stringResource(R.string.btc_transfer_sats_label),
-                    keyboardType = KeyboardType.Number,
-                )
-                TransferEditorField(
-                    value = feeSats,
-                    onValueChange = { feeSats = it },
-                    label = stringResource(R.string.btc_transfer_fee_label),
-                    keyboardType = KeyboardType.Number,
-                )
-                TransferEditorField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = stringResource(R.string.btc_transfer_note_label),
-                )
-            }
-            message?.let { Text(it, color = LocalLedgerTheme.current.colors.loss) }
+        actions = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -199,7 +143,52 @@ internal fun BtcTransferEntrySheet(
                     },
                 )
             }
+        },
+    ) {
+        Text(stringResource(R.string.btc_transfer_editor_detail))
+        LedgerDateField(
+            value = date,
+            enabled = !submitting,
+            onValueChange = { date = it },
+            label = stringResource(R.string.btc_transfer_date_label),
+        )
+        if (eligibleAccounts.size < 2) {
+            Text(
+                stringResource(R.string.btc_transfer_accounts_unavailable),
+                color = LocalLedgerTheme.current.colors.loss,
+            )
+        } else {
+            BtcAccountPicker(
+                label = stringResource(R.string.btc_transfer_from_account_label),
+                selected = eligibleAccounts.firstOrNull { it.key == fromAccountKey },
+                accounts = eligibleAccounts,
+                onSelected = { fromAccountKey = it.key },
+            )
+            BtcAccountPicker(
+                label = stringResource(R.string.btc_transfer_to_account_label),
+                selected = eligibleAccounts.firstOrNull { it.key == toAccountKey },
+                accounts = eligibleAccounts,
+                onSelected = { toAccountKey = it.key },
+            )
+            TransferEditorField(
+                value = sats,
+                onValueChange = { sats = it },
+                label = stringResource(R.string.btc_transfer_sats_label),
+                keyboardType = KeyboardType.Number,
+            )
+            TransferEditorField(
+                value = feeSats,
+                onValueChange = { feeSats = it },
+                label = stringResource(R.string.btc_transfer_fee_label),
+                keyboardType = KeyboardType.Number,
+            )
+            TransferEditorField(
+                value = note,
+                onValueChange = { note = it },
+                label = stringResource(R.string.btc_transfer_note_label),
+            )
         }
+        message?.let { Text(it, color = LocalLedgerTheme.current.colors.loss) }
     }
 }
 
@@ -214,12 +203,12 @@ private fun BtcAccountPicker(
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium)
         Box {
-            VaultButton(
-                label = selected?.let { "${it.displayLabel()} · ${Money.formatSats(it.sats)}" }
-                    ?: stringResource(R.string.btc_transfer_select_account),
+            androidx.compose.material3.OutlinedButton(
                 onClick = { expanded = true },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(com.sats21m.vogelvault.ui.theme.LedgerRadii.control),
                 modifier = Modifier.fillMaxWidth(),
-            )
+            ) { Text(selected?.let { "${it.displayLabel()} · ${Money.formatSats(it.sats)}" }
+                    ?: stringResource(R.string.btc_transfer_select_account)) }
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },

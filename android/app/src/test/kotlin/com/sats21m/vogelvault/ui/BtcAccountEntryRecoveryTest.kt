@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -85,7 +86,7 @@ class BtcAccountEntryRecoveryTest {
             assertEquals(app.poster.bodies[0], app.poster.bodies[1])
             assertNull(BtcAccountDraftStore(preferences).current(FamilyMember.RACHEL))
             compose.onNodeWithText(original.label).assertIsEnabled()
-            compose.onNodeWithText("✓ Exchange").assertExists()
+            compose.onNodeWithText("Exchange").assertIsSelected()
             compose.onNodeWithText(original.label).performTextReplacement("Corrected account")
             app.poster.response = HttpTextResponse(200, """{"status":"success","value":{"ok":true}}""")
             compose.onNodeWithText("Save").performSemanticsAction(SemanticsActions.OnClick) { it() }
