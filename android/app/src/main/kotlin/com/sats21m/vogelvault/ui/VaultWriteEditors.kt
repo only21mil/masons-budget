@@ -356,6 +356,7 @@ internal fun budgetProgressAccessibilityLabel(
 ): String =
     "${category.name}, ${Money.formatUsd(category.spentCents)} spent of " +
         "${Money.formatUsd(category.budgetCents)} planned, " +
+        "${Money.formatUsd(category.remainingCents)} remaining, " +
         "${progress.statusLabel}, ${progress.percentageLabel}"
 
 internal fun btcBuyWriteRequest(
@@ -395,7 +396,7 @@ internal fun btcBuyWriteRequest(
 }
 
 /**
- * The handoff category row: name and spent figure, a 3dp bar, then `OF <planned>`.
+ * Category remaining amount and planned limit, followed by the spend progress bar.
  *
  * The whole row opens the drilldown, where editing lives, so there is no badge,
  * no percent text, and no edit link. The bar fills over 300ms when the fraction
@@ -456,11 +457,15 @@ internal fun EditableBudgetCategoryRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Text(
-                    Money.formatUsd(category.spentCents),
-                    style = tokens.type.rowFigure,
-                    color = if (over) colors.loss else colors.foreground,
-                )
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "${Money.formatUsd(category.remainingCents)} left",
+                        style = tokens.type.rowFigure,
+                        color = if (over) colors.loss else colors.foreground,
+                    )
+                    Text("OF ${Money.formatUsd(category.budgetCents)} planned",
+                        style = tokens.type.rowMeta, color = colors.foregroundTertiary)
+                }
             }
             Box(
                 Modifier
@@ -475,11 +480,6 @@ internal fun EditableBudgetCategoryRow(
                         .background(barColor),
                 )
             }
-            Text(
-                "OF ${Money.formatUsd(category.budgetCents)}",
-                style = tokens.type.rowMeta,
-                color = colors.foregroundTertiary,
-            )
         }
     }
 }
