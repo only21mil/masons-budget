@@ -14,7 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.testTag
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -144,11 +144,12 @@ internal fun LedgerPanes(
 internal fun rememberLedgerHinge(): LedgerHinge? {
     val context = LocalContext.current
     val density = LocalDensity.current
-    val hinge by produceState<LedgerHinge?>(null, context, density) {
-        val activity = context.activity() ?: return@produceState
+    var hinge by remember { mutableStateOf<LedgerHinge?>(null) }
+    LaunchedEffect(context, density) {
+        val activity = context.activity() ?: return@LaunchedEffect
         WindowInfoTracker.getOrCreate(context).windowLayoutInfo(activity).collect { info ->
             val feature = info.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull { it.isSeparating }
-            value = feature?.let {
+            hinge = feature?.let {
                 with(density) {
                     if (it.orientation == FoldingFeature.Orientation.HORIZONTAL) {
                         LedgerHinge(it.bounds.top.toDp(), it.bounds.bottom.toDp(), true)
