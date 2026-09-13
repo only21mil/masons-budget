@@ -201,6 +201,7 @@
 		A8842AB993A3B57408404D4E /* ProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E87F8471A5178129ADC32F6 /* ProjectsView.swift */; };
 		A8ED76C861DCA518890FB6A2 /* listTodos.convex_encoded_json.json in Resources */ = {isa = PBXBuildFile; fileRef = 5B1D5B4D12045D8F03AA2B7B /* listTodos.convex_encoded_json.json */; };
 		A926EBA0625AC1BA2DC2BC1B /* ConvexWriteResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0A3F46E4A07D5AA25C0F87E /* ConvexWriteResult.swift */; };
+		A93614425BE18FD24BA3B6F6 /* CanonicalFinancialSourceStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12C10A597494A7C840FC49B8 /* CanonicalFinancialSourceStoreTests.swift */; };
 		A97366A2EB4EA2FFDBA47FA5 /* Hairline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 598608F085B0A81286803F0F /* Hairline.swift */; };
 		A9879A70BEBAAD08D3FA3628 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6D0182EA2E13DE22F30E4E71 /* README.md */; };
 		A9C97F4F24814C2915C6BAD1 /* ConvexSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C3385DCCF03F3E6D6FE6C7 /* ConvexSyncService.swift */; };
@@ -296,6 +297,7 @@
 		08E8E973EE7F78352B998034 /* ConvexConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexConfigTests.swift; sourceTree = "<group>"; };
 		0DBCCD025DF53FB5AB826594 /* TasksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TasksView.swift; sourceTree = "<group>"; };
 		0F3F8A436874CF43D7C27027 /* listBtcAccounts.convex_encoded_json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = listBtcAccounts.convex_encoded_json.json; sourceTree = "<group>"; };
+		12C10A597494A7C840FC49B8 /* CanonicalFinancialSourceStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanonicalFinancialSourceStoreTests.swift; sourceTree = "<group>"; };
 		130D186945E2F17AE4A79132 /* MC2DTOs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MC2DTOs.swift; sourceTree = "<group>"; };
 		1457DFCCCA2D3246BB67236D /* SHA256SUMS */ = {isa = PBXFileReference; path = SHA256SUMS; sourceTree = "<group>"; };
 		1548F69DA102C9E89909A9D9 /* rowCounts.json.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = rowCounts.json.json; sourceTree = "<group>"; };
@@ -508,6 +510,7 @@
 				2C99959F828240EDC6CE7CB4 /* AppleScreenAdoptionTests.swift */,
 				661693167D7791B43DA9AA2D /* AppWritebackConfigTests.swift */,
 				39F9FEE550CB799FCADD40AF /* BudgetMonthScopingTests.swift */,
+				12C10A597494A7C840FC49B8 /* CanonicalFinancialSourceStoreTests.swift */,
 				08E8E973EE7F78352B998034 /* ConvexConfigTests.swift */,
 				3250E7396C07FAB87774D194 /* ConvexInt64WireTests.swift */,
 				AC71D565300376FE836CAA75 /* ConvexRowsTests.swift */,
@@ -1062,6 +1065,7 @@
 				25D761D3D754B167202F23A7 /* BudgetCategory.swift in Sources */,
 				07D0AA232411368DDBE5A262 /* BudgetMonthScopingTests.swift in Sources */,
 				FF53E751B802F5EFB8382F76 /* BudgetView.swift in Sources */,
+				A93614425BE18FD24BA3B6F6 /* CanonicalFinancialSourceStoreTests.swift in Sources */,
 				3C5D681E2D464F77A40D8608 /* CategoryDetailView.swift in Sources */,
 				3F55B3C03BBD1E4EE61A0DC2 /* ContentView.swift in Sources */,
 				8B7D4660455866A0008B1DA6 /* ConvexClient.swift in Sources */,

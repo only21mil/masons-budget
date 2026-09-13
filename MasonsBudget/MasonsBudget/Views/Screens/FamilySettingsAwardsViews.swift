@@ -139,6 +139,7 @@ struct FamilyView: View {
 }
 
 struct SettingsView: View {
+    @AppStorage(ConvexSyncService.lastSyncKey) private var lastSync: Double = 0
     @Environment(\.theme) private var theme
     @AppStorage("appearance_mode") private var appearanceRaw = AppearanceMode.system.rawValue
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
@@ -196,6 +197,19 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
+                .padding(.horizontal, AppLayout.sectionPadding)
+
+                HStack {
+                    Text("Last successful sync")
+                        .ledgerType(.rowPrimary)
+                    Spacer()
+                    Text(lastSync > 0
+                        ? Date(timeIntervalSince1970: lastSync).formatted(date: .abbreviated, time: .shortened)
+                        : "Not synced yet")
+                        .ledgerType(.rowMeta)
+                        .foregroundStyle(theme.textMuted)
+                }
+                .glassCard()
                 .padding(.horizontal, AppLayout.sectionPadding)
 
                 ledgerEffectsCard

@@ -5,6 +5,7 @@ struct OnboardingView: View {
     @AppStorage("has_completed_onboarding") private var hasCompletedOnboarding = false
     @Environment(\.theme) var theme
     @State private var stepIndex = 0
+    @State private var showSyncSetup = false
 
     private var step: OnboardingStep {
         OnboardingStep.all[stepIndex]
@@ -62,7 +63,7 @@ struct OnboardingView: View {
                 Button {
                     advance()
                 } label: {
-                    Text(stepIndex == OnboardingStep.all.count - 1 ? "Open Vogel Vault" : "Continue")
+                    Text(stepIndex == OnboardingStep.all.count - 1 ? "Open Sync Setup" : "Continue")
                         .ledgerType(.button)
                         .foregroundStyle(theme.onAccent)
                         .frame(maxWidth: .infinity)
@@ -71,6 +72,13 @@ struct OnboardingView: View {
                         .clipShape(RoundedRectangle(cornerRadius: AppLayout.radiusSmall))
                 }
                 .padding(.horizontal, AppLayout.sectionPadding)
+
+                if stepIndex == OnboardingStep.all.count - 1 {
+                    Button("Set up later") { finish() }
+                        .ledgerType(.rowPrimary)
+                        .foregroundStyle(theme.textMuted)
+                        .frame(minHeight: 44)
+                }
 
                 if stepIndex > 0 {
                     Button("Back") { stepIndex -= 1 }
@@ -81,14 +89,28 @@ struct OnboardingView: View {
             }
             .padding(.bottom, 28)
         }
+        .sheet(isPresented: $showSyncSetup, onDismiss: { finish() }) {
+            NavigationStack {
+                SyncSetupView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showSyncSetup = false }
+                        }
+                    }
+            }
+        }
+    }
+
+    private func finish() {
+        hasCompletedOnboarding = true
+        dismiss()
     }
 
     private func advance() {
         if stepIndex < OnboardingStep.all.count - 1 {
             stepIndex += 1
         } else {
-            hasCompletedOnboarding = true
-            dismiss()
+            showSyncSetup = true
         }
     }
 }
