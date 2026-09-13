@@ -66,11 +66,12 @@ final class AppleScreenAdoptionTests: XCTestCase {
         )
     }
 
-    func testOnboardingHasThreeAuthoredSteps() {
-        XCTAssertEqual(OnboardingStep.all.count, 3)
-        XCTAssertEqual(OnboardingStep.all.map(\.eyebrow), ["01 · LEDGER", "02 · FAMILY", "03 · READY"])
-        XCTAssertEqual(OnboardingStep.progressLabel(for: 0), "Step 1 of 3")
-        XCTAssertEqual(OnboardingStep.progressLabel(for: 2), "Step 3 of 3")
+    func testOnboardingEndsWithSyncSetup() {
+        XCTAssertEqual(OnboardingStep.all.count, 4)
+        XCTAssertEqual(OnboardingStep.all.map(\.eyebrow), ["01 · LEDGER", "02 · FAMILY", "03 · READY", "04 · CONNECT"])
+        XCTAssertEqual(OnboardingStep.progressLabel(for: 0), "Step 1 of 4")
+        XCTAssertEqual(OnboardingStep.progressLabel(for: 2), "Step 3 of 4")
+        XCTAssertEqual(OnboardingStep.all.last?.title, "Connect your household")
     }
 
     func testMoreCountBadgesHideZeroAndCapLargeCounts() {

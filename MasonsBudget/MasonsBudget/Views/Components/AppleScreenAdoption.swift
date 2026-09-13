@@ -109,6 +109,12 @@ struct OnboardingStep: Equatable {
             message: "Review money out, finish tasks, and move through the Bitcoin ledger from one daily view.",
             icon: "checkmark.circle.fill",
         ),
+        OnboardingStep(
+            eyebrow: "04 · CONNECT",
+            title: "Connect your household",
+            message: "Open Sync Setup to connect this device and load your household data.",
+            icon: "arrow.triangle.2.circlepath",
+        ),
     ]
 
     static func progressLabel(for index: Int) -> String {

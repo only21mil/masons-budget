@@ -826,6 +826,13 @@ enum CanonicalFinancialProjection {
     }
 }
 
+/// Profile and recovery events that restart the root's financial-source task.
+struct CanonicalFinancialLoadID: Equatable {
+    let viewer: FamilyMember
+    let lastReadSuccess: Double
+    let reloadRequest: UUID
+}
+
 /// Shared UI state for sources that must never fall back to an inferred zero.
 @MainActor
 @Observable
@@ -835,36 +842,69 @@ final class CanonicalFinancialSourceStore {
     private(set) var btcBillPays: RequiredFinancialSource<CanonicalBTCBillPayLedger> = .loading
 
     private let reader: ConvexRowReader
+    private var loadGeneration = UUID()
+    private var loadingViewer: FamilyMember?
+    private var reloadRequest = UUID()
 
     init(client: ConvexClient? = nil) {
         let resolvedClient = client ?? ConvexClient(deploymentURL: ConvexConfig.deploymentURL)
         reader = ConvexRowReader(client: resolvedClient)
     }
 
+    func loadID(viewer: FamilyMember, lastReadSuccess: Double) -> CanonicalFinancialLoadID {
+        CanonicalFinancialLoadID(
+            viewer: viewer,
+            lastReadSuccess: lastReadSuccess,
+            reloadRequest: reloadRequest,
+        )
+    }
+
+    /// Setup sheets share this signal with the root's lifecycle-owned task.
+    func requestReload() {
+        reloadRequest = UUID()
+    }
+
     func load(viewer: FamilyMember) async {
+        guard !Task.isCancelled else { return }
+        let generation = UUID()
+        loadGeneration = generation
+        loadingViewer = viewer
         btcBalance = .loading
         income = .unavailable
         btcBillPays = .loading
 
         do {
-            btcBalance = try await reader.canonicalBTCBalance(viewer: viewer, scope: .netWorth)
+            let result = try await reader.canonicalBTCBalance(viewer: viewer, scope: .netWorth)
+            guard mayPublish(generation: generation, viewer: viewer) else { return }
+            btcBalance = result
         } catch {
+            guard mayPublish(generation: generation, viewer: viewer) else { return }
             btcBalance = .unavailable
         }
 
         do {
-            income = try await reader.canonicalIncome(viewer: viewer)
+            let result = try await reader.canonicalIncome(viewer: viewer)
+            guard mayPublish(generation: generation, viewer: viewer) else { return }
+            income = result
         } catch {
+            guard mayPublish(generation: generation, viewer: viewer) else { return }
             income = .unavailable
         }
 
         do {
-            btcBillPays = try await reader.canonicalBTCBillPayLedger(
+            let result = try await reader.canonicalBTCBillPayLedger(
                 viewer: viewer,
                 scope: .netWorth,
             )
+            guard mayPublish(generation: generation, viewer: viewer) else { return }
+            btcBillPays = result
         } catch {
+            guard mayPublish(generation: generation, viewer: viewer) else { return }
             btcBillPays = .unavailable
         }
+    }
+
+    private func mayPublish(generation: UUID, viewer: FamilyMember) -> Bool {
+        !Task.isCancelled && loadGeneration == generation && loadingViewer == viewer
     }
 }
