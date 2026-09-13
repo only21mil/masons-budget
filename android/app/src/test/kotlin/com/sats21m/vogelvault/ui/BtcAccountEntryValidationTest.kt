@@ -66,6 +66,23 @@ class BtcAccountEntryValidationTest {
         assertFalse(accountRevisionRejected(com.sats21m.vogelvault.data.ConvexResult.Failed("convex rejection")))
     }
 
+    @Test fun `generated identifiers fit the server contract while retaining household and random suffix`() {
+        for (owner in listOf(FamilyMember.VICTOR, FamilyMember.RACHEL)) {
+            for (name in listOf("a".repeat(243), "a".repeat(16384), "日本語", "Cold card")) {
+                val first = newAccountKey(name, owner)
+                assertTrue(first.length <= 256)
+                assertTrue(first.matches(Regex("[a-z0-9-]+-victor-[a-f0-9]{6}")))
+            }
+        }
+    }
+
+    @Test fun `only explicit validation refusal permits correction without a new revision`() {
+        assertTrue(accountValidationRejected(com.sats21m.vogelvault.data.ConvexResult.Failed("task was rejected as invalid")))
+        for (reason in listOf("transport failure (IOException)", "convex rejection", "http 500", "malformed response envelope", "task changed on another device")) {
+            assertFalse(accountValidationRejected(com.sats21m.vogelvault.data.ConvexResult.Failed(reason)))
+        }
+    }
+
     @Test fun `adding zero account preserves document as of and uses midnight only without a document`() {
         assertEquals("2026-08-01T12:00:00Z", accountAsOf("2026-08-01T12:00:00Z"))
         assertEquals("2026-09-13T00:00:00.000Z", accountAsOf(null, LocalDate.of(2026, 9, 13)))

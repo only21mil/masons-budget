@@ -175,8 +175,13 @@ internal fun BtcAccountEntrySheet(
                     val result = app.deviceMutationClient.mutate(request.mutation())
                     working = false
                     failure = convexWriteFailureMessage("Account not saved", result)
-                    if (accountRevisionRejected(result) && app.btcAccountDrafts.release(viewer, request)) {
-                        conflictedSnapshot = "${request.baseUpdatedAtMs}:${request.asOf}"
+                    if ((accountRevisionRejected(result) || accountValidationRejected(result)) &&
+                        app.btcAccountDrafts.release(viewer, request)) {
+                        label = request.label
+                        custodyWire = request.custodyKey
+                        if (accountRevisionRejected(result)) {
+                            conflictedSnapshot = "${request.baseUpdatedAtMs}:${request.asOf}"
+                        }
                         pending = null
                     }
                     if (result is ConvexResult.Ok) {
@@ -203,7 +208,9 @@ internal fun accountNameError(name: String, accounts: List<BtcAccount>, pendingK
 
 internal fun newAccountKey(name: String, owner: FamilyMember): String {
     val slug = name.trim().lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty { "account" }
-    return "$slug-${owner.ledgerOwner.key}-${UUID.randomUUID().toString().replace("-", "").take(6)}"
+    val suffix = "-${owner.ledgerOwner.key}-${UUID.randomUUID().toString().replace("-", "").take(6)}"
+    // The server caps account identifiers at 256 characters. Keep the retry suffix intact.
+    return "${slug.take(256 - suffix.length)}$suffix"
 }
 
 internal fun accountAsOf(loadedAsOf: String?, today: LocalDate = LocalDate.now()): String =
@@ -223,6 +230,10 @@ internal fun accountRevisionRejected(result: ConvexResult<*>): Boolean =
             ConvexServerRejection.TASK_CHANGED, ConvexServerRejection.REVISION_REQUIRED,
         )
     }
+
+internal fun accountValidationRejected(result: ConvexResult<*>): Boolean =
+    (result as? ConvexResult.Failed)?.failure ==
+        ConvexFailure.ServerRejected(ConvexServerRejection.VALIDATION_REJECTED)
 
 /** Only a complete successful empty read establishes that the create contract is safe. */
 internal fun accountWriteSnapshot(
