@@ -633,10 +633,14 @@ final class ConvexRowsTests: XCTestCase {
         )
         XCTAssertEqual(summary.cents(forMonth: "2026-07"), 3_489_347)
         XCTAssertEqual(summary.cents(forYear: 2026), 3_489_347)
-        XCTAssertNil(
-            try CanonicalFinancialProjection.income(rows: [], complete: true).value,
-            "An empty required income source is unavailable, not a zero-dollar month.",
-        )
+        XCTAssertEqual(summary.rows.map(\.incomeId), ["income-2", "income-1"])
+        XCTAssertEqual(summary.amount(forMonth: "2026-07", emptyLedgerFallback: 1), Decimal(3_489_347) / 100)
+        XCTAssertEqual(summary.amount(forMonth: "2026-08", emptyLedgerFallback: 1), 0)
+        let empty = try XCTUnwrap(CanonicalFinancialProjection.income(rows: [], complete: true).value)
+        XCTAssertTrue(empty.rows.isEmpty)
+        XCTAssertEqual(empty.amount(forMonth: "2026-07", emptyLedgerFallback: 123), 123)
+        XCTAssertNil(empty.amount(forMonth: "2026-07", emptyLedgerFallback: nil))
+        XCTAssertThrowsError(try CanonicalFinancialProjection.income(rows: [], complete: false))
     }
 
     func testBTCBillPaysStayASeparateRequiredLedger() throws {

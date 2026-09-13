@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ActivityView: View {
     @Environment(\.theme) var theme
+    @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
@@ -26,6 +27,7 @@ struct ActivityView: View {
     enum TxFilter: String, CaseIterable {
         case all = "All"
         case income = "Income"
+        case legacyIncome = "Legacy income"
         case spends = "Spends"
         case lightning = "Bolt"
         case onChain = "Chain"
@@ -52,7 +54,8 @@ struct ActivityView: View {
         // matching Android.
         let scoped: [Transaction] = switch filter {
         case .all: visible
-        case .income: visible.filter(\.isIncome)
+        case .income: []
+        case .legacyIncome: visible.filter(\.isIncome)
         case .spends: visible.filter(\.isSpend)
         case .lightning: visible.filter { TransactionSourceCatalog.activityRail(forCard: $0.card) == .lightning }
         case .onChain: visible.filter { TransactionSourceCatalog.activityRail(forCard: $0.card) == .onChain }
@@ -103,12 +106,48 @@ struct ActivityView: View {
                 filterPills
                     .padding(.bottom, AppLayout.cardSpacing)
 
-                transactionGroups
+                if filter == .income {
+                    incomeRows
+                } else {
+                    transactionGroups
+                }
             }
             .padding(.bottom, 100)
         }
         .background(theme.bg)
         .searchable(text: $searchText, prompt: "Search activity")
+    }
+
+    private var incomeRows: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let summary = canonicalFinancials.income.value {
+                let rows = summary.rows.filter {
+                    activeMember.canSee(dataOwnedBy: $0.owner) &&
+                        (searchText.isEmpty || "\($0.source) \($0.note ?? "") \($0.date)".localizedCaseInsensitiveContains(searchText))
+                }
+                if rows.isEmpty {
+                    Text(searchText.isEmpty ? "No income entries yet" : "No matching income")
+                        .ledgerType(.rowPrimary)
+                }
+                ForEach(rows, id: \.incomeId) { row in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(row.source).ledgerType(.rowPrimary)
+                            Text(row.date).ledgerType(.rowMeta)
+                            if let note = row.note { Text(note).ledgerType(.rowMeta) }
+                        }
+                        Spacer()
+                        Text(AppFormatter.formatCurrency(Decimal(row.amountCents) / 100))
+                            .ledgerType(.rowFigure)
+                    }
+                    .glassCard(padding: AppLayout.paddingCompact, radius: AppLayout.radiusMedium)
+                }
+            } else {
+                Text("Income is unavailable. Refresh to try again.").ledgerType(.rowMeta)
+            }
+        }
+        .foregroundStyle(theme.text)
+        .padding(.horizontal, AppLayout.sectionPadding)
     }
 
     // MARK: - Filter Pills
