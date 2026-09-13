@@ -296,7 +296,7 @@ class AndroidFinanceRegressionTest {
 
     @Test
     fun `one selected Bitcoin unit remains selected across financial destinations`() {
-        val destination = mutableStateOf(Destination.BITCOIN)
+        val destination = mutableStateOf(Destination.SETTINGS)
         val displayUnit = mutableStateOf(DisplayUnit.BTC)
         val state = financeState(
             profile = FamilyMember.VICTOR,
@@ -327,16 +327,25 @@ class AndroidFinanceRegressionTest {
         }
         settle()
 
+        contentList().performScrollToNode(hasContentDescription("SATS display unit"))
         compose.onNodeWithContentDescription("SATS display unit").performClick()
         settle()
         compose.onNodeWithContentDescription("SATS display unit").assertIsSelected()
 
-        compose.runOnUiThread { destination.value = Destination.NET_WORTH }
+        compose.runOnUiThread { destination.value = Destination.BITCOIN }
         settle()
-        compose.onNodeWithContentDescription("SATS display unit").assertIsSelected()
+        compose.onNodeWithContentDescription("Total stack, 100 000 000 sats")
+            .fetchSemanticsNode()
 
         compose.runOnUiThread { destination.value = Destination.NET_WORTH }
         settle()
+        contentList().performScrollToNode(hasContentDescription("Bitcoin stack, 100 000 000 sats, estimated figure"))
+        compose.onNodeWithContentDescription("Bitcoin stack, 100 000 000 sats, estimated figure")
+            .fetchSemanticsNode()
+
+        compose.runOnUiThread { destination.value = Destination.SETTINGS }
+        settle()
+        contentList().performScrollToNode(hasContentDescription("SATS display unit"))
         compose.onNodeWithContentDescription("SATS display unit").assertIsSelected()
     }
 

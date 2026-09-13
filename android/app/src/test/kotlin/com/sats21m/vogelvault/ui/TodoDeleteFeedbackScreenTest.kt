@@ -6,6 +6,9 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -267,6 +270,7 @@ class TodoDeleteFeedbackScreenTest {
             }
         }
         settle()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(todo.title))
         assertEquals(1, nodesWithText(todo.title), "the todo under test never rendered")
     }
 

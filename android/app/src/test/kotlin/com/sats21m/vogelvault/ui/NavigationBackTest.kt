@@ -120,6 +120,7 @@ class NavigationBackTest {
         compose.onNodeWithText("Settings").performClick()
         compose.waitForIdle()
         assertEquals(Destination.SETTINGS, destination)
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Family") and hasClickAction())
         compose.onNode(hasText("Family") and hasClickAction()).performScrollTo().performClick()
         compose.waitForIdle()
         assertEquals(Destination.FAMILY, destination)
