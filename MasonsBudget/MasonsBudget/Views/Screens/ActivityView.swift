@@ -9,6 +9,7 @@ struct ActivityView: View {
 
     @Query(sort: \Transaction.date, order: .reverse) private var allTransactions: [Transaction]
 
+    @State private var showingAdd = false
     @State private var filter: TxFilter = .all
     @State private var searchText = ""
 
@@ -116,6 +117,9 @@ struct ActivityView: View {
         }
         .background(theme.bg)
         .searchable(text: $searchText, prompt: "Search activity")
+        .sheet(isPresented: $showingAdd) {
+            AddTransactionView(initialType: filter == .income ? .income : .spend)
+        }
     }
 
     private var incomeRows: some View {
@@ -128,6 +132,9 @@ struct ActivityView: View {
                 if rows.isEmpty {
                     Text(searchText.isEmpty ? "No income entries yet" : "No matching income")
                         .ledgerType(.rowPrimary)
+                    if searchText.isEmpty {
+                        Button("Add income") { showingAdd = true }
+                    }
                 }
                 ForEach(rows, id: \.incomeId) { row in
                     HStack {
@@ -173,6 +180,10 @@ struct ActivityView: View {
 
         LazyVStack(spacing: AppLayout.cardSpacing) {
             if grouped.isEmpty {
+                if !isSearching {
+                    Button("Add transaction") { showingAdd = true }
+                        .accessibilityIdentifier("activity.empty.add")
+                }
                 Text(isSearching ? "No matching transactions" : "No transactions yet")
                     .ledgerType(.rowPrimary)
                     .foregroundStyle(theme.textMuted)
