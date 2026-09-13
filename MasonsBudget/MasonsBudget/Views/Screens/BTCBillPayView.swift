@@ -9,6 +9,10 @@ struct BTCBillPayView: View {
 
     @Query(sort: \BTCBillPay.date, order: .reverse) private var allBillPays: [BTCBillPay]
     @State private var showCompose = false
+    @State private var selectedBillPay: BTCBillPay?
+    @State private var writeMessage: String?
+    @State private var isDeleting = false
+    @Environment(\.modelContext) private var modelContext
 
     private var unit: DisplayUnit {
         DisplayUnit(rawValue: displayUnitRaw) ?? .btc
@@ -34,16 +38,24 @@ struct BTCBillPayView: View {
         ScrollView {
             VStack(spacing: 0) {
                 ScreenHeader(title: "Bill Pay", eyebrow: "Pay Bills in Bitcoin") {
-                    Button("COMPOSE") { showCompose = true }
-                        .ledgerType(.button)
-                        .foregroundStyle(theme.accent)
-                        .buttonStyle(.plain)
+                    if activeMember.isAdult {
+                        Button("COMPOSE") { showCompose = true }
+                            .disabled(!AppWritebackConfig.canWriteBitcoin)
+                            .ledgerType(.button)
+                            .foregroundStyle(theme.accent)
+                            .buttonStyle(.plain)
+                    }
                 }
 
+                if activeMember.isAdult { DeviceWriteSetupPrompt().padding(.horizontal, AppLayout.sectionPadding) }
+                if let writeMessage { Text(writeMessage).foregroundStyle(theme.warn) }
                 summaryCard
                     .padding(.horizontal, AppLayout.sectionPadding)
                     .padding(.bottom, AppLayout.cardSpacing)
 
+                if visibleBillPays.isEmpty && activeMember.isAdult {
+                    Button("Record a bill payment") { showCompose = true }.disabled(!AppWritebackConfig.canWriteBitcoin).padding(AppLayout.sectionPadding)
+                }
                 ForEach(grouped, id: \.0) { month, billPays in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(month.uppercased())
@@ -53,7 +65,9 @@ struct BTCBillPayView: View {
 
                         VStack(spacing: 0) {
                             ForEach(Array(billPays.enumerated()), id: \.element.id) { idx, bp in
-                                billPayRow(bp)
+                                Button { selectedBillPay = bp } label: { billPayRow(bp) }
+                                    .buttonStyle(.plain)
+                                    .disabled(isDeleting)
                                     .ledgerRowReveal(index: idx)
                                 if idx < billPays.count - 1 {
                                     Hairline(indent: 56)
@@ -73,6 +87,24 @@ struct BTCBillPayView: View {
         #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
+        .confirmationDialog("Delete bill payment?", isPresented: Binding(
+            get: { selectedBillPay != nil }, set: { if !$0 { selectedBillPay = nil } }
+        ), titleVisibility: .visible) {
+            if let billPay = selectedBillPay {
+                Button("Delete \(billPay.merchant)", role: .destructive) {
+                    isDeleting = true
+                    AppWriteSyncService.deleteBitcoinEntry(.billPay, id: billPay.id, owner: billPay.ownerMember,
+                                                           baseUpdatedAtMs: billPay.updatedAtMs) { result in
+                        isDeleting = false
+                        if result.isOk {
+                            modelContext.delete(billPay)
+                            do { try modelContext.save() }
+                            catch { writeMessage = "Deleted online. Refresh to update this device." }
+                        } else { writeMessage = result.userMessage(operation: "Delete bill payment") }
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $showCompose) {
             BTCBillPayComposeView()
         }
@@ -159,11 +191,47 @@ struct BTCBillPayView: View {
 struct BTCBillPayComposeView: View {
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
+    @Query(sort: \BudgetCategory.sortOrder) private var budgetCategories: [BudgetCategory]
+    @State private var note = ""
+    @State private var reference = ""
     @State private var merchant = ""
     @State private var amount = ""
     @State private var fee = ""
     @State private var effect: BTCBillPayBudgetEffect = .budgetCategory
     @State private var category = ""
+    @State private var sats = ""
+    @State private var price = ""
+    @State private var date = Date.now
+    @State private var id = UUID().uuidString
+    @State private var isSaving = false
+    @State private var writeMessage: String?
+    @AppStorage("selected_family_member") private var memberRaw = FamilyMember.victor.rawValue
+
+    private var householdCategories: [String] {
+        let member = FamilyMember(rawValue: memberRaw) ?? .victor
+        return budgetCategories.filter { $0.ownerMember.isAdult && member.canSee(dataOwnedBy: $0.ownerMember) }
+            .map { LedgerMapper.wireBudgetCategoryName(from: $0.name, owner: $0.ownerMember) }
+    }
+
+    private var parsedPrice: Decimal { Decimal(string: price, locale: Locale(identifier: "en_US_POSIX")) ?? 0 }
+    private var canSave: Bool {
+        AppWritebackConfig.canWriteBitcoin && !isSaving && (FamilyMember(rawValue: memberRaw)?.isAdult == true) &&
+            !merchant.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && parsedAmount > 0 &&
+            (try? ConvexClient.exactMinorUnits(parsedAmount, field: "billPay.amount")) != nil &&
+            (Int64(sats) ?? 0) > 0 && parsedPrice > 0 &&
+            (try? ConvexClient.exactMinorUnits(parsedPrice, field: "billPay.price")) != nil &&
+            exactFee != nil && (exactFee ?? -1) >= 0 &&
+            (try? ConvexClient.exactMinorUnits(exactFee ?? -1, field: "billPay.fee")) != nil &&
+            (effect == .creditCardPayment || householdCategories.contains(category))
+    }
+
+    private var receiptHint: String? {
+        guard let satsValue = Int64(sats), satsValue > 0, parsedPrice > 0, parsedAmount > 0 else { return nil }
+        let receiptValue = Decimal(satsValue) / 100_000_000 * parsedPrice
+        let difference = receiptValue - parsedAmount
+        guard (difference < 0 ? -difference : difference) > parsedAmount / 100 else { return nil }
+        return "Sats × price is \(AppFormatter.formatCurrency(receiptValue)), not \(AppFormatter.formatCurrency(parsedAmount)). Check the receipt."
+    }
 
     private var parsedAmount: Decimal {
         // Write-path parse: pinned POSIX locale (the entry pad emits
@@ -188,72 +256,80 @@ struct BTCBillPayComposeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: AppLayout.cardSpacing) {
-                    ScreenHeader(title: "Bill Pay", eyebrow: "Compose · River")
+                    ScreenHeader(title: "Record a bill pay", eyebrow: "Already paid through River")
+                    DeviceWriteSetupPrompt()
+                    Text("Record a payment you made in River. Enter the exact sats and fee from its receipt.")
+                        .ledgerType(.rowMeta).padding(.horizontal, AppLayout.sectionPadding)
 
                     VStack(spacing: 0) {
+                        DatePicker("Date", selection: $date, displayedComponents: .date).padding(14)
+                        Hairline()
                         composeField("MERCHANT", prompt: "Payee", text: $merchant)
                         Hairline()
-                        composeField("AMOUNT", prompt: "$0.00", text: $amount)
-                        Hairline()
-                        composeField("FEE", prompt: "Enter exact fee", text: $fee)
-                        Hairline()
                         HStack {
-                            Text("BUDGET")
-                                .ledgerType(.kpiLabel)
-                                .foregroundStyle(theme.textMuted)
+                            Text("BUDGET").ledgerType(.kpiLabel).foregroundStyle(theme.textMuted)
                             Spacer()
                             Picker("Budget effect", selection: $effect) {
                                 Text("Budget category").tag(BTCBillPayBudgetEffect.budgetCategory)
                                 Text("Credit card payment").tag(BTCBillPayBudgetEffect.creditCardPayment)
-                            }
-                            .labelsHidden()
-                        }
-                        .padding(14)
-
+                            }.labelsHidden()
+                        }.padding(14)
                         if effect == .budgetCategory {
                             Hairline()
-                            composeField("CATEGORY", prompt: "Required", text: $category)
+                            Picker("Category", selection: $category) {
+                                Text("Select category").tag("")
+                                ForEach(householdCategories, id: \.self) { Text($0).tag($0) }
+                            }.padding(14)
                         }
+                        Hairline()
+                        composeField("AMOUNT USD", prompt: "$0.00", text: $amount)
+                        Hairline()
+                        composeField("SATS SPENT", prompt: "Exact sats spent", text: $sats)
+                        Hairline()
+                        composeField("BTC PRICE USD", prompt: "Receipt price", text: $price)
+                        Hairline()
+                        composeField("FEE USD", prompt: "Enter exact fee", text: $fee)
+                        if parsedFee == nil {
+                            Text("Enter the fee River charged, or 0.").ledgerType(.rowMeta).foregroundStyle(theme.warn).padding(.horizontal, 14)
+                        }
+                        Text(RiverBillPayFeePolicy.guidance).ledgerType(.rowMeta).foregroundStyle(theme.textMuted).padding(14)
+                        DisclosureGroup("Note and reference") {
+                            composeField("NOTE", prompt: "Optional", text: $note)
+                            composeField("REFERENCE", prompt: "Optional", text: $reference)
+                        }.padding(14)
                     }
                     .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                     .padding(.horizontal, AppLayout.sectionPadding)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("RIVER FEE HOLD")
-                            .ledgerType(.sectionLabel)
-                            .foregroundStyle(theme.warn)
-                        Text(RiverBillPayFeePolicy.guidance)
-                            .ledgerType(.rowPrimary)
-                            .foregroundStyle(theme.textMuted)
-                        Text(exactFee.map { "MANUAL FEE · \(AppFormatter.formatCurrency($0))" } ?? "MANUAL FEE · NOT ENTERED")
-                            .ledgerType(.rowMeta)
-                            .foregroundStyle(exactFee == nil ? theme.warn : theme.text)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassCard(padding: 14, radius: AppLayout.radiusMedium)
-                    .padding(.horizontal, AppLayout.sectionPadding)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("WRITEBACK HOLD")
-                            .ledgerType(.sectionLabel)
-                            .foregroundStyle(theme.warn)
-                        Text("The Apple client has no bill-pay create route yet. This form does not submit or create a transaction row in its place.")
-                            .ledgerType(.rowPrimary)
-                            .foregroundStyle(theme.textMuted)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassCard(padding: 14, radius: AppLayout.radiusMedium)
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    if let receiptHint { Text(receiptHint).ledgerType(.rowMeta).foregroundStyle(theme.warn).padding(.horizontal, AppLayout.sectionPadding) }
+                    if let writeMessage { Text(writeMessage).foregroundStyle(theme.warn) }
                 }
                 .padding(.bottom, 100)
             }
             .background(theme.bg)
-            .navigationTitle("Compose bill pay")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+            .disabled(isSaving)
+            .navigationTitle("Record a bill pay")
+            .safeAreaInset(edge: .bottom) {
+                HStack {
+                    Button("Cancel") { dismiss() }.disabled(isSaving)
+                    Spacer()
+                    Button(isSaving ? "Saving" : "Save bill payment", action: save).buttonStyle(.borderedProminent).disabled(!canSave)
                 }
+                .padding(AppLayout.sectionPadding).background(theme.surface)
             }
+            .interactiveDismissDisabled(isSaving)
+        }
+    }
+
+    private func save() {
+        guard canSave, let satsValue = Int64(sats), let feeValue = exactFee,
+              let priceValue = Decimal(string: price, locale: Locale(identifier: "en_US_POSIX")) else { return }
+        isSaving = true
+        writeMessage = nil
+        AppWriteSyncService.pushBillPay(id: id, date: date, merchant: merchant, category: category,
+                                        effect: effect, amount: parsedAmount, sats: satsValue, price: priceValue,
+                                        fee: feeValue, member: FamilyMember(rawValue: memberRaw) ?? .victor, note: note, reference: reference) { result in
+            isSaving = false
+            if result.isOk { dismiss() } else { writeMessage = result.userMessage(operation: "Bill payment") }
         }
     }
 
