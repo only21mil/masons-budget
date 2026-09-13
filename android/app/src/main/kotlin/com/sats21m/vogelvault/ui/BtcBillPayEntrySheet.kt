@@ -294,7 +294,7 @@ internal fun BtcBillPayEntrySheet(
                     R.string.btc_bill_pay_effect_budget_category_short else R.string.btc_bill_pay_effect_credit_card_short)
                 SelectionChip(label = displayLabel, semanticLabel = choiceLabel,
                     actionLabel = "Select $choiceLabel", selected = effect == choice,
-                    enabled = !submitting, modifier = Modifier.weight(1f),
+                    enabled = !submitting, wrapLabel = true, modifier = Modifier.weight(1f),
                     onSelect = { effectWire = choice.wireValue })
             }
         }
