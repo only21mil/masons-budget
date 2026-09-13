@@ -17,6 +17,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.DeviceCapabilities
+import com.sats21m.vogelvault.data.DeviceCapability
 import com.sats21m.vogelvault.domain.Budget
 import com.sats21m.vogelvault.domain.CategorySpend
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -40,7 +43,7 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], application = LedgerAdoptionApplication::class)
 class LedgerAdoptionComposeTest {
     @get:Rule
     val compose = createEmptyComposeRule()
@@ -202,4 +205,10 @@ class LedgerAdoptionComposeTest {
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
     }
+}
+
+internal class LedgerAdoptionApplication : VaultApplication() {
+    override val deviceCapabilities = DeviceCapabilities(
+        FamilyMember.VICTOR, setOf(DeviceCapability.BUDGET.wire),
+    )
 }

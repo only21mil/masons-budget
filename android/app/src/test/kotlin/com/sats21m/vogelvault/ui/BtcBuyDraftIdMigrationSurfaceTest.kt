@@ -14,6 +14,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.DeviceCapabilities
+import com.sats21m.vogelvault.data.DeviceCapability
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
@@ -145,6 +147,7 @@ class MaddoxLegacyLeaseTest {
             }
             compose.waitForIdle()
 
+            compose.onNodeWithText("Save").fetchSemanticsNode()
             val maddoxId = assertNotNull(preferences.getString(maddoxScope, null))
             assertNotEquals(LEGACY_ID, maddoxId)
             assertEquals(LEGACY_ID, preferences.getString(LEGACY_KEY, null))
@@ -182,6 +185,7 @@ class PartiallyMigratedLeaseTest {
             }
             compose.waitForIdle()
 
+            compose.onNodeWithText("Save").fetchSemanticsNode()
             assertEquals(SCOPED_ID, preferences.getString(victorScope, null))
             assertEquals(LEGACY_ID, preferences.getString(LEGACY_KEY, null))
         } finally {
@@ -191,6 +195,10 @@ class PartiallyMigratedLeaseTest {
 }
 
 internal class OrdinaryTransactionLegacyLeaseApplication : VaultApplication() {
+    override val deviceCapabilities = DeviceCapabilities(
+        FamilyMember.VICTOR,
+        setOf(DeviceCapability.TRANSACTIONS.wire, DeviceCapability.BITCOIN.wire),
+    )
     override fun onCreate() {
         getSharedPreferences(BTC_BUY_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE)
             .edit()
@@ -202,6 +210,9 @@ internal class OrdinaryTransactionLegacyLeaseApplication : VaultApplication() {
 }
 
 internal class MaddoxLegacyLeaseApplication : VaultApplication() {
+    override val deviceCapabilities = DeviceCapabilities(
+        FamilyMember.MADDOX, setOf(DeviceCapability.BITCOIN.wire),
+    )
     override fun onCreate() {
         getSharedPreferences(BTC_BUY_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE)
             .edit()
@@ -213,6 +224,9 @@ internal class MaddoxLegacyLeaseApplication : VaultApplication() {
 }
 
 internal class PartiallyMigratedLeaseApplication : VaultApplication() {
+    override val deviceCapabilities = DeviceCapabilities(
+        FamilyMember.VICTOR, setOf(DeviceCapability.BITCOIN.wire),
+    )
     override fun onCreate() {
         val victorScope = btcBuyDraftIdScope(BtcBuyWriteSurface.STANDALONE, FamilyMember.VICTOR)
         getSharedPreferences(BTC_BUY_DRAFT_ID_PREFERENCES, Context.MODE_PRIVATE)

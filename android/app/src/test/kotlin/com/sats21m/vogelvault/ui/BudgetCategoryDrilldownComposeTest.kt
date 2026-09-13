@@ -27,6 +27,8 @@ import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.DeviceCapabilities
+import com.sats21m.vogelvault.data.DeviceCapability
 import com.sats21m.vogelvault.domain.BillPayBudgetEffect
 import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.DisplayUnit
@@ -316,4 +318,9 @@ class BudgetCategoryDrilldownComposeTest {
     }
 }
 
-class BudgetDrilldownTestApplication : VaultApplication()
+class BudgetDrilldownTestApplication : VaultApplication() {
+    override val deviceCapabilities = DeviceCapabilities(
+        FamilyMember.VICTOR,
+        setOf(DeviceCapability.TRANSACTIONS.wire, DeviceCapability.BITCOIN.wire, DeviceCapability.BUDGET.wire),
+    )
+}
