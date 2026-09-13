@@ -84,7 +84,8 @@ struct TodayView: View {
         List {
             ScreenHeader(title: "Today", eyebrow: todayEyebrow)
                 .listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
-            moneyOutCard.listRowSeparator(.hidden)
+            NavigationLink { ActivityView(todayOnly: true) } label: { moneyOutCard }
+                .buttonStyle(.plain).listRowSeparator(.hidden)
             Section("Today · \(todayTodos.count) remaining") {
                 if todayTodos.isEmpty { Text("All clear for today").ledgerType(.rowPrimary) }
                 taskRows(todayTodos)
@@ -131,7 +132,7 @@ struct TodayView: View {
     private var moneyOutCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("MONEY OUT TODAY")
+                Text("Spent today")
                     .ledgerType(.kpiLabel)
                     .foregroundStyle(theme.textMuted)
                 Spacer()
@@ -145,19 +146,20 @@ struct TodayView: View {
                 Text(AppFormatter.formatCurrency(decimalMinorUnits(cents, scale: 2)))
                     .ledgerType(.kpiValue)
                     .foregroundStyle(theme.text)
-                Text("Transactions plus eligible bill-pay principal and exact manual fees")
+                Text("Spending and bill payments, including fees")
                     .ledgerType(.body)
                     .foregroundStyle(theme.textMuted)
             case .failure:
                 Text("UNAVAILABLE")
                     .ledgerType(.kpiValue)
                     .foregroundStyle(theme.warn)
-                Text("An exact-cent input could not be verified.")
+                Text("Today’s spending could not be loaded.")
                     .ledgerType(.body)
                     .foregroundStyle(theme.textMuted)
             }
         }
         .glassCard(padding: 16, radius: AppLayout.radiusMedium)
+        .accessibilityElement(children: .combine)
     }
 
     private var addTaskRow: some View {

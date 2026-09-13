@@ -3,6 +3,7 @@ import SwiftData
 import SwiftUI
 
 struct ExportView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     private static let exportLog = Logger(subsystem: "com.sats21m.masonsbudget", category: "Export")
 
     @Environment(\.theme) var theme
@@ -64,7 +65,7 @@ struct ExportView: View {
                     )
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
             }
             .padding(.bottom, 100)
         }

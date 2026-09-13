@@ -53,6 +53,7 @@ enum SmartListFilter: String, CaseIterable, Identifiable {
 /// SAT-1335 will layer swipe actions / detail navigation on top of this one row.
 struct TaskRowView: View {
     let todo: TodoItem
+    @Environment(\.ledgerEffects) private var effects
     @Environment(\.theme) var theme
     @Environment(\.modelContext) private var modelContext
 
@@ -149,7 +150,7 @@ struct TaskRowView: View {
 
     private func toggleDone() {
         let previous = DeletedTodoSnapshot(todo: todo)
-        withAnimation(.easeOut(duration: 0.25)) {
+        withAnimation(LedgerMotionToken.chipAndNavigation.animation(reduceMotion: effects.reduceMotion)) {
             todo.isDone.toggle()
             todo.updatedAt = .now
             todo.hasServerAuthority = false
@@ -193,6 +194,7 @@ struct TaskRowView: View {
 // MARK: - Smart List Screen
 
 struct TaskSmartListView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     let filter: SmartListFilter
 
     @Environment(\.theme) var theme
@@ -277,7 +279,7 @@ struct TaskSmartListView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
     }
 }
 

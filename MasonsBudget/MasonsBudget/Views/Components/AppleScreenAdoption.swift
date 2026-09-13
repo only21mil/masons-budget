@@ -81,7 +81,7 @@ struct OnboardingStep: Equatable {
         ),
         OnboardingStep(
             eyebrow: "02 · FAMILY",
-            title: "One household, scoped views",
+            title: "One household, separate profiles",
             message: "Victor and Rachel share the adult ledger. Mason and Maddox stay isolated in their own profiles.",
             icon: "person.3.fill",
         ),

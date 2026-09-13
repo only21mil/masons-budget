@@ -34,6 +34,7 @@ struct LedgerToggle<Label: View>: View {
                 Spacer(minLength: 8)
                 track
             }
+            .frame(minHeight: LedgerMetrics.minimumHitTarget)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -8,6 +8,14 @@ final class LedgerFoundationTests: XCTestCase {
     private let dark = LedgerPalette.terminalLedger
     private let light = LedgerPalette.daylightLedger
 
+    func testAccessibleControlFloorAndReduceMotion() {
+        XCTAssertGreaterThanOrEqual(LedgerMetrics.minimumHitTarget, 44)
+        for token in [LedgerMotionToken.chipAndNavigation, .toggleAndButton, .toggleKnob, .rowReveal] {
+            XCTAssertNil(token.animation(reduceMotion: true))
+            XCTAssertNotNil(token.animation(reduceMotion: false))
+        }
+    }
+
     // MARK: - Colour tokens
 
     func testSatsBlackSurfacesAndRules() {
@@ -136,7 +144,7 @@ final class LedgerFoundationTests: XCTestCase {
             (.rowMeta, 11, .medium, 0.03),
             (.screenSubtitle, 11, .medium, 0.10),
             (.sectionLabel, 11, .semibold, 0.10),
-            (.chip, 11, .semibold, 0.06),
+            (.chip, 12.5, .semibold, 0.06),
         ]
         for (role, size, weight, tracking) in expected {
             let specification = spec(role)
@@ -190,7 +198,7 @@ final class LedgerFoundationTests: XCTestCase {
             .heroNumeral: (28, .semibold), .priceHero: (38, .semibold), .priceHeroDecimals: (20, .semibold),
             .kpiLabel: (11, .medium), .kpiValue: (20, .medium), .kpiSub: (11, .medium),
             .sectionLabel: (11, .semibold), .rowPrimary: (12.5, .regular), .rowMeta: (11, .medium),
-            .rowFigure: (12.5, .medium), .chip: (11, .semibold), .tabLabel: (11, .semibold),
+            .rowFigure: (12.5, .medium), .chip: (12.5, .semibold), .tabLabel: (11, .semibold),
             .body: (12, .regular), .button: (11, .semibold), .amountInput: (28, .medium), .textInput: (15, .regular),
         ]
         XCTAssertEqual(Set(expected.keys), Set(LedgerTypeRole.allCases))
@@ -211,7 +219,7 @@ final class LedgerFoundationTests: XCTestCase {
         let tierRoles: [LedgerTypeRole] = [.rowMeta, .kpiLabel, .kpiSub, .sectionLabel, .tabLabel, .chip, .screenSubtitle]
         for role in tierRoles {
             let specification = spec(role)
-            XCTAssertEqual(specification.size, 11, "\(role)")
+            XCTAssertEqual(specification.size, role == .chip ? 12.5 : 11, "\(role)")
             XCTAssertTrue([.medium, .semibold].contains(specification.weight), "\(role) weight \(specification.weight)")
         }
     }
@@ -325,7 +333,7 @@ final class LedgerFoundationTests: XCTestCase {
         XCTAssertEqual(LedgerChromeSpec.tabLabel.weight, .semibold)
         XCTAssertEqual(LedgerChromeSpec.tabLabel.trackingEm, 0.06, accuracy: 0.0001)
         XCTAssertTrue(LedgerChromeSpec.tabLabel.uppercase)
-        XCTAssertEqual(LedgerChromeSpec.badge.size, 11)
+        XCTAssertEqual(LedgerChromeSpec.badge.size, 12.5)
         XCTAssertEqual(LedgerChromeSpec.badge.weight, .semibold)
         XCTAssertEqual(LedgerChromeSpec.inlineTitle.size, 15)
         XCTAssertEqual(LedgerChromeSpec.inlineTitle.weight, .semibold)

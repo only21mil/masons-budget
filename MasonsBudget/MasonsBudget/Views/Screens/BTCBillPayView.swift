@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct BTCBillPayView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
@@ -47,14 +48,14 @@ struct BTCBillPayView: View {
                     }
                 }
 
-                if activeMember.isAdult { DeviceWriteSetupPrompt().padding(.horizontal, AppLayout.sectionPadding) }
+                if activeMember.isAdult { DeviceWriteSetupPrompt().padding(.horizontal, ledgerTokens.metrics.screenGutter) }
                 if let writeMessage { Text(writeMessage).foregroundStyle(theme.warn) }
                 summaryCard
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     .padding(.bottom, AppLayout.cardSpacing)
 
                 if visibleBillPays.isEmpty && activeMember.isAdult {
-                    Button("Record a bill payment") { showCompose = true }.disabled(!AppWritebackConfig.canWriteBitcoin).padding(AppLayout.sectionPadding)
+                    Button("Record a bill payment") { showCompose = true }.disabled(!AppWritebackConfig.canWriteBitcoin).padding(ledgerTokens.metrics.screenGutter)
                 }
                 ForEach(grouped, id: \.0) { month, billPays in
                     VStack(alignment: .leading, spacing: 8) {
@@ -76,7 +77,7 @@ struct BTCBillPayView: View {
                         }
                         .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                     }
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     .padding(.bottom, AppLayout.cardSpacing)
                 }
             }
@@ -189,6 +190,7 @@ struct BTCBillPayView: View {
 }
 
 struct BTCBillPayComposeView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \BudgetCategory.sortOrder) private var budgetCategories: [BudgetCategory]
@@ -259,7 +261,7 @@ struct BTCBillPayComposeView: View {
                     ScreenHeader(title: "Record a bill pay", eyebrow: "Already paid through River")
                     DeviceWriteSetupPrompt()
                     Text("Record a payment you made in River. Enter the exact sats and fee from its receipt.")
-                        .ledgerType(.rowMeta).padding(.horizontal, AppLayout.sectionPadding)
+                        .ledgerType(.rowMeta).padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                     VStack(spacing: 0) {
                         DatePicker("Date", selection: $date, displayedComponents: .date).padding(14)
@@ -299,8 +301,8 @@ struct BTCBillPayComposeView: View {
                         }.padding(14)
                     }
                     .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                    .padding(.horizontal, AppLayout.sectionPadding)
-                    if let receiptHint { Text(receiptHint).ledgerType(.rowMeta).foregroundStyle(theme.warn).padding(.horizontal, AppLayout.sectionPadding) }
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
+                    if let receiptHint { Text(receiptHint).ledgerType(.rowMeta).foregroundStyle(theme.warn).padding(.horizontal, ledgerTokens.metrics.screenGutter) }
                     if let writeMessage { Text(writeMessage).foregroundStyle(theme.warn) }
                 }
                 .padding(.bottom, 100)
@@ -314,7 +316,7 @@ struct BTCBillPayComposeView: View {
                     Spacer()
                     Button(isSaving ? "Saving" : "Save bill payment", action: save).buttonStyle(.borderedProminent).disabled(!canSave)
                 }
-                .padding(AppLayout.sectionPadding).background(theme.surface)
+                .padding(ledgerTokens.metrics.screenGutter).background(theme.surface)
             }
             .interactiveDismissDisabled(isSaving)
         }

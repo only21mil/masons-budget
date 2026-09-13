@@ -33,6 +33,7 @@ struct ScreenHeader<Accessory: View>: View {
     var eyebrow: String?
     @ViewBuilder var accessory: () -> Accessory
 
+    @Environment(\.ledgerTokens) private var tokens
     @Environment(\.theme) var theme
     @Environment(\.ledgerRootTitle) private var rootTitle
     @Environment(\.ledgerRootAccessory) private var rootAccessory
@@ -51,7 +52,7 @@ struct ScreenHeader<Accessory: View>: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar(.visible, for: .navigationBar)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) { accessory() }
+                    ToolbarItem(placement: .topBarTrailing) { accessory().frame(minWidth: LedgerMetrics.minimumHitTarget, minHeight: LedgerMetrics.minimumHitTarget) }
                 }
         } else {
             header
@@ -76,13 +77,13 @@ struct ScreenHeader<Accessory: View>: View {
 
                 Spacer()
                 if rootTitle == title, let rootAccessory {
-                    rootAccessory
+                    rootAccessory.frame(minHeight: LedgerMetrics.minimumHitTarget)
                 } else {
-                    accessory()
+                    accessory().frame(minHeight: LedgerMetrics.minimumHitTarget)
                 }
             }
         }
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.horizontal, tokens.metrics.screenGutter)
         .padding(.top, 8)
         .padding(.bottom, 12)
     }

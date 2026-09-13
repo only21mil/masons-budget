@@ -110,9 +110,11 @@ struct ContentView: View {
     @Query private var holdingAccounts: [HoldingAccount]
 
     @State private var selectedTab: AppTab = .home
+    @State private var profileSyncPending = false
     @State private var canonicalFinancials = CanonicalFinancialSourceStore()
     @StateObject private var syncStatus = SyncStatusStore.shared
     @StateObject private var taskUndoStore = TaskUndoStore.shared
+    @AppStorage(ConvexSyncService.versionsMemberKey) private var syncedMember = ""
     @AppStorage(ConvexSyncService.lastSyncErrorKey) private var lastReadError = ""
     @AppStorage(ConvexSyncService.lastSyncKey) private var lastReadSuccess: Double = 0
     @State private var showSyncSetup = false
@@ -166,10 +168,24 @@ struct ContentView: View {
         .task(id: financialLoadID) {
             await canonicalFinancials.load(viewer: financialLoadID.viewer)
         }
-        .onChange(of: activeMember) { _, _ in cancelReadRetry() }
+        .onChange(of: activeMember) { _, _ in
+            profileSyncPending = true
+            cancelReadRetry()
+        }
+        .onChange(of: lastReadSuccess) { _, _ in
+            if syncedMember == selectedMemberRaw { profileSyncPending = false }
+        }
         .onDisappear { cancelReadRetry() }
         .safeAreaInset(edge: .top, spacing: 0) {
-            syncFailureBanner
+            VStack(spacing: 6) {
+                if profileSyncPending && ConvexConfig.hasReadToken && lastReadError.isEmpty {
+                    ProgressView("Syncing profile…")
+                        .ledgerType(.rowMeta)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel("Syncing \(activeMember.displayName)’s profile")
+                }
+                syncFailureBanner
+            }
                 .padding(.horizontal, AppLayout.sectionPadding)
                 .padding(.top, 10)
         }
@@ -506,10 +522,11 @@ struct ContentView: View {
                         .ledgerType(.rowFigure)
                         .foregroundStyle(theme.onAccent),
                 )
-                .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
+                .frame(minWidth: LedgerMetrics.minimumHitTarget, minHeight: LedgerMetrics.minimumHitTarget)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(minWidth: 44, minHeight: 44)
+        .frame(minWidth: LedgerMetrics.minimumHitTarget, minHeight: LedgerMetrics.minimumHitTarget)
         .accessibilityLabel("Profile and settings")
     }
 
@@ -523,7 +540,7 @@ struct ContentView: View {
                 .frame(width: 32, height: 32)
                 .background(theme.accentFill)
                 .clipShape(RoundedRectangle(cornerRadius: 3))
-                .frame(minWidth: 44, minHeight: 44)
+                .frame(minWidth: LedgerMetrics.minimumHitTarget, minHeight: LedgerMetrics.minimumHitTarget)
         } primaryAction: {
             if selectedTab == .tasks { openTask() }
             else { openAdd(.spend) }

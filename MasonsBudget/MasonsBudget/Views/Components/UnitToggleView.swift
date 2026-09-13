@@ -38,7 +38,7 @@ struct UnitToggleView: View {
                     Text(u.label)
                         .ledgerType(size.role)
                         .foregroundStyle(unit == u ? theme.onAccent : theme.textMuted)
-                        .frame(height: size.height)
+                        .frame(minWidth: LedgerMetrics.minimumHitTarget, minHeight: LedgerMetrics.minimumHitTarget)
                         .padding(.horizontal, size.horizontalPadding)
                         .background(unit == u ? theme.accentFill : .clear)
                         .clipShape(Capsule())
