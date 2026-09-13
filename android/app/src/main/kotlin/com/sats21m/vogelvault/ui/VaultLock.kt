@@ -87,6 +87,7 @@ internal class VaultLockController(
      * Returns the profile that may now be applied, if this was a switch request.
      */
     fun authenticationSucceeded(): FamilyMember? {
+        externalLaunchAt = null
         val target = (activeRequest as? VaultAuthenticationRequest.ProfileSwitch)?.target
         isUnlocked = true
         activeRequest = null
@@ -97,6 +98,8 @@ internal class VaultLockController(
     }
 
     fun authenticationErrored(message: String, allowReturnGrace: Boolean = true) {
+        // A terminal callback before stop must not leave a launch armed for Home.
+        externalLaunchAt = null
         val wasUnlock = activeRequest is VaultAuthenticationRequest.AppUnlock
         if (wasUnlock || (backgroundedDuringAuthentication && (!allowReturnGrace || !withinReturnGrace()))) {
             isUnlocked = false
@@ -106,7 +109,7 @@ internal class VaultLockController(
         error = message
     }
 
-    /** Only a chooser launched by this activity can arm share-return grace. */
+    /** Only an allowed external activity launched by this host can arm return grace. */
     fun externalActivityLaunched() {
         if (isUnlocked) externalLaunchAt = nowMillis()
     }
@@ -128,10 +131,10 @@ internal class VaultLockController(
         val now = nowMillis()
         val launchedHere = externalLaunchAt?.let { now - it in 0 until RETURN_GRACE_MILLIS } == true
         externalLaunchAt = null
-        if (activeRequest != null) {
-            backgroundedDuringAuthentication = true
-            returnDeadline = now + RETURN_GRACE_MILLIS
-        } else if (launchedHere && isUnlocked) {
+        // Preserve the callback owner, but a prompt alone does not explain a stop:
+        // Home also stops this host before Android delivers prompt cancellation.
+        if (activeRequest != null) backgroundedDuringAuthentication = true
+        if (launchedHere && isUnlocked) {
             returnDeadline = now + RETURN_GRACE_MILLIS
         } else {
             isUnlocked = false

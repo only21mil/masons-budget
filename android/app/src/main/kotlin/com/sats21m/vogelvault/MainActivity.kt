@@ -253,11 +253,17 @@ class MainActivity : FragmentActivity(), ConnectionAuthenticationHost {
         val isShare = intent.action == Intent.ACTION_CHOOSER &&
             intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)?.action in
             setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)
-        if (isShare) lockController.externalActivityLaunched()
+        // AndroidX launches the Keyguard fallback through this activity. Derive
+        // its action from the public factory; the platform action constant is hidden.
+        val isCredential = lockController.snapshot().isAuthenticating && intent.action != null &&
+            intent.action == getSystemService<KeyguardManager>()
+                ?.createConfirmDeviceCredentialIntent(null, null)?.action
+        val grantsReturnGrace = isShare || isCredential
+        if (grantsReturnGrace) lockController.externalActivityLaunched()
         try {
             super.startActivityForResult(intent, requestCode, options)
         } catch (error: RuntimeException) {
-            if (isShare) lockController.externalActivityLaunchFailed()
+            if (grantsReturnGrace) lockController.externalActivityLaunchFailed()
             throw error
         }
     }
