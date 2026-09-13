@@ -251,7 +251,9 @@ class VaultViewModel(
     }
 
     fun navigate(destination: Destination) {
-        _state.update { current -> current.copy(destination = destination) }
+        _state.update { current ->
+            if (destination in destinationsFor(current.activeProfile)) current.copy(destination = destination) else current
+        }
     }
 
     fun switchProfile(next: FamilyMember) {
@@ -262,6 +264,7 @@ class VaultViewModel(
 
             current.copy(
                 activeProfile = next,
+                destination = current.destination.takeIf { it in destinationsFor(next) } ?: Destination.DASHBOARD,
                 data = if (!readReady.value) Fixtures.envelope(next) else loadingModel(next),
                 financeDocument = null,
                 financeStatus = if (readReady.value) Freshness.LOADING else Freshness.EMPTY,

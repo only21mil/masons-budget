@@ -1752,7 +1752,9 @@ private fun VaultLazyListScope.settings(
                 remoteReadReady = remoteReadReady,
                 onConnected = { onRemoteRowsConnected() },
                 modifier = Modifier.padding(vertical = VaultSpace.md),
-                allowReset = true,
+                allowReset = state.activeProfile.isAdult,
+                profile = state.activeProfile,
+                onSaveReadToken = onEnableRemoteRows,
             )
         }
     }

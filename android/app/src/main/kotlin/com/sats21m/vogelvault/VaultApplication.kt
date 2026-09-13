@@ -457,6 +457,17 @@ open class VaultApplication : Application() {
             storedConvexConfigSource.hasDeviceCredential()
         }
 
+    /** Revokes this device before removing its local connection. Failed requests retain access for retry. */
+    internal open suspend fun unpairMobileDevice(): Boolean {
+        val client = ConvexDeviceMutationClient(
+            configSource = MutableConvexConfigSource(writeConvexConfig()),
+            credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+        )
+        val result = client.mutate(com.sats21m.vogelvault.data.ConvexMutation.RevokeMobileDevice)
+        if (result !is ConvexResult.Ok) return false
+        return removeStoredConvexCredential()
+    }
+
     /** Whether the selected profile matches the persisted backend binding. */
     internal open fun hasTodoWriteCredential(profile: FamilyMember): Boolean =
         synchronized(convexConfigLock) {

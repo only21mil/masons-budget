@@ -187,6 +187,7 @@ class MainActivity : FragmentActivity() {
                             configurationError = state.remoteConfigurationError,
                             remoteReadReady = effectiveReadReady,
                             onConnected = { _ -> model.enableStoredRemoteRows() },
+                            onSaveReadToken = model::enableRemoteRows,
                         )
 
                     else -> {

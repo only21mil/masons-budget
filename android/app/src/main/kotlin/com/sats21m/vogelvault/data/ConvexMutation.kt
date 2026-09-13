@@ -21,6 +21,10 @@ internal enum class TodoWriteOperation(val wireValue: String) {
 internal sealed class ConvexMutation(val path: String) {
     abstract fun arguments(): JsonObject
 
+    data object RevokeMobileDevice : ConvexMutation("dataFiles:revokeMobileDevice") {
+        override fun arguments(): JsonObject = JsonObject(emptyMap())
+    }
+
     data class UpsertTransaction(
         val transaction: TransactionInput,
         val sourceFile: String? = null,

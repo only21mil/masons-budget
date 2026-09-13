@@ -162,7 +162,7 @@
     <string name="onboarding_token_help">Setup grants only the access approved for this installation. Credentials are never displayed or entered here.</string>
     <string name="read_bootstrap_title">Secure connection</string>
     <string name="read_bootstrap_connected_read_only">Connected for household data. Todo changes are not enabled.</string>
-    <string name="read_bootstrap_connected_full">Connected for household data and todo changes.</string>
+    <string name="read_bootstrap_connected_full">Connected for household data. Tasks can be changed only for the paired profile.</string>
     <string name="read_bootstrap_unconfigured">This installation is not connected to household data.</string>
     <string name="read_bootstrap_connect">Connect securely</string>
     <string name="read_bootstrap_connecting">Connecting…</string>
@@ -177,7 +177,7 @@
     <string name="read_bootstrap_invalid_response">The household service returned an invalid setup response. Update the app or report the problem.</string>
     <string name="read_bootstrap_storage_error">The secure connection could not be stored. Install a newly approved build before retrying.</string>
     <string name="read_bootstrap_reset">Reset secure connection</string>
-    <string name="read_bootstrap_reset_warning">Resetting removes this installation’s access. Reconnecting requires a newly approved build.</string>
+    <string name="read_bootstrap_reset_warning">This pairing can only be used once. Reset removes the saved connection. Reconnect with a new approved build or restore read access in Connection recovery.</string>
     <string name="read_bootstrap_reset_confirm">Confirm reset</string>
     <string name="read_bootstrap_reset_failed">The secure connection could not be reset.</string>
     <string name="budget_category_edit_action">Edit budget</string>
@@ -278,7 +278,7 @@
     <string name="todo_save">Save</string>
     <string name="todo_cancel">Cancel</string>
     <string name="todo_write_access_title">Todo write access</string>
-    <string name="todo_write_access_detail">Todo writes require a profile-bound secure connection. Open Settings and connect with a newly provisioned trusted bootstrap bundle for this profile.</string>
+    <string name="todo_write_access_detail">This phone can change tasks for one paired profile. Ask an adult to connect this profile in Settings.</string>
     <string name="todo_deleted">Deleted “%1$s”</string>
     <string name="todo_undo">Undo</string>
     <string name="budget_notification_channel_name">Budget alerts</string>
@@ -306,4 +306,10 @@
     <string name="btc_bill_pay_fee_label">Fee (USD)</string>
     <string name="btc_bill_pay_note_label">Note (optional)</string>
     <string name="btc_bill_pay_reference_label">Reference (optional)</string>
+    <string name="read_bootstrap_other_profile">Connected for reading. This phone is paired to a different profile for task changes.</string>
+    <string name="read_bootstrap_unpair">Unpair this phone</string>
+    <string name="read_bootstrap_unpair_warning">Unpairing revokes this phone’s write access and removes its saved connection. A new approved pairing is required to write again.</string>
+    <string name="read_bootstrap_recovery">Connection recovery</string>
+    <string name="read_bootstrap_read_token">Read access token</string>
+    <string name="read_bootstrap_save_read">Restore read access</string>
 </resources>

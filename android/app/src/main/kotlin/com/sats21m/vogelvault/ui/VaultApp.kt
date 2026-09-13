@@ -221,8 +221,8 @@ fun VaultApp(
         val unfolded = maxWidth.value >= UNFOLDED_MIN_WIDTH_DP
 
         CompositionLocalProvider(LocalIsUnfolded provides unfolded) {
-            val destinations = Destination.entries.toList()
-            val current = state.destination
+            val destinations = destinationsFor(state.activeProfile)
+            val current = state.destination.takeIf { it in destinations } ?: Destination.DASHBOARD
 
             if (unfolded) {
                 Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -659,3 +659,6 @@ private fun VaultTopBar(
         FreshnessTag(state.worstStatus, state.worstUpdatedAt, state.now)
     }
 }
+
+internal fun destinationsFor(profile: FamilyMember): List<Destination> =
+    Destination.entries.filter { profile.isAdult || it !in setOf(Destination.SETTINGS, Destination.EXPORT, Destination.FAMILY) }
