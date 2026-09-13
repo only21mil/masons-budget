@@ -15,10 +15,15 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import com.sats21m.vogelvault.ledgerSystemBarAppearance
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 
@@ -42,6 +47,7 @@ internal fun LedgerSheet(
         contentWindowInsets = { if (region == null) BottomSheetDefaults.windowInsets else WindowInsets(0, 0, 0, 0) },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         ConstrainLedgerDialogWindow()
+        ApplyLedgerSheetSystemBars()
         Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = VaultSpace.md)) {
             Text(title, style = LocalLedgerTheme.current.type.drilldownTitle,
                 modifier = Modifier.padding(bottom = VaultSpace.md))
@@ -54,6 +60,21 @@ internal fun LedgerSheet(
             Column(Modifier.fillMaxWidth().padding(vertical = VaultSpace.md).testTag("ledger-sheet-actions")) {
                 actions()
             }
+        }
+    }
+}
+
+@Composable
+private fun ApplyLedgerSheetSystemBars() {
+    val view = LocalView.current
+    val window = (view.parent as? DialogWindowProvider)?.window ?: return
+    val appearance = ledgerSystemBarAppearance(LocalLedgerTheme.current.treatment)
+    SideEffect {
+        // Material3 1.3.2 initializes this separate window from the OS theme.
+        // The ledger can override that theme, including while a sheet is open.
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = appearance.useDarkIcons
+            isAppearanceLightNavigationBars = appearance.useDarkIcons
         }
     }
 }
