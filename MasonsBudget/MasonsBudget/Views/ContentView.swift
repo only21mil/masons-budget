@@ -741,7 +741,7 @@ struct ContentView: View {
     @ViewBuilder
     private func screenForTab(_ tab: AppTab) -> some View {
         switch tab {
-        case .home: HomeDashboardView()
+        case .home: HomeDashboardView(hasReadToken: ConvexConfig.hasReadToken)
         case .budget: BudgetView()
         case .activity: ActivityView()
         case .tasks: TasksView()

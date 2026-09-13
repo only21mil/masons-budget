@@ -56,6 +56,26 @@ final class AppleScreenAdoptionTests: XCTestCase {
         XCTAssertFalse(HomeDashboardData.isCurrentBudgetMonth("", currentMonth: "2026-09"))
     }
 
+    func testHomeUnavailableHintMatchesReadConnectionRecovery() {
+        // A missing read credential still needs setup after a previous sync error.
+        for lastError in ["", "Offline"] {
+            XCTAssertEqual(
+                ContentView.readSyncMessage(hasReadToken: false, lastError: lastError),
+                "Connect this device to load your household data.",
+            )
+            XCTAssertEqual(
+                HomeDashboardData.netWorthUnavailableHint(hasReadToken: false),
+                "Unavailable until this device is connected.",
+            )
+        }
+        // Once reads are configured, absent balances or prices can request refresh.
+        XCTAssertNil(ContentView.readSyncMessage(hasReadToken: true, lastError: ""))
+        XCTAssertEqual(
+            HomeDashboardData.netWorthUnavailableHint(hasReadToken: true),
+            "Refresh balances and prices to calculate your total.",
+        )
+    }
+
     func testTodayIncomeUsesLocalDayAndRootRetainsHistory() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: -6 * 3600))
