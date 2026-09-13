@@ -260,28 +260,58 @@ struct BTCBillPayComposeView: View {
                 VStack(spacing: AppLayout.cardSpacing) {
                     ScreenHeader(title: "Record a bill pay", eyebrow: "Already paid through River")
                     DeviceWriteSetupPrompt()
+                        .ledgerType(.button)
+                        .tint(theme.accent)
                     Text("Record a payment you made in River. Enter the exact sats and fee from its receipt.")
                         .ledgerType(.rowMeta).padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                     VStack(spacing: 0) {
-                        DatePicker("Date", selection: $date, displayedComponents: .date).padding(14)
+                        HStack {
+                            Text("DATE").ledgerType(.kpiLabel).foregroundStyle(theme.textMuted)
+                            Spacer()
+                            DatePicker("Date", selection: $date, displayedComponents: .date)
+                                .labelsHidden()
+                                .tint(theme.accent)
+                        }
+                        .padding(14)
                         Hairline()
                         composeField("MERCHANT", prompt: "Payee", text: $merchant)
                         Hairline()
                         HStack {
                             Text("BUDGET").ledgerType(.kpiLabel).foregroundStyle(theme.textMuted)
                             Spacer()
-                            Picker("Budget effect", selection: $effect) {
-                                Text("Budget category").tag(BTCBillPayBudgetEffect.budgetCategory)
-                                Text("Credit card payment").tag(BTCBillPayBudgetEffect.creditCardPayment)
-                            }.labelsHidden()
+                            Menu {
+                                Picker("Budget effect", selection: $effect) {
+                                    Text("Budget category").tag(BTCBillPayBudgetEffect.budgetCategory)
+                                    Text("Credit card payment").tag(BTCBillPayBudgetEffect.creditCardPayment)
+                                }
+                                .pickerStyle(.inline)
+                            } label: {
+                                pickerLabel(effect == .budgetCategory ? "Budget category" : "Credit card payment")
+                            }
+                            .buttonStyle(.plain)
+                            .menuIndicator(.hidden)
+                            .tint(theme.accent)
+                            .accessibilityLabel("Budget effect")
+                            .accessibilityValue(effect == .budgetCategory ? "Budget category" : "Credit card payment")
                         }.padding(14)
                         if effect == .budgetCategory {
                             Hairline()
-                            Picker("Category", selection: $category) {
-                                Text("Select category").tag("")
-                                ForEach(householdCategories, id: \.self) { Text($0).tag($0) }
-                            }.padding(14)
+                            Menu {
+                                Picker("Category", selection: $category) {
+                                    Text("Select category").tag("")
+                                    ForEach(householdCategories, id: \.self) { Text($0).tag($0) }
+                                }
+                                .pickerStyle(.inline)
+                            } label: {
+                                pickerLabel(category.isEmpty ? "Select category" : category)
+                            }
+                            .buttonStyle(.plain)
+                            .menuIndicator(.hidden)
+                            .tint(theme.accent)
+                            .accessibilityLabel("Category")
+                            .accessibilityValue(category.isEmpty ? "Select category" : category)
+                            .padding(14)
                         }
                         Hairline()
                         composeField("AMOUNT USD", prompt: "$0.00", text: $amount)
@@ -298,7 +328,10 @@ struct BTCBillPayComposeView: View {
                         DisclosureGroup("Note and reference") {
                             composeField("NOTE", prompt: "Optional", text: $note)
                             composeField("REFERENCE", prompt: "Optional", text: $reference)
-                        }.padding(14)
+                        }
+                        .ledgerType(.button)
+                        .tint(theme.accent)
+                        .padding(14)
                     }
                     .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                     .padding(.horizontal, ledgerTokens.metrics.screenGutter)
@@ -309,17 +342,41 @@ struct BTCBillPayComposeView: View {
             }
             .background(theme.bg)
             .disabled(isSaving)
-            .navigationTitle("Record a bill pay")
+            #if os(iOS)
+                .toolbar(.hidden, for: .navigationBar)
+            #endif
             .safeAreaInset(edge: .bottom) {
                 HStack {
-                    Button("Cancel") { dismiss() }.disabled(isSaving)
+                    Button("Cancel") { dismiss() }
+                        .ledgerType(.button)
+                        .tint(theme.accent)
+                        .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                        .disabled(isSaving)
                     Spacer()
-                    Button(isSaving ? "Saving" : "Save bill payment", action: save).buttonStyle(.borderedProminent).disabled(!canSave)
+                    Button(isSaving ? "Saving" : "Save bill payment", action: save)
+                        .ledgerType(.button)
+                        .buttonStyle(.borderedProminent)
+                        .tint(theme.accentFill)
+                        .foregroundStyle(canSave ? theme.onAccent : theme.textFaint)
+                        .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                        .disabled(!canSave)
                 }
                 .padding(ledgerTokens.metrics.screenGutter).background(theme.surface)
             }
             .interactiveDismissDisabled(isSaving)
         }
+        // This sheet owns its header rather than inheriting the presenting tab's title.
+        .environment(\.ledgerRootTitle, nil)
+        .environment(\.ledgerRootAccessory, nil)
+    }
+
+    private func pickerLabel(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Text(title).ledgerType(.button)
+            Image(systemName: "chevron.up.chevron.down").font(AppFont.icon(size: 12))
+        }
+        .foregroundStyle(theme.accent)
+        .frame(minHeight: LedgerMetrics.minimumHitTarget)
     }
 
     private func save() {

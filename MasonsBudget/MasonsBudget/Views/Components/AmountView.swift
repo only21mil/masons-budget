@@ -80,6 +80,7 @@ struct RequiredFinancialSourceView: View {
 
     let title: String
     let message: String
+    var showsSyncSetupGuidance = true
     var onRetry: (() -> Void)?
     @State private var showSyncSetup = false
 
@@ -94,16 +95,20 @@ struct RequiredFinancialSourceView: View {
             Text(message)
                 .ledgerType(.body)
                 .foregroundStyle(theme.textMuted)
-            Text("Open Sync Setup to check your household connection.")
-                .ledgerType(.body)
-                .foregroundStyle(theme.textMuted)
+            if showsSyncSetupGuidance {
+                Text("Open Sync Setup to check your household connection.")
+                    .ledgerType(.body)
+                    .foregroundStyle(theme.textMuted)
+            }
             HStack {
                 if let onRetry {
                     Button("Retry", action: onRetry)
                         .frame(minHeight: 44)
                 }
-                Button("Open Sync Setup") { showSyncSetup = true }
-                    .frame(minHeight: 44)
+                if showsSyncSetupGuidance {
+                    Button("Open Sync Setup") { showSyncSetup = true }
+                        .frame(minHeight: 44)
+                }
             }
             .ledgerType(.button)
             .foregroundStyle(theme.accent)
