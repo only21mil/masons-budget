@@ -225,7 +225,9 @@ const ANDROID_READ_BOOTSTRAP_PAIR_ID = /^android-read-[A-Za-z0-9_-]{16,64}$/;
 // The final character has two zero padding bits, so only these 16 values are valid.
 const ANDROID_READ_BOOTSTRAP_PROOF = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
-const ANDROID_TODO_WRITE_CAPABILITY = "todos:write" as const;
+const ANDROID_WRITE_CAPABILITIES = [
+  "todos:write", "transactions:write", "budget:write", "bitcoin:write",
+] as const;
 
 type AndroidReadBootstrapErrorCode =
   | "ANDROID_READ_BOOTSTRAP_NOT_FOUND"
@@ -270,8 +272,10 @@ function validateAndroidReadBootstrapCapabilities(
 ) {
   if (
     capabilities !== undefined &&
-    (capabilities.length !== 1 ||
-      capabilities[0] !== ANDROID_TODO_WRITE_CAPABILITY)
+    (capabilities.length === 0 ||
+      new Set(capabilities).size !== capabilities.length ||
+      capabilities.some((capability) =>
+        !ANDROID_WRITE_CAPABILITIES.some((allowed) => allowed === capability)))
   ) {
     androidReadBootstrapFailure("VALIDATION_FAILED");
   }
@@ -927,7 +931,7 @@ export const upsertTodoFromMobile = mutation({
  * Mint one short-lived Android bootstrap.
  *
  * This is deliberately separate from mobilePairings. Read-only is the default;
- * only an explicit exact todos:write grant may also create one mobileDevices
+ * an explicit supported capability grant may also create one mobileDevices
  * row at claim time. The bootstrap stores neither its raw proof nor a token.
  */
 export const createAndroidReadBootstrap = mutation({
@@ -951,8 +955,8 @@ export const createAndroidReadBootstrap = mutation({
     validateAndroidReadBootstrapPairId(pairId);
     validateAndroidReadBootstrapProofHash(proofHash);
     validateAndroidReadBootstrapCapabilities(capabilities);
-    const grantsTodoWrite = capabilities?.length === 1;
-    if (grantsTodoWrite !== (profile !== undefined)) {
+    const grantsDeviceWrite = (capabilities?.length ?? 0) > 0;
+    if (grantsDeviceWrite !== (profile !== undefined)) {
       androidReadBootstrapFailure("VALIDATION_FAILED");
     }
 
@@ -979,10 +983,7 @@ export const createAndroidReadBootstrap = mutation({
       createdAt: now,
       expiresAt,
       claimedAt: undefined,
-      capabilities:
-        capabilities === undefined
-          ? undefined
-          : [ANDROID_TODO_WRITE_CAPABILITY],
+      capabilities,
       profile,
     });
     return { pairId, expiresAt };
@@ -992,7 +993,7 @@ export const createAndroidReadBootstrap = mutation({
 /**
  * Redeem a raw 256-bit Android proof for the deployment's current read token.
  *
- * A todo-write bootstrap must also present a client-generated device credential.
+ * A device-write bootstrap must also present a client-generated device credential.
  * Its raw token is hashed before storage. Device creation and claim state share
  * one Convex transaction, so any failure leaves both sides unchanged.
  */
@@ -1052,8 +1053,8 @@ export const claimAndroidReadBootstrap = mutation({
 
     validateAndroidReadBootstrapCapabilities(bootstrap.capabilities);
     const capabilities = bootstrap.capabilities ?? [];
-    const grantsTodoWrite = capabilities.length === 1;
-    if (grantsTodoWrite) {
+    const grantsDeviceWrite = capabilities.length > 0;
+    if (grantsDeviceWrite) {
       if (deviceId === undefined || deviceToken === undefined) {
         androidReadBootstrapFailure("VALIDATION_FAILED");
       }
@@ -1084,7 +1085,7 @@ export const claimAndroidReadBootstrap = mutation({
         lastSeenAt: now,
         revokedAt: undefined,
         pairId,
-        capabilities: [ANDROID_TODO_WRITE_CAPABILITY],
+        capabilities,
         profile: bootstrap.profile,
       });
 
@@ -1094,7 +1095,7 @@ export const claimAndroidReadBootstrap = mutation({
         readToken,
         pairedAt: now,
         deviceId,
-        capabilities: [ANDROID_TODO_WRITE_CAPABILITY],
+        capabilities,
         profile: bootstrap.profile,
       };
     }
