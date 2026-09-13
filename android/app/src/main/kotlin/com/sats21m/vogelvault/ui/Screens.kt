@@ -18,6 +18,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.material3.MaterialTheme
 import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
@@ -552,7 +556,7 @@ fun ScreenHost(
                             onNavigate(target)
                         }) { selectedTransactionKey = it.selectionKey }
                         Destination.ACTIVITY -> {
-                            activity(state, checkNotNull(activitySearch), displayUnit) {
+                            activity(state, checkNotNull(activitySearch), displayUnit, selectedTransactionKey) {
                                 selectedTransactionKey = it.selectionKey
                             }
                         }
@@ -937,6 +941,7 @@ private fun VaultLazyListScope.activity(
     state: VaultUiState,
     search: ActivitySearchProjection,
     displayUnit: DisplayUnit,
+    selectedTransactionKey: String?,
     onSelectTransaction: (Transaction) -> Unit,
 ) {
     val quote = state.operationalBitcoinQuote()
@@ -999,10 +1004,19 @@ private fun VaultLazyListScope.activity(
         rowKey = Transaction::selectionKey,
         revealKey = state.data.transactions.updatedAt,
         rowContent = {
+            val selected = it.selectionKey == selectedTransactionKey
+            val colors = LocalLedgerTheme.current.colors
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .clickable { onSelectTransaction(it) },
+                    .selectable(selected = selected, onClick = { onSelectTransaction(it) })
+                    .drawBehind {
+                        if (selected) {
+                            drawRect(colors.bitcoinSoft)
+                            drawRect(colors.bitcoin, Offset.Zero, Size(2.dp.toPx(), size.height))
+                        }
+                    }
+                    .padding(start = VaultSpace.sm),
             ) {
                 TransactionRow(it, displayUnit, quote)
             }
