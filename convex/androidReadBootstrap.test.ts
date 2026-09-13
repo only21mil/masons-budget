@@ -24,7 +24,7 @@ const createAndroidReadBootstrap =
       pairId: string;
       proofHash: string;
       expiresAt: number;
-      capabilities?: Array<"todos:write">;
+      capabilities?: Array<"todos:write" | "transactions:write" | "budget:write" | "bitcoin:write">;
       profile?: "victor" | "rachel" | "mason" | "maddox";
       token?: string;
     },
@@ -46,7 +46,7 @@ const claimAndroidReadBootstrap =
       readToken: string;
       pairedAt: number;
       deviceId?: string;
-      capabilities: Array<"todos:write">;
+      capabilities: Array<"todos:write" | "transactions:write" | "budget:write" | "bitcoin:write">;
       profile?: "victor" | "rachel" | "mason" | "maddox";
     }
   >;
@@ -76,9 +76,9 @@ async function createBootstrap(
   pairId = newPairId(),
   proof = newProof(),
   expiresAt = Date.now() + 60_000,
-  capabilities?: Array<"todos:write">,
+  capabilities?: Array<"todos:write" | "transactions:write" | "budget:write" | "bitcoin:write">,
   profile: "victor" | "rachel" | "mason" | "maddox" | undefined =
-    capabilities?.length === 1 ? "victor" : undefined,
+    capabilities?.length ? "victor" : undefined,
 ) {
   await t.mutation(createAndroidReadBootstrap, {
     pairId,
@@ -214,7 +214,7 @@ describe("createAndroidReadBootstrap", () => {
     expect(await storedBootstrap(pairId)).toEqual(original);
   });
 
-  it("defaults to read-only and accepts only an explicit exact todo-write grant", async () => {
+  it("defaults to read-only and rejects empty or duplicate write grants", async () => {
     const readOnly = await createBootstrap();
     expect((await storedBootstrap(readOnly.pairId))!.capabilities).toBeUndefined();
 
@@ -231,8 +231,7 @@ describe("createAndroidReadBootstrap", () => {
     for (const capabilities of [
       [],
       ["todos:write", "todos:write"],
-      ["transactions:write"],
-      ["todos:write", "budget:write"],
+
     ]) {
       const pairId = newPairId();
       await expect(
@@ -246,6 +245,19 @@ describe("createAndroidReadBootstrap", () => {
       ).rejects.toThrow(/VALIDATION_FAILED/);
       await expect(storedBootstrap(pairId)).resolves.toBeNull();
     }
+  });
+
+  it("claims all four grants exactly as minted", async () => {
+    setDeploymentEnv({ CONVEX_READ_TOKEN: freshSecret() });
+    const capabilities = ["todos:write", "transactions:write", "budget:write", "bitcoin:write"] as const;
+    const bootstrap = await createBootstrap(newPairId(), newProof(), Date.now() + 60_000, [...capabilities]);
+    const deviceId = "android-four-capability-device";
+    const deviceToken = freshSecret();
+    const result = await t.mutation(claimAndroidReadBootstrap, { ...bootstrap, deviceId, deviceToken });
+    expect(result.capabilities).toEqual(capabilities);
+    const devices = await t.run((ctx) => ctx.db.query("mobileDevices").collect());
+    expect(devices).toHaveLength(1);
+    expect(devices[0]!.capabilities).toEqual(capabilities);
   });
 
   it("rejects a todo-write bootstrap without a bound profile and inserts nothing", async () => {
@@ -400,7 +412,7 @@ describe("claimAndroidReadBootstrap", () => {
         .withIndex("by_pair_id", (q) => q.eq("pairId", bootstrap.pairId))
         .unique();
       await ctx.db.patch(row!._id, {
-        capabilities: ["transactions:write"],
+        capabilities: ["todos:write", "todos:write"],
       });
     });
 
@@ -632,7 +644,7 @@ describe("claimAndroidReadBootstrap", () => {
         ok: true;
         readToken: string;
         pairedAt: number;
-        capabilities: Array<"todos:write">;
+        capabilities: Array<"todos:write" | "transactions:write" | "budget:write" | "bitcoin:write">;
       }> => result.status === "fulfilled",
     );
     const rejected = results.filter(

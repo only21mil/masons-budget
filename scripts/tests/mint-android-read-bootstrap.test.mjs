@@ -15,6 +15,7 @@ import {
   RESPONSE_LIMIT_BYTES,
   mintAndroidReadBootstrap,
   validateOutputPath,
+  validateCapabilities,
 } from "../mint-android-read-bootstrap.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "../..");
@@ -65,7 +66,7 @@ test("dry-run needs no token and creates no pairing material", async () => {
   );
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /no request, file write, or secret generation/);
-  assert.match(result.stdout, /capabilities=todos:write/);
+  assert.match(result.stdout, /capabilities=todos:write,transactions:write,budget:write,bitcoin:write/);
   await assert.rejects(readFile(output), /ENOENT/);
 });
 
@@ -101,8 +102,8 @@ test("mint sends the exact locked wire shape and writes only pairId dot canonica
     "token",
   ]);
   assert.equal(body.path, "dataFiles:createAndroidReadBootstrap");
-  assert.deepEqual(body.args.capabilities, ["todos:write"]);
-  assert.deepEqual(ANDROID_BOOTSTRAP_CAPABILITIES, ["todos:write"]);
+  assert.deepEqual(body.args.capabilities, ANDROID_BOOTSTRAP_CAPABILITIES);
+  assert.deepEqual(ANDROID_BOOTSTRAP_CAPABILITIES, ["todos:write", "transactions:write", "budget:write", "bitcoin:write"]);
   assert.equal(Object.isFrozen(ANDROID_BOOTSTRAP_CAPABILITIES), true);
   assert.equal(body.args.profile, "victor");
   assert.equal(body.args.token, syncToken);
@@ -190,5 +191,13 @@ test("redirect and malformed or oversized responses leave no file", async () => 
       /failed|JSON|size limit|schema/,
     );
     await assert.rejects(readFile(output), /ENOENT/);
+  }
+});
+
+ test("capability option accepts a legacy todo grant and rejects invalid grants", () => {
+  assert.deepEqual(validateCapabilities("todos:write"), ["todos:write"]);
+  assert.deepEqual(validateCapabilities(ANDROID_BOOTSTRAP_CAPABILITIES), ANDROID_BOOTSTRAP_CAPABILITIES);
+  for (const value of ["", "todos:write,todos:write", "admin:write", []]) {
+    assert.throws(() => validateCapabilities(value), /capabilities/);
   }
 });

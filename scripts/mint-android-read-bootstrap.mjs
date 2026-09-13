@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Mint one short-lived Android read + todo-write bootstrap on a trusted host.
+// Mint one short-lived Android read + device-write bootstrap on a trusted host.
 // The raw proof is written only to a new mode-0600 file under $HOME/work. Convex
 // receives only its SHA-256 hash, and no secret or derivative is printed.
 
@@ -14,7 +14,7 @@ export const DEFAULT_TTL_MINUTES = 15;
 export const MAX_TTL_MINUTES = 30;
 export const REQUEST_TIMEOUT_MS = 10_000;
 export const RESPONSE_LIMIT_BYTES = 16 * 1024;
-export const ANDROID_BOOTSTRAP_CAPABILITIES = Object.freeze(["todos:write"]);
+export const ANDROID_BOOTSTRAP_CAPABILITIES = Object.freeze(["todos:write", "transactions:write", "budget:write", "bitcoin:write"]);
 export const DEVICE_PROFILES = Object.freeze(["victor", "rachel", "mason", "maddox"]);
 export const PAIRING_CODE_PATTERN =
   /^android-read-[A-Za-z0-9_-]{16,64}\.[A-Za-z0-9_-]{43}$/;
@@ -42,10 +42,22 @@ function validateProfile(value) {
   return value;
 }
 
+export function validateCapabilities(value) {
+  const capabilities = typeof value === "string" ? value.split(",") : value;
+  if (!Array.isArray(capabilities) || capabilities.length === 0 ||
+      new Set(capabilities).size !== capabilities.length ||
+      capabilities.some((capability) => !ANDROID_BOOTSTRAP_CAPABILITIES.includes(capability))) {
+    throw new Error("--capabilities must contain distinct supported write capabilities separated by commas.");
+  }
+  return [...capabilities];
+}
+
 function parseArgs(args) {
   let output;
   let minutes = DEFAULT_TTL_MINUTES;
   let profile;
+  let capabilities = ANDROID_BOOTSTRAP_CAPABILITIES;
+  let capabilitiesSupplied = false;
   let dryRun = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -64,6 +76,12 @@ function parseArgs(args) {
         throw new Error("--profile requires a value.");
       }
       profile = validateProfile(args[++index]);
+    } else if (argument === "--capabilities") {
+      if (capabilitiesSupplied || args[index + 1] === undefined) {
+        throw new Error("--capabilities requires one comma-separated value.");
+      }
+      capabilities = validateCapabilities(args[++index]);
+      capabilitiesSupplied = true;
     } else if (argument === "--dry-run") {
       dryRun = true;
     } else if (argument === "--help" || argument === "-h") {
@@ -78,7 +96,7 @@ function parseArgs(args) {
   if (profile === undefined) {
     throw new Error("--profile is required for a profile-bound task credential.");
   }
-  return { output, minutes, profile, dryRun, help: false };
+  return { output, minutes, profile, capabilities, dryRun, help: false };
 }
 
 function pathInside(parent, candidate) {
@@ -184,6 +202,7 @@ export async function mintAndroidReadBootstrap({
   syncToken,
   minutes = DEFAULT_TTL_MINUTES,
   profile,
+  capabilities = ANDROID_BOOTSTRAP_CAPABILITIES,
   output,
   homeDirectory,
   fetchImpl = fetch,
@@ -195,6 +214,7 @@ export async function mintAndroidReadBootstrap({
   }
   const ttlMinutes = validateTtlMinutes(minutes);
   const deviceProfile = validateProfile(profile);
+  const deviceCapabilities = validateCapabilities(capabilities);
   const destination = validateOutputPath(output, homeDirectory);
   const pairId = `android-read-${base64url(randomBytes(18))}`;
   const proof = base64url(randomBytes(32));
@@ -218,7 +238,7 @@ export async function mintAndroidReadBootstrap({
           pairId,
           proofHash,
           expiresAt,
-          capabilities: ANDROID_BOOTSTRAP_CAPABILITIES,
+          capabilities: deviceCapabilities,
           profile: deviceProfile,
           token: syncToken,
         },
@@ -246,7 +266,8 @@ function usage() {
 Options:
   --out <path>     Required new mode-0600 file beneath $HOME/work.
   --minutes <n>    Pairing lifetime, 1-${MAX_TTL_MINUTES}. Default: ${DEFAULT_TTL_MINUTES}.
-  --profile <name> Required credential-bound task profile.
+  --profile <name> Required credential-bound profile.
+  --capabilities <list> Comma-separated write capabilities. Default: all four.
   --dry-run        Validate configuration without a request, file, or secret generation.
 
 CONVEX_SYNC_TOKEN must come from the environment. No credential is accepted in argv.
@@ -267,7 +288,7 @@ export async function main(args = process.argv.slice(2), processEnv = process.en
   if (options.dryRun) {
     console.log("DRY RUN: no request, file write, or secret generation occurred.");
     console.log(`minutes=${options.minutes}`);
-    console.log(`capabilities=${ANDROID_BOOTSTRAP_CAPABILITIES.join(",")}`);
+    console.log(`capabilities=${options.capabilities.join(",")}`);
     console.log(`profile=${options.profile}`);
     console.log(`out=${output}`);
     return;
@@ -276,11 +297,12 @@ export async function main(args = process.argv.slice(2), processEnv = process.en
     syncToken: processEnv.CONVEX_SYNC_TOKEN || "",
     minutes: options.minutes,
     profile: options.profile,
+    capabilities: options.capabilities,
     output,
     homeDirectory: processEnv.HOME,
   });
   console.log(
-    `Minted one short-lived Android read + todo-write bootstrap into ${output}.`,
+    `Minted one short-lived Android read + device-write bootstrap into ${output}.`,
   );
   console.log("No pairing value or derivative was printed.");
 }
