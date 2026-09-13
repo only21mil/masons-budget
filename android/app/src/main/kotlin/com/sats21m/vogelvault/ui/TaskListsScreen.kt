@@ -447,7 +447,7 @@ private fun TaskSection(
     TaskPanel(title) {
         tasks.forEachIndexed { index, task ->
             if (index > 0) HorizontalHairline()
-            Box(Modifier.ledgerRowReveal(index, actions.revealKey?.let { "tasks-$title:$it" })) {
+            Box(Modifier.ledgerRowReveal(index, actions.revealKey?.let { "tasks-$title" })) {
                 TaskEditableRow(task, viewer, actions)
             }
         }
@@ -545,7 +545,7 @@ private fun TaskDetailList(
         } else {
             tasks.forEachIndexed { index, task ->
                 if (index > 0) HorizontalHairline()
-                Box(Modifier.ledgerRowReveal(index, actions.revealKey?.let { "tasks-$title:$it" })) {
+                Box(Modifier.ledgerRowReveal(index, actions.revealKey?.let { "tasks-$title" })) {
                     TaskEditableRow(task, viewer, actions)
                 }
             }

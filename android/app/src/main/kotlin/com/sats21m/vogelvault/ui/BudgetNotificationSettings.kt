@@ -5,6 +5,11 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -57,9 +62,23 @@ internal fun BudgetNotificationSettings(state: VaultUiState) {
             }
         }
 
+    val onToggle: (Boolean) -> Unit = { next ->
+        when {
+            !next -> setEnabled(false)
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> setEnabled(true)
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED -> setEnabled(true)
+            else -> permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     Panel(stringResource(R.string.budget_notifications_setting_title)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = VaultSpace.md),
+            modifier = Modifier.fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .toggleable(value = enabled, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onToggle)
+                .semantics { contentDescription = context.getString(R.string.budget_notifications_setting_title) }
+                .padding(vertical = VaultSpace.md),
             horizontalArrangement = Arrangement.spacedBy(VaultSpace.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -82,19 +101,7 @@ internal fun BudgetNotificationSettings(state: VaultUiState) {
             LedgerToggle(
                 checked = enabled,
                 contentDescription = stringResource(R.string.budget_notifications_setting_title),
-                onCheckedChange = { next ->
-                    when {
-                        !next -> setEnabled(false)
-                        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ->
-                            setEnabled(true)
-                        ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.POST_NOTIFICATIONS,
-                        ) == PackageManager.PERMISSION_GRANTED ->
-                            setEnabled(true)
-                        else -> permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                },
+                onCheckedChange = null,
             )
         }
     }

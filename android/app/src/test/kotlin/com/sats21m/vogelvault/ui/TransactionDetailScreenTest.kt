@@ -175,7 +175,7 @@ class TransactionDetailScreenTest {
         val result = runBlocking { actions(poster).save(transaction(), draft()) }
 
         val error = assertIs<TransactionActionResult.Error>(result)
-        assertTrue(error.message.contains("Convex refused the change"))
+        assertTrue(error.message.contains("Household sync refused the change"))
     }
 
     @Test

@@ -47,7 +47,7 @@ class BtcTransferWriteTest {
     @Test
     fun `accepted transfer with a stale draft id reports local recovery`() {
         assertEquals(
-            "Convex accepted this Bitcoin transfer, but this device could not retire its draft id. " +
+            "Household sync accepted this Bitcoin transfer, but this device could not retire its draft id. " +
                 "Do not submit another transfer until local storage is repaired.",
             btcTransferWriteFailureMessage(DraftIdWriteOutcome.AcceptedLeaseResetFailed),
         )

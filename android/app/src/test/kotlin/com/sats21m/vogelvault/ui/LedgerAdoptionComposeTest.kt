@@ -133,7 +133,7 @@ class LedgerAdoptionComposeTest {
         compose.onNodeWithText("$94,250").fetchSemanticsNode()
         compose.onNodeWithText(".12").fetchSemanticsNode()
         compose.onNodeWithText(
-            "VOGEL PRICE SERVICE · 2026-08-26T12:00:00Z",
+            "Market quote · 2026-08-26T12:00:00Z",
         ).fetchSemanticsNode()
 
         render {
@@ -142,9 +142,9 @@ class LedgerAdoptionComposeTest {
                 PaymentRail(PaymentSource.ZEUS_ON_CHAIN)
             }
         }
-        compose.onNodeWithText("BOLT · ZEUS LIGHTNING").fetchSemanticsNode()
+        compose.onNodeWithText("Bolt · Zeus Lightning").fetchSemanticsNode()
         compose.onNodeWithContentDescription("Bolt payment rail").fetchSemanticsNode()
-        compose.onNodeWithText("CHAIN · ZEUS ON-CHAIN").fetchSemanticsNode()
+        compose.onNodeWithText("Chain · Zeus On-chain").fetchSemanticsNode()
         compose.onNodeWithContentDescription("Chain payment rail").fetchSemanticsNode()
 
         render {

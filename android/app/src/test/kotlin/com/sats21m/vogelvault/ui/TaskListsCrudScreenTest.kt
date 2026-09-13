@@ -21,9 +21,10 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import com.sats21m.vogelvault.R
@@ -361,30 +362,22 @@ class TaskListsCrudScreenTest {
 
         deleteTodo(todo.title)
 
-        compose.onNodeWithContentDescription(
-            application.getString(R.string.todo_delete_pending_named, second.title),
-        ).assertIsNotEnabled()
+        assertFalse(hasTaskAction(second.title, R.string.todo_delete_named))
         assertEquals(1, application.poster.requestCount, "a second delete displaced the first request")
 
         application.poster.answer(success("deleted"))
         settle()
 
-        compose.onNodeWithContentDescription(
-            application.getString(R.string.todo_delete_pending_named, second.title),
-        ).assertIsNotEnabled()
+        assertFalse(hasTaskAction(second.title, R.string.todo_delete_named))
         compose.onNodeWithText(application.getString(R.string.todo_undo)).performClick()
         settle()
         application.poster.answer(success("restored"))
         settle()
-        compose.onNodeWithContentDescription(
-            application.getString(R.string.todo_delete_pending_named, second.title),
-        ).assertIsNotEnabled()
+        assertFalse(hasTaskAction(second.title, R.string.todo_delete_named))
         compose.mainClock.advanceTimeBy(TODO_UNDO_WINDOW_MILLIS + 1)
         settle()
 
-        compose.onNodeWithContentDescription(
-            application.getString(R.string.todo_delete_named, second.title),
-        ).assertIsEnabled()
+        assertTrue(hasTaskAction(second.title, R.string.todo_delete_named))
         assertEquals(2, application.poster.requestCount)
     }
 
@@ -463,12 +456,8 @@ class TaskListsCrudScreenTest {
         compose.onNodeWithContentDescription(markCompleteDescription(title))
             .performScrollTo()
             .fetchSemanticsNode()
-        compose.onNodeWithContentDescription(
-            application.getString(R.string.todo_remove_flag_named, title),
-        ).performScrollTo().fetchSemanticsNode()
-        compose.onNodeWithContentDescription(
-            application.getString(R.string.todo_delete_named, title),
-        ).performScrollTo().fetchSemanticsNode()
+        assertTrue(hasTaskAction(title, R.string.todo_remove_flag_named))
+        assertTrue(hasTaskAction(title, R.string.todo_delete_named))
     }
 
     private fun openGroup(name: String) {
@@ -483,10 +472,17 @@ class TaskListsCrudScreenTest {
         settle()
     }
 
+    private fun hasTaskAction(title: String, labelRes: Int): Boolean =
+        compose.onNodeWithContentDescription(editDescription(title)).performScrollTo().fetchSemanticsNode()
+            .config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.CustomActions)
+            .orEmpty().any { it.label == application.getString(labelRes, title) }
+
     private fun deleteTodo(title: String) {
-        compose.onNodeWithContentDescription(
-            application.getString(R.string.todo_delete_named, title),
-        ).performScrollTo().performClick()
+        val actions = compose.onNodeWithContentDescription(editDescription(title)).performScrollTo()
+            .fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
+        compose.runOnIdle {
+            actions.single { it.label == application.getString(R.string.todo_delete_named, title) }.action()
+        }
         settle()
     }
 

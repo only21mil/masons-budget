@@ -669,16 +669,16 @@ private fun ScreenHeader(
         Destination.BTC_BILL_PAYS -> "Bitcoin spent on bills visible to this profile"
         Destination.NET_WORTH -> "Household for adults; self only for children"
         Destination.RETIREMENT -> "Retirement accounts and long-range scenario"
-        Destination.EXPORT -> "Owner-filtered files shared outside the app"
+        Destination.EXPORT -> "Share files for this profile"
         Destination.TODAY -> "Due today or overdue"
         Destination.TASKS -> "Projects, areas and smart lists"
         Destination.FAMILY -> "Who can see what"
-        Destination.SETTINGS -> "Runtime and boundaries"
+        Destination.SETTINGS -> "Appearance and connection"
     }
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.xs)) {
         Text(destination.label, style = tokens.type.screenTitle, color = tokens.colors.foreground)
         Text(
-            subtitle.uppercase(),
+            subtitle,
             style = tokens.type.screenSubtitle,
             color = tokens.colors.foregroundSecondary,
             maxLines = 1,
@@ -1662,7 +1662,7 @@ internal fun BitcoinPriceHero(quote: MarketQuote?, nowMillis: Long? = null) {
                 }
             }
             Text(
-                operationalBitcoinPriceBasis(quote, nowMillis).uppercase(),
+                operationalBitcoinPriceBasis(quote, nowMillis),
                 style = tokens.type.rowMeta,
                 color = tokens.colors.foregroundTertiary,
             )
@@ -1796,7 +1796,7 @@ internal fun operationalBitcoinPriceBasis(quote: MarketQuote?, nowMillis: Long? 
     quote ?: return "No operational quote"
     if (nowMillis != null) return quote.quoteHint(nowMillis)
     return buildString {
-        append(quote.source)
+        append("Market quote")
         if (quote.status == MarketQuoteStatus.STALE) append(" · stale")
         append(" · ${quote.fetchedAt}")
     }
@@ -1904,6 +1904,15 @@ private fun VaultLazyListScope.settings(
         TextButton(onClick = { onNavigate(Destination.FAMILY) }) { Text("Family") }
         TextButton(onClick = { onNavigate(Destination.EXPORT) }) { Text("Export") }
     }
+    item { LedgerAppearanceSettings(ledgerSettings, onLedgerSettingsChange) }
+    item { BudgetNotificationSettings(state) }
+    item { com.sats21m.vogelvault.ui.components.SectionLabel("Diagnostics") }
+    item {
+        Panel("Services") {
+            Text("Household sync: Convex")
+            state.marketQuotes?.quotes?.map { it.source }?.distinct()?.forEach { Text("Market data: $it") }
+        }
+    }
     item {
         if (remoteReadReady) {
             StatusBanner(
@@ -1919,7 +1928,6 @@ private fun VaultLazyListScope.settings(
             )
         }
     }
-    item { LedgerAppearanceSettings(ledgerSettings, onLedgerSettingsChange) }
     state.remoteConfigurationError?.let { detail ->
         item {
             StatusBanner(
@@ -1928,9 +1936,6 @@ private fun VaultLazyListScope.settings(
                 tone = LocalLedgerTheme.current.colors.loss,
             )
         }
-    }
-    item {
-        BudgetNotificationSettings(state)
     }
     item {
         Panel(stringResource(R.string.read_bootstrap_title)) {

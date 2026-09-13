@@ -248,7 +248,7 @@ internal fun transactionWriteFailureMessage(outcome: DraftIdWriteOutcome<*>): St
     when (outcome) {
         is DraftIdWriteOutcome.Accepted -> null
         DraftIdWriteOutcome.AcceptedLeaseResetFailed ->
-            "Convex accepted this transaction, but this device could not retire its draft id. " +
+            "Household sync accepted this transaction, but this device could not retire its draft id. " +
                 "Do not submit another transaction until local storage is repaired."
         is DraftIdWriteOutcome.Rejected -> transactionWriteFailureMessage(outcome.result)
     }

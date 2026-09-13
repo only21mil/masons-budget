@@ -304,7 +304,7 @@ private fun VaultLazyListScope.retirementAccountAndHoldingContent(
                     },
                     figure = state.formatFinanceCentsOrNull(account.valueCents, displayUnit)
                         ?: Money.PRICE_UNAVAILABLE,
-                    badge = account.account.weeklyContributionDay?.uppercase() ?: "NOT SCHEDULED",
+                    badge = account.account.weeklyContributionDay ?: "Not scheduled",
                 )
             }
             val rows = accounts.flatMap { account ->
@@ -443,7 +443,7 @@ internal fun MarketQuote.quoteHint(nowMillis: Long): String {
     val failure = errorCode?.name?.lowercase()?.replace('_', ' ')
     // Short enough for a row's meta line and the 296dp sidebar: "Kraken · 2 min ago".
     return buildString {
-        append(source)
+        append("Market quote")
         when (status) {
             MarketQuoteStatus.LIVE -> append(" · ${age ?: "now"}")
             MarketQuoteStatus.STALE -> append(" · cached · ${age ?: "age unknown"}")

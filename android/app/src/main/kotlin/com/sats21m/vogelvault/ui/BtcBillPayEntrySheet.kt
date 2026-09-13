@@ -144,7 +144,7 @@ internal fun btcBillPayWriteFailureMessage(outcome: DraftIdWriteOutcome<*>): Str
     when (outcome) {
         is DraftIdWriteOutcome.Accepted -> null
         DraftIdWriteOutcome.AcceptedLeaseResetFailed ->
-            "Convex accepted this Bitcoin bill pay, but this device could not retire its draft id. " +
+            "Household sync accepted this Bitcoin bill pay, but this device could not retire its draft id. " +
                 "Do not submit another bill pay until local storage is repaired."
         is DraftIdWriteOutcome.Rejected -> btcBillPayWriteFailureMessage(outcome.result)
     }

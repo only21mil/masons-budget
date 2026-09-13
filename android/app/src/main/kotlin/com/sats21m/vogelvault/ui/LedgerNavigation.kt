@@ -42,9 +42,9 @@ internal fun Destination.ledgerGlyph(): ImageVector = when (this) {
     Destination.ACTIVITY -> LedgerGlyphs.Stack
     Destination.BUDGET -> LedgerGlyphs.Wallet
     Destination.BITCOIN -> LedgerGlyphs.Btc
-    Destination.BTC_BUYS -> LedgerGlyphs.Btc
+    Destination.BTC_BUYS -> LedgerGlyphs.ArrowDown
     Destination.BTC_BILL_PAYS -> LedgerGlyphs.Chain
-    Destination.NET_WORTH -> LedgerGlyphs.Bars
+    Destination.NET_WORTH -> LedgerGlyphs.Vault
     Destination.RETIREMENT -> LedgerGlyphs.Target
     Destination.EXPORT -> LedgerGlyphs.Doc
     Destination.TODAY -> LedgerGlyphs.Calendar

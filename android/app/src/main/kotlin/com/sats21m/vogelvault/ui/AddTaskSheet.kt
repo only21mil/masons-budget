@@ -41,7 +41,7 @@ import kotlinx.coroutines.launch
 
 /** Shown when the server accepted a task but the lease could not be retired. */
 internal const val acceptedTaskLeaseResetFailure =
-    "Convex accepted this task, but this device could not retire its draft id. " +
+    "Household sync accepted this task, but this device could not retire its draft id. " +
         "Do not submit another task until local storage is repaired."
 
 internal data class AddTaskDraft(

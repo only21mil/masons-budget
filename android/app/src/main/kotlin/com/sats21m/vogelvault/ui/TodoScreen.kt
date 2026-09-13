@@ -160,7 +160,7 @@ internal fun TodoScreen(
                 Column {
                     Text("Today", style = ledgerTokens.type.screenTitle, color = ledgerTokens.colors.foreground)
                     Text(
-                        stringResource(R.string.todo_today_subtitle).uppercase(),
+                        stringResource(R.string.todo_today_subtitle),
                         style = ledgerTokens.type.screenSubtitle,
                         color = ledgerTokens.colors.foregroundSecondary,
                     )

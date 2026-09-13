@@ -120,11 +120,7 @@ fun revealWithinWindow(
  * to remember this in, hence the small process-wide table.
  */
 internal object LedgerRevealMarks {
-    private const val CAPACITY = 32
-    private val firstSeen = object : LinkedHashMap<Any, Long>(CAPACITY, 0.75f, false) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Any, Long>?): Boolean =
-            size > CAPACITY
-    }
+    private val firstSeen = mutableMapOf<Any, Long>()
 
     fun staggers(key: Any, nowMillis: Long): Boolean =
         revealWithinWindow(firstSeen.getOrPut(key) { nowMillis }, nowMillis)
@@ -139,13 +135,17 @@ internal object LedgerRevealMarks {
 fun Modifier.ledgerRowReveal(index: Int, revealKey: Any?): Modifier {
     if (revealKey == null) return this
     val animate = LocalLedgerEffects.current.animate
+    val arrivalKey = LocalLedgerRevealProfile.current to revealKey
     val spec = ledgerTween<Float>(LedgerReveal.rowMillis, delayMillis = revealDelayMillis(index))
-    val alpha = remember(revealKey) {
-        val staggers = animate && LedgerRevealMarks.staggers(revealKey, SystemClock.uptimeMillis())
+    val alpha = remember(arrivalKey) {
+        val staggers = LedgerRevealMarks.staggers(arrivalKey, SystemClock.uptimeMillis()) && animate
         Animatable(if (staggers) 0f else 1f)
     }
-    LaunchedEffect(revealKey) {
-        if (alpha.value < 1f) alpha.animateTo(1f, spec)
+    LaunchedEffect(arrivalKey, animate) {
+        if (!animate) alpha.snapTo(1f)
+        else if (alpha.value < 1f) alpha.animateTo(1f, spec)
     }
     return graphicsLayer { this.alpha = alpha.value }
 }
+
+internal val LocalLedgerRevealProfile = androidx.compose.runtime.staticCompositionLocalOf { "preview" }

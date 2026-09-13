@@ -176,7 +176,7 @@ internal fun btcTransferWriteFailureMessage(outcome: DraftIdWriteOutcome<*>): St
     when (outcome) {
         is DraftIdWriteOutcome.Accepted -> null
         DraftIdWriteOutcome.AcceptedLeaseResetFailed ->
-            "Convex accepted this Bitcoin transfer, but this device could not retire its draft id. " +
+            "Household sync accepted this Bitcoin transfer, but this device could not retire its draft id. " +
                 "Do not submit another transfer until local storage is repaired."
         is DraftIdWriteOutcome.Rejected -> btcTransferWriteFailureMessage(outcome.result)
     }

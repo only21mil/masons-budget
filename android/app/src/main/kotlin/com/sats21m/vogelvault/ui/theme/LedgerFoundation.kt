@@ -184,7 +184,7 @@ data class LedgerTypeTokens(
     val textInput: TextStyle,
 )
 
-private fun ledgerTypeTokens(treatment: LedgerTreatment): LedgerTypeTokens {
+private fun ledgerTypeTokens(treatment: LedgerTreatment, folded: Boolean = false): LedgerTypeTokens {
     val daylight = treatment == LedgerTreatment.DAYLIGHT_LIGHT
     fun style(
         size: TextUnit,
@@ -214,7 +214,7 @@ private fun ledgerTypeTokens(treatment: LedgerTreatment): LedgerTypeTokens {
         kpiValue = style(20.sp, FontWeight.Medium, tabular = true),
         kpiSub = style(11.sp, FontWeight.Medium, 0.04.em),
         sectionLabel = style(11.sp, FontWeight.SemiBold, 0.10.em),
-        rowPrimary = style(if (daylight) 13.5.sp else 12.5.sp, FontWeight.Normal),
+        rowPrimary = style(if (folded) 14.sp else if (daylight) 13.5.sp else 12.5.sp, FontWeight.Normal),
         rowMeta = style(11.sp, FontWeight.Medium, 0.03.em),
         rowFigure = style(if (daylight) 13.5.sp else 12.5.sp, FontWeight.Medium, tabular = true),
         chip = style(11.sp, FontWeight.SemiBold, 0.06.em),
@@ -278,7 +278,7 @@ data class LedgerAccessibilityPreferences(
 data class LedgerEffectSettings(
     /** Off by default since the 2026-09-05 readability audit; the texture is a preference, not a base layer. */
     val scanlinesEnabled: Boolean = false,
-    val phosphorGlowEnabled: Boolean = true,
+    val phosphorGlowEnabled: Boolean = false,
 )
 
 @Immutable
@@ -309,12 +309,12 @@ data class LedgerThemeTokens(
     val density: LedgerDensityTokens,
 )
 
-internal fun themeTokens(treatment: LedgerTreatment): LedgerThemeTokens {
+internal fun themeTokens(treatment: LedgerTreatment, folded: Boolean = false): LedgerThemeTokens {
     val daylight = treatment == LedgerTreatment.DAYLIGHT_LIGHT
     return LedgerThemeTokens(
         treatment = treatment,
         colors = if (daylight) LedgerPalettes.DaylightLight else LedgerPalettes.TerminalDark,
-        type = ledgerTypeTokens(treatment),
+        type = ledgerTypeTokens(treatment, folded),
         density = LedgerDensityTokens(
             screenGutter = if (daylight) 22.dp else 20.dp,
             cardPadding = if (daylight) 17.dp else 15.dp,
@@ -347,14 +347,15 @@ fun SovereignLedgerTheme(
     accessibility: LedgerAccessibilityPreferences = LedgerAccessibilityPreferences(),
     content: @Composable () -> Unit,
 ) {
-    val tokens = themeTokens(treatment)
+    val tokens = themeTokens(treatment, androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 600)
+    val systemReduceMotion = rememberSystemReduceMotion()
     MaterialTheme(
         colorScheme = tokens.colors.toMaterialScheme(treatment),
         typography = tokens.type.toMaterialTypography(),
     ) {
         CompositionLocalProvider(
             LocalLedgerTheme provides tokens,
-            LocalLedgerEffects provides effectSettings.resolve(treatment, accessibility),
+            LocalLedgerEffects provides effectSettings.resolve(treatment, accessibility.copy(reduceMotion = accessibility.reduceMotion || systemReduceMotion)),
             LocalContentColor provides tokens.colors.foreground,
             content = content,
         )
@@ -364,8 +365,8 @@ fun SovereignLedgerTheme(
 internal fun LedgerColors.toMaterialScheme(treatment: LedgerTreatment): ColorScheme {
     val base = if (treatment == LedgerTreatment.TERMINAL_DARK) darkColorScheme() else lightColorScheme()
     return base.copy(
-        primary = bitcoinFill,
-        onPrimary = LedgerPalettes.TerminalDark.background,
+        primary = bitcoin,
+        onPrimary = if (treatment == LedgerTreatment.DAYLIGHT_LIGHT) LedgerPalettes.TerminalDark.foreground else LedgerPalettes.TerminalDark.background,
         primaryContainer = bitcoinSoft,
         onPrimaryContainer = foreground,
         inversePrimary = background,

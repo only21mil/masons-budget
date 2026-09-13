@@ -14,7 +14,7 @@ class BtcBillPayWriteTest {
     @Test
     fun `accepted bill pay with a stale draft id reports local recovery`() {
         assertEquals(
-            "Convex accepted this Bitcoin bill pay, but this device could not retire its draft id. " +
+            "Household sync accepted this Bitcoin bill pay, but this device could not retire its draft id. " +
                 "Do not submit another bill pay until local storage is repaired.",
             btcBillPayWriteFailureMessage(DraftIdWriteOutcome.AcceptedLeaseResetFailed),
         )

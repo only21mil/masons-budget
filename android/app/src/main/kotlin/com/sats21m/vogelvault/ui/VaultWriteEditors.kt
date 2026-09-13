@@ -556,9 +556,9 @@ internal fun BudgetCategoryEditorSheet(
                                     is BudgetCategoryDeleteResult.Submitted -> when (val submitted = result.result) {
                                         is ConvexResult.Ok -> null
                                         ConvexResult.Unauthorized -> "Category not deleted: this device is not authorized."
-                                        ConvexResult.NotConfigured -> "Category not deleted: Convex is not configured."
+                                        ConvexResult.NotConfigured -> "Category not deleted: household sync is not connected."
                                         ConvexResult.Disabled -> "Category not deleted: authenticated writes are disabled."
-                                        ConvexResult.Missing -> "Category not deleted: Convex returned no result."
+                                        ConvexResult.Missing -> "Category not deleted: household sync returned no result."
                                         is ConvexResult.Failed -> "Category not deleted: ${submitted.reason}."
                                     }
                                 }
@@ -947,7 +947,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
 }
 
 private const val acceptedBtcBuyLeaseResetFailure =
-    "Convex accepted this Bitcoin buy, but this device could not retire its draft id. " +
+    "Household sync accepted this Bitcoin buy, but this device could not retire its draft id. " +
         "Do not submit another buy until local storage is repaired."
 
 @Composable

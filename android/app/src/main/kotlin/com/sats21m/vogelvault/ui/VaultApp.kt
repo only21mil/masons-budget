@@ -26,18 +26,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ReceiptLong
-import androidx.compose.material.icons.filled.AccountBalance
-import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.CurrencyBitcoin
-import androidx.compose.material.icons.filled.Dashboard
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Savings
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -92,31 +81,11 @@ import com.sats21m.vogelvault.ui.theme.VaultSpace
  * each screen receives or derives its collections; the destination catalog is
  * not an authorization boundary.
  */
-enum class Destination(
-    val label: String,
-    val icon: ImageVector,
-    /**
-     * Resting glyph colour. Navigation item colors consume this value so their
-     * selected colors remain authoritative; never pass it directly to Icon.
-     */
-    val navigationRestingTint: Color,
-) {
-    DASHBOARD("Dashboard", Icons.Filled.Dashboard, VaultNavSlate),
-    ACTIVITY("Activity", Icons.AutoMirrored.Filled.ReceiptLong, VaultNavSlate),
-    BUDGET("Budget", Icons.Filled.Payments, VaultNavSlate),
-    BITCOIN("Bitcoin", Icons.Filled.CurrencyBitcoin, VaultBitcoin),
-    BTC_BUYS("BTC Buys", Icons.Filled.CurrencyBitcoin, VaultBitcoin),
-    BTC_BILL_PAYS("BTC Bill Pays", Icons.AutoMirrored.Filled.ReceiptLong, VaultBitcoin),
-    NET_WORTH("Net Worth", Icons.Filled.AccountBalance, VaultNavSlate),
-    RETIREMENT("Retirement", Icons.Filled.Savings, VaultNavSlate),
-    EXPORT("Export", Icons.Filled.FileDownload, VaultNavSlate),
-    TODAY("Today", Icons.Filled.WbSunny, VaultNavSlate),
-    TASKS("Tasks", Icons.Filled.Checklist, VaultNavSlate),
-    FAMILY("Family", Icons.Filled.People, VaultNavSlate),
-    SETTINGS("Settings", Icons.Filled.Settings, VaultNavSlate);
-
-    val navigationSelectedTint: Color
-        get() = if (navigationRestingTint == VaultBitcoin) VaultBitcoin else VaultCream
+enum class Destination(val label: String) {
+    DASHBOARD("Dashboard"), ACTIVITY("Activity"), BUDGET("Budget"), BITCOIN("Bitcoin"),
+    BTC_BUYS("BTC Buys"), BTC_BILL_PAYS("BTC Bill Pays"), NET_WORTH("Net Worth"),
+    RETIREMENT("Retirement"), EXPORT("Export"), TODAY("Today"), TASKS("Tasks"),
+    FAMILY("Family"), SETTINGS("Settings");
 }
 
 /**
@@ -167,7 +136,7 @@ internal fun moreNavigationLabel(count: Int): String = "More ($count)"
 internal fun ledgerNavigationSelectedTint(
     destination: Destination,
     colors: LedgerColors,
-): Color = if (destination.navigationRestingTint == VaultBitcoin) colors.bitcoin else colors.foreground
+): Color = if (destination in setOf(Destination.BITCOIN, Destination.BTC_BUYS, Destination.BTC_BILL_PAYS)) colors.bitcoin else colors.foreground
 
 internal fun ledgerNavigationUnselectedTint(colors: LedgerColors): Color = colors.foregroundSecondary
 
@@ -258,6 +227,7 @@ fun VaultApp(
             CompositionLocalProvider(
                 LocalLedgerPanePlan provides plan,
                 LocalLedgerSheetRegion provides sheetRegion,
+                com.sats21m.vogelvault.ui.components.LocalLedgerRevealProfile provides state.activeProfile.key,
                 com.sats21m.vogelvault.ui.components.LocalStateBlockRetry provides onWriteSucceeded,
                 com.sats21m.vogelvault.ui.components.LocalFigureUnitCycle provides if (current.supportsFinancialDisplayUnit) ({
                     onDisplayUnitChange(DisplayUnit.entries[(displayUnit.ordinal + 1) % DisplayUnit.entries.size])
@@ -388,7 +358,8 @@ private fun VaultScreenContent(
             .height(fabHeight).align(Alignment.TopStart)) {
             androidx.compose.material3.FloatingActionButton(
                 onClick = { quickAddRequested = true },
-                containerColor = LocalLedgerTheme.current.colors.bitcoin,
+                containerColor = LocalLedgerTheme.current.colors.bitcoinFill,
+                contentColor = com.sats21m.vogelvault.ui.theme.LedgerPalettes.TerminalDark.background,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(VaultSpace.md).testTag("quick-add-fab"),
             ) { Text("+", modifier = Modifier.semantics { contentDescription = "Add transaction" }) }
         }
@@ -466,7 +437,7 @@ private fun VaultRail(
     ) {
         Spacer(Modifier.height(VaultSpace.lg))
         Icon(
-            Icons.Filled.AccountBalance,
+            com.sats21m.vogelvault.ui.components.LedgerGlyphs.Horizon,
             contentDescription = null,
             tint = tokens.colors.bitcoin,
             modifier = Modifier

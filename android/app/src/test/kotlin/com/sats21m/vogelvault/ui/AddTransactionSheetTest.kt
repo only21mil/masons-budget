@@ -78,7 +78,7 @@ class AddTransactionSheetTest {
     @Test
     fun `accepted transaction with a stale draft id reports local recovery`() {
         assertEquals(
-            "Convex accepted this transaction, but this device could not retire its draft id. " +
+            "Household sync accepted this transaction, but this device could not retire its draft id. " +
                 "Do not submit another transaction until local storage is repaired.",
             transactionWriteFailureMessage(DraftIdWriteOutcome.AcceptedLeaseResetFailed),
         )

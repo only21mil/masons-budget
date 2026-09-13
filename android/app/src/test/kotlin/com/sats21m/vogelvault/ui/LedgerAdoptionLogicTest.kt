@@ -48,7 +48,7 @@ class LedgerAdoptionLogicTest {
 
         assertEquals("\$94,250.12", formatOperationalBitcoinPrice(quote))
         assertEquals(
-            "Vogel price service · 2026-08-26T12:00:00Z",
+            "Market quote · 2026-08-26T12:00:00Z",
             operationalBitcoinPriceBasis(quote),
         )
         assertEquals(Money.PRICE_UNAVAILABLE, formatOperationalBitcoinPrice(null))

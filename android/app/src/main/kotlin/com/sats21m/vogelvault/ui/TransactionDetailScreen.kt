@@ -527,10 +527,10 @@ private fun ConvexResult<*>.toTransactionActionResult(): TransactionActionResult
         is ConvexResult.Ok -> TransactionActionResult.Success
         ConvexResult.Disabled -> TransactionActionResult.Error("Transaction writes are disabled.")
         ConvexResult.NotConfigured ->
-            TransactionActionResult.Error("The secure Convex write path is not configured.")
+            TransactionActionResult.Error("The secure household write connection is not configured.")
         ConvexResult.Unauthorized ->
-            TransactionActionResult.Error("The secure Convex write credential was not accepted.")
-        ConvexResult.Missing -> TransactionActionResult.Error("Convex returned no mutation result.")
+            TransactionActionResult.Error("The secure household write access was not accepted.")
+        ConvexResult.Missing -> TransactionActionResult.Error("Household sync returned no result.")
         is ConvexResult.Failed ->
-            TransactionActionResult.Error("Convex refused the change (${this.reason}).")
+            TransactionActionResult.Error("Household sync refused the change (${this.reason}).")
     }

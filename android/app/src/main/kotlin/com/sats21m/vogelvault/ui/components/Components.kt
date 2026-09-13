@@ -153,7 +153,7 @@ class VaultLazyListScope internal constructor(
         source: String? = null,
         rows: List<T>,
         rowKey: (T) -> String,
-        /** The slice revision the rows came from; a change reveals them. Null prints cold. */
+        /** The slice revision the rows came from; its first arrival reveals it. Null prints cold. */
         revealKey: Any? = null,
         onHeaderClick: (() -> Unit)? = null,
         rowContent: @Composable (T) -> Unit,
@@ -174,7 +174,7 @@ class VaultLazyListScope internal constructor(
         ) { index, row ->
             LazyPanelRow(
                 isLast = index == rows.lastIndex,
-                modifier = Modifier.ledgerRowReveal(index, revealKey?.let { "$sectionKey:$it" }),
+                modifier = Modifier.ledgerRowReveal(index, revealKey?.let { sectionKey }),
             ) {
                 rowContent(row)
             }
@@ -252,7 +252,7 @@ private fun SectionHeading(
                 },
             )
             userFacingSource(source)?.let {
-                Text(it.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
+                Text(it, style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
             }
         }
         trailing?.invoke()
@@ -374,7 +374,7 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
             color = figureColor,
         )
         if (!unavailable && item.hint != null) {
-            Text(item.hint.uppercase(), style = tokens.type.kpiSub, color = tokens.colors.foregroundTertiary)
+            Text(item.hint, style = tokens.type.kpiSub, color = tokens.colors.foregroundTertiary)
         }
     }
 }
@@ -448,7 +448,7 @@ fun LedgerRow(
         Column(Modifier.weight(1f)) {
             Text(primary, style = tokens.type.rowPrimary, color = tokens.colors.foreground)
             if (secondary != null) {
-                Text(secondary.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
+                Text(secondary, style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
             }
         }
         if (badge != null) {

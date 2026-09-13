@@ -61,58 +61,6 @@ class AdaptiveThresholdTest {
 class DestinationVisibilityTest {
 
     @Test
-    fun `all thirteen destinations use only approved resting navigation colors`() {
-        val expectedResting = mapOf(
-            Destination.DASHBOARD to VaultNavSlate,
-            Destination.ACTIVITY to VaultNavSlate,
-            Destination.BUDGET to VaultNavSlate,
-            Destination.BITCOIN to VaultBitcoin,
-            Destination.BTC_BUYS to VaultBitcoin,
-            Destination.BTC_BILL_PAYS to VaultBitcoin,
-            Destination.NET_WORTH to VaultNavSlate,
-            Destination.RETIREMENT to VaultNavSlate,
-            Destination.EXPORT to VaultNavSlate,
-            Destination.TODAY to VaultNavSlate,
-            Destination.TASKS to VaultNavSlate,
-            Destination.FAMILY to VaultNavSlate,
-            Destination.SETTINGS to VaultNavSlate,
-        )
-        val expectedSelected = Destination.entries.associateWith { destination ->
-            if (destination in setOf(
-                    Destination.BITCOIN,
-                    Destination.BTC_BUYS,
-                    Destination.BTC_BILL_PAYS,
-                )
-            ) {
-                VaultBitcoin
-            } else {
-                VaultCream
-            }
-        }
-
-        assertEquals(13, Destination.entries.size)
-        assertEquals(expectedResting, Destination.entries.associateWith { it.navigationRestingTint })
-        assertEquals(expectedSelected, Destination.entries.associateWith { it.navigationSelectedTint })
-        assertEquals(Color(0xFFF7931A), VaultBitcoin)
-        assertEquals(Color(0xFF7A86C0), VaultNavSlate)
-    }
-
-    @Test
-    fun `resting navigation colors do not consume selection or status colors`() {
-        Destination.entries.forEach { destination ->
-            assertNotEquals(VaultCream, destination.navigationRestingTint)
-            assertFalse(
-                destination.navigationRestingTint in setOf(
-                    VaultPositive,
-                    VaultNegative,
-                    VaultWarning,
-                    VaultInfo,
-                ),
-            )
-        }
-    }
-
-    @Test
     fun `retirement and net worth remain separate navigation destinations`() {
         assertTrue(Destination.RETIREMENT in Destination.entries)
         assertTrue(Destination.NET_WORTH in Destination.entries)
