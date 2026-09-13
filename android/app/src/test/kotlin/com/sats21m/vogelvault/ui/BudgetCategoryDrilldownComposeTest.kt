@@ -132,7 +132,7 @@ class BudgetCategoryDrilldownComposeTest {
                 listOf(transfer), 1L, "test transfers"))))
         contentList().performScrollToKey("bitcoin-transfers:row:victor:move-1")
         compose.onNodeWithText("source-account → destination-account", useUnmergedTree = true).fetchSemanticsNode()
-        compose.onNodeWithText("2026-07-26 · FEE 5 SATS", useUnmergedTree = true).fetchSemanticsNode()
+        compose.onNodeWithText("2026-07-26 · Fee 5 sats", useUnmergedTree = true).fetchSemanticsNode()
     }
 
     @Test

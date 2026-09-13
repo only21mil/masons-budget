@@ -210,7 +210,7 @@ class FinancialScreenValuesTest {
 
         assertEquals("\$100,000.00", formatOperationalBitcoinPrice(selected))
         assertEquals(
-            "market adapter · stale · 2026-07-30T10:00:00Z",
+            "Market quote · stale · 2026-07-30T10:00:00Z",
             operationalBitcoinPriceBasis(selected),
         )
         assertEquals("\$541,782.86", formatCanonicalBalance(balance, DisplayUnit.USD, selected))

@@ -3,7 +3,7 @@ package com.sats21m.vogelvault.ui
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -82,7 +82,7 @@ class WriteCredentialAccessorTest {
     fun `settings destination includes credential panel wired to application accessor`() {
         showSettingsDestination()
         compose
-            .onNode(hasScrollAction())
+            .onNode(hasScrollToIndexAction())
             .performScrollToNode(hasText("Sync credential"))
         compose
             .onNodeWithText("Sync credential")
