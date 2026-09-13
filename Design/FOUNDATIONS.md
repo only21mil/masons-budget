@@ -168,8 +168,11 @@ the old 0.18em labels had. The PLANNED and ACTUAL label pairs keep nowrap.
   12px. Status dots are circular.
 - Every tappable row is at least 44px tall. Standard steppers are 30 by 28px,
   category-editor steppers are 34 by 34px, and toggles are 42 by 24px.
-- Folded layout targets about 360 by 780dp. Unfolded layout targets about 876
-  by 800dp with a 130dp rail and a 296dp secondary column where specified.
+- Folded test sizes are 411 by 891dp for the Pixel Fold cover and 345 by
+  870dp for a narrow Galaxy Z Fold cover. The Galaxy size is an inferred test
+  fixture, pending physical-device measurement and verification. Unfolded layout
+  targets about 876 by 800dp with a 130dp rail and a 296dp secondary column
+  where specified.
 - The scanline is `repeating-linear-gradient(180deg, scan 0 1px, transparent 1px 3px)`.
   It never intercepts input or enters the accessibility tree.
 - Scanlines and phosphor glow are separate settings. Scanlines default off
