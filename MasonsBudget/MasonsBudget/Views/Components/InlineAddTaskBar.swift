@@ -20,6 +20,10 @@ struct InlineAddTaskBar: View {
 
     @Binding var isExpanded: Bool
     @State private var draftText = ""
+    @State private var isSaving = false
+    @State private var pendingTodo: TodoItem?
+    @State private var writeMessage: String?
+    @State private var showSetup = false
     @FocusState private var draftFocused: Bool
 
     private var activeMember: FamilyMember {
@@ -38,11 +42,18 @@ struct InlineAddTaskBar: View {
                         .ledgerType(.textInput)
                         .foregroundStyle(theme.text)
                         .focused($draftFocused)
+                        .disabled(isSaving || pendingTodo != nil)
                         .onSubmit(addTask)
-                    Button("Add", action: addTask)
-                        .ledgerType(.button)
-                        .foregroundStyle(theme.accent)
-                        .buttonStyle(.plain)
+                    if AppWritebackConfig.canWriteTasks {
+                        Button(isSaving ? "Saving" : "Add", action: addTask)
+                            .ledgerType(.button)
+                            .foregroundStyle(theme.accent)
+                            .buttonStyle(.plain)
+                            .disabled(isSaving || draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    } else {
+                        Button("Open Sync Setup") { showSetup = true }
+                            .ledgerType(.button)
+                    }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -72,6 +83,17 @@ struct InlineAddTaskBar: View {
                 )
             }
         }
+        .sheet(isPresented: $showSetup) { NavigationStack { SyncSetupView() } }
+        .overlay(alignment: .bottomLeading) {
+            if let writeMessage { Text(writeMessage).ledgerType(.rowMeta).foregroundStyle(theme.warn).offset(y: 22) }
+        }
+        .onChange(of: selectedMemberRaw) { _, _ in
+            draftText = ""
+            pendingTodo = nil
+            writeMessage = nil
+            isSaving = false
+            isExpanded = false
+        }
         .onChange(of: isExpanded) { _, expanded in
             if expanded { draftFocused = true }
         }
@@ -80,8 +102,15 @@ struct InlineAddTaskBar: View {
     @MainActor
     private func addTask() {
         let trimmed = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let todo = TodoItem(
+        guard !trimmed.isEmpty, !isSaving else { return }
+        guard AppWritebackConfig.canWriteTasks else {
+            writeMessage = ConvexWriteResult.notConfigured.userMessage(operation: "Task")
+            return
+        }
+        let attemptMemberRaw = selectedMemberRaw
+        isSaving = true
+        writeMessage = nil
+        let todo = pendingTodo ?? TodoItem(
             id: UUID().uuidString,
             title: trimmed,
             dueDate: defaultDueDate,
@@ -89,17 +118,30 @@ struct InlineAddTaskBar: View {
             owner: activeMember,
             createdBy: "app",
         )
-        modelContext.insert(todo)
-        if TaskMutationSave.perform(operation: "Todo", in: modelContext, rollbackMutation: {
+        if pendingTodo == nil { modelContext.insert(todo) }
+        pendingTodo = todo
+        let started = TaskMutationSave.perform(operation: "Todo", in: modelContext, rollbackMutation: {
             modelContext.delete(todo)
         }, remoteWrite: { completion in
             AppWriteSyncService.pushTodo(todo) { result in
-                onResult?(result)
                 completion(result)
+                guard selectedMemberRaw == attemptMemberRaw else { return }
+                isSaving = false
+                if !result.isRetryable { pendingTodo = nil }
+                if result.isOk {
+                    if draftText.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed {
+                        draftText = ""
+                        isExpanded = false
+                    }
+                } else {
+                    writeMessage = result.userMessage(operation: "Task")
+                }
+                onResult?(result)
             }
-        }) {
-            draftText = ""
-            isExpanded = false
+        })
+        if !started {
+            isSaving = false
+            pendingTodo = nil
         }
     }
 }

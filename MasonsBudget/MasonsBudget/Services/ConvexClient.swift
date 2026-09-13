@@ -391,6 +391,7 @@ enum AppWritebackConfig {
     private static let deviceIDKey = "mc2_mobile_device_id"
     private static let deviceTokenKey = "mc2_mobile_device_token"
     private static let deviceProfileKey = "vogel_vault_mobile_device_profile"
+    private static let deviceCapabilitiesKey = "vogel_vault_mobile_device_capabilities"
 
     static var activeProfile: FamilyMember {
         let raw = UserDefaults.standard.string(forKey: ConvexSyncService.selectedMemberKey)
@@ -462,6 +463,26 @@ enum AppWritebackConfig {
         hasStoredCredential
     }
 
+    static var grantedCapabilities: [String]? { UserDefaults.standard.stringArray(forKey: deviceCapabilitiesKey) }
+
+    static func allows(_ capability: String, granted: [String]?) -> Bool {
+        // Older installs did not retain the receipt. The server remains the
+        // authority for those devices; an unknown receipt permits a checked request.
+        granted?.contains(capability) ?? true
+    }
+
+    static var canWriteTasks: Bool {
+        isConfigured && boundProfile == activeProfile && allows("todos:write", granted: grantedCapabilities)
+    }
+
+    static var canWriteLedger: Bool {
+        isConfigured && boundProfile?.sharesNetWorth(with: activeProfile) == true
+    }
+
+    static var canWriteBitcoin: Bool {
+        canWriteLedger && allows("bitcoin:write", granted: grantedCapabilities)
+    }
+
     static var bundledPairingURLs: [String] {
         let encodedPayload = Bundle.main.object(
             forInfoDictionaryKey: "VogelVaultBundledPairingURLsB64",
@@ -497,6 +518,7 @@ enum AppWritebackConfig {
         deviceID: String,
         deviceToken: String,
         profile: FamilyMember = activeProfile,
+        capabilities: [String]? = nil,
         credentialStore: any CredentialStoring = AppWritebackDeviceTokenStore.store,
     ) -> Bool {
         let trimmedBaseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -509,6 +531,8 @@ enum AppWritebackConfig {
         UserDefaults.standard.set(trimmedBaseURL, forKey: baseURLKey)
         UserDefaults.standard.set(trimmedDeviceID, forKey: deviceIDKey)
         UserDefaults.standard.set(profile.rawValue, forKey: deviceProfileKey)
+        if let capabilities { UserDefaults.standard.set(capabilities, forKey: deviceCapabilitiesKey) }
+        else { UserDefaults.standard.removeObject(forKey: deviceCapabilitiesKey) }
         UserDefaults.standard.removeObject(forKey: deviceTokenKey)
         deviceTokenCacheLock.lock()
         cachedDeviceToken = nil
@@ -521,6 +545,7 @@ enum AppWritebackConfig {
         UserDefaults.standard.removeObject(forKey: deviceIDKey)
         UserDefaults.standard.removeObject(forKey: deviceTokenKey)
         UserDefaults.standard.removeObject(forKey: deviceProfileKey)
+        UserDefaults.standard.removeObject(forKey: deviceCapabilitiesKey)
         AppWritebackDeviceTokenStore.store.clear()
         deviceTokenCacheLock.lock()
         cachedDeviceToken = nil
@@ -647,6 +672,38 @@ struct TodoDeviceWritePayload: Sendable, Equatable {
     }
 }
 
+struct BitcoinAccountDocument: Decodable, Sendable {
+    struct Account: Decodable, Sendable {
+        let key: String
+        let label: String
+        let custody: BTCCustody
+        let sats: Int64
+    }
+    let owner: FamilyMember
+    let asOf: String
+    let updatedAtMs: Double
+    let accounts: [Account]
+}
+
+struct BitcoinDeviceEntry: Decodable, Identifiable, Sendable {
+    let buyId: String?
+    let transferId: String?
+    let key: String?
+    let owner: FamilyMember
+    let date: String?
+    let label: String?
+    let source: String?
+    let custody: BTCCustody?
+    let asOf: String?
+    let fromAccountKey: String?
+    let toAccountKey: String?
+    let sats: Int64
+    let updatedAtMs: Double
+
+    var id: String { buyId ?? transferId ?? key ?? "" }
+    var title: String { label ?? source ?? "\(fromAccountKey ?? "") → \(toAccountKey ?? "")" }
+}
+
 final class AppWritebackClient: Sendable {
     static let todoUpsertPath = "tables:upsertTodoFromDevice"
     static let todoDeletePath = "tables:deleteTodoFromDevice"
@@ -656,6 +713,110 @@ final class AppWritebackClient: Sendable {
 
     init(session: URLSession = .shared) {
         self.session = session
+    }
+
+    func bitcoinAccountDocument(profile: FamilyMember) async throws -> BitcoinAccountDocument? {
+        let device = try await ledgerSession(activeProfile: profile)
+        let value = try await convexMutation(baseURL: device.baseURL, path: "tables:listBtcBalanceDocuments", args: [
+            "deviceId": device.deviceID, "deviceToken": device.deviceToken,
+            "viewer": (AppWritebackConfig.boundProfile ?? profile).rawValue, "scope": "netWorth",
+        ], endpointKind: "query")
+        let data = try JSONSerialization.data(withJSONObject: ConvexTaggedInt64Decoder.decode(value))
+        let rows = try JSONDecoder().decode(ConvexRowEnvelope<BitcoinAccountDocument>.self, from: data).completeRows()
+        guard rows.count <= 1, rows.allSatisfy({ profile.sharesNetWorth(with: $0.owner) }) else {
+            throw AppWritebackError.remote(.ownerMismatch)
+        }
+        return rows.first
+    }
+
+    func bitcoinEntries(kind: String, profile: FamilyMember) async throws -> [BitcoinDeviceEntry] {
+        if kind == "BtcAccount" {
+            guard let document = try await bitcoinAccountDocument(profile: profile) else { return [] }
+            return document.accounts.map {
+                BitcoinDeviceEntry(buyId: nil, transferId: nil, key: $0.key, owner: document.owner,
+                                   date: nil, label: $0.label, source: nil, custody: $0.custody, asOf: document.asOf,
+                                   fromAccountKey: nil, toAccountKey: nil, sats: $0.sats, updatedAtMs: document.updatedAtMs)
+            }
+        }
+        let path: String
+        switch kind {
+        case "BtcBuy": path = "tables:listBtcBuys"
+        case "BtcTransfer": path = "tables:listBtcTransfers"
+        case "BtcAccount": path = "tables:listBtcAccounts"
+        default: throw AppWritebackError.unexpectedResponse
+        }
+        let device = try await ledgerSession(activeProfile: profile)
+        let value = try await convexMutation(baseURL: device.baseURL, path: path, args: [
+            "deviceId": device.deviceID, "deviceToken": device.deviceToken,
+            "viewer": (AppWritebackConfig.boundProfile ?? profile).rawValue, "scope": "netWorth",
+        ], endpointKind: "query")
+        let decoded = try ConvexTaggedInt64Decoder.decode(value)
+        let data = try JSONSerialization.data(withJSONObject: decoded)
+        let envelope = try JSONDecoder().decode(ConvexRowEnvelope<BitcoinDeviceEntry>.self, from: data)
+        let rows = try envelope.completeRows()
+        guard rows.allSatisfy({ profile.sharesNetWorth(with: $0.owner) && !$0.id.isEmpty }) else {
+            throw AppWritebackError.remote(.ownerMismatch)
+        }
+        return rows
+    }
+
+    /// Money routes share the same profile-bound device session as tasks.
+    /// The owner stays canonical to Victor for the adult household.
+    func writeLedger(
+        path: String,
+        owner: FamilyMember,
+        entityID: String,
+        arguments: [String: Any],
+        deleting: Bool = false,
+    ) async throws {
+        let capability: String
+        if path.contains("Btc") { capability = "bitcoin:write" }
+        else if path.contains("Budget") { capability = "budget:write" }
+        else { capability = "transactions:write" }
+        guard AppWritebackConfig.allows(capability, granted: AppWritebackConfig.grantedCapabilities) else {
+            throw AppWritebackError.remote(.deviceUnauthorized)
+        }
+        let activeProfile = AppWritebackConfig.activeProfile
+        let device = try await ledgerSession(activeProfile: activeProfile)
+        let args = try Self.ledgerArguments(
+            owner: owner, activeProfile: activeProfile, arguments: arguments,
+            deviceID: device.deviceID, deviceToken: device.deviceToken,
+        )
+        let value = try await convexMutation(baseURL: device.baseURL, path: path, args: args)
+        try Self.validateLedgerResponse(value, entityID: entityID, deleting: deleting)
+    }
+
+    static func ledgerArguments(
+        owner: FamilyMember,
+        activeProfile: FamilyMember,
+        arguments: [String: Any],
+        deviceID: String,
+        deviceToken: String,
+    ) throws -> [String: Any] {
+        guard activeProfile.sharesNetWorth(with: owner) else {
+            throw AppWritebackError.remote(.ownerMismatch)
+        }
+        var args = arguments
+        args.removeValue(forKey: "token")
+        args["owner"] = owner.ledgerOwner.rawValue
+        args["deviceId"] = deviceID
+        args["deviceToken"] = deviceToken
+        return args
+    }
+
+    static func validateLedgerResponse(_ value: Any, entityID: String, deleting: Bool) throws {
+        guard let result = value as? [String: Any], result["ok"] as? Bool == true,
+              result["entityId"] as? String == entityID else {
+            throw AppWritebackError.unexpectedResponse
+        }
+        if deleting {
+            guard result["removed"] is Bool else { throw AppWritebackError.unexpectedResponse }
+        } else {
+            guard let outcome = result["outcome"] as? String,
+                  ["inserted", "updated"].contains(outcome) else {
+                throw AppWritebackError.unexpectedResponse
+            }
+        }
     }
 
     func claimPairing(
@@ -1084,6 +1245,27 @@ final class AppWritebackClient: Sendable {
         return boundProfile == activeProfile ? nil : .ownerMismatch
     }
 
+    static func ledgerProfileBindingError(boundProfile: FamilyMember?, activeProfile: FamilyMember) -> AppWritebackRemoteErrorCode? {
+        guard let boundProfile else { return .profileBindingRequired }
+        return boundProfile.sharesNetWorth(with: activeProfile) ? nil : .ownerMismatch
+    }
+
+    private func ledgerSession(
+        activeProfile: FamilyMember,
+    ) async throws -> (baseURL: URL, deviceID: String, deviceToken: String) {
+        if !AppWritebackConfig.hasStoredCredential {
+            try await claimBundledPairing(deviceName: "Vogel Vault Apple", profile: activeProfile)
+        }
+        guard AppWritebackConfig.hasStoredCredential, let baseURL = AppWritebackConfig.baseURL else {
+            throw AppWritebackError.notConfigured
+        }
+        if let error = Self.ledgerProfileBindingError(boundProfile: AppWritebackConfig.boundProfile, activeProfile: activeProfile) {
+            throw AppWritebackError.remote(error)
+        }
+        guard Self.isConvexBaseURL(baseURL) else { throw AppWritebackError.invalidBaseURL }
+        return (baseURL, AppWritebackConfig.deviceID, AppWritebackConfig.deviceToken)
+    }
+
     private func taskSession(
         activeProfile: FamilyMember,
     ) async throws -> (baseURL: URL, deviceID: String, deviceToken: String) {
@@ -1140,17 +1322,18 @@ final class AppWritebackClient: Sendable {
             deviceID: deviceID,
             deviceToken: deviceToken,
             profile: profile,
+            capabilities: object["capabilities"] as? [String],
         ) else { throw AppWritebackError.credentialStorageFailed }
     }
 
-    private func convexMutation(baseURL: URL, path: String, args: [String: Any]) async throws -> Any {
+    private func convexMutation(baseURL: URL, path: String, args: [String: Any], endpointKind: String = "mutation") async throws -> Any {
         guard baseURL.scheme?.lowercased() == "https" else {
             throw AppWritebackError.invalidBaseURL
         }
 
         let endpoint = baseURL
             .appendingPathComponent("api")
-            .appendingPathComponent("mutation")
+            .appendingPathComponent(endpointKind)
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1384,6 +1567,8 @@ final class ConvexClient: Sendable {
 
     private let deploymentURL: URL
     private let session: URLSession
+    typealias LedgerExecutor = @Sendable (String, FamilyMember, String, [String: Any], Bool) async throws -> Void
+    private let ledgerExecutor: LedgerExecutor?
     private let requestExecutor: RequestExecutor?
     private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "Convex")
 
@@ -1391,9 +1576,11 @@ final class ConvexClient: Sendable {
         deploymentURL: URL,
         session: URLSession? = nil,
         requestExecutor: RequestExecutor? = nil,
+        ledgerExecutor: LedgerExecutor? = nil,
     ) {
         self.deploymentURL = deploymentURL
         self.requestExecutor = requestExecutor
+        self.ledgerExecutor = ledgerExecutor
         if let session {
             self.session = session
         } else {
@@ -1401,6 +1588,18 @@ final class ConvexClient: Sendable {
             config.timeoutIntervalForRequest = 30
             config.timeoutIntervalForResource = 60
             self.session = URLSession(configuration: config)
+        }
+    }
+
+    private func writeDeviceLedger(
+        path: String, owner: FamilyMember, entityID: String, arguments: [String: Any], deleting: Bool = false,
+    ) async throws {
+        if let ledgerExecutor {
+            try await ledgerExecutor(path, owner, entityID, arguments, deleting)
+        } else {
+            try await AppWritebackClient(session: session).writeLedger(
+                path: path, owner: owner, entityID: entityID, arguments: arguments, deleting: deleting,
+            )
         }
     }
 
@@ -1464,6 +1663,7 @@ final class ConvexClient: Sendable {
         _ transaction: LegacyTransactionDTO,
         owner: FamilyMember,
         sourceFile: String,
+        fromDevice: Bool = false,
     ) async throws -> Double? {
         let canonicalOwner = owner.ledgerOwner
         guard transaction.owner == canonicalOwner else {
@@ -1544,6 +1744,16 @@ final class ConvexClient: Sendable {
         if let updatedAtMs = transaction.updatedAtMs {
             args["baseUpdatedAtMs"] = updatedAtMs
         }
+        if fromDevice {
+            try await writeDeviceLedger(
+                path: "tables:upsertTransactionFromDevice", owner: canonicalOwner,
+                entityID: transaction.id, arguments: args,
+            )
+            // A device acknowledgement carries no revision. A failed read must
+            // not turn an accepted write into another mutation retry.
+            return try? await ConvexRowReader(client: self).transactions(viewer: owner)
+                .first { $0.id == transaction.id && $0.owner == canonicalOwner }?.updatedAtMs
+        }
         let raw = try await mutation(path, args: args)
         guard let result = raw as? [String: Any],
               result["txId"] as? String == transaction.id
@@ -1569,6 +1779,7 @@ final class ConvexClient: Sendable {
         owner: FamilyMember,
         sourceFile: String,
         baseUpdatedAtMs: Double? = nil,
+        fromDevice: Bool = false,
     ) async throws {
         let canonicalOwner = owner.ledgerOwner
         guard sourceFile == canonicalOwner.transactionsDataFileName else {
@@ -1585,6 +1796,18 @@ final class ConvexClient: Sendable {
             "sourceFile": sourceFile,
         ]
         if let baseUpdatedAtMs { args["baseUpdatedAtMs"] = baseUpdatedAtMs }
+        if fromDevice {
+            guard let baseUpdatedAtMs, baseUpdatedAtMs.isFinite, baseUpdatedAtMs > 0 else {
+                throw AppWritebackError.remote(.revisionRequired)
+            }
+            args.removeValue(forKey: "txId")
+            args["entityId"] = id
+            try await writeDeviceLedger(
+                path: "tables:deleteTransactionFromDevice", owner: canonicalOwner,
+                entityID: id, arguments: args, deleting: true,
+            )
+            return
+        }
         let raw = try await mutation(path, args: args)
         guard let result = raw as? [String: Any],
               result["txId"] as? String == id,
@@ -1600,6 +1823,7 @@ final class ConvexClient: Sendable {
         _ buy: LegacyBTCBuyDTO,
         owner: FamilyMember,
         sourceFile: String = "bitcoin-buys",
+        fromDevice: Bool = false,
     ) async throws -> Double? {
         guard buy.owner == owner.rawValue else {
             throw ConvexRowMutationError.ownerMismatch(
@@ -1640,6 +1864,16 @@ final class ConvexClient: Sendable {
         ]
         if let baseUpdatedAtMs = buy.updatedAtMs {
             args["baseUpdatedAtMs"] = baseUpdatedAtMs
+        }
+        if fromDevice {
+            row["owner"] = owner.ledgerOwner.rawValue
+            args["buy"] = row
+            try await writeDeviceLedger(
+                path: "tables:upsertBtcBuyFromDevice", owner: owner,
+                entityID: buy.id, arguments: args,
+            )
+            return try? await ConvexRowReader(client: self).btcBuys(viewer: owner, scope: .netWorth)
+                .first { $0.id == buy.id && $0.owner == owner.ledgerOwner.rawValue }?.updatedAtMs
         }
         let raw = try await mutation(path, args: args)
         guard let result = raw as? [String: Any],
@@ -1687,6 +1921,7 @@ final class ConvexClient: Sendable {
         icon: String,
         budget: Decimal,
         viewer: FamilyMember,
+        fromDevice: Bool = false,
     ) async throws {
         let envelope = try await fetchRows(
             .budget(viewer: viewer),
@@ -1695,6 +1930,20 @@ final class ConvexClient: Sendable {
         let document = try envelope.completeDocument()
         let budgetCents = try Self.exactMinorUnits(budget, field: "budgetCategory.budget")
         let path = "tables:upsertBudgetCategory"
+        if fromDevice {
+            var args: [String: Any] = [
+                "sourceFile": viewer.isAdult ? "budget" : "mason-budget",
+                "month": document.month,
+                "category": ["name": name, "icon": icon,
+                             "budgetCents": ConvexTaggedInt64Encoder.encode(budgetCents)],
+            ]
+            if let revision = document.updatedAtMs { args["baseUpdatedAtMs"] = revision }
+            try await writeDeviceLedger(
+                path: "tables:upsertBudgetCategoryFromDevice", owner: viewer,
+                entityID: name, arguments: args,
+            )
+            return
+        }
         let raw = try await mutation(path, args: [
             "viewer": viewer.rawValue,
             "month": document.month,
