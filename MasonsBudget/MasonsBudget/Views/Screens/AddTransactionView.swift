@@ -61,6 +61,9 @@ final class AddTransactionCreateIDStore: ObservableObject {
 }
 
 struct AddTransactionView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
+    @ScaledMetric(relativeTo: .body) private var padRowHeight = 56.0
+    @ScaledMetric(relativeTo: .body) private var labelWidth = 88.0
     @Environment(\.theme) var theme
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) var modelContext
@@ -115,24 +118,10 @@ struct AddTransactionView: View {
         let storedOwner = UserDefaults.standard.string(forKey: "selected_family_member")
             ?? FamilyMember.victor.rawValue
 
-        if let member = FamilyMember(rawValue: storedOwner), member.isAdult {
-            let victor = FamilyMember.victor.rawValue
-            let rachel = FamilyMember.rachel.rawValue
-            _categories = Query(
-                filter: #Predicate<BudgetCategory> { category in
-                    category.owner == victor || category.owner == rachel
-                },
-                sort: [SortDescriptor(\BudgetCategory.sortOrder)],
-            )
-        } else {
-            let owner = FamilyMember(rawValue: storedOwner)?.rawValue ?? "__invalid_owner__"
-            _categories = Query(
-                filter: #Predicate<BudgetCategory> { category in
-                    category.owner == owner
-                },
-                sort: [SortDescriptor(\BudgetCategory.sortOrder)],
-            )
-        }
+        _categories = Query(
+            filter: BudgetCategory.predicate(for: FamilyMember(rawValue: storedOwner)),
+            sort: [SortDescriptor(\BudgetCategory.sortOrder)],
+        )
     }
 
     private var activeMember: FamilyMember? {
@@ -209,7 +198,7 @@ struct AddTransactionView: View {
                             .onTapGesture { focusedField = nil }
                         fieldsCard.id("fields")
                     }
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     .padding(.vertical, 12)
                     .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
                 }
@@ -225,7 +214,7 @@ struct AddTransactionView: View {
                             numPad.disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
                         }
                     }
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     .padding(.top, 8)
                     .background(theme.bg)
                 }
@@ -326,7 +315,7 @@ struct AddTransactionView: View {
 
             conversionLine
         }
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
     }
 
     private var unitSelector: some View {
@@ -488,7 +477,7 @@ struct AddTransactionView: View {
             Text(label)
                 .ledgerType(.rowPrimary)
                 .foregroundStyle(theme.textMuted)
-                .frame(width: 88, alignment: .leading)
+                .frame(width: labelWidth, alignment: .leading)
             content()
         }
         .padding(.horizontal, 14)
@@ -554,7 +543,7 @@ struct AddTransactionView: View {
                                 .ledgerType(.amountInput)
                                 .foregroundStyle(theme.text)
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 56)
+                                .frame(minHeight: max(LedgerMetrics.minimumHitTarget, padRowHeight))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(key == "⌫" ? "Delete digit" : key)

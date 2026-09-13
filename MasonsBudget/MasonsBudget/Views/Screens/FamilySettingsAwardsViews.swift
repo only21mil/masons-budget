@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct FamilyView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
     @State private var showProfileSwitcher = false
@@ -43,7 +44,7 @@ struct FamilyView: View {
                         .foregroundStyle(theme.textMuted)
                 }
                 .glassCard(padding: 16, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 VStack(spacing: 0) {
                     scopeRow("FINANCE VISIBILITY", value: scope.finance)
@@ -53,7 +54,7 @@ struct FamilyView: View {
                     scopeRow("NET WORTH TOTAL", value: scope.netWorth)
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 VStack(spacing: 0) {
                     ForEach(Array(FamilyMember.allCases.enumerated()), id: \.element.id) { index, member in
@@ -64,7 +65,7 @@ struct FamilyView: View {
                     }
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("HOUSEHOLD SCOPING")
@@ -76,7 +77,7 @@ struct FamilyView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .glassCard(padding: 14, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
             }
             .padding(.bottom, 100)
         }
@@ -139,6 +140,7 @@ struct FamilyView: View {
 }
 
 struct SettingsView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @AppStorage(ConvexSyncService.lastSyncKey) private var lastSync: Double = 0
     @Environment(\.theme) private var theme
     @AppStorage("appearance_mode") private var appearanceRaw = AppearanceMode.system.rawValue
@@ -168,7 +170,7 @@ struct SettingsView: View {
                     }
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 VStack(spacing: 0) {
                     LedgerToggle(
@@ -197,7 +199,7 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 HStack {
                     Text("Last successful sync")
@@ -210,7 +212,7 @@ struct SettingsView: View {
                         .foregroundStyle(theme.textMuted)
                 }
                 .glassCard()
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 ledgerEffectsCard
 
@@ -222,13 +224,13 @@ struct SettingsView: View {
                     settingsLink("EXPORT", icon: "square.and.arrow.up", destination: ExportView())
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 Text("Export keeps its existing format and behavior. Settings do not widen profile visibility or task-write authority.")
                     .ledgerType(.body)
                     .foregroundStyle(theme.textFaint)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, AppLayout.sectionPadding + 4)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter + 4)
             }
             .padding(.bottom, 100)
         }
@@ -253,7 +255,7 @@ struct SettingsView: View {
                 .padding(14)
         }
         .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
     }
 
     private func settingsPicker(
@@ -295,6 +297,7 @@ struct SettingsView: View {
 }
 
 struct AwardsView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
     @Query private var allTransactions: [Transaction]
@@ -306,7 +309,7 @@ struct AwardsView: View {
     }
 
     private var visibleTransactions: [Transaction] {
-        allTransactions.filter { activeMember.canSee(dataOwnedBy: $0.ownerMember) }
+        allTransactions.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
     }
 
     private var visibleTodos: [TodoItem] {
@@ -316,7 +319,7 @@ struct AwardsView: View {
     private var visibleBuys: [BTCBuy] {
         allBuys.filter {
             guard let owner = $0.ownerMember else { return false }
-            return activeMember.canSee(dataOwnedBy: owner)
+            return activeMember.sharesNetWorth(with: owner)
         }
     }
 
@@ -347,7 +350,7 @@ struct AwardsView: View {
                     }
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
             }
             .padding(.bottom, 100)
         }

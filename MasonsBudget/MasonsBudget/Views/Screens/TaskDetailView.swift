@@ -6,6 +6,7 @@ import SwiftUI
 /// delete with undo. Saves stamp `updatedAt` and push through the
 /// multi-profile writeback path (sync status is surfaced by AppWriteSyncService).
 struct TaskDetailView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) var theme
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -50,6 +51,8 @@ struct TaskDetailView: View {
     private var taskEditor: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppLayout.cardSpacing) {
+                Text("Tasks belong to \(activeMember.displayName).")
+                    .ledgerType(.rowMeta)
                 ScreenHeader(title: "Task", eyebrow: todo.isDone ? "Completed" : "Editing")
 
                 fieldCard("TITLE") {
@@ -60,7 +63,7 @@ struct TaskDetailView: View {
                 }
 
                 fieldCard("DUE DATE") {
-                    LedgerToggle(isOn: $hasDueDate.animation()) {
+                    LedgerToggle(isOn: $hasDueDate) {
                         Text("Has a due date")
                             .ledgerType(.rowPrimary)
                             .foregroundStyle(theme.text)
@@ -88,12 +91,13 @@ struct TaskDetailView: View {
                 }
 
                 fieldCard("PRIORITY") {
-                    Picker("Priority", selection: $priority) {
-                        ForEach(0 ..< Self.priorityLabels.count, id: \.self) { i in
-                            Text(Self.priorityLabels[i]).tag(i)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: LedgerMetrics.siblingChipSpacing) {
+                            ForEach(0 ..< Self.priorityLabels.count, id: \.self) { i in
+                                PillButton(label: Self.priorityLabels[i], isActive: priority == i, accent: true) { priority = i }
+                            }
                         }
                     }
-                    .pickerStyle(.segmented)
                 }
 
                 fieldCard("FLAG") {
@@ -111,10 +115,11 @@ struct TaskDetailView: View {
                 saveButton
                 deleteButton
             }
-            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
             .padding(.bottom, 100)
         }
         .background(theme.bg)
+        .ledgerAnimation(.chipAndNavigation, value: hasDueDate)
         .confirmationDialog("Delete this task?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete task", role: .destructive, action: deleteTask)
             Button("Cancel", role: .cancel) {}

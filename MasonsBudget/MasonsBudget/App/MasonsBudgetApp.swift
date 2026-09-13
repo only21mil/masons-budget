@@ -1,6 +1,9 @@
 import SwiftData
 import SwiftUI
 import os
+#if os(macOS)
+    import AppKit
+#endif
 
 @main
 struct MasonsBudgetApp: App {
@@ -72,7 +75,8 @@ struct MasonsBudgetApp: App {
     @AppStorage("appearance_mode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @StateObject private var syncStatus = SyncStatusStore.shared
     @StateObject private var taskUndoStore = TaskUndoStore.shared
-    @State private var isUnlocked = false
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var authentication = AppAuthenticationSession()
     @State private var syncTimer: Timer?
     @State private var priceTimer: Timer?
 
@@ -89,29 +93,28 @@ struct MasonsBudgetApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                ContentView()
-                    .task {
-                        await syncFromConvex()
-                        startPeriodicSync()
-                    }
-                    .opacity(isUnlocked || !appLockEnabled ? 1 : 0)
-
-                if appLockEnabled, !isUnlocked {
-                    LockScreenView(isUnlocked: $isUnlocked)
+                if authentication.isUnlocked {
+                    ContentView()
+                        .task {
+                            await syncFromConvex()
+                            startPeriodicSync()
+                        }
+                } else {
+                    LockScreenView()
                         .transition(.opacity)
                 }
             }
             #if os(iOS)
             .fullScreenCover(isPresented: Binding(
-                get: { !hasCompletedOnboarding && isUnlocked },
-                set: { hasCompletedOnboarding = !$0 },
+                get: { !hasCompletedOnboarding && authentication.isUnlocked },
+                set: { if authentication.isUnlocked { hasCompletedOnboarding = !$0 } },
             )) {
                 OnboardingView()
             }
             #else
             .sheet(isPresented: Binding(
-                        get: { !hasCompletedOnboarding && isUnlocked },
-                        set: { hasCompletedOnboarding = !$0 },
+                        get: { !hasCompletedOnboarding && authentication.isUnlocked },
+                        set: { if authentication.isUnlocked { hasCompletedOnboarding = !$0 } },
                     )) {
                         OnboardingView()
                             .frame(minWidth: 500, minHeight: 600)
@@ -120,19 +123,43 @@ struct MasonsBudgetApp: App {
             #if os(macOS)
             .frame(minWidth: 800, minHeight: 500)
             #endif
-            .onAppear {
-                if !appLockEnabled {
-                    isUnlocked = true
-                }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                authentication.profileChanged(to: selectedMember)
+                authentication.setLockEnabled(appLockEnabled)
+                authentication.transition(to: phase)
+            }
+            .onChange(of: appLockEnabled) { _, enabled in
+                authentication.setLockEnabled(enabled)
             }
             #if os(iOS)
             .onReceive(NotificationCenter.default.publisher(for: UIScene.willEnterForegroundNotification)) { _ in
                 Task { await syncIfChanged() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
+                authentication.suspend(for: .protectedData)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
+                authentication.resume(from: .protectedData, scenePhase: scenePhase)
+            }
+            #elseif os(macOS)
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidResignActiveNotification)) { _ in
+                authentication.suspend(for: .inactiveSession)
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidSleepNotification)) { _ in
+                authentication.suspend(for: .screenSleep)
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.sessionDidBecomeActiveNotification)) { _ in
+                authentication.resume(from: .inactiveSession, scenePhase: scenePhase)
+            }
+            .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidWakeNotification)) { _ in
+                authentication.resume(from: .screenSleep, scenePhase: scenePhase)
+            }
             #endif
-            .onChange(of: selectedMember) { _, _ in
+            .onChange(of: selectedMember) { _, member in
+                authentication.profileChanged(to: member)
                 Task { await syncFromConvex() }
             }
+            .environmentObject(authentication)
             .environmentObject(syncStatus)
             .environmentObject(taskUndoStore)
             .themed()

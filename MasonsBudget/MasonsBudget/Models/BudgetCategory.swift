@@ -20,6 +20,17 @@ final class BudgetCategory {
         "Auto & Transport": 99,
     ]
 
+    /// Household budget scope excludes child totals; invalid profiles match nothing.
+    static func predicate(for member: FamilyMember?) -> Predicate<BudgetCategory> {
+        let owner = member?.rawValue ?? "__invalid_owner__"
+        let includesHousehold = member?.isAdult == true
+        let victor = FamilyMember.victor.rawValue
+        let rachel = FamilyMember.rachel.rawValue
+        return #Predicate { category in
+            category.owner == owner || (includesHousehold && (category.owner == victor || category.owner == rachel))
+        }
+    }
+
     var displayName: String {
         LedgerMapper.wireBudgetCategoryName(from: name, owner: ownerMember)
     }

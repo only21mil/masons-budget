@@ -345,7 +345,7 @@ extension LedgerTypeRole {
             .init(size: 12.5, weight: .medium, trackingEm: 0,
                   relativeTo: .body, lineHeight: 1, uppercase: false, tabularFigures: true)
         case .chip:
-            .init(size: 11, weight: .semibold, trackingEm: 0.06,
+            .init(size: 12.5, weight: .semibold, trackingEm: 0.06,
                   relativeTo: .caption, lineHeight: 1, uppercase: true, tabularFigures: true)
         case .tabLabel:
             .init(size: 11, weight: .semibold, trackingEm: 0.06,
@@ -584,16 +584,18 @@ struct LedgerRule: View {
 
 struct LedgerPanel<Content: View>: View {
     private let content: Content
+    private let padding: CGFloat
 
     @Environment(\.ledgerTokens) private var tokens
 
-    init(@ViewBuilder content: () -> Content) {
+    init(padding: CGFloat = LedgerMetrics.cardPadding, @ViewBuilder content: () -> Content) {
+        self.padding = padding
         self.content = content()
     }
 
     var body: some View {
         content
-            .padding(LedgerMetrics.cardPadding)
+            .padding(padding)
             .background(tokens.colors.panel)
             .clipShape(RoundedRectangle(cornerRadius: LedgerMetrics.cardRadius))
             .overlay {

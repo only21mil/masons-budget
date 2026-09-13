@@ -61,6 +61,8 @@ struct AmountView: View {
             Text("\(signPrefix)\(unit.prefix)\(formattedValue)")
                 .ledgerType(role)
                 .foregroundStyle(displayColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
 
             if !unitSuffix.isEmpty {
                 Text(" \(unitSuffix)")
@@ -68,6 +70,7 @@ struct AmountView: View {
                     .foregroundStyle(suffixColor)
             }
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
