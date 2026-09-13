@@ -16,8 +16,10 @@ internal data class ConvexDeviceCredential(
     val deviceId: String,
     val deviceToken: String,
     val profile: FamilyMember? = null,
+    val capabilities: Set<String> = DeviceCapabilities.legacy,
 ) {
     init {
+        require(capabilities.all { it in DeviceCapabilities.supported }) { "unsupported device capability" }
         require(DEVICE_ID.matches(deviceId)) { "device id is malformed" }
         require(DEVICE_TOKEN.matches(deviceToken)) { "device token is malformed" }
     }

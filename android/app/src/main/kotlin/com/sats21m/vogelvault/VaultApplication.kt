@@ -7,6 +7,7 @@ import androidx.annotation.CheckResult
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.sats21m.vogelvault.data.DeviceCapabilities
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutationClient
@@ -158,6 +159,18 @@ open class VaultApplication : Application() {
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
         PaymentSourceStore(this)
+    }
+
+    internal open val deviceCapabilities: DeviceCapabilities
+        get() = storedConvexConfigSource.currentDeviceCredential()?.let {
+            DeviceCapabilities(it.profile, it.capabilities)
+        } ?: DeviceCapabilities()
+
+    internal open val deviceMutationClient: ConvexDeviceMutationClient by lazy {
+        ConvexDeviceMutationClient(
+            configSource = MutableConvexConfigSource(writeConvexConfig()),
+            credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+        )
     }
 
     /** Capability-scoped transaction writes for the Android add surface. */
@@ -376,7 +389,7 @@ open class VaultApplication : Application() {
      * here would have no sync-token source and would stay fail-closed forever.
      */
     internal val transactionActions by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        ConvexTransactionActions(convexMutationClient)
+        ConvexTransactionActions(deviceMutationClient)
     }
 
     /** Capability-scoped todo writes, isolated from the legacy sync-token transport. */
@@ -460,7 +473,7 @@ open class VaultApplication : Application() {
     /** Whether the selected profile matches the persisted backend binding. */
     internal open fun hasTodoWriteCredential(profile: FamilyMember): Boolean =
         synchronized(convexConfigLock) {
-            storedConvexConfigSource.currentDeviceCredential()?.profile == profile
+            deviceCapabilities.allows(profile, com.sats21m.vogelvault.data.DeviceCapability.TODOS)
         }
 
     internal open fun removeTodoWriteCredential(): Result<Unit> =

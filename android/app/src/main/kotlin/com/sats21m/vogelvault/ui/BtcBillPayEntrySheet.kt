@@ -67,7 +67,7 @@ internal data class BtcBillPayWriteRequest(
 )
 
 internal fun canAddBtcBillPay(status: Freshness, owner: FamilyMember): Boolean =
-    status in setOf(Freshness.LIVE, Freshness.EMPTY) && owner.isAdult
+    status == Freshness.LIVE && owner.isAdult
 
 /**
  * Validates the editor into the exact request sent to the device mutation.
@@ -188,6 +188,7 @@ internal fun BtcBillPayEntrySheet(
     onWriteSucceeded: () -> Unit,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
+    if (WriteAccessBlockedSheet(owner, com.sats21m.vogelvault.data.DeviceCapability.BITCOIN, onDismiss)) return
     val gateway = remember(application) { application?.btcBillPayMutationGateway }
     val draftIds = application?.btcBillPayDraftIds
     val writeScope = application?.applicationScope

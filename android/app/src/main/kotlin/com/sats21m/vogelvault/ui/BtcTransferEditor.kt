@@ -61,6 +61,7 @@ internal fun BtcTransferEntrySheet(
     onWriteSucceeded: () -> Unit,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
+    if (WriteAccessBlockedSheet(viewer, com.sats21m.vogelvault.data.DeviceCapability.BITCOIN, onDismiss)) return
     val gateway = remember(application) { application?.btcTransferMutationGateway }
     val transferDraftIds = application?.btcTransferDraftIds
     val writeScope = remember(application) { application?.applicationScope }
