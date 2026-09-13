@@ -2,11 +2,13 @@ package com.sats21m.vogelvault.ui
 
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ReadBootstrapStatus
+import com.sats21m.vogelvault.domain.FamilyMember
 
 /** Non-secret, durable access state that screens may safely observe. */
 internal enum class BootstrapAccess {
     NONE,
     READ_ONLY,
+    OTHER_PROFILE,
     READ_AND_TODO_WRITE,
 }
 
@@ -27,12 +29,14 @@ internal data class BootstrapConnectionResult(
 internal interface BootstrapEnrollment {
     fun isBundledEnrollmentAvailable(): Boolean
 
-    fun currentAccess(): BootstrapAccess
+    fun currentAccess(profile: FamilyMember = FamilyMember.VICTOR): BootstrapAccess
 
-    suspend fun connect(): BootstrapConnectionResult
+    suspend fun connect(profile: FamilyMember = FamilyMember.VICTOR): BootstrapConnectionResult
 
     /** Clears read and todo-write grants, returning null when storage refused the reset. */
     fun reset(): BootstrapAccess?
+
+    suspend fun unpair(): Boolean
 }
 
 /** Application adapter exposing only effective, non-secret access state. */
@@ -42,19 +46,23 @@ internal class ReadOnlyBootstrapEnrollment(
     override fun isBundledEnrollmentAvailable(): Boolean =
         application.hasBundledReadBootstrap()
 
-    override fun currentAccess(): BootstrapAccess =
+    override fun currentAccess(profile: FamilyMember): BootstrapAccess =
         if (!application.effectiveReadReady.value) {
             BootstrapAccess.NONE
-        } else if (application.hasTodoWriteCredential()) {
+        } else if (application.hasTodoWriteCredential(profile)) {
             BootstrapAccess.READ_AND_TODO_WRITE
+        } else if (application.hasTodoWriteCredential()) {
+            BootstrapAccess.OTHER_PROFILE
         } else {
             BootstrapAccess.READ_ONLY
         }
 
-    override suspend fun connect(): BootstrapConnectionResult {
+    override suspend fun connect(profile: FamilyMember): BootstrapConnectionResult {
         val status = application.connectBundledReadBootstrap()
-        return BootstrapConnectionResult(status = status, access = currentAccess())
+        return BootstrapConnectionResult(status = status, access = currentAccess(profile))
     }
+
+    override suspend fun unpair(): Boolean = application.unpairMobileDevice()
 
     override fun reset(): BootstrapAccess? {
         if (!application.removeStoredConvexCredential()) return null

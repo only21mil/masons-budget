@@ -221,8 +221,8 @@ fun VaultApp(
         val unfolded = maxWidth.value >= UNFOLDED_MIN_WIDTH_DP
 
         CompositionLocalProvider(LocalIsUnfolded provides unfolded) {
-            val destinations = Destination.entries.toList()
-            val current = state.destination
+            val destinations = destinationsFor(state.activeProfile)
+            val current = state.destination.takeIf { it in destinations } ?: Destination.DASHBOARD
 
             if (unfolded) {
                 Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -237,6 +237,9 @@ fun VaultApp(
                             VaultScreenContent(
                                 state = state,
                                 refusal = refusal,
+                                profileSwitcher = {
+                                    ProfileSwitcher(state.activeProfile, requestProfileSwitchAuthentication, onSwitchProfile)
+                                },
                                 current = current,
                                 onEnableRemoteRows = onEnableRemoteRows,
                                 onRemoteRowsConnected = onRemoteRowsConnected,
@@ -265,6 +268,9 @@ fun VaultApp(
                     VaultScreenContent(
                         state = state,
                         refusal = refusal,
+                        profileSwitcher = {
+                            ProfileSwitcher(state.activeProfile, requestProfileSwitchAuthentication, onSwitchProfile)
+                        },
                         current = current,
                         onEnableRemoteRows = onEnableRemoteRows,
                         onRemoteRowsConnected = onRemoteRowsConnected,
@@ -293,6 +299,7 @@ fun VaultApp(
 private fun VaultScreenContent(
     state: VaultUiState,
     refusal: ProfileSwitchRefusal?,
+    profileSwitcher: @Composable () -> Unit,
     current: Destination,
     onEnableRemoteRows: (String) -> Unit,
     onRemoteRowsConnected: () -> Unit,
@@ -318,6 +325,7 @@ private fun VaultScreenContent(
                 ScreenHost(
                     destination = current,
                     state = state,
+                    profileSwitcher = profileSwitcher,
                     onEnableRemoteRows = onEnableRemoteRows,
                     onRemoteRowsConnected = onRemoteRowsConnected,
                     onWriteSucceeded = onWriteSucceeded,
@@ -659,3 +667,6 @@ private fun VaultTopBar(
         FreshnessTag(state.worstStatus, state.worstUpdatedAt, state.now)
     }
 }
+
+internal fun destinationsFor(profile: FamilyMember): List<Destination> =
+    Destination.entries.filter { profile.isAdult || it !in setOf(Destination.SETTINGS, Destination.EXPORT, Destination.FAMILY) }

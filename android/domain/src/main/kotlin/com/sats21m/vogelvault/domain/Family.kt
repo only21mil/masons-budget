@@ -44,7 +44,11 @@ enum class FamilyMember(val key: String) {
     val allowedSwitchTargets: List<FamilyMember>
         get() = if (isAdult) entries.toList() else listOf(this)
 
-    /** Every profile switch is authenticated. */
+    /** Eligible destinations behind the Android profile authentication gate. */
+    val gatedSwitchTargets: List<FamilyMember>
+        get() = if (isAdult) allowedSwitchTargets else entries.filter { it == this || it.isAdult }
+
+    /** Every profile switch is authenticated in the shared baseline contract. */
     val requiresAuthToSwitch: Boolean
         get() = true
 

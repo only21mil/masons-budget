@@ -45,11 +45,11 @@ internal fun profileSwitchRequest(
     target: FamilyMember,
     onAuthorized: () -> Unit,
 ): ProfileSwitchRequest? {
-    if (target == current || target !in current.allowedSwitchTargets) return null
+    if (target == current || target !in current.gatedSwitchTargets) return null
     return ProfileSwitchRequest(
         current = current,
         target = target,
-        requiresAuthentication = current.requiresAuthToSwitch,
+        requiresAuthentication = !(current.isAdult && target.isAdult),
         onAuthorized = onAuthorized,
     )
 }
@@ -62,15 +62,6 @@ fun ProfileSwitcher(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalLedgerTheme.current.colors
-    if (!activeProfile.isAdult) {
-        Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-            Text(activeProfile.displayName, color = colors.foreground)
-            Spacer(Modifier.width(8.dp))
-            Badge(stringResource(R.string.profile_switcher_child_profile))
-        }
-        return
-    }
-
     var expanded by remember(activeProfile) { mutableStateOf(false) }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { expanded = true }) {
@@ -81,11 +72,15 @@ fun ProfileSwitcher(
                 tint = colors.bitcoin,
             )
         }
+        if (!activeProfile.isAdult) {
+            Spacer(Modifier.width(8.dp))
+            Badge(stringResource(R.string.profile_switcher_child_profile))
+        }
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
-            activeProfile.allowedSwitchTargets.forEach { target ->
+            activeProfile.gatedSwitchTargets.forEach { target ->
                 DropdownMenuItem(
                     text = {
                         Text(
@@ -100,7 +95,10 @@ fun ProfileSwitcher(
                             current = activeProfile,
                             target = target,
                             onAuthorized = { onAuthorizedSwitch(target) },
-                        )?.let(onAuthenticationRequired)
+                        )?.let { request ->
+                            if (request.requiresAuthentication) onAuthenticationRequired(request)
+                            else request.authorize()
+                        }
                     },
                 )
             }

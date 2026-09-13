@@ -212,26 +212,28 @@ class DestinationVisibilityTest {
     }
 
     @Test
-    fun `children can navigate every child-scoped destination`() {
+    fun `children cannot navigate household settings export or family`() {
         for (child in listOf(FamilyMember.MASON, FamilyMember.MADDOX)) {
             val viewModel = VaultViewModel(remoteInitiallyEnabled = false)
             viewModel.switchProfile(child)
 
             for (destination in Destination.entries) {
+                val previous = viewModel.state.value.destination
                 viewModel.navigate(destination)
-                assertEquals(destination, viewModel.state.value.destination, "$child could not open $destination")
+                val expected = if (destination in setOf(Destination.SETTINGS, Destination.EXPORT, Destination.FAMILY)) previous else destination
+                assertEquals(expected, viewModel.state.value.destination)
             }
         }
     }
 
     @Test
-    fun `profile switching preserves the current child-scoped destination`() {
+    fun `profile switching leaves adult settings`() {
         val viewModel = VaultViewModel(remoteInitiallyEnabled = false)
         viewModel.navigate(Destination.SETTINGS)
 
         viewModel.switchProfile(FamilyMember.MASON)
 
-        assertEquals(Destination.SETTINGS, viewModel.state.value.destination)
+        assertEquals(Destination.DASHBOARD, viewModel.state.value.destination)
     }
 
     @Test

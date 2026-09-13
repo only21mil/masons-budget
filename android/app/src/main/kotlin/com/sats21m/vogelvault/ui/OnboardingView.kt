@@ -45,7 +45,7 @@ internal enum class OnboardingStep(val title: String, val eyebrow: String, val d
     CONNECT(
         title = "Pair this device",
         eyebrow = "Authenticated rows",
-        detail = "Setup grants only the access approved for this installation. Credentials are never displayed or entered here.",
+        detail = "Setup grants only the access approved for this installation. A single-use pairing connects this phone. Connection recovery can restore read access after a reset.",
     ),
 }
 
@@ -60,6 +60,7 @@ internal fun OnboardingView(
     remoteReadReady: Boolean,
     onConnected: (BootstrapAccess) -> Unit,
     modifier: Modifier = Modifier,
+    onSaveReadToken: ((String) -> Unit)? = null,
 ) {
     var stepIndex by rememberSaveable { mutableIntStateOf(0) }
     val step = OnboardingStep.entries[stepIndex]
@@ -98,6 +99,7 @@ internal fun OnboardingView(
                     ReadBootstrapConfiguration(
                         remoteReadReady = remoteReadReady,
                         onConnected = onConnected,
+                        onSaveReadToken = onSaveReadToken,
                     )
                 }
             }

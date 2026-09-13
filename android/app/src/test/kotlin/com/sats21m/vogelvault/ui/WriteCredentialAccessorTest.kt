@@ -73,8 +73,8 @@ class WriteCredentialAccessorTest {
             compose.onAllNodesWithText("Paired-device credential").fetchSemanticsNodes().size,
         )
         compose.onNodeWithText(
-            "Todo writes require a profile-bound secure connection. Open Settings and connect " +
-                "with a newly provisioned trusted bootstrap bundle for this profile.",
+            "This phone can change tasks for one paired profile. " +
+                "Ask an adult to connect this profile in Settings.",
         ).performScrollTo().fetchSemanticsNode()
     }
 
