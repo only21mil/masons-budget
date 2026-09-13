@@ -12,6 +12,26 @@ class BtcBillPayWriteTest {
     private val categories = listOf("Housing", "Groceries")
 
     @Test
+    fun `blank fee requires an explicit River fee`() {
+        for (fee in listOf("", "  ")) {
+            val result = btcBillPayWriteRequest(
+                owner = FamilyMember.VICTOR,
+                id = "bill-fee",
+                date = "2026-08-20",
+                merchant = "Utility",
+                category = "Housing",
+                budgetEffect = BillPayBudgetEffect.BUDGET_CATEGORY,
+                amountUsd = "12.00",
+                sats = "2000",
+                priceUsd = "600000.00",
+                feeUsd = fee,
+                availableCategories = categories,
+            )
+            assertEquals("Enter the fee River charged, or 0.", assertIs<WriteDraftResult.Invalid>(result).reason)
+        }
+    }
+
+    @Test
     fun `accepted bill pay with a stale draft id reports local recovery`() {
         assertEquals(
             "Household sync accepted this Bitcoin bill pay, but this device could not retire its draft id. " +
@@ -82,6 +102,7 @@ class BtcBillPayWriteTest {
         )
 
         assertEquals("Credit Card Payment", result.request.category)
+        assertEquals(0L, result.request.feeUsdCents)
         assertEquals(BillPayBudgetEffect.CREDIT_CARD_PAYMENT, result.request.budgetEffect)
     }
 

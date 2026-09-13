@@ -304,6 +304,7 @@
     <string name="btc_bill_pay_sats_label">Sats spent</string>
     <string name="btc_bill_pay_price_label">BTC price (USD)</string>
     <string name="btc_bill_pay_fee_label">Fee (USD)</string>
+    <string name="btc_bill_pay_fee_placeholder">Enter exact fee</string>
     <string name="btc_bill_pay_note_label">Note (optional)</string>
     <string name="btc_bill_pay_reference_label">Reference (optional)</string>
     <string name="read_bootstrap_other_profile">Connected for reading. This phone is paired to a different profile for task changes.</string>
