@@ -20,6 +20,8 @@ import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 
 internal sealed interface VaultAuthenticationRequest {
+    data object ConnectionChange : VaultAuthenticationRequest
+
     data object AppUnlock : VaultAuthenticationRequest
 
     data class ProfileSwitch(val target: FamilyMember) : VaultAuthenticationRequest
@@ -53,6 +55,14 @@ internal class VaultLockController {
     fun beginAppUnlock(): Boolean {
         if (activeRequest != null || isUnlocked) return false
         activeRequest = VaultAuthenticationRequest.AppUnlock
+        backgroundedDuringAuthentication = false
+        error = null
+        return true
+    }
+
+    fun beginConnectionChange(): Boolean {
+        if (!isUnlocked || activeRequest != null) return false
+        activeRequest = VaultAuthenticationRequest.ConnectionChange
         backgroundedDuringAuthentication = false
         error = null
         return true

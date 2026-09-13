@@ -28,16 +28,19 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.fragment.app.FragmentActivity
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.notifications.BudgetNotificationController
+import com.sats21m.vogelvault.ui.ConnectionAuthenticationHost
 import com.sats21m.vogelvault.ui.LedgerUiPreferences
 import com.sats21m.vogelvault.ui.LedgerUiSettings
 import com.sats21m.vogelvault.ui.OnboardingView
 import com.sats21m.vogelvault.ui.ProfileSwitchAuthenticationGate
 import com.sats21m.vogelvault.ui.ProfileSwitchRefusal
 import com.sats21m.vogelvault.ui.VaultApp
+import com.sats21m.vogelvault.ui.VaultAuthenticationCoordinator
 import com.sats21m.vogelvault.ui.VaultLockController
 import com.sats21m.vogelvault.ui.VaultLockSnapshot
 import com.sats21m.vogelvault.ui.VaultLockedScreen
 import com.sats21m.vogelvault.ui.VaultViewModel
+import com.sats21m.vogelvault.ui.deviceAuthenticationPromptInfo
 import com.sats21m.vogelvault.ui.purgeExportedCsvFiles
 import com.sats21m.vogelvault.ui.requiresOnboarding
 import com.sats21m.vogelvault.ui.refreshMarketQuotesPeriodically
@@ -63,10 +66,11 @@ internal fun ledgerSystemBarAppearance(treatment: LedgerTreatment): LedgerSystem
         )
     }
 
-class MainActivity : FragmentActivity() {
+class MainActivity : FragmentActivity(), ConnectionAuthenticationHost {
     private val lockController = VaultLockController()
     private val lockState = mutableStateOf(VaultLockSnapshot())
     private val profileSwitchRefusal = mutableStateOf<ProfileSwitchRefusal?>(null)
+    private lateinit var authenticationCoordinator: VaultAuthenticationCoordinator
     private lateinit var biometricPrompt: BiometricPrompt
     private lateinit var model: VaultViewModel
     private lateinit var budgetNotifications: BudgetNotificationController
@@ -121,36 +125,23 @@ class MainActivity : FragmentActivity() {
                 refreshMarketQuotesPeriodically(refresh = model::refreshActiveProfile)
             }
         }
-        biometricPrompt =
-            BiometricPrompt(
-                this,
-                object : BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(
-                        result: BiometricPrompt.AuthenticationResult,
-                    ) {
-                        super.onAuthenticationSucceeded(result)
-                        // The controller releases the authenticated profile; the
-                        // gate applies it, and only if it is the one the user
-                        // asked for. An app unlock releases nothing.
-                        profileSwitchGate.authenticationApproved(
-                            lockController.authenticationSucceeded(),
-                        )
-                        publishLockState()
-                    }
-
-                    override fun onAuthenticationError(
-                        errorCode: Int,
-                        errString: CharSequence,
-                    ) {
-                        super.onAuthenticationError(errorCode, errString)
-                        lockController.authenticationErrored(getString(R.string.vault_auth_error))
-                        // A cancelled or failed prompt refuses the switch and says
-                        // so. There is no fallback that applies it anyway.
-                        profileSwitchGate.authenticationRefused()
-                        publishLockState()
-                    }
-                },
-            )
+        authenticationCoordinator = VaultAuthenticationCoordinator(
+            lockController = lockController,
+            onProfileApproved = profileSwitchGate::authenticationApproved,
+            onProfileRefused = profileSwitchGate::authenticationRefused,
+            publishLockState = ::publishLockState,
+            authenticationError = { getString(R.string.vault_auth_error) },
+            showConnectionPrompt = {
+                biometricPrompt.authenticate(
+                    deviceAuthenticationPromptInfo(
+                        title = "Confirm connection change",
+                        subtitle = "Authenticate with this device to continue",
+                    ),
+                )
+            },
+            cancelPrompt = { biometricPrompt.cancelAuthentication() },
+        )
+        biometricPrompt = BiometricPrompt(this, authenticationCoordinator.callback)
         val displayPreferences =
             getSharedPreferences(DISPLAY_PREFERENCES, MODE_PRIVATE)
         budgetNotifications = BudgetNotificationController(this)
@@ -309,42 +300,20 @@ class MainActivity : FragmentActivity() {
         return getSystemService<KeyguardManager>()?.isDeviceSecure == true
     }
 
-    @Suppress("DEPRECATION")
-    private fun promptInfo(forProfileSwitch: Boolean): BiometricPrompt.PromptInfo {
-        val builder =
-            BiometricPrompt.PromptInfo.Builder()
-                .setTitle(
-                    getString(
-                        if (forProfileSwitch) {
-                            R.string.vault_profile_prompt_title
-                        } else {
-                            R.string.vault_auth_prompt_title
-                        },
-                    ),
-                )
-                .setSubtitle(
-                    getString(
-                        if (forProfileSwitch) {
-                            R.string.vault_profile_prompt_subtitle
-                        } else {
-                            R.string.vault_auth_prompt_subtitle
-                        },
-                    ),
-                )
-                .setConfirmationRequired(true)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            builder.setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
-        } else {
-            // 1.2.x deprecates setDeviceCredentialAllowed and claims device-
-            // credential support on API 23-29, but the lock gate must not ride
-            // an unverifiable library claim. Until the pinned 1.2.0-alpha05 is
-            // verified on a real API 29 device, this branch stays explicit: it
-            // still requires device-owner authentication and fails closed.
-            builder.setDeviceCredentialAllowed(true)
-        }
-        return builder.build()
+    override suspend fun authenticateConnectionChange(): Boolean {
+        if (!::authenticationCoordinator.isInitialized || !deviceAuthenticationAvailable()) return false
+        return authenticationCoordinator.authenticateConnectionChange()
     }
+
+    private fun promptInfo(forProfileSwitch: Boolean): BiometricPrompt.PromptInfo =
+        deviceAuthenticationPromptInfo(
+            title = getString(
+                if (forProfileSwitch) R.string.vault_profile_prompt_title else R.string.vault_auth_prompt_title,
+            ),
+            subtitle = getString(
+                if (forProfileSwitch) R.string.vault_profile_prompt_subtitle else R.string.vault_auth_prompt_subtitle,
+            ),
+        )
 
     private fun publishLockState() {
         lockState.value = lockController.snapshot()
