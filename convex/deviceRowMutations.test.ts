@@ -2455,6 +2455,30 @@ describe("device bitcoin mutations", () => {
     ]);
   });
 
+  it("adds an Android zero account only with the matching household document revision", async () => {
+    await seedBtcLedger("victor");
+    const device = await fullDevice();
+    const document = await t.run((ctx) => ctx.db.query("btcBalanceDocuments")
+      .withIndex("by_source_file", (q) => q.eq("sourceFile", "btc-balance-snapshot")).unique());
+    const request = {
+      ...authArgs(device), owner: "victor", sourceFile: "btc-balance-snapshot",
+      account: { key: "android-new-zero", owner: "victor", label: "New wallet",
+        custody: "self_custody", sats: 0n, asOf: document!.asOf },
+    };
+    await expectDeviceError(t.mutation(api.upsertBtcAccount, request), "REVISION_REQUIRED", "android-new-zero");
+    await expectDeviceError(t.mutation(api.upsertBtcAccount, {
+      ...request, baseUpdatedAtMs: document!.updatedAtMs - 1,
+    }), "ENTITY_CONFLICT", "android-new-zero");
+    const accepted = { ...request, baseUpdatedAtMs: document!.updatedAtMs };
+    await expect(t.mutation(api.upsertBtcAccount, accepted)).resolves.toMatchObject({ ok: true });
+    await expect(t.mutation(api.upsertBtcAccount, accepted)).resolves.toMatchObject({ ok: true });
+    const after = await t.run((ctx) => ctx.db.query("btcBalanceDocuments")
+      .withIndex("by_source_file", (q) => q.eq("sourceFile", "btc-balance-snapshot")).unique());
+    expect(after!.asOf).toBe(document!.asOf);
+    expect(after!.totals.sats).toBe(document!.totals.sats);
+    expect(after!.accounts.filter((row) => row.key === "android-new-zero")).toHaveLength(1);
+  });
+
   it("keeps activated account quantities ledger-controlled and protects referenced accounts", async () => {
     await seedBtcLedger("victor");
     const device = await fullDevice();

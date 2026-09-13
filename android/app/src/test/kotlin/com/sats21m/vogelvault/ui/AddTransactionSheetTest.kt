@@ -2,6 +2,8 @@ package com.sats21m.vogelvault.ui
 
 import com.sats21m.vogelvault.DraftIdWriteOutcome
 import com.sats21m.vogelvault.TransactionDraftIdStore
+import com.sats21m.vogelvault.data.DeviceCapabilities
+import com.sats21m.vogelvault.data.DeviceCapability
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexDeviceCredential
 import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
@@ -38,6 +40,41 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 class AddTransactionSheetTest {
+    @Test
+    fun `evening draft date uses local day instead of tomorrow in UTC`() {
+        val clock = java.time.Clock.fixed(java.time.Instant.parse("2026-09-14T02:30:00Z"), java.time.ZoneId.of("America/Chicago"))
+        assertEquals(LocalDate.of(2026, 9, 13), ledgerToday(clock))
+    }
+
+    @Test
+    fun `picker dates round trip without a time zone shift`() {
+        for (date in listOf(LocalDate.of(2026, 3, 8), LocalDate.of(2026, 11, 1), LocalDate.of(2026, 9, 13))) {
+            assertEquals(date, ledgerPickerDate(ledgerPickerMillis(date)))
+            assertEquals(0L, ledgerPickerMillis(date) % 86_400_000L)
+        }
+    }
+
+    @Test
+    fun `transaction route checks both grants for Bitcoin while fiat remains available`() {
+        for (paired in listOf(FamilyMember.VICTOR, FamilyMember.RACHEL)) {
+            val transactions = DeviceCapabilities(paired, setOf(DeviceCapability.TRANSACTIONS.wire))
+            for (viewer in listOf(FamilyMember.VICTOR, FamilyMember.RACHEL)) {
+                for (source in PaymentSource.entries) {
+                    assertEquals(source.route == PaymentSourceRoute.CARD_TRANSACTION,
+                        transactionRouteUnavailableReason(transactions, viewer, source) == null)
+                    assertEquals(null, transactionRouteUnavailableReason(
+                        DeviceCapabilities(paired, DeviceCapabilities.supported), viewer, source))
+                }
+            }
+            assertNotNull(transactionRouteUnavailableReason(transactions, FamilyMember.MASON, PaymentSource.DEFAULT))
+        }
+        val child = DeviceCapabilities(FamilyMember.MASON, setOf(DeviceCapability.TRANSACTIONS.wire))
+        assertEquals(null, transactionRouteUnavailableReason(child, FamilyMember.MASON, PaymentSource.DEFAULT))
+        assertNotNull(transactionRouteUnavailableReason(child, FamilyMember.MADDOX, PaymentSource.DEFAULT))
+        assertNotNull(transactionRouteUnavailableReason(
+            DeviceCapabilities(FamilyMember.VICTOR, setOf(DeviceCapability.BITCOIN.wire)), FamilyMember.VICTOR, PaymentSource.RIVER))
+    }
+
     @Test
     fun `accepted transaction with a stale draft id reports local recovery`() {
         assertEquals(
