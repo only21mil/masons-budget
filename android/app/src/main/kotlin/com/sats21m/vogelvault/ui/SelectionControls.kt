@@ -75,6 +75,7 @@ internal fun SelectionChip(
     actionLabel: String,
     selected: Boolean,
     compact: Boolean = false,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
     onSelect: () -> Unit,
 ) {
@@ -84,13 +85,14 @@ internal fun SelectionChip(
         modifier
             .heightIn(min = 48.dp)
             .clip(shape)
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
+            .selectable(selected = selected, enabled = enabled, role = Role.RadioButton,
+                onClick = { if (enabled) onSelect() })
             .semantics {
                 contentDescription = semanticLabel
                 stateDescription = if (selected) "Selected" else "Not selected"
                 onClick(label = actionLabel) {
-                    onSelect()
-                    true
+                    if (enabled) onSelect()
+                    enabled
                 }
             }
             .background(if (selected) tokens.colors.bitcoinSoft else tokens.colors.panel, shape)

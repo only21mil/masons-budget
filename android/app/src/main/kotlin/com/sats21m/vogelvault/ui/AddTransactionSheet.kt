@@ -3,38 +3,28 @@ package com.sats21m.vogelvault.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.DraftIdWriteOutcome
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.TransactionDraftIdStore
@@ -43,7 +33,6 @@ import com.sats21m.vogelvault.draftIdWriteOutcome
 import com.sats21m.vogelvault.onServerAccepted
 import com.sats21m.vogelvault.data.DeviceCapabilities
 import com.sats21m.vogelvault.data.DeviceCapability
-import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.data.TransactionInput
@@ -57,9 +46,7 @@ import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import com.sats21m.vogelvault.ui.theme.rememberLedgerHaptics
 import java.math.BigDecimal
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
@@ -104,7 +91,7 @@ internal data class AddTransactionDraft(
     // `card` remains as a source-compatible bridge for the older add surface.
     // New callers use paymentSource; new drafts carry the canonical source wire.
     val card: String = PaymentSource.DEFAULT.wire,
-    val date: LocalDate = LocalDate.now(ZoneOffset.UTC),
+    val date: LocalDate = ledgerToday(),
     val note: String = "",
     val owner: FamilyMember = FamilyMember.VICTOR,
     val paymentSource: PaymentSource = PaymentSource.DEFAULT,
@@ -512,14 +499,13 @@ internal fun AddTransactionSheet(
     var category by rememberSaveable { mutableStateOf("") }
     var amount by rememberSaveable { mutableStateOf("") }
     var bitcoinAccountKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var dateIso by rememberSaveable { mutableStateOf(LocalDate.now(ZoneOffset.UTC).toString()) }
+    var dateIso by rememberSaveable { mutableStateOf(ledgerToday().toString()) }
     var note by rememberSaveable { mutableStateOf("") }
     var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
     // Deliberately NOT rememberSaveable: a recreated sheet cannot reconnect to
     // the in-flight job. A fresh sheet reconnects to the same process-owned id
     // and safely retries instead.
     var saving by remember { mutableStateOf(false) }
-    var showDatePicker by rememberSaveable { mutableStateOf(false) }
     val haptics = rememberLedgerHaptics()
     fun refuse(reason: String) {
         errorMessage = reason
@@ -588,216 +574,16 @@ internal fun AddTransactionSheet(
         bitcoinAccountKey = selectedBitcoinAccountKey,
     )
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = VaultSpace.lg, vertical = VaultSpace.sm),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
-        ) {
-            Text(
-                stringResource(R.string.add_transaction_title),
-                style = MaterialTheme.typography.headlineMedium,
-            )
-
-            OptionRow(
-                options = AddTransactionType.entries.filterNot { it == AddTransactionType.TRANSFER },
-                selected = type,
-                label = AddTransactionType::label,
-                onSelect = {
-                    typeName = it.name
-                    category = ""
-                    errorMessage = null
-                },
-            )
-
-            DropdownField(
-                label = "Payment source",
-                selected = paymentSource.label,
-                options = paymentSourceOptions.map(PaymentSource::label),
-                modifier = Modifier.testTag(PAYMENT_SOURCE_SELECTOR_TEST_TAG),
-                onSelect = { selectedLabel ->
-                    val next = paymentSourceOptions.first { it.label == selectedLabel }
-                    if (!paymentSourceStore.select(next)) {
-                        errorMessage = "Payment source could not be saved"
-                    } else {
-                        paymentSourceWire = next.wire
-                        bitcoinAccountKey = selectedBitcoinAccountKeyAfterSourceChange(
-                            source = next,
-                            currentKey = bitcoinAccountKey,
-                            accounts = state.data.btcAccounts.value,
-                            viewer = state.activeProfile,
-                        )
-                        if (next.route == PaymentSourceRoute.BILL_PAY) {
-                            if (inputUnit != DisplayUnit.USD) {
-                                amount = convertAmountForUnit(
-                                    amount = amount,
-                                    from = inputUnit,
-                                    to = DisplayUnit.USD,
-                                    btcPriceCents = operationalBtcPriceCents,
-                                ).orEmpty()
-                            }
-                            inputUnitName = DisplayUnit.USD.name
-                        }
-                        errorMessage = null
-                    }
-                },
-            )
-            PaymentRail(paymentSource)
-            if (writeUnavailableReason != null) {
-                Text(writeUnavailableReason)
-                TextButton(onClick = onDismiss) { Text("Close") }
-                return@Column
-            }
-
-            LedgerTextField(
-                value = merchant,
-                onValueChange = {
-                    merchant = it
-                    errorMessage = null
-                },
-                label = stringResource(R.string.add_transaction_merchant),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-
-            DropdownField(
-                label = stringResource(R.string.add_transaction_category),
-                selected = selectedCategory,
-                options = categories,
-                onSelect = {
-                    category = it
-                    errorMessage = null
-                },
-            )
-
-            if (paymentSource.route == PaymentSourceRoute.BILL_PAY) {
-                Text(
-                    "River bill pay opens a separate Bitcoin bill-pay form in USD",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            } else {
-                OptionRow(
-                    options = DisplayUnit.entries,
-                    selected = inputUnit,
-                    label = DisplayUnit::label,
-                    onSelect = {
-                        convertAmountForUnit(
-                            amount = amount,
-                            from = inputUnit,
-                            to = it,
-                            btcPriceCents = operationalBtcPriceCents,
-                        )?.let { converted -> amount = converted }
-                        inputUnitName = it.name
-                        errorMessage = null
-                    },
-                )
-            }
-
-            LedgerTextField(
-                value = amount,
-                onValueChange = {
-                    amount = it
-                    errorMessage = null
-                },
-                label = stringResource(R.string.add_transaction_amount),
-                prefix = amountPrefix(inputUnit),
-                supporting = conversionPreview(amount, inputUnit, operationalBtcPriceCents),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = LocalLedgerTheme.current.type.amountInput,
-            )
-
-            if (paymentSource.isBitcoinTransaction) {
-                if (eligibleBitcoinAccounts.isEmpty()) {
-                    Text(
-                        "No Bitcoin accounts belong to ${state.activeProfile.ledgerOwner.displayName}",
-                        color = LocalLedgerTheme.current.colors.loss,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                } else {
-                    DropdownField(
-                        label = "Bitcoin account",
-                        selected = selectedAccountLabel,
-                        options = accountOptionLabels.keys.toList(),
-                        modifier = Modifier.testTag(BITCOIN_ACCOUNT_SELECTOR_TEST_TAG),
-                        onSelect = { selected ->
-                            bitcoinAccountKey = accountOptionLabels[selected]?.key
-                            errorMessage = null
-                        },
-                    )
-                }
-            }
-
-            OutlinedButton(
-                onClick = { showDatePicker = true },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("${stringResource(R.string.add_transaction_date)}: $dateIso")
-            }
-
-            LedgerTextField(
-                value = note,
-                onValueChange = { note = it },
-                label = stringResource(R.string.add_transaction_note),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = false,
-                minLines = 2,
-                maxLines = 4,
-            )
-
-            writeUnavailableReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            errorMessage?.let {
-                Text(it, color = LocalLedgerTheme.current.colors.loss, style = MaterialTheme.typography.bodySmall)
-            }
-
-            if (allowIncomeBitcoinBuy && state.activeProfile.isAdult) {
-                Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.xs)) {
-                    Text(
-                        stringResource(R.string.budget_income_add_as_bitcoin_buy_detail),
-                        color = LocalLedgerTheme.current.colors.foregroundSecondary,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            // Validate every user field before taking the
-                            // process-owned Bitcoin-buy lease. The conversion
-                            // does not inspect this temporary id.
-                            val seed =
-                                incomeEntryForBitcoinBuy(
-                                    draft = currentDraft(),
-                                    btcPriceCents = operationalBtcPriceCents,
-                                    id = "validation-only",
-                                    bitcoinAccounts = state.data.btcAccounts.value,
-                                )
-                            when (seed) {
-                                is WriteDraftResult.Invalid -> errorMessage = seed.reason
-                                is WriteDraftResult.Valid -> {
-                                    val btcBuyDraftScope = btcBuyDraftIdScope(
-                                        surface = BtcBuyWriteSurface.INCOME_LINKED,
-                                        profile = state.activeProfile,
-                                    )
-                                    val atomicIncomeDraftId =
-                                        btcBuyDraftIds?.currentId(btcBuyDraftScope)
-                                            ?: "android-${UUID.randomUUID()}"
-                                    onOpenIncomeBitcoinBuy(seed.request.copy(id = atomicIncomeDraftId))
-                                }
-                            }
-                        },
-                        enabled = !saving && type == AddTransactionType.INCOME,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(stringResource(R.string.budget_income_add_as_bitcoin_buy))
-                    }
-                }
-            }
-
+    LedgerSheet(
+        title = stringResource(R.string.add_transaction_title),
+        onDismissRequest = { if (!saving) onDismiss() },
+        actions = {
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm),
             ) {
                 OutlinedButton(
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(com.sats21m.vogelvault.ui.theme.LedgerRadii.control),
                     onClick = onDismiss,
                     enabled = !saving,
                     modifier = Modifier.weight(1f),
@@ -884,42 +670,189 @@ internal fun AddTransactionSheet(
                     modifier = Modifier.weight(1f),
                 )
             }
-            Spacer(Modifier.height(VaultSpace.lg))
+        },
+    ) {
+        OptionRow(
+            options = AddTransactionType.entries.filterNot { it == AddTransactionType.TRANSFER },
+            selected = type,
+            label = AddTransactionType::label,
+            onSelect = {
+                typeName = it.name
+                category = ""
+                errorMessage = null
+            },
+        )
+        DropdownField(
+            label = "Payment source",
+            selected = paymentSource.label,
+            options = paymentSourceOptions.map(PaymentSource::label),
+            modifier = Modifier.testTag(PAYMENT_SOURCE_SELECTOR_TEST_TAG),
+            onSelect = { selectedLabel ->
+                val next = paymentSourceOptions.first { it.label == selectedLabel }
+                if (!paymentSourceStore.select(next)) {
+                    errorMessage = "Payment source could not be saved"
+                } else {
+                    paymentSourceWire = next.wire
+                    bitcoinAccountKey = selectedBitcoinAccountKeyAfterSourceChange(
+                        source = next,
+                        currentKey = bitcoinAccountKey,
+                        accounts = state.data.btcAccounts.value,
+                        viewer = state.activeProfile,
+                    )
+                    if (next.route == PaymentSourceRoute.BILL_PAY) {
+                        if (inputUnit != DisplayUnit.USD) {
+                            amount = convertAmountForUnit(
+                                amount = amount,
+                                from = inputUnit,
+                                to = DisplayUnit.USD,
+                                btcPriceCents = operationalBtcPriceCents,
+                            ).orEmpty()
+                        }
+                        inputUnitName = DisplayUnit.USD.name
+                    }
+                    errorMessage = null
+                }
+            },
+        )
+        PaymentRail(paymentSource)
+        if (writeUnavailableReason != null) {
+            Text(writeUnavailableReason)
+            TextButton(onClick = onDismiss) { Text("Close") }
+            return@LedgerSheet
+        }
+        LedgerTextField(
+            value = merchant,
+            onValueChange = {
+                merchant = it
+                errorMessage = null
+            },
+            label = stringResource(R.string.add_transaction_merchant),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        DropdownField(
+            label = stringResource(R.string.add_transaction_category),
+            selected = selectedCategory,
+            options = categories,
+            onSelect = {
+                category = it
+                errorMessage = null
+            },
+        )
+        if (paymentSource.route == PaymentSourceRoute.BILL_PAY) {
+            Text(
+                "River bill pay opens a separate Bitcoin bill-pay form in USD",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        } else {
+            OptionRow(
+                options = DisplayUnit.entries,
+                selected = inputUnit,
+                label = DisplayUnit::label,
+                onSelect = {
+                    convertAmountForUnit(
+                        amount = amount,
+                        from = inputUnit,
+                        to = it,
+                        btcPriceCents = operationalBtcPriceCents,
+                    )?.let { converted -> amount = converted }
+                    inputUnitName = it.name
+                    errorMessage = null
+                },
+            )
+        }
+        LedgerTextField(
+            value = amount,
+            onValueChange = {
+                amount = it
+                errorMessage = null
+            },
+            label = stringResource(R.string.add_transaction_amount),
+            prefix = amountPrefix(inputUnit),
+            supporting = conversionPreview(amount, inputUnit, operationalBtcPriceCents),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = LocalLedgerTheme.current.type.amountInput,
+        )
+        if (paymentSource.isBitcoinTransaction) {
+            if (eligibleBitcoinAccounts.isEmpty()) {
+                Text(
+                    "No Bitcoin accounts belong to ${state.activeProfile.ledgerOwner.displayName}",
+                    color = LocalLedgerTheme.current.colors.loss,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                DropdownField(
+                    label = "Bitcoin account",
+                    selected = selectedAccountLabel,
+                    options = accountOptionLabels.keys.toList(),
+                    modifier = Modifier.testTag(BITCOIN_ACCOUNT_SELECTOR_TEST_TAG),
+                    onSelect = { selected ->
+                        bitcoinAccountKey = accountOptionLabels[selected]?.key
+                        errorMessage = null
+                    },
+                )
+            }
+        }
+        LedgerDateField(value = dateIso, onValueChange = { dateIso = it },
+            label = stringResource(R.string.add_transaction_date), enabled = !saving)
+        LedgerTextField(
+            value = note,
+            onValueChange = { note = it },
+            label = stringResource(R.string.add_transaction_note),
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = false,
+            minLines = 2,
+            maxLines = 4,
+        )
+        writeUnavailableReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        errorMessage?.let {
+            Text(it, color = LocalLedgerTheme.current.colors.loss, style = MaterialTheme.typography.bodySmall)
+        }
+        if (allowIncomeBitcoinBuy && state.activeProfile.isAdult) {
+            Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.xs)) {
+                Text(
+                    stringResource(R.string.budget_income_add_as_bitcoin_buy_detail),
+                    color = LocalLedgerTheme.current.colors.foregroundSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(com.sats21m.vogelvault.ui.theme.LedgerRadii.control),
+                    onClick = {
+                        // Validate every user field before taking the
+                        // process-owned Bitcoin-buy lease. The conversion
+                        // does not inspect this temporary id.
+                        val seed =
+                            incomeEntryForBitcoinBuy(
+                                draft = currentDraft(),
+                                btcPriceCents = operationalBtcPriceCents,
+                                id = "validation-only",
+                                bitcoinAccounts = state.data.btcAccounts.value,
+                            )
+                        when (seed) {
+                            is WriteDraftResult.Invalid -> errorMessage = seed.reason
+                            is WriteDraftResult.Valid -> {
+                                val btcBuyDraftScope = btcBuyDraftIdScope(
+                                    surface = BtcBuyWriteSurface.INCOME_LINKED,
+                                    profile = state.activeProfile,
+                                )
+                                val atomicIncomeDraftId =
+                                    btcBuyDraftIds?.currentId(btcBuyDraftScope)
+                                        ?: "android-${UUID.randomUUID()}"
+                                onOpenIncomeBitcoinBuy(seed.request.copy(id = atomicIncomeDraftId))
+                            }
+                        }
+                    },
+                    enabled = !saving && type == AddTransactionType.INCOME,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.budget_income_add_as_bitcoin_buy))
+                }
+            }
         }
     }
 
-    if (showDatePicker) {
-        val initialMillis = LocalDate.parse(dateIso)
-            .atStartOfDay(ZoneOffset.UTC)
-            .toInstant()
-            .toEpochMilli()
-        val pickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pickerState.selectedDateMillis?.let {
-                            dateIso = Instant.ofEpochMilli(it)
-                                .atZone(ZoneOffset.UTC)
-                                .toLocalDate()
-                                .toString()
-                        }
-                        showDatePicker = false
-                    },
-                ) {
-                    Text(stringResource(R.string.add_transaction_date_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) {
-                    Text(stringResource(R.string.add_transaction_cancel))
-                }
-            },
-        ) {
-            DatePicker(state = pickerState)
-        }
-    }
+
 }
 
 @Composable
@@ -934,20 +867,9 @@ private fun <T> OptionRow(
         horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm),
     ) {
         options.forEach { option ->
-            if (option == selected) {
-                VaultButton(
-                    label = label(option),
-                    onClick = { onSelect(option) },
-                    modifier = Modifier.weight(1f),
-                )
-            } else {
-                OutlinedButton(
-                    onClick = { onSelect(option) },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(label(option))
-                }
-            }
+            SelectionChip(label = label(option), semanticLabel = label(option),
+                actionLabel = "Select ${label(option)}", selected = option == selected,
+                modifier = Modifier.weight(1f), onSelect = { onSelect(option) })
         }
     }
 }
@@ -964,6 +886,7 @@ private fun DropdownField(
     Column(modifier.fillMaxWidth()) {
         Text(label, style = MaterialTheme.typography.labelSmall)
         OutlinedButton(
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(com.sats21m.vogelvault.ui.theme.LedgerRadii.control),
             onClick = { expanded = true },
             modifier = Modifier.fillMaxWidth(),
         ) {

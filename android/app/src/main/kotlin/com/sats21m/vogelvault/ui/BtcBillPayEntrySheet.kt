@@ -1,27 +1,22 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -36,7 +31,6 @@ import com.sats21m.vogelvault.onServerAccepted
 import com.sats21m.vogelvault.data.BTC_BILL_PAYS_SOURCE_FILE
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.convexWriteFailureMessage
-import com.sats21m.vogelvault.data.RIVER_BITCOIN_BILL_PAY_PLATFORM
 import com.sats21m.vogelvault.domain.BillPayBudgetEffect
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
@@ -196,7 +190,7 @@ internal fun BtcBillPayEntrySheet(
         draftIds?.currentId(BTC_BILL_PAYS_SOURCE_FILE) ?: "android-${UUID.randomUUID()}"
     }
     val stateKeys = arrayOf(owner.key, draftId, prefill?.dateIso.orEmpty(), prefill?.merchant.orEmpty())
-    var date by rememberSaveable(*stateKeys) { mutableStateOf(prefill?.dateIso ?: LocalDate.now().toString()) }
+    var date by rememberSaveable(*stateKeys) { mutableStateOf(prefill?.dateIso ?: ledgerToday().toString()) }
     var merchant by rememberSaveable(*stateKeys) { mutableStateOf(prefill?.merchant.orEmpty()) }
     var effectWire by rememberSaveable(*stateKeys) {
         mutableStateOf(BillPayBudgetEffect.CREDIT_CARD_PAYMENT.wireValue)
@@ -212,110 +206,14 @@ internal fun BtcBillPayEntrySheet(
     var reference by rememberSaveable(*stateKeys) { mutableStateOf("") }
     var message by rememberSaveable(*stateKeys) { mutableStateOf<String?>(null) }
     var submitting by remember(*stateKeys) { mutableStateOf(false) }
-    var effectMenuExpanded by remember(*stateKeys) { mutableStateOf(false) }
     var categoryMenuExpanded by remember(*stateKeys) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val effect = BillPayBudgetEffect.fromWireOrDefault(effectWire)
 
-    ModalBottomSheet(onDismissRequest = { if (!submitting) onDismiss() }) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
-        ) {
-            Text(stringResource(R.string.btc_bill_pay_editor_title))
-            BillPayEditorField(date, { date = it }, R.string.btc_bill_pay_date_label)
-            BillPayEditorField(merchant, { merchant = it }, R.string.btc_bill_pay_merchant_label)
-
-            Text(stringResource(R.string.btc_bill_pay_effect_label))
-            OutlinedButton(
-                onClick = { effectMenuExpanded = true },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    if (effect == BillPayBudgetEffect.BUDGET_CATEGORY) {
-                        stringResource(R.string.btc_bill_pay_effect_budget_category)
-                    } else {
-                        stringResource(R.string.btc_bill_pay_effect_credit_card)
-                    },
-                )
-            }
-            DropdownMenu(
-                expanded = effectMenuExpanded,
-                onDismissRequest = { effectMenuExpanded = false },
-            ) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.btc_bill_pay_effect_budget_category)) },
-                    onClick = {
-                        effectWire = BillPayBudgetEffect.BUDGET_CATEGORY.wireValue
-                        effectMenuExpanded = false
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.btc_bill_pay_effect_credit_card)) },
-                    onClick = {
-                        effectWire = BillPayBudgetEffect.CREDIT_CARD_PAYMENT.wireValue
-                        effectMenuExpanded = false
-                    },
-                )
-            }
-
-            if (effect == BillPayBudgetEffect.BUDGET_CATEGORY) {
-                Text(stringResource(R.string.btc_bill_pay_category_label))
-                OutlinedButton(
-                    onClick = { categoryMenuExpanded = true },
-                    enabled = budgetCategories.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(category.ifBlank { stringResource(R.string.btc_bill_pay_choose_category) })
-                }
-                DropdownMenu(
-                    expanded = categoryMenuExpanded,
-                    onDismissRequest = { categoryMenuExpanded = false },
-                ) {
-                    budgetCategories.forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(option) },
-                            onClick = {
-                                category = option
-                                categoryMenuExpanded = false
-                            },
-                        )
-                    }
-                }
-            } else {
-                Text("Category: $BTC_BILL_PAY_CATEGORY")
-            }
-
-            BillPayEditorField(
-                amountUsd,
-                { amountUsd = it },
-                R.string.btc_bill_pay_amount_label,
-                KeyboardType.Decimal,
-            )
-            BillPayEditorField(
-                sats,
-                { sats = it },
-                R.string.btc_bill_pay_sats_label,
-                KeyboardType.Number,
-            )
-            BillPayEditorField(
-                priceUsd,
-                { priceUsd = it },
-                R.string.btc_bill_pay_price_label,
-                KeyboardType.Decimal,
-            )
-            BillPayEditorField(
-                feeUsd,
-                { feeUsd = it },
-                R.string.btc_bill_pay_fee_label,
-                KeyboardType.Decimal,
-            )
-            BillPayEditorField(note, { note = it }, R.string.btc_bill_pay_note_label)
-            BillPayEditorField(reference, { reference = it }, R.string.btc_bill_pay_reference_label)
-            message?.let { Text(it) }
+    LedgerSheet(
+        title = stringResource(R.string.btc_bill_pay_editor_title),
+        onDismissRequest = { if (!submitting) onDismiss() },
+        actions = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))
@@ -370,7 +268,75 @@ internal fun BtcBillPayEntrySheet(
                     },
                 )
             }
+        },
+    ) {
+        LedgerDateField(date, { date = it }, stringResource(R.string.btc_bill_pay_date_label), enabled = !submitting)
+        BillPayEditorField(merchant, { merchant = it }, R.string.btc_bill_pay_merchant_label)
+        Text(stringResource(R.string.btc_bill_pay_effect_label))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
+            BillPayBudgetEffect.entries.forEach { choice ->
+                val choiceLabel = stringResource(if (choice == BillPayBudgetEffect.BUDGET_CATEGORY)
+                    R.string.btc_bill_pay_effect_budget_category else R.string.btc_bill_pay_effect_credit_card)
+                SelectionChip(label = choiceLabel, semanticLabel = choiceLabel,
+                    actionLabel = "Select $choiceLabel", selected = effect == choice,
+                    enabled = !submitting, modifier = Modifier.weight(1f),
+                    onSelect = { effectWire = choice.wireValue })
+            }
         }
+        if (effect == BillPayBudgetEffect.BUDGET_CATEGORY) {
+            Text(stringResource(R.string.btc_bill_pay_category_label))
+            OutlinedButton(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(com.sats21m.vogelvault.ui.theme.LedgerRadii.control),
+                onClick = { categoryMenuExpanded = true },
+                enabled = budgetCategories.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(category.ifBlank { stringResource(R.string.btc_bill_pay_choose_category) })
+            }
+            DropdownMenu(
+                expanded = categoryMenuExpanded,
+                onDismissRequest = { categoryMenuExpanded = false },
+            ) {
+                budgetCategories.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            category = option
+                            categoryMenuExpanded = false
+                        },
+                    )
+                }
+            }
+        } else {
+            Text("Category: $BTC_BILL_PAY_CATEGORY")
+        }
+        BillPayEditorField(
+            amountUsd,
+            { amountUsd = it },
+            R.string.btc_bill_pay_amount_label,
+            KeyboardType.Decimal,
+        )
+        BillPayEditorField(
+            sats,
+            { sats = it },
+            R.string.btc_bill_pay_sats_label,
+            KeyboardType.Number,
+        )
+        BillPayEditorField(
+            priceUsd,
+            { priceUsd = it },
+            R.string.btc_bill_pay_price_label,
+            KeyboardType.Decimal,
+        )
+        BillPayEditorField(
+            feeUsd,
+            { feeUsd = it },
+            R.string.btc_bill_pay_fee_label,
+            KeyboardType.Decimal,
+        )
+        BillPayEditorField(note, { note = it }, R.string.btc_bill_pay_note_label)
+        BillPayEditorField(reference, { reference = it }, R.string.btc_bill_pay_reference_label)
+        message?.let { Text(it) }
     }
 }
 
