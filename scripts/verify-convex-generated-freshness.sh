@@ -10,6 +10,19 @@
 
 set -euo pipefail
 
+# Match the remote wrapper's sole supported help form, without preparation or
+# comparisons that could turn a successful help exit into a freshness claim.
+if [[ "$#" -eq 1 && "$1" == "--help" ]]; then
+  cat <<'EOF'
+Usage: scripts/verify-convex-generated-freshness.sh --target-url <https://deployment.convex.cloud> --acknowledge-remote-preparation
+Requires Victor's separate approval for this revision and target before invocation.
+Remote preparation may persist schema/index work. The flag does not grant approval.
+Requires a clean generated tree and an already approved injected direct URL/admin-key pair.
+See docs/convex-codegen-safety.md. Help performs no preparation or freshness check.
+EOF
+  exit 0
+fi
+
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 

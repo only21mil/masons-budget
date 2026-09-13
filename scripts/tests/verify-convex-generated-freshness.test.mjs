@@ -13,6 +13,30 @@ function git(root, ...args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim()
 }
 
+test("help exits before repository comparisons or remote preparation", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "convex-freshness-help-"))
+  t.after(() => rm(root, { force: true, recursive: true }))
+  await mkdir(path.join(root, "test-bin"))
+  // A zero-exit stub models the old wrapper help result. Any Git or Node call
+  // leaves evidence, so help must work even outside a repository without either.
+  for (const command of ["git", "node"]) {
+    await writeFile(path.join(root, "test-bin", command), `#!/usr/bin/env bash
+touch "${path.join(root, `${command}-was-run`)}"
+if [[ "$1" == rev-parse ]]; then printf '%s\\n' "${root}"; fi
+exit 0
+`, { mode: 0o755 })
+  }
+  const result = spawnSync("bash", [sourceScript, "--help"], {
+    cwd: root, encoding: "utf8", env: { PATH: `${path.join(root, "test-bin")}:${process.env.PATH}` },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /^Usage: scripts\/verify-convex-generated-freshness\.sh /)
+  assert.doesNotMatch(result.stdout + result.stderr, /match authenticated codegen|Remote preparation completed/)
+  for (const command of ["git", "node"]) {
+    await assert.rejects(access(path.join(root, `${command}-was-run`)))
+  }
+})
+
 test("authenticated freshness refuses a dirty generated tree before codegen", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "convex-generated-freshness-"))
   t.after(() => rm(root, { force: true, recursive: true }))
