@@ -696,6 +696,7 @@ internal fun BtcBuyEntrySheet(
     owner: FamilyMember,
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
+    quoteCents: Long = 0,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
     val mutationClient = remember(application) { application?.deviceMutationClient }
@@ -733,6 +734,10 @@ internal fun BtcBuyEntrySheet(
                     label = stringResource(R.string.write_save),
                     enabled = !submitting,
                     onClick = {
+                        val derived = deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrElse {
+                            message = it.message ?: "Check the buy amounts"
+                            return@VaultButton
+                        }
                         when (
                             val draft =
                                 btcBuyWriteRequest(
@@ -740,9 +745,9 @@ internal fun BtcBuyEntrySheet(
                                     buyId,
                                     date,
                                     source,
-                                    sats,
-                                    priceUsd,
-                                    purchaseUsd,
+                                    derived.sats,
+                                    derived.priceUsd,
+                                    derived.purchaseUsd,
                                 )
                         ) {
                             is WriteDraftResult.Invalid -> message = draft.reason
@@ -806,7 +811,11 @@ internal fun BtcBuyEntrySheet(
             R.string.btc_buy_purchase_amount_label,
             KeyboardType.Decimal,
         )
-        Text(stringResource(R.string.btc_buy_independent_amounts_detail))
+        Text("Enter any two of sats, price and dollars. Leave the third blank to calculate it.")
+        if (quoteCents > 0) Text("Live price: ${Money.formatUsd(quoteCents)}. Enter a price to override it.")
+        deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrNull()?.let { result ->
+            Text("${result.sats} sats · $${result.priceUsd} per BTC · $${result.purchaseUsd}")
+        }
         message?.let { Text(it) }
     }
 }
@@ -818,6 +827,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
     income: IncomeEntry,
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
+    quoteCents: Long = 0,
 ) {
     val colors = LocalLedgerTheme.current.colors
     val application = LocalContext.current.applicationContext as? VaultApplication
@@ -833,6 +843,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
     var message by rememberSaveable(income.id) { mutableStateOf<String?>(null) }
     var submitting by remember(income.id) { mutableStateOf(false) }
     val haptics = rememberLedgerHaptics()
+    val purchaseUsd = java.math.BigDecimal(income.amountCents).movePointLeft(2).toPlainString()
 
     LedgerSheet(
         title = stringResource(R.string.budget_income_add_as_bitcoin_buy),
@@ -846,14 +857,18 @@ internal fun BtcBuyFromIncomeEntrySheet(
                     label = stringResource(R.string.write_save),
                     enabled = !submitting,
                     onClick = {
+                        val derived = deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrElse {
+                            message = it.message ?: "Check the buy amounts"
+                            return@VaultButton
+                        }
                         when (
                             val draft = btcBuyFromIncomeWriteRequest(
                                 viewer = viewer,
                                 id = income.id,
                                 income = income,
                                 source = source,
-                                sats = sats,
-                                priceUsd = priceUsd,
+                                sats = derived.sats,
+                                priceUsd = derived.priceUsd,
                                 buyNote = buyNote,
                             )
                         ) {
@@ -909,6 +924,11 @@ internal fun BtcBuyFromIncomeEntrySheet(
         EditorField(source, { source = it }, R.string.btc_buy_source_label)
         EditorField(sats, { sats = it }, R.string.btc_buy_sats_label, KeyboardType.Number)
         EditorField(priceUsd, { priceUsd = it }, R.string.btc_buy_price_label, KeyboardType.Decimal)
+        Text("Income supplies the dollars. Enter sats or price to calculate the other.")
+        if (quoteCents > 0) Text("Live price: ${Money.formatUsd(quoteCents)}. Enter a price to override it.")
+        deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrNull()?.let { result ->
+            Text("${result.sats} sats · $${result.priceUsd} per BTC · $${result.purchaseUsd}")
+        }
         EditorField(buyNote, { buyNote = it }, R.string.transaction_note)
         message?.let { Text(it, color = colors.loss) }
     }
