@@ -77,14 +77,21 @@ actor ConvexDataReader {
         )
     }
 
-    private func balanceDocument(viewer: FamilyMember) async throws -> ConvexBTCBalanceDocumentRow {
+    private func balanceDocument(viewer: FamilyMember, owner: FamilyMember? = nil) async throws -> ConvexBTCBalanceDocumentRow {
+        if let owner, !viewer.canSee(dataOwnedBy: owner) { throw ConvexRowDecodeError.ownerOutOfScope }
+        let scope: ConvexRowScope = owner == nil ? .netWorth : .visible
         let envelope = try await client.fetchRows(
-            .btcBalanceDocuments(viewer: viewer, scope: .netWorth),
+            .btcBalanceDocuments(viewer: viewer, scope: scope),
             as: ConvexRowEnvelope<ConvexBTCBalanceDocumentRow>.self,
         )
-        let rows = try envelope.completeRows()
-        guard rows.allSatisfy({ viewer.sharesNetWorth(with: $0.owner) }) else {
+        let visibleRows = try envelope.completeRows()
+        guard visibleRows.allSatisfy({ row in
+            scope == .visible ? viewer.canSee(dataOwnedBy: row.owner) : viewer.sharesNetWorth(with: row.owner)
+        }) else {
             throw ConvexRowDecodeError.ownerOutOfScope
+        }
+        let rows = visibleRows.filter { row in
+            owner.map { $0.sharesNetWorth(with: row.owner) } ?? viewer.sharesNetWorth(with: row.owner)
         }
         guard let document = rows.first else { throw ConvexRowDecodeError.missingDocument }
         guard rows.count == 1 else { throw ConvexRowDecodeError.ambiguousDocument }
@@ -92,12 +99,15 @@ actor ConvexDataReader {
     }
 
     /// Account rows retain dynamic account keys and canonical owners, including children.
-    func readBalanceAccounts(viewer: FamilyMember) async throws -> [SyncedBTCAccount] {
-        try await rowOrBlob(
+    func readBalanceAccounts(viewer: FamilyMember, owner: FamilyMember? = nil) async throws -> [SyncedBTCAccount] {
+        let targetOwner = owner ?? viewer.ledgerOwner
+        guard viewer.canSee(dataOwnedBy: targetOwner) else { throw ConvexRowDecodeError.ownerOutOfScope }
+        return try await rowOrBlob(
             {
                 // Require a balance document: an empty account list alone cannot prove zero.
-                let document = try await balanceDocument(viewer: viewer)
-                let rows = try await rowReader.btcAccounts(viewer: viewer, scope: .netWorth)
+                let document = try await balanceDocument(viewer: viewer, owner: targetOwner)
+                let visibleRows = try await rowReader.btcAccounts(viewer: viewer, scope: .visible)
+                let rows = visibleRows.filter { targetOwner.sharesNetWorth(with: $0.owner) }
                 guard Set(rows.map(\.key)).count == rows.count,
                       rows.count == document.accounts.count,
                       rows.allSatisfy({ row in
@@ -114,7 +124,7 @@ actor ConvexDataReader {
                 }
             },
             blob: {
-                if viewer.isAdult {
+                if targetOwner.isAdult {
                     let dto = try await client.fetchFile("btc-balance-snapshot", as: LegacyBTCSnapshotDTO.self)
                     return dto.accounts.map { key, account in
                         SyncedBTCAccount(key: key, label: account.label,
@@ -122,7 +132,7 @@ actor ConvexDataReader {
                                          btc: account.btc, fiat: account.fiat, owner: .victor)
                     }
                 }
-                guard viewer == .mason else { throw ConvexRowDecodeError.missingDocument }
+                guard targetOwner == .mason else { throw ConvexRowDecodeError.missingDocument }
                 let dto = try await client.fetchFile("son-balances", as: LegacySonBalancesDTO.self)
                 return [
                     SyncedBTCAccount(key: "son-strike-mason", label: "Strike", custody: .exchange, btc: dto.strike, fiat: 0, owner: .mason),

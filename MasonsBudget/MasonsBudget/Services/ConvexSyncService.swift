@@ -348,7 +348,7 @@ final class ConvexSyncService {
 
     private func syncSonBalances(_ errors: inout [String]) async -> Int {
         do {
-            let rows = try await reader.readBalanceAccounts(viewer: currentMember)
+            let rows = try await reader.readBalanceAccounts(viewer: currentMember, owner: .mason)
             let accounts = rows.map { $0.model() }
             try replaceBTCAccounts(ownedBy: [.mason], with: accounts)
             return accounts.count
