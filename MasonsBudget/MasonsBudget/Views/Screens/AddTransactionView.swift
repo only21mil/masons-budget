@@ -80,6 +80,11 @@ struct AddTransactionView: View {
     @State private var bitcoinAccountKey: String?
     @Query private var btcAccounts: [BTCAccount]
     @State private var merchant = ""
+    @State private var note = ""
+    @State private var extraOptionsOpen = false
+    @Query(sort: \Transaction.date, order: .reverse) private var history: [Transaction]
+    private enum EntryField: Hashable { case merchant, price, note }
+    @FocusState private var focusedField: EntryField?
     @State private var btcBuyPrice = ""
     @State private var amountValidationMessage: String?
     @State private var commitHaptic = LedgerHapticTrigger()
@@ -196,46 +201,45 @@ struct AddTransactionView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                typeSegment
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 20) {
+                        typeSegment
+                        amountSection.id("amount")
+                            .onTapGesture { focusedField = nil }
+                        fieldsCard.id("fields")
+                    }
                     .padding(.horizontal, AppLayout.sectionPadding)
-                    .padding(.top, 12)
+                    .padding(.vertical, 12)
                     .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
-
-                Spacer()
-
-                amountSection
-                    .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
-
-                Spacer()
-
-                fieldsCard
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 8) {
+                        if let inlineMessage {
+                            Text(inlineMessage).ledgerType(.body).foregroundStyle(theme.danger)
+                                .accessibilityIdentifier("entry.validation")
+                        }
+                        saveButton
+                        if focusedField == nil {
+                            numPad.disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
+                        }
+                    }
                     .padding(.horizontal, AppLayout.sectionPadding)
-                    .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
-
-                numPad
                     .padding(.top, 8)
-                    .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
+                    .background(theme.bg)
+                }
+                .onChange(of: amountValidationMessage) { _, message in
+                    if message != nil { proxy.scrollTo(focusedField == nil ? "amount" : "fields", anchor: .top) }
+                }
             }
             .background(theme.bg)
             .ledgerHaptics(commitHaptic)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(writeFeedback.isRetryPending ? "Abandon" : "Cancel") {
-                        cancelSheet()
-                    }
+                    Button(writeFeedback.isRetryPending ? "Abandon" : "Cancel") { cancelSheet() }
                         .foregroundStyle(theme.accent)
                         .disabled(writeFeedback.isSaving)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(
-                        writeFeedback.isSaving
-                            ? "Saving…"
-                            : (writeFeedback.isRetryPending ? "Retry pending" : "Save"),
-                    ) { saveTransaction() }
-                        .ledgerType(.button)
-                        .foregroundStyle(theme.accent)
-                        .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
                 }
             }
             .navigationTitle("New transaction")
@@ -244,6 +248,23 @@ struct AddTransactionView: View {
             #endif
         }
         .interactiveDismissDisabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
+        .onAppear { restoreDefaults() }
+        .onChange(of: method) { _, _ in restoreDefaults() }
+        .onChange(of: selectedMemberRaw) { _, _ in restoreDefaults() }
+    }
+
+    private var saveButton: some View {
+        Button(writeFeedback.isSaving ? "Saving…" : (writeFeedback.isRetryPending ? "Retry pending" : "Save")) {
+            saveTransaction()
+        }
+        .ledgerType(.button)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .foregroundStyle(theme.onAccent)
+        .background(theme.accentFill)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .buttonStyle(.plain)
+        .disabled(writeFeedback.isSaving || writeFeedback.isRetryPending)
+        .accessibilityIdentifier("entry.save.pinned")
     }
 
     // MARK: - Type Segment
@@ -304,12 +325,6 @@ struct AddTransactionView: View {
             }
 
             conversionLine
-
-            if let inlineMessage {
-                Text(inlineMessage)
-                    .ledgerType(.body)
-                    .foregroundStyle(theme.danger)
-            }
         }
         .padding(.horizontal, AppLayout.sectionPadding)
     }
@@ -371,130 +386,103 @@ struct AddTransactionView: View {
         VStack(spacing: 0) {
             if txType == .btcBuy {
                 fieldRow(label: "Price") {
-                    TextField(AppFormatter.formatCurrency(btcPrice), text: $btcBuyPrice)
-                        .ledgerType(.rowFigure)
-                        .foregroundStyle(theme.text)
-                }
-
-                Hairline()
-
-                fieldRow(label: "Account") {
-                    TextField("Strike, River...", text: $merchant)
-                        .ledgerType(.rowPrimary)
-                        .foregroundStyle(theme.text)
-                }
-            } else if txType == .income {
-                fieldRow(label: "Source") {
-                    TextField("Employer or source", text: $merchant)
-                        .ledgerType(.rowPrimary)
-                        .foregroundStyle(theme.text)
-                }
-            } else {
-                fieldRow(label: "Category") {
-                    Menu {
-                        ForEach(
-                            scopedCategories.filter { txType == .income ? $0.isIncome : !$0.isIncome },
-                            id: \.name,
-                        ) { cat in
-                            Button {
-                                selectedCategory = cat.displayName
-                            } label: {
-                                Label(cat.displayName, systemImage: cat.icon)
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            if !selectedCategory.isEmpty {
-                                let cat = scopedCategories.first(where: { $0.displayName == selectedCategory })
-                                CatGlyphView(kind: cat?.icon ?? "wrench", size: 11, color: theme.onAccent)
-                                    .frame(width: 18, height: 18)
-                                    .background(theme.accentFill)
-                                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                            }
-                            Text(selectedCategory.isEmpty ? "Select" : selectedCategory)
-                                .ledgerType(.rowPrimary)
-                                .foregroundStyle(selectedCategory.isEmpty ? theme.textMuted : theme.text)
-                            Spacer()
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(AppFont.icon(size: 12, weight: .regular))
-                                .foregroundStyle(theme.textMuted)
-                        }
-                    }
-                }
-
-                Hairline()
-
-                fieldRow(label: "Method") {
-                    // The catalogue's canonical order; selection is stored as
-                    // the option's wire value, never its display label.
-                    Menu {
-                        ForEach(pickerOptions) { option in
-                            Button {
-                                method = option.wire
-                            } label: {
-                                Label(option.label, systemImage: PaymentMethod.icon(forWire: option.wire))
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: PaymentMethod.icon(forWire: method))
-                                .font(AppFont.icon(size: 12, weight: .regular))
-                                .foregroundStyle(theme.textMuted)
-                            Text(selectedLabel)
-                                .ledgerType(.rowPrimary)
-                                .foregroundStyle(theme.text)
-                            Spacer()
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(AppFont.icon(size: 12, weight: .regular))
-                                .foregroundStyle(theme.textMuted)
-                        }
-                    }
-                }
-
-                if isBitcoinNativeMethod {
-                    Hairline()
-
-                    fieldRow(label: "Account") {
-                        // The backend requires a named Bitcoin account on
-                        // every Bitcoin-native posting; the save is blocked
-                        // below until one is chosen.
-                        Menu {
-                            ForEach(adultBtcAccounts, id: \.key) { account in
-                                Button {
-                                    bitcoinAccountKey = account.key
-                                } label: {
-                                    Label(account.label, systemImage: "bitcoinsign.circle")
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "bitcoinsign.circle")
-                                    .font(AppFont.icon(size: 12, weight: .regular))
-                                    .foregroundStyle(theme.textMuted)
-                                Text(bitcoinAccountLabel)
-                                    .ledgerType(.rowPrimary)
-                                    .foregroundStyle(bitcoinAccountKey == nil ? theme.textMuted : theme.text)
-                                Spacer()
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(AppFont.icon(size: 12, weight: .regular))
-                                    .foregroundStyle(theme.textMuted)
-                            }
-                        }
-                    }
-                }
-
-                Hairline()
-
-                fieldRow(label: "Merchant") {
-                    TextField("Where?", text: $merchant)
-                        .ledgerType(.rowPrimary)
-                        .foregroundStyle(theme.text)
+                    TextField("USD per BTC", text: $btcBuyPrice)
+                        .focused($focusedField, equals: .price)
+                        .submitLabel(.done).onSubmit { focusedField = nil }
                 }
             }
+            fieldRow(label: txType == .income ? "Source" : txType == .btcBuy ? "Account" : "Merchant") {
+                TextField(txType == .income ? "Employer or source" : txType == .btcBuy ? "Strike, River…" : "Where?", text: $merchant)
+                    .ledgerType(.rowPrimary)
+                    .focused($focusedField, equals: .merchant)
+                    .submitLabel(.done).onSubmit { focusedField = nil }
+                    .accessibilityIdentifier("entry.merchant")
+            }
+            if txType == .spend {
+                Hairline()
+                fieldRow(label: "Category") {
+                    Menu {
+                        ForEach(scopedCategories.filter { !$0.isIncome }, id: \.name) { category in
+                            Button(category.displayName) { selectedCategory = category.displayName }
+                        }
+                    } label: {
+                        Text(selectedCategory.isEmpty ? "Select" : selectedCategory)
+                            .ledgerType(.rowPrimary).frame(minHeight: 44)
+                    }
+                }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], alignment: .leading, spacing: 4) {
+                    ForEach(frequentCategories, id: \.name) { category in
+                        Button(category.displayName) { selectedCategory = category.displayName }
+                            .ledgerType(.chip)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .foregroundStyle(selectedCategory == category.displayName ? theme.onAccent : theme.accent)
+                            .background(selectedCategory == category.displayName ? theme.accentFill : theme.accentSoft)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14)
+            }
+            Hairline()
+            DatePicker(Calendar.current.isDateInToday(incomeDate) ? "Today" : "Date", selection: $incomeDate, displayedComponents: .date)
+                .datePickerStyle(.compact)
+                .ledgerType(.rowPrimary)
+                .padding(14)
+                .accessibilityIdentifier("entry.date")
+            if txType == .spend {
+                DisclosureGroup("More options", isExpanded: $extraOptionsOpen) {
+                    fieldRow(label: "Method") {
+                        Picker("Method", selection: $method) {
+                            ForEach(pickerOptions) { option in Text(option.label).tag(option.wire) }
+                        }
+                        .labelsHidden()
+                    }
+                    noteField
+                }
+                .ledgerType(.rowPrimary).padding(14)
+                if isBitcoinNativeMethod { accountField }
+            } else { noteField }
         }
+        .foregroundStyle(theme.text)
         .glassCard(padding: 0, radius: AppLayout.radiusCompact)
     }
 
+    private var noteField: some View {
+        fieldRow(label: "Note") {
+            TextField("Optional", text: $note)
+                .focused($focusedField, equals: .note)
+                .submitLabel(.done).onSubmit { focusedField = nil }
+        }
+    }
+    private var accountField: some View {
+        fieldRow(label: "Account") {
+            Menu {
+                ForEach(adultBtcAccounts, id: \.key) { account in
+                    Button(account.label) { bitcoinAccountKey = account.key }
+                }
+            } label: {
+                Text(bitcoinAccountLabel).ledgerType(.rowPrimary).frame(minHeight: 44)
+            }
+        }
+    }
+    private var frequentCategories: [BudgetCategory] {
+        guard let member = activeMember else { return [] }
+        let rows = history.filter { member.sharesNetWorth(with: $0.ownerMember) && $0.isSpend }
+        let counts = Dictionary(uniqueKeysWithValues: scopedCategories.map { category in
+            (category.name, rows.count(where: { category.matches($0) }))
+        })
+        return Array(scopedCategories.filter { !$0.isIncome }.sorted {
+            let left = counts[$0.name, default: 0]
+            let right = counts[$1.name, default: 0]
+            return left == right ? $0.sortOrder < $1.sortOrder : left > right
+        }.prefix(4))
+    }
+    private func restoreDefaults() {
+        guard let member = activeMember else { selectedCategory = ""; merchant = ""; return }
+        let defaults = EntryFormDefaults.load(owner: member.ledgerOwner, method: method)
+        selectedCategory = scopedCategories.contains { $0.name == defaults.category || $0.displayName == defaults.category } ? defaults.category : ""
+        merchant = defaults.merchant
+    }
     private func fieldRow(label: String, @ViewBuilder content: () -> some View) -> some View {
         HStack {
             Text(label)
@@ -637,15 +625,24 @@ struct AddTransactionView: View {
     /// A refused save plays the error haptic after validation, never on press.
     private func rejectSave(_ message: String) {
         amountValidationMessage = message
+        if message.localizedCaseInsensitiveContains("source") || message.localizedCaseInsensitiveContains("merchant") {
+            focusedField = .merchant
+        } else {
+            focusedField = nil
+        }
+        if message.localizedCaseInsensitiveContains("account") { extraOptionsOpen = true }
         commitHaptic.fire(.error)
     }
 
     private func saveTransaction() {
+        guard !writeFeedback.isSaving, !writeFeedback.isRetryPending else { return }
         guard let activeMember else {
             rejectSave("Select a valid family profile")
             return
         }
         let ledgerOwner = activeMember.ledgerOwner
+        let savedDefaults = EntryFormDefaults(category: selectedCategory, merchant: merchant)
+        let defaultsMethod = method
 
         if txType == .income {
             saveIncome(member: activeMember)
@@ -699,7 +696,7 @@ struct AddTransactionView: View {
 
         let tx = Transaction(
             id: createIDs.transactionID,
-            date: Date(),
+            date: incomeDate,
             merchant: merchant.isEmpty ? (isIncome ? "Income" : "Expense") : merchant,
             amount: amountIntent.amountUSD,
             category: transactionCategory,
@@ -711,6 +708,7 @@ struct AddTransactionView: View {
             // them from the entry unit).
             card: method,
             bitcoinAccountKey: isBitcoinNativeMethod ? bitcoinAccountKey : nil,
+            note: note.isEmpty ? nil : note,
             owner: ledgerOwner,
             createdBy: "app",
         )
@@ -739,12 +737,14 @@ struct AddTransactionView: View {
             },
             afterResult: { [createIDs, dismiss, haptic = $commitHaptic] result in
                 haptic.wrappedValue.fire(result.isOk ? .success : .error)
-                if createIDs.recordServerResult(result, for: .transaction) { dismiss() }
+                if createIDs.recordServerResult(result, for: .transaction) { savedDefaults.save(owner: ledgerOwner, method: defaultsMethod); dismiss() }
             },
         )
     }
 
     private func saveIncome(member: FamilyMember) {
+        let savedDefaults = EntryFormDefaults(category: selectedCategory, merchant: merchant)
+        let defaultsMethod = method
         let amountUSD = inputUnit == .usd ? numericAmount : computedSats / 100_000_000 * conversionBTCPrice
         guard amountUSD > 0 else {
             rejectSave("Enter an amount")
@@ -757,11 +757,12 @@ struct AddTransactionView: View {
         }
         writeFeedback.begin()
         AppWriteSyncService.pushIncome(
-            id: incomeID, date: incomeDate, amount: amountUSD, source: source, note: nil, member: member,
+            id: incomeID, date: incomeDate, amount: amountUSD, source: source, note: note.isEmpty ? nil : note, member: member,
         ) { [writeFeedback, canonicalFinancials, dismiss] result in
             if result.isOk {
                 _ = writeFeedback.finish(result, operation: "Income")
                 canonicalFinancials.requestReload()
+                savedDefaults.save(owner: member.ledgerOwner, method: defaultsMethod)
                 dismiss()
             } else {
                 // Income has no optimistic transaction or background retry owner.
@@ -773,6 +774,8 @@ struct AddTransactionView: View {
 
     private func saveBTCBuy(owner activeMember: FamilyMember) {
         let ledgerOwner = activeMember.ledgerOwner
+        let savedDefaults = EntryFormDefaults(category: selectedCategory, merchant: merchant)
+        let defaultsMethod = method
         let sats = roundedSats(from: abs(computedSats))
         guard sats > 0 else {
             rejectSave("Enter an amount")
@@ -784,7 +787,7 @@ struct AddTransactionView: View {
         let usd = inputUnit == .usd ? abs(numericAmount) : btc * price
         let source = merchant.trimmingCharacters(in: .whitespacesAndNewlines)
         let account = source.isEmpty ? "Bitcoin Buy" : source
-        let date = Date()
+        let date = incomeDate
 
         let buy = BTCBuy(
             id: createIDs.bitcoinBuyID,
@@ -794,7 +797,7 @@ struct AddTransactionView: View {
             amountSats: sats,
             priceUSD: price,
             usd: usd,
-            note: "Logged in app",
+            note: note.isEmpty ? "Logged in app" : note,
             loggedBy: "app",
             owner: ledgerOwner,
         )
@@ -823,7 +826,7 @@ struct AddTransactionView: View {
             },
             afterResult: { [createIDs, dismiss, haptic = $commitHaptic] result in
                 haptic.wrappedValue.fire(result.isOk ? .success : .error)
-                if createIDs.recordServerResult(result, for: .bitcoinBuy) { dismiss() }
+                if createIDs.recordServerResult(result, for: .bitcoinBuy) { savedDefaults.save(owner: ledgerOwner, method: defaultsMethod); dismiss() }
             },
         )
     }
@@ -843,4 +846,23 @@ struct AddTransactionView: View {
 
 private extension AppLayout {
     static let radiusCompact: CGFloat = 14
+}
+
+struct EntryFormDefaults: Codable, Equatable {
+    var category = ""
+    var merchant = ""
+
+    static func key(owner: FamilyMember, method: String) -> String {
+        "entry_defaults_v1.\(owner.ledgerOwner.rawValue).\(method)"
+    }
+    static func load(owner: FamilyMember, method: String, store: UserDefaults = .standard) -> Self {
+        guard let data = store.data(forKey: key(owner: owner, method: method)),
+              let value = try? JSONDecoder().decode(Self.self, from: data)
+        else { return Self() }
+        return value
+    }
+    func save(owner: FamilyMember, method: String, store: UserDefaults = .standard) {
+        guard let data = try? JSONEncoder().encode(self) else { return }
+        store.set(data, forKey: Self.key(owner: owner, method: method))
+    }
 }

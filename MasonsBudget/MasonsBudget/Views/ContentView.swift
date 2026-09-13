@@ -173,11 +173,9 @@ struct ContentView: View {
                 .padding(.horizontal, AppLayout.sectionPadding)
                 .padding(.top, 10)
         }
-        .overlay(alignment: .bottom) {
-            TaskUndoBanner()
-                .padding(.horizontal, AppLayout.sectionPadding)
-                .padding(.bottom, taskUndoBottomPadding)
-        }
+        #if os(macOS)
+        .safeAreaInset(edge: .bottom) { undoBanner }
+        #endif
         .sheet(isPresented: $showAddTransaction) {
             addTransactionSheet
         }
@@ -193,6 +191,7 @@ struct ContentView: View {
         .sheet(isPresented: $showTaskEntry) {
             NavigationStack {
                 TaskSmartListView(filter: .inbox, initiallyAdding: true)
+                    .safeAreaInset(edge: .bottom) { undoBanner }
                     .environment(\.ledgerRootTitle, "")
                     .navigationTitle("New task")
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showTaskEntry = false } } }
@@ -218,6 +217,7 @@ struct ContentView: View {
                 ForEach(AppTab.allCases) { tab in
                     NavigationStack {
                         screenForTab(tab)
+                            .safeAreaInset(edge: .bottom) { undoBanner }
                             .environment(\.ledgerRootTitle, tab.label)
                             .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
                                 avatarButton
@@ -599,12 +599,9 @@ struct ContentView: View {
         }
     }
 
-    private var taskUndoBottomPadding: CGFloat {
-        #if os(iOS)
-            84
-        #else
-            18
-        #endif
+    private var undoBanner: some View {
+        TaskUndoBanner()
+            .padding(.horizontal, AppLayout.sectionPadding)
     }
 
     @ViewBuilder
