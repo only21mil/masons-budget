@@ -511,20 +511,14 @@ enum LedgerChromeSpec {
             ]
         }
 
-        /// UIKit owns the tab bar height. Bound only its caption to standard
-        /// text sizes; accessibility names and the native large content viewer remain intact.
-        static func tabTitleAttributes(
-            ink: KeyPath<LedgerPalette, Color>,
-            compatibleWith traits: UITraitCollection? = nil,
-        ) -> [NSAttributedString.Key: Any] {
+        /// UIKit owns the tab bar height and enlarged content presentation.
+        /// Keep its visible caption at the foundation size to avoid icon overlap.
+        static func tabTitleAttributes(ink: KeyPath<LedgerPalette, Color>) -> [NSAttributedString.Key: Any] {
             let specification = LedgerChromeSpec.tabLabel
             let face = UIFont(name: specification.weight.postScriptName, size: specification.size)
                 ?? UIFont.systemFont(ofSize: specification.size)
-            let metrics = UIFontMetrics(forTextStyle: .caption2)
-            let largestStandardTraits = UITraitCollection(preferredContentSizeCategory: .extraExtraExtraLarge)
-            let maximumPointSize = metrics.scaledFont(for: face, compatibleWith: largestStandardTraits).pointSize
             return [
-                .font: metrics.scaledFont(for: face, maximumPointSize: maximumPointSize, compatibleWith: traits),
+                .font: face,
                 .kern: specification.tracking,
                 .foregroundColor: color(ink),
             ]
