@@ -40,13 +40,13 @@ struct CategoryDetailView: View {
         Self.transactions(
             transactions,
             visibleTo: activeMember,
-            category: category.name,
+            category: category.displayName,
             selectedMonth: selectedMonth,
         )
     }
 
     private var canDelete: Bool {
-        activeMember != .maddox &&
+        activeMember.canSee(dataOwnedBy: category.ownerMember) &&
             Calendar.current.isDate(selectedMonth, equalTo: Date(), toGranularity: .month)
     }
 
@@ -59,7 +59,8 @@ struct CategoryDetailView: View {
     ) -> [Transaction] {
         transactions.filter {
             member.sharesNetWorth(with: $0.ownerMember) &&
-                $0.category == category &&
+                LedgerMapper.wireBudgetCategoryName(from: $0.category, owner: $0.ownerMember) ==
+                LedgerMapper.wireBudgetCategoryName(from: category, owner: member) &&
                 calendar.isDate($0.date, equalTo: selectedMonth, toGranularity: .month)
         }
     }
@@ -67,7 +68,24 @@ struct CategoryDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: AppLayout.cardSpacing) {
-                ScreenHeader(title: category.name, eyebrow: "Budget category")
+                ScreenHeader(title: category.displayName, eyebrow: "Budget category")
+
+                VStack(alignment: .leading, spacing: 8) {
+                    let spent = categoryTransactions.reduce(Decimal(0)) { $0 + $1.spendAmount }
+                    Text("Spent \(AppFormatter.formatCurrency(spent))")
+                        .ledgerType(.rowFigure)
+                    Text("Limit \(AppFormatter.formatCurrency(category.monthlyBudget)) · Remaining \(AppFormatter.formatCurrency(category.monthlyBudget - spent))")
+                        .ledgerType(.rowMeta)
+                    LedgerProgressBar(
+                        fraction: category.monthlyBudget > 0 ? NSDecimalNumber(decimal: spent / category.monthlyBudget).doubleValue : 0,
+                        height: 6,
+                        fill: spent > category.monthlyBudget ? theme.danger : theme.accent,
+                        track: theme.surface2,
+                    )
+                }
+                .foregroundStyle(theme.text)
+                .glassCard(padding: AppLayout.paddingCompact, radius: AppLayout.radiusMedium)
+                .padding(.horizontal, AppLayout.sectionPadding)
 
                 VStack(spacing: 0) {
                     HStack {
@@ -173,7 +191,7 @@ struct CategoryDetailView: View {
             .padding(.bottom, 100)
         }
         .background(theme.bg)
-        .navigationTitle(category.name)
+        .navigationTitle(category.displayName)
         #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -185,7 +203,7 @@ struct CategoryDetailView: View {
                         .disabled(writeFeedback.isSaving)
                 }
             }
-            .alert("Delete \(category.name)?", isPresented: $showDeleteConfirmation) {
+            .alert("Delete \(category.displayName)?", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) {}
                 Button("Delete", role: .destructive) { deleteCategory() }
             } message: {
@@ -236,7 +254,7 @@ struct CategoryDetailView: View {
     private func deleteCategory() {
         deletion.begin()
         let viewer = activeMember
-        let categoryName = category.name
+        let categoryName = category.displayName
         Task {
             do {
                 let client = ConvexClient(deploymentURL: ConvexConfig.deploymentURL)
