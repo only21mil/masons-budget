@@ -66,9 +66,11 @@ struct BTCBuysView: View {
                     }
                     .foregroundStyle(theme.text)
                     .frame(maxWidth: .infinity).padding(AppLayout.sectionPadding)
-                } else { summaryCard }
-                    .padding(.horizontal, AppLayout.sectionPadding)
-                    .padding(.bottom, AppLayout.cardSpacing)
+                } else {
+                    summaryCard
+                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.bottom, AppLayout.cardSpacing)
+                }
 
                 ForEach(grouped, id: \.0) { month, buys in
                     VStack(alignment: .leading, spacing: 8) {
