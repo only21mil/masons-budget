@@ -899,7 +899,7 @@ final class AppWritebackClient: Sendable {
 
         let urls = AppWritebackConfig.bundledPairingURLs
         guard !urls.isEmpty else {
-            throw AppWritebackError.serverError
+            throw AppWritebackError.notConfigured
         }
 
         var lastError: Error?
@@ -1749,10 +1749,10 @@ final class ConvexClient: Sendable {
                 path: "tables:upsertTransactionFromDevice", owner: canonicalOwner,
                 entityID: transaction.id, arguments: args,
             )
-            // A device acknowledgement carries no revision. A failed read must
-            // not turn an accepted write into another mutation retry.
-            return try? await ConvexRowReader(client: self).transactions(viewer: owner)
-                .first { $0.id == transaction.id && $0.owner == canonicalOwner }?.updatedAtMs
+            // The acknowledgement has no revision. A later query may describe
+            // another device's payload, so it cannot authorize this local draft.
+            // A normal sync must install the full row and its revision together.
+            return nil
         }
         let raw = try await mutation(path, args: args)
         guard let result = raw as? [String: Any],
@@ -1872,8 +1872,8 @@ final class ConvexClient: Sendable {
                 path: "tables:upsertBtcBuyFromDevice", owner: owner,
                 entityID: buy.id, arguments: args,
             )
-            return try? await ConvexRowReader(client: self).btcBuys(viewer: owner, scope: .netWorth)
-                .first { $0.id == buy.id && $0.owner == owner.ledgerOwner.rawValue }?.updatedAtMs
+            // Only a full row refresh can pair a later revision with its data.
+            return nil
         }
         let raw = try await mutation(path, args: args)
         guard let result = raw as? [String: Any],

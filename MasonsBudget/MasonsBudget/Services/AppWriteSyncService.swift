@@ -359,8 +359,12 @@ enum AppWriteSyncService {
             owner: canonicalOwner,
             to: fileName,
             onOperationStart: onOperationStart,
-            onAcceptedRevision: { buy.updatedAtMs = $0 },
-            onResult: onResult,
+            onResult: { result in
+                // Device buy acknowledgements carry no revision. Do not leave
+                // the pre-edit revision attached to the accepted new payload.
+                if result.isOk { buy.updatedAtMs = nil }
+                onResult?(result)
+            },
         )
     }
 

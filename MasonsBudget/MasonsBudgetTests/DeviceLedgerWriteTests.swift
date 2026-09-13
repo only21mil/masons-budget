@@ -69,7 +69,7 @@ final class DeviceLedgerWriteTests: XCTestCase {
         ))
     }
 
-    func testTransactionDeviceRoutePreservesRevisionAndSurvivesFailedReadAfterAcceptance() async throws {
+    func testTransactionDeviceRouteSendsBaseRevisionAndAcceptsWithoutARevision() async throws {
         let upsert = expectation(description: "device upsert")
         let deletion = expectation(description: "device deletion")
         let client = ConvexClient(
@@ -100,9 +100,112 @@ final class DeviceLedgerWriteTests: XCTestCase {
             category: "Food", card: nil, note: nil, owner: .mason, updatedAtMs: 1234,
         )
         let acceptedRevision = try await client.upsertTransactionRow(payload, owner: .mason, sourceFile: "mason-transactions", fromDevice: true)
-        XCTAssertNil(acceptedRevision, "The accepted mutation must not fail or retry when the subsequent read is offline.")
+        XCTAssertNil(acceptedRevision, "The accepted mutation stays successful without inventing a row revision.")
         try await client.deleteTransactionRow(id: payload.id, owner: .mason, sourceFile: "mason-transactions", baseUpdatedAtMs: 1234, fromDevice: true)
         await fulfillment(of: [upsert, deletion], timeout: 1)
+    }
+
+    func testDeviceAcknowledgementsNeverBorrowAConcurrentSnapshotRevision() async throws {
+        for isBuy in [false, true] {
+            for concurrentValue in ["Submitted", "Other device"] {
+                let ordering = DeviceWriteOrdering()
+                let tagged = ConvexTaggedInt64Encoder.encode(Int64(100))
+                var row: [String: Any] = [
+                    "owner": "victor", "date": "2026-09-13", "month": "2026-09",
+                    "updatedAtMs": 3000,
+                ]
+                if isBuy {
+                    row.merge(["buyId": "race", "source": concurrentValue, "sats": tagged,
+                               "priceUsdCents": tagged, "usdCents": tagged]) { _, new in new }
+                } else {
+                    row.merge(["txId": "race", "merchant": concurrentValue,
+                               "amountCents": tagged, "category": "Food"]) { _, new in new }
+                }
+                let response = try JSONSerialization.data(withJSONObject: [
+                    "status": "success", "value": ["complete": true, "rows": [row]],
+                ])
+                let client = ConvexClient(
+                    deploymentURL: URL(string: "https://example.convex.cloud")!,
+                    requestExecutor: { request in
+                        await ordering.record("query")
+                        return (response, HTTPURLResponse(url: request.url!, statusCode: 200,
+                                                         httpVersion: nil, headerFields: nil)!)
+                    },
+                    ledgerExecutor: { _, _, _, args, _ in
+                        XCTAssertEqual(args["baseUpdatedAtMs"] as? Double, 1234)
+                        let payload = try XCTUnwrap(args[isBuy ? "buy" : "transaction"] as? [String: Any])
+                        XCTAssertEqual(payload[isBuy ? "source" : "merchant"] as? String, "Submitted")
+                        // The server accepts our payload, then another device
+                        // commits before the response reaches this client.
+                        await ordering.record("accepted submitted payload")
+                        await ordering.record("concurrent commit before response")
+                    },
+                )
+                let revision: Double?
+                if isBuy {
+                    let buy = LegacyBTCBuyDTO(
+                        id: "race", date: "2026-09-13", source: "Submitted", amountSats: 100,
+                        amountBtc: Decimal(string: "0.000001")!, priceUsd: 1, usd: 1,
+                        note: nil, status: nil, costBasisStatus: nil, loggedBy: nil,
+                        archimedesRequestId: nil, owner: "victor", updatedAtMs: 1234,
+                    )
+                    revision = try await client.upsertBTCBuyRow(buy, owner: .victor, fromDevice: true)
+                } else {
+                    let transaction = LegacyTransactionDTO(
+                        id: "race", date: "2026-09-13", merchant: "Submitted", amount: 1,
+                        category: "Food", card: nil, note: nil, owner: .victor, updatedAtMs: 1234,
+                    )
+                    revision = try await client.upsertTransactionRow(transaction, owner: .victor,
+                                                                     sourceFile: "transactions", fromDevice: true)
+                }
+                XCTAssertNil(revision, "An ACK without a revision stays unknown even when a later payload looks unchanged.")
+                let events = await ordering.events
+                XCTAssertEqual(events, ["accepted submitted payload", "concurrent commit before response"])
+            }
+        }
+    }
+
+    @MainActor
+    func testAcceptedTransactionWithUnknownRevisionCannotAuthorizeTheNextEditOrDelete() async {
+        let row = Transaction(id: "unknown", date: .now, merchant: "Submitted", amount: 1,
+                              category: "Food", createdBy: "app", updatedAtMs: 1234)
+        let accepted = expectation(description: "accepted without revision")
+        AppWriteSyncService.pushTransaction(
+            row, owner: .victor, statusStore: SyncStatusStore(), automaticRetries: 0,
+            retryDelayNanoseconds: 0, preflight: { nil },
+            write: { payload, _, _ in
+                XCTAssertEqual(payload.updatedAtMs, 1234)
+                return nil
+            }, onResult: { result in
+                XCTAssertEqual(result, .ok)
+                accepted.fulfill()
+            },
+        )
+        await fulfillment(of: [accepted], timeout: 1)
+        XCTAssertNil(row.updatedAtMs)
+        row.merchant = "Next edit"
+        let refused = expectation(description: "unfenced edit refused")
+        AppWriteSyncService.pushTransaction(
+            row, owner: .victor, statusStore: SyncStatusStore(), automaticRetries: 0,
+            retryDelayNanoseconds: 0, preflight: { nil },
+            write: { payload, _, _ in
+                XCTAssertNil(payload.updatedAtMs, "The next write must not borrow the concurrent device's revision.")
+                throw AppWritebackError.remote(.revisionRequired)
+            }, onResult: { result in
+                XCTAssertEqual(result, .failed(.revisionRequired))
+                refused.fulfill()
+            },
+        )
+        await fulfillment(of: [refused], timeout: 1)
+        let client = ConvexClient(deploymentURL: URL(string: "https://example.convex.cloud")!,
+                                  ledgerExecutor: { _, _, _, _, _ in XCTFail("Unfenced delete must not be sent") })
+        do {
+            try await client.deleteTransactionRow(id: row.id, owner: .victor, sourceFile: "transactions",
+                                                  baseUpdatedAtMs: row.updatedAtMs, fromDevice: true)
+            XCTFail("Unknown revision must refuse deletion")
+        } catch {
+            XCTAssertEqual(ConvexWriteResult.classify(error), .failed(.revisionRequired))
+        }
     }
 
     func testDeviceDeleteRefusesAnUnknownRevisionBeforeSending() async throws {
@@ -269,6 +372,70 @@ final class DeviceLedgerWriteTests: XCTestCase {
         XCTAssertTrue(asOf.hasSuffix("T00:00:00.000Z"))
     }
 
+    @MainActor
+    func testProfileRoundTripIgnoresOldTaskCompletionAndKeepsTheNewRetryDraft() {
+        for oldResult in [ConvexWriteResult.ok, .unauthorized] {
+            var draft = InlineTaskDraft()
+            draft.text = "Same title"
+            let oldID = draft.begin(todo: TodoItem(id: "old", title: draft.text, owner: .victor))
+            draft.reset() // A to B
+            draft.reset() // B to A
+            draft.text = "Same title"
+            let newTodo = TodoItem(id: "new", title: draft.text, owner: .victor)
+            let newID = draft.begin(todo: newTodo)
+            XCTAssertFalse(draft.finish(oldResult, requestID: oldID))
+            XCTAssertTrue(draft.isSaving)
+            XCTAssertEqual(draft.pendingTodo?.id, "new")
+            XCTAssertEqual(draft.text, "Same title")
+            XCTAssertNil(draft.message)
+            let offline = ConvexWriteResult.classify(URLError(.notConnectedToInternet))
+            XCTAssertTrue(offline.isRetryable)
+            XCTAssertTrue(draft.finish(offline, requestID: newID))
+            XCTAssertFalse(draft.isSaving)
+            XCTAssertEqual(draft.pendingTodo?.id, "new")
+            XCTAssertEqual(draft.text, "Same title")
+            XCTAssertFalse(draft.finish(.ok, requestID: oldID))
+            XCTAssertEqual(draft.text, "Same title")
+            // The retained Retry action still owns this exact request.
+            XCTAssertTrue(draft.finish(.ok, requestID: newID))
+            XCTAssertEqual(draft.text, "")
+            XCTAssertNil(draft.pendingTodo)
+        }
+    }
+
+    @MainActor
+    func testOldTaskCompletionCannotClearANewUnsubmittedDraft() {
+        var draft = InlineTaskDraft()
+        draft.text = "Same title"
+        let oldID = draft.begin(todo: TodoItem(id: "old", title: draft.text))
+        draft.reset()
+        draft.reset()
+        draft.text = "Same title"
+        XCTAssertFalse(draft.finish(.ok, requestID: oldID))
+        XCTAssertEqual(draft.text, "Same title")
+        XCTAssertFalse(draft.isSaving)
+    }
+
+    func testUnpairedLedgerWriteWithoutBundledURLsReturnsNotConfigured() async throws {
+        AppWritebackConfig.clear()
+        defer { AppWritebackConfig.clear() }
+        guard AppWritebackConfig.bundledPairingURLs.isEmpty else {
+            XCTFail("This regression requires the unsigned test bundle without pairing URLs")
+            return
+        }
+        XCTAssertFalse(AppWritebackConfig.hasStoredCredential)
+        let client = AppWritebackClient(session: URLSession(configuration: .ephemeral))
+        do {
+            try await client.writeLedger(path: "tables:upsertTransactionFromDevice", owner: .victor,
+                                         entityID: "unpaired", arguments: [:])
+            XCTFail("Unpaired installation must refuse before a network request")
+        } catch {
+            XCTAssertEqual(ConvexWriteResult.classify(error), .notConfigured)
+            XCTAssertEqual(ConvexWriteResult.classify(error).userMessage(operation: "Transaction"),
+                           "Pair this device in Sync Setup before saving.")
+        }
+    }
+
     func testMissingPairingOffersSetupInsteadOfUnauthorized() {
         XCTAssertEqual(ConvexWriteResult.classify(AppWritebackError.notConfigured), .notConfigured)
         XCTAssertEqual(ConvexWriteResult.notConfigured.userMessage(operation: "Task"), "Pair this device in Sync Setup before saving.")
@@ -282,5 +449,13 @@ final class DeviceLedgerWriteTests: XCTestCase {
         XCTAssertEqual(AppWriteSyncService.BitcoinEntity.transfer.sourceFile(owner: .mason), "btc-transfers")
         XCTAssertEqual(AppWriteSyncService.BitcoinEntity.account.sourceFile(owner: .rachel), "btc-balance-snapshot")
         XCTAssertEqual(AppWriteSyncService.BitcoinEntity.account.sourceFile(owner: .maddox), "son-balances")
+    }
+}
+
+private actor DeviceWriteOrdering {
+    private(set) var events: [String] = []
+
+    func record(_ event: String) {
+        events.append(event)
     }
 }
