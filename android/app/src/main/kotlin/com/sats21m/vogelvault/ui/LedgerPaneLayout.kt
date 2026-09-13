@@ -39,6 +39,7 @@ internal data class LedgerPanePlan(
     val railWidth: Dp = 0.dp,
     val leadingInset: Dp = 0.dp,
     val topInset: Dp = 0.dp,
+    val windowOriginY: Dp = 0.dp,
 ) {
     val split: Boolean get() = detailWidth > 0.dp
 }
@@ -111,8 +112,11 @@ internal fun LedgerPanes(
         val width = constraints.maxWidth
         val height = constraints.maxHeight
         val listWidth = if (plan.listWidth > 0.dp) plan.listWidth.roundToPx().coerceIn(0, width) else width
-        val listHeight = (plan.listHeight?.let { (it - originY).roundToPx() } ?: height).coerceIn(0, height)
-        val detailWidth = if (plan.split) plan.detailWidth.roundToPx().coerceIn(0, width) else listWidth
+        val listHeight = (plan.listHeight?.let { (it - (originY - plan.windowOriginY)).roundToPx() } ?: height).coerceIn(0, height)
+        val availableDetailWidth = if (plan.split && !plan.horizontalHinge) {
+            (width - listWidth - plan.gap.roundToPx()).coerceAtLeast(0)
+        } else width
+        val detailWidth = if (plan.split) plan.detailWidth.roundToPx().coerceIn(0, availableDetailWidth) else listWidth
         val detailHeight = when {
             !plan.split -> listHeight
             plan.horizontalHinge -> (height - listHeight - plan.gap.roundToPx()).coerceAtLeast(0)

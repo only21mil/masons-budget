@@ -2,12 +2,16 @@ package com.sats21m.vogelvault.ui
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.assertIsSelected
@@ -15,6 +19,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -48,7 +55,9 @@ import kotlin.test.assertTrue
 class UnfoldedLayoutTest {
     @get:Rule val compose = createEmptyComposeRule()
     private lateinit var controller: ActivityController<ComponentActivity>
+    private var hostOffset = 0.dp
     private var width by mutableStateOf(841.dp)
+    private var safeInsets: WindowInsets = WindowInsets(0, 0, 0, 0)
     private var hinge by mutableStateOf<LedgerHinge?>(null)
 
     @Before fun start() {
@@ -60,14 +69,14 @@ class UnfoldedLayoutTest {
     private fun render(destination: Destination) {
         controller.get().setContent {
             LedgerTheme {
-                Box(Modifier.size(width, 945.dp)) {
+                Box(Modifier.padding(start = hostOffset).size(width, 945.dp)) {
                     VaultApp(
                         state = VaultUiState(activeProfile = FamilyMember.VICTOR, destination = destination,
                             data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE).let { fixture ->
                                 fixture.copy(btcBalanceReadOwner = FamilyMember.VICTOR,
                                     btcBalance = fixture.btcBalance.copy(value = fixture.btcBalance.value?.copy(updatedAtMs = 1L)))
                             }),
-                        onNavigate = {}, onSwitchProfile = {}, hingeOverride = hinge,
+                        onNavigate = {}, onSwitchProfile = {}, hingeOverride = hinge, safeDrawingInsets = safeInsets,
                     )
                 }
             }
@@ -85,6 +94,77 @@ class UnfoldedLayoutTest {
         assertTrue(left.right <= 420f && right.left >= 421f)
         compose.onNodeWithText("Select a transaction to see its details.").assertIsDisplayed()
     }
+    @Test fun `vertical hinge uses inset content origin and contains the far edge`() {
+        safeInsets = WindowInsets(left = 24.dp, top = 0.dp, right = 16.dp, bottom = 0.dp)
+        hinge = LedgerHinge(420.dp, 421.dp, false)
+        render(Destination.ACTIVITY)
+        val left = compose.onNodeWithTag("vault-list-pane").fetchSemanticsNode().boundsInRoot
+        val right = compose.onNodeWithTag("vault-detail-pane").fetchSemanticsNode().boundsInRoot
+        assertTrue(left.left >= 24f && left.right <= 420f, "list bounds: $left")
+        assertTrue(right.left >= 421f && right.right <= 825f, "detail bounds: $right")
+        compose.onNodeWithTag("vault-detail-pane").assertWidthIsEqualTo(404.dp)
+    }
+
+    @Test fun `vertical hinge also accounts for a host origin outside safe padding`() {
+        hostOffset = 13.dp
+        safeInsets = WindowInsets(left = 24.dp, top = 0.dp, right = 16.dp, bottom = 0.dp)
+        hinge = LedgerHinge(420.dp, 421.dp, false)
+        render(Destination.ACTIVITY)
+        val left = compose.onNodeWithTag("vault-list-pane").fetchSemanticsNode().boundsInRoot
+        val right = compose.onNodeWithTag("vault-detail-pane").fetchSemanticsNode().boundsInRoot
+        assertTrue(left.left >= 37f && left.right <= 420f, "list bounds: $left")
+        assertTrue(right.left >= 421f && right.right <= 838f, "detail bounds: $right")
+        compose.onNodeWithTag("vault-detail-pane").assertWidthIsEqualTo(417.dp)
+    }
+
+    @Test fun `horizontal hinge uses the same inset origin for stacked panes`() {
+        safeInsets = WindowInsets(left = 24.dp, top = 28.dp, right = 16.dp, bottom = 0.dp)
+        hinge = LedgerHinge(470.dp, 475.dp, true)
+        render(Destination.ACTIVITY)
+        val upper = compose.onNodeWithTag("vault-list-pane").fetchSemanticsNode().boundsInRoot
+        val lower = compose.onNodeWithTag("vault-detail-pane").fetchSemanticsNode().boundsInRoot
+        assertTrue(upper.top >= 28f && upper.bottom <= 470f, "list bounds: $upper")
+        assertTrue(lower.top >= 475f && lower.bottom <= 945f, "detail bounds: $lower")
+        assertTrue(upper.left >= 24f && upper.right <= 825f && lower.left >= 24f && lower.right <= 825f)
+    }
+
+    @Test fun `selecting a smart list replaces the previous task detail`() = taskParentReplacesDetail("Inbox")
+    @Test fun `selecting a project replaces the previous task detail`() = taskParentReplacesDetail("Tax Prep")
+    @Test fun `selecting an area replaces the previous task detail`() = taskParentReplacesDetail("Finance")
+
+    private fun taskParentReplacesDetail(parent: String) {
+        render(Destination.TASKS)
+        val inList = hasAnyAncestor(hasTestTag("vault-list-pane"))
+        val inDetail = hasAnyAncestor(hasTestTag("vault-detail-pane"))
+        compose.onNode(hasContentDescription("Open Review insurance renewal") and hasClickAction() and inList)
+            .performScrollTo().performClick()
+        compose.onNode(hasText("Review insurance renewal") and inDetail).assertIsDisplayed()
+        val parentRow = if (parent == "Inbox") hasText(parent) else hasContentDescription("Open $parent")
+        compose.onNode(parentRow and hasClickAction() and inList).performScrollTo().performClick()
+        compose.onNode(hasText("Review insurance renewal") and inDetail).assertDoesNotExist()
+        compose.onNode(hasText(parent) and inDetail and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)).assertIsDisplayed()
+    }
+
+    @Test fun `selecting another Budget category replaces the previous transaction detail`() {
+        render(Destination.BUDGET)
+        val inList = hasAnyAncestor(hasTestTag("vault-list-pane"))
+        val inDetail = hasAnyAncestor(hasTestTag("vault-detail-pane"))
+        val category = hasContentDescription("View Groceries transactions for 2026-07")
+        compose.onNode(hasScrollToIndexAction() and inList).performScrollToNode(category)
+        compose.onNode(category and inList).performClick()
+        val transaction = hasContentDescription("Neighborhood Market", substring = true) and hasClickAction()
+        compose.onNode(hasScrollToIndexAction() and inDetail).performScrollToNode(transaction)
+        compose.onNode(transaction and inDetail).performClick()
+        compose.onNode(hasText("Edit") and inDetail).assertIsDisplayed()
+        val next = hasContentDescription("View Dining transactions for 2026-07")
+        compose.onNode(hasScrollToIndexAction() and inList).performScrollToNode(next)
+        compose.onNode(next and inList).performClick()
+        compose.onNode(hasText("Edit") and inDetail).assertDoesNotExist()
+        val diningTransaction = hasContentDescription("Coffee Bar", substring = true) and hasClickAction()
+        compose.onNode(hasScrollToIndexAction() and inDetail).performScrollToNode(diningTransaction)
+        compose.onNode(diningTransaction and inDetail).assertIsDisplayed()
+    }
+
     @Test fun `both cover sizes use bottom navigation and one content pane`() {
         width = 411.dp
         render(Destination.BUDGET)

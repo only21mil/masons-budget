@@ -538,6 +538,7 @@ fun ScreenHost(
                                     onSelectMonth = { picked = it },
                                     onAddIncome = { addingIncome = true; addingTransaction = true },
                                     onOpenCategory = { scope ->
+                                        selectedTransactionKey = null
                                         budgetDrilldownMonth = scope.month
                                         budgetDrilldownCategory = scope.category
                                     },

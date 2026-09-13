@@ -262,15 +262,18 @@ private fun ProfileTaskListsScreen(
                     viewer = state.activeProfile,
                     actions = actions,
                     onSmartList = {
+                        selectedTaskKey = null
                         selectedKind = it.name
                         routeName = TaskListRoute.SMART.name
                     },
                     onProject = {
+                        selectedTaskKey = null
                         selectedOwner = it.owner.key
                         selectedName = it.name
                         routeName = TaskListRoute.PROJECT.name
                     },
                     onArea = {
+                        selectedTaskKey = null
                         selectedOwner = it.owner.key
                         selectedName = it.name
                         routeName = TaskListRoute.AREA.name

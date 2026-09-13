@@ -54,6 +54,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -191,6 +195,7 @@ fun VaultApp(
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit = {},
     modifier: Modifier = Modifier,
     hingeOverride: LedgerHinge? = null,
+    safeDrawingInsets: WindowInsets = WindowInsets.safeDrawing,
 ) {
     // An unwired shell refuses loudly instead of swallowing the request: the user
     // learns the switch did not happen, and so does anyone testing this screen.
@@ -221,6 +226,8 @@ fun VaultApp(
     BackHandler(routeParents.isNotEmpty(), onBack = navigateBack)
     val tokens = LocalLedgerTheme.current
     val observedHinge = rememberLedgerHinge()
+    val density = LocalDensity.current
+    var contentOrigin by remember { mutableStateOf(Offset.Zero) }
     BoxWithConstraints(modifier.fillMaxSize().background(tokens.colors.background)) {
         val widthClass = androidx.compose.material3.windowsizeclass.WindowSizeClass.calculateFromSize(
             androidx.compose.ui.unit.DpSize(maxWidth, maxHeight),
@@ -230,47 +237,62 @@ fun VaultApp(
         val current = state.destination.takeIf { it in destinations } ?: Destination.DASHBOARD
         val selectedPrimary = routeParents.firstOrNull()?.let(Destination::valueOf) ?: current
         val hinge = hingeOverride ?: observedHinge
-        val plan = ledgerPanePlan(maxWidth, maxHeight, expanded, current in DETAIL_DESTINATIONS, hinge)
         val sheetRegion = ledgerSheetRegion(maxWidth, maxHeight, hinge)
-        CompositionLocalProvider(LocalLedgerPanePlan provides plan, LocalLedgerSheetRegion provides sheetRegion) {
-            // One call site owns ScreenHost in every posture. Resizing changes
-            // constraints and chrome, never the composition that owns editors.
-            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)).padding(start = plan.leadingInset, top = plan.topInset)) {
-                Row(Modifier.weight(1f)) {
-                    if (plan.railWidth > 0.dp) {
-                        Box(Modifier.width(plan.railWidth).then(plan.listHeight?.let { Modifier.height(it) } ?: Modifier.fillMaxHeight())) {
-                            VaultRail(destinations, selectedPrimary, navigatePrimary)
-                        }
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Box(Modifier.width(plan.listWidth)) {
-                            VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile, { navigateWithin(Destination.SETTINGS) }) {
-                                onWriteSucceeded()
+        BoxWithConstraints(
+            Modifier.fillMaxSize()
+                .windowInsetsPadding(safeDrawingInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+                .onGloballyPositioned { contentOrigin = it.positionInWindow() },
+        ) {
+            // Measure the inset content and translate the window hinge to that same
+            // origin. The rail and both panes now share the available width.
+            val originX = with(density) { contentOrigin.x.toDp() }
+            val originY = with(density) { contentOrigin.y.toDp() }
+            val localHinge = hinge?.let {
+                val origin = if (it.horizontal) originY else originX
+                it.copy(start = it.start - origin, end = it.end - origin)
+            }
+            val plan = ledgerPanePlan(maxWidth, maxHeight, expanded, current in DETAIL_DESTINATIONS, localHinge)
+                .copy(windowOriginY = originY)
+            CompositionLocalProvider(LocalLedgerPanePlan provides plan, LocalLedgerSheetRegion provides sheetRegion) {
+                // One call site owns ScreenHost in every posture. Resizing changes
+                // constraints and chrome, never the composition that owns editors.
+                Column(Modifier.fillMaxSize().padding(start = plan.leadingInset, top = plan.topInset)) {
+                    Row(Modifier.weight(1f)) {
+                        if (plan.railWidth > 0.dp) {
+                            Box(Modifier.width(plan.railWidth).then(plan.listHeight?.let { Modifier.height(it) } ?: Modifier.fillMaxHeight())) {
+                                VaultRail(destinations, selectedPrimary, navigatePrimary)
                             }
                         }
-                        HorizontalHairline(Modifier.width(plan.listWidth))
-                        VaultScreenContent(
-                            state = state,
-                            refusal = refusal,
-                            current = current,
-                            onNavigate = navigateWithin,
-                            primaryReset = primaryReset,
-                            onBack = navigateBack.takeIf { routeParents.isNotEmpty() },
-                            onEnableRemoteRows = onEnableRemoteRows,
-                            onRemoteRowsConnected = onRemoteRowsConnected,
-                            onWriteSucceeded = onWriteSucceeded,
-                            onStartRiverBillPay = onStartRiverBillPay,
-                            displayUnit = displayUnit,
-                            onDisplayUnitChange = onDisplayUnitChange,
-                            ledgerSettings = ledgerSettings,
-                            onLedgerSettingsChange = onLedgerSettingsChange,
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                        )
+                        Column(Modifier.weight(1f)) {
+                            Box(Modifier.width(plan.listWidth)) {
+                                VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile, { navigateWithin(Destination.SETTINGS) }) {
+                                    onWriteSucceeded()
+                                }
+                            }
+                            HorizontalHairline(Modifier.width(plan.listWidth))
+                            VaultScreenContent(
+                                state = state,
+                                refusal = refusal,
+                                current = current,
+                                onNavigate = navigateWithin,
+                                primaryReset = primaryReset,
+                                onBack = navigateBack.takeIf { routeParents.isNotEmpty() },
+                                onEnableRemoteRows = onEnableRemoteRows,
+                                onRemoteRowsConnected = onRemoteRowsConnected,
+                                onWriteSucceeded = onWriteSucceeded,
+                                onStartRiverBillPay = onStartRiverBillPay,
+                                displayUnit = displayUnit,
+                                onDisplayUnitChange = onDisplayUnitChange,
+                                ledgerSettings = ledgerSettings,
+                                onLedgerSettingsChange = onLedgerSettingsChange,
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                            )
+                        }
                     }
-                }
-                if (plan.railWidth == 0.dp) {
-                    HorizontalHairline(Modifier.width(plan.listWidth))
-                    Box(Modifier.width(plan.listWidth)) { VaultBottomBar(destinations, selectedPrimary, navigatePrimary) }
+                    if (plan.railWidth == 0.dp) {
+                        HorizontalHairline(Modifier.width(plan.listWidth))
+                        Box(Modifier.width(plan.listWidth)) { VaultBottomBar(destinations, selectedPrimary, navigatePrimary) }
+                    }
                 }
             }
         }
