@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct ActivityView: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
@@ -9,7 +10,16 @@ struct ActivityView: View {
 
     @Query(sort: \Transaction.date, order: .reverse) private var allTransactions: [Transaction]
 
-    var todayOnly = false
+    @State var todayOnly = false
+    @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
+    @State private var recategorizing: Transaction?
+    @State private var deleting: Transaction?
+    @State private var mutationInFlight = false
+    @State private var writeMessage: String?
+    @State private var showWriteError = false
+
+    @AppStorage(ConvexSyncService.versionsMemberKey) private var syncedMember = ""
+    @AppStorage(ConvexSyncService.lastSyncKey) private var lastSync = 0.0
 
     @State private var showingAdd = false
     @State private var filter: TxFilter = .all
@@ -73,59 +83,50 @@ struct ActivityView: View {
         return df
     }()
 
-    private var grouped: [(String, [Transaction])] {
-        let cal = Calendar.current
-        var map: [String: [Transaction]] = [:]
-        for tx in filtered {
-            let key: String
-            if cal.isDateInToday(tx.date) { key = "Today" }
-            else if cal.isDateInYesterday(tx.date) { key = "Yesterday" }
-            else {
-                key = Self.shortDateFormatter.string(from: tx.date)
-            }
-            map[key, default: []].append(tx)
-        }
-        let sortedKeys = map.keys.sorted { k1, k2 in
-            if k1 == "Today" { return true }
-            if k2 == "Today" { return false }
-            if k1 == "Yesterday" { return true }
-            if k2 == "Yesterday" { return false }
-            return k1 > k2
-        }
-        return sortedKeys.map { ($0, map[$0]!) }
+    private var grouped: [(Date, [Transaction])] {
+        let grouped = Dictionary(grouping: filtered) { Calendar.current.startOfDay(for: $0.date) }
+        return grouped.keys.sorted(by: >).map { ($0, grouped[$0] ?? []) }
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                HStack(alignment: .top) {
-                    ScreenHeader(
-                        title: "Activity",
-                        eyebrow: "Bolt + Chain",
-                    )
-                    Spacer()
-                }
-
-                filterPills
-                    .padding(.bottom, AppLayout.cardSpacing)
-
-                if filter == .income {
-                    incomeRows
-                } else {
-                    transactionGroups
-                }
-            }
-            .padding(.bottom, 100)
+        List {
+            ScreenHeader(title: "Activity", eyebrow: todayOnly ? "Today" : "Bolt + Chain")
+                .listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
+            filterPills.listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
+            if filter == .income { incomeRows }
+            else { transactionGroups }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .background(theme.bg)
         .searchable(text: $searchText, prompt: "Search activity")
+        .modifier(LedgerListRefresh())
         .sheet(isPresented: $showingAdd) {
             AddTransactionView(initialType: filter == .income ? .income : .spend)
+        }
+        .confirmationDialog("Choose category", isPresented: Binding(
+            get: { recategorizing != nil }, set: { if !$0 { recategorizing = nil } }
+        ), titleVisibility: .visible) {
+            if let transaction = recategorizing {
+                ForEach(categories.filter { transaction.ownerMember.sharesNetWorth(with: $0.ownerMember) && !$0.isIncome }, id: \.name) { category in
+                    Button(category.displayName) { recategorize(transaction, category: category.displayName) }
+                }
+            }
+        }
+        .confirmationDialog("Delete transaction?", isPresented: Binding(
+            get: { deleting != nil }, set: { if !$0 { deleting = nil } }
+        ), titleVisibility: .visible) {
+            if let transaction = deleting {
+                Button("Delete", role: .destructive) { delete(transaction) }
+            }
+        }
+        .alert("Activity", isPresented: $showWriteError) { Button("OK", role: .cancel) {} } message: {
+            Text(writeMessage ?? "The change could not be saved.")
         }
     }
 
     private var incomeRows: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        Group {
             if let summary = canonicalFinancials.income.value {
                 let rows = summary.rows.filter {
                     activeMember.canSee(dataOwnedBy: $0.owner) &&
@@ -135,12 +136,15 @@ struct ActivityView: View {
                 if rows.isEmpty {
                     Text(searchText.isEmpty ? "No income entries yet" : "No matching income")
                         .ledgerType(.rowPrimary)
-                    if searchText.isEmpty {
+                    if searchText.isEmpty && !todayOnly {
                         Button("Add income") { showingAdd = true }
+                    } else {
+                        Button("Clear filters") { searchText = ""; todayOnly = false }
                     }
                 }
                 ForEach(rows, id: \.incomeId) { row in
-                    HStack {
+                    NavigationLink { IncomeActivityDetail(row: row) } label: {
+                      HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(row.source).ledgerType(.rowPrimary)
                             Text(row.date).ledgerType(.rowMeta)
@@ -150,14 +154,15 @@ struct ActivityView: View {
                         Text(AppFormatter.formatCurrency(Decimal(row.amountCents) / 100))
                             .ledgerType(.rowFigure)
                     }
-                    .glassCard(padding: AppLayout.paddingCompact, radius: AppLayout.radiusMedium)
+                    }
+                    .listRowBackground(theme.surface)
                 }
             } else {
                 Text("Income is unavailable. Refresh to try again.").ledgerType(.rowMeta)
+                LedgerRefreshButton()
             }
         }
         .foregroundStyle(theme.text)
-        .padding(.horizontal, AppLayout.sectionPadding)
     }
 
     // MARK: - Filter Pills
@@ -179,42 +184,80 @@ struct ActivityView: View {
 
     @ViewBuilder
     private var transactionGroups: some View {
-        let isSearching = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-
-        LazyVStack(spacing: AppLayout.cardSpacing) {
-            if grouped.isEmpty {
-                if !isSearching {
-                    Button("Add transaction") { showingAdd = true }
-                        .accessibilityIdentifier("activity.empty.add")
-                }
-                Text(isSearching ? "No matching transactions" : "No transactions yet")
-                    .ledgerType(.rowPrimary)
-                    .foregroundStyle(theme.textMuted)
-                    .frame(maxWidth: .infinity)
-                    .padding(20)
-                    .glassCard(padding: 0, radius: AppLayout.radiusMedium)
+        if grouped.isEmpty {
+            let sourceLoaded = syncedMember == activeMember.rawValue && UserDefaults.standard.dictionary(forKey: ConvexSyncService.dataVersionsKey)?[activeMember.transactionsDataFileName] != nil
+            let hasFilters = !searchText.isEmpty || filter != .all || todayOnly
+            Text(!sourceLoaded ? "Activity unavailable" : hasFilters ? "No matching transactions" : "No transactions yet").ledgerType(.rowPrimary)
+            if !sourceLoaded {
+                LedgerRefreshButton()
+            } else if hasFilters {
+                Button("Clear filters") { searchText = ""; filter = .all; todayOnly = false }
             } else {
-                ForEach(grouped, id: \.0) { day, txs in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(day.uppercased())
-                            .ledgerType(.sectionLabel)
-                            .foregroundStyle(theme.textMuted)
-                            .padding(.horizontal, 4)
-
-                        VStack(spacing: 0) {
-                            ForEach(Array(txs.enumerated()), id: \.element.id) { idx, tx in
-                                txRow(tx: tx)
-                                if idx < txs.count - 1 {
-                                    Hairline(indent: 60)
+                Button("Add transaction") { showingAdd = true }
+                    .accessibilityIdentifier("activity.empty.add")
+            }
+        } else {
+            ForEach(grouped, id: \.0) { day, rows in
+                Section(day.formatted(.dateTime.year().month().day())) {
+                    ForEach(rows) { tx in
+                        txRow(tx: tx)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(theme.surface)
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                if !tx.isIncome {
+                                    Button("Category", systemImage: "tag") { recategorizing = tx }
+                                        .tint(theme.accentFill)
+                                        .disabled(mutationInFlight)
                                 }
                             }
-                        }
-                        .glassCard(padding: 0, radius: AppLayout.radiusMedium)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button("Delete", systemImage: "trash", role: .destructive) { deleting = tx }
+                                    .disabled(mutationInFlight)
+                            }
+                            .contextMenu {
+                                if !tx.isIncome { Button("Change category") { recategorizing = tx }.disabled(mutationInFlight) }
+                                Button("Delete", role: .destructive) { deleting = tx }.disabled(mutationInFlight)
+                            }
                     }
                 }
             }
         }
-        .padding(.horizontal, AppLayout.sectionPadding)
+    }
+
+    private func recategorize(_ transaction: Transaction, category: String) {
+        guard !mutationInFlight else { return }
+        mutationInFlight = true
+        let candidate = Transaction(
+            id: transaction.id, date: transaction.date, merchant: transaction.merchant,
+            amount: transaction.amount, category: category, amountSats: transaction.amountSats,
+            enteredInBitcoin: transaction.enteredInBitcoin, card: transaction.card,
+            bitcoinAccountKey: transaction.bitcoinAccountKey, note: transaction.note,
+            owner: transaction.ownerMember.ledgerOwner, createdBy: transaction.createdBy,
+            createdAt: transaction.createdAt, sourceFile: transaction.sourceFile, updatedAtMs: transaction.updatedAtMs
+        )
+        TransactionDetailWriteFlow.save(transaction, candidate: candidate) { result in
+            finishMutation(result, operation: "Change category")
+        }
+    }
+
+    private func delete(_ transaction: Transaction) {
+        guard !mutationInFlight else { return }
+        mutationInFlight = true
+        AppWriteSyncService.deleteTransaction(transaction, owner: transaction.ownerMember) { result in
+            if result.isOk { modelContext.delete(transaction) }
+            finishMutation(result, operation: "Delete transaction")
+        }
+    }
+
+    private func finishMutation(_ result: ConvexWriteResult, operation: String) {
+        mutationInFlight = false
+        if !result.isOk {
+            writeMessage = result.userMessage(operation: operation)
+            showWriteError = true
+            return
+        }
+        do { try modelContext.save() }
+        catch { writeMessage = "Saved online. Refresh to update this device."; showWriteError = true }
     }
 
     private func txRow(tx: Transaction) -> some View {
