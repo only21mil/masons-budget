@@ -68,7 +68,7 @@ data class VaultUiState(
     val marketQuoteStatus: Freshness = Freshness.EMPTY,
     val financeReadDiagnostics: Set<RowReadDiagnostic> = emptySet(),
 ) {
-    val switchTargets: List<FamilyMember> get() = activeProfile.allowedSwitchTargets
+    val switchTargets: List<FamilyMember> get() = activeProfile.gatedSwitchTargets
 
     /**
      * The most actionable cause for a single UI notice.
@@ -256,11 +256,19 @@ class VaultViewModel(
         }
     }
 
-    fun switchProfile(next: FamilyMember) {
+    fun switchProfile(next: FamilyMember) = switchProfile(next, authorized = false)
+
+    /** Called only by the shell's authorized-switch callback. */
+    internal fun switchAuthorizedProfile(next: FamilyMember) = switchProfile(next, authorized = true)
+
+    private fun switchProfile(next: FamilyMember, authorized: Boolean) {
         _state.update { current ->
-            // Enforced here as well as in the UI: a child profile must not be able
-            // to reach an adult one even if the control is bypassed.
-            if (next !in current.activeProfile.allowedSwitchTargets) return@update current
+            val targets = if (authorized) {
+                current.activeProfile.gatedSwitchTargets
+            } else {
+                current.activeProfile.allowedSwitchTargets
+            }
+            if (next !in targets) return@update current
 
             current.copy(
                 activeProfile = next,

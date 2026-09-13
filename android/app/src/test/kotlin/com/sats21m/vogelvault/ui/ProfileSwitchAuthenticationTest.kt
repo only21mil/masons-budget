@@ -97,7 +97,7 @@ class ProfileSwitchAuthenticationTest {
     fun `a selected profile reaches the prompt and is applied only once it succeeds`() {
         renderShell()
 
-        chooseProfile(FamilyMember.RACHEL)
+        chooseProfile(FamilyMember.MASON)
 
         assertEquals(
             1,
@@ -114,11 +114,11 @@ class ProfileSwitchAuthenticationTest {
         promptSucceeds()
 
         assertEquals(
-            FamilyMember.RACHEL,
+            FamilyMember.MASON,
             model.state.value.activeProfile,
             "A successful authentication did not apply the switch.",
         )
-        assertProfileShown(FamilyMember.RACHEL)
+        assertProfileShown(FamilyMember.MASON)
         assertNoRefusalShown()
     }
 
@@ -128,7 +128,7 @@ class ProfileSwitchAuthenticationTest {
         // request had nowhere to go. It must now refuse out loud instead.
         renderShell(wired = false)
 
-        chooseProfile(FamilyMember.RACHEL)
+        chooseProfile(FamilyMember.MASON)
 
         assertEquals(0, promptsShown, "An unwired shell reached the prompt.")
         assertEquals(
@@ -176,22 +176,58 @@ class ProfileSwitchAuthenticationTest {
     }
 
     @Test
-    fun `a child profile is offered no way out of its own profile`() {
+    fun `child exit waits for device authentication and never offers a sibling`() {
         model.switchProfile(FamilyMember.MASON)
         renderShell()
+        chooseProfile(FamilyMember.VICTOR)
+        assertEquals(1, promptsShown)
+        assertEquals(FamilyMember.MASON, model.state.value.activeProfile)
+        promptSucceeds()
+        assertEquals(FamilyMember.VICTOR, model.state.value.activeProfile)
+    }
 
-        assertTrue(
-            compose.onAllNodesWithContentDescription(
-                context.getString(R.string.profile_switcher_open),
-            ).fetchSemanticsNodes().isEmpty(),
-            "A child profile was offered the profile switcher.",
-        )
-        assertTrue(
-            compose.onAllNodesWithText(
-                context.getString(R.string.profile_switcher_child_profile),
-            ).fetchSemanticsNodes().isNotEmpty(),
-            "A child profile was not marked as one.",
-        )
+    @Test
+    fun `cancelled child exit stays on the child profile`() {
+        model.switchProfile(FamilyMember.MASON)
+        renderShell()
+        chooseProfile(FamilyMember.RACHEL)
+        promptCancelled()
+        assertEquals(FamilyMember.MASON, model.state.value.activeProfile)
+        assertRefusalShown(ProfileSwitchRefusal.AUTHENTICATION_INCOMPLETE)
+    }
+
+    @Test
+    fun `child exit on an unenrolled device is refused`() {
+        model.switchProfile(FamilyMember.MADDOX)
+        authenticationAvailable = false
+        renderShell()
+        chooseProfile(FamilyMember.VICTOR)
+        assertEquals(0, promptsShown)
+        assertEquals(FamilyMember.MADDOX, model.state.value.activeProfile)
+        assertRefusalShown(ProfileSwitchRefusal.AUTHENTICATION_UNAVAILABLE)
+    }
+
+    @Test
+    fun `adult household switch skips the prompt even without enrolled credentials`() {
+        authenticationAvailable = false
+        renderShell()
+        chooseProfile(FamilyMember.RACHEL)
+        assertEquals(0, promptsShown)
+        assertEquals(FamilyMember.RACHEL, model.state.value.activeProfile)
+    }
+
+    @Test
+    fun `Family screen hosts the same authenticated profile switcher`() {
+        model.navigate(Destination.FAMILY)
+        renderShell()
+        compose.onAllNodesWithContentDescription(context.getString(R.string.profile_switcher_open))[1].performClick()
+        compose.onNode(
+            hasText(FamilyMember.MASON.displayName) and hasClickAction() and hasAnyAncestor(isPopup()),
+        ).performClick()
+        compose.waitForIdle()
+        assertEquals(1, promptsShown)
+        assertEquals(FamilyMember.VICTOR, model.state.value.activeProfile)
+        promptSucceeds()
         assertEquals(FamilyMember.MASON, model.state.value.activeProfile)
     }
 
@@ -218,8 +254,8 @@ class ProfileSwitchAuthenticationTest {
             requireNotNull(
                 profileSwitchRequest(
                     current = FamilyMember.VICTOR,
-                    target = FamilyMember.RACHEL,
-                    onAuthorized = { switched = FamilyMember.RACHEL },
+                    target = FamilyMember.MASON,
+                    onAuthorized = { switched = FamilyMember.MASON },
                 ),
             ),
         )
@@ -253,14 +289,14 @@ class ProfileSwitchAuthenticationTest {
             requireNotNull(
                 profileSwitchRequest(
                     current = FamilyMember.VICTOR,
-                    target = FamilyMember.RACHEL,
-                    onAuthorized = { switched = FamilyMember.RACHEL },
+                    target = FamilyMember.MASON,
+                    onAuthorized = { switched = FamilyMember.MASON },
                 ),
             ),
         )
         assertEquals(1, promptsShown)
 
-        gate.authenticationApproved(FamilyMember.MASON)
+        gate.authenticationApproved(FamilyMember.RACHEL)
 
         assertNull(switched, "The gate applied a profile the user never selected.")
         assertEquals(ProfileSwitchRefusal.AUTHENTICATION_INCOMPLETE, refusal.value)
@@ -275,7 +311,7 @@ class ProfileSwitchAuthenticationTest {
                         VaultApp(
                             state = state,
                             onNavigate = model::navigate,
-                            onSwitchProfile = model::switchProfile,
+                            onSwitchProfile = model::switchAuthorizedProfile,
                             onRequestProfileSwitchAuthentication =
                                 if (wired) gate::authenticate else null,
                             profileSwitchRefusal = refusal.value,

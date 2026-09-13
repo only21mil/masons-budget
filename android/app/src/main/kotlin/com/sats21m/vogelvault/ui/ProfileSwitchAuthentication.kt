@@ -63,8 +63,8 @@ internal val ProfileSwitchRefusal.detailRes: Int
  * matters can be driven from a test without a device prompt: every path either
  * launches the system prompt or refuses with a named cause. There is no path
  * that reaches [ProfileSwitchRequest.authorize] without the prompt reporting
- * success for that exact target, so a child profile cannot be opened — and an
- * adult profile cannot be opened from a child's — without device authentication.
+ * success for that exact target. The system validates an enrolled device
+ * biometric or credential; it cannot identify a particular named adult.
  *
  * @param authenticationAvailable whether the device can authenticate at all.
  * @param beginAuthentication [VaultLockController.beginProfileSwitch]; false when
@@ -83,9 +83,8 @@ internal class ProfileSwitchAuthenticationGate(
 
     fun authenticate(request: ProfileSwitchRequest) {
         onRefusalChanged(null)
-        // FamilyMember.requiresAuthToSwitch says every switch is authenticated. A
-        // request claiming otherwise is a policy regression, so it is refused
-        // rather than treated as permission to skip the prompt.
+        // Adult-to-adult switches are applied by the switcher. Every request
+        // reaching this gate must require authentication.
         if (!request.requiresAuthentication) {
             refuse(ProfileSwitchRefusal.AUTHENTICATION_NOT_REQUIRED)
             return
