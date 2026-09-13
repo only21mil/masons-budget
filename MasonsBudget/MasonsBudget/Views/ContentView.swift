@@ -176,20 +176,8 @@ struct ContentView: View {
             if syncedMember == selectedMemberRaw { profileSyncPending = false }
         }
         .onDisappear { cancelReadRetry() }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 6) {
-                if profileSyncPending && ConvexConfig.hasReadToken && lastReadError.isEmpty {
-                    ProgressView("Syncing profile…")
-                        .ledgerType(.rowMeta)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Syncing \(activeMember.displayName)’s profile")
-                }
-                syncFailureBanner
-            }
-                .padding(.horizontal, AppLayout.sectionPadding)
-                .padding(.top, 10)
-        }
         #if os(macOS)
+        .safeAreaInset(edge: .top, spacing: 0) { syncBanner }
         .safeAreaInset(edge: .bottom) { undoBanner }
         #endif
         .sheet(isPresented: $showAddTransaction) {
@@ -242,6 +230,8 @@ struct ContentView: View {
                             }))
                             .toolbar(.hidden, for: .navigationBar)
                     }
+                    // TabView does not forward an outer top inset to its navigation stacks.
+                    .safeAreaInset(edge: .top, spacing: 0) { syncBanner }
                     .safeAreaInset(edge: .bottom) { undoBanner }
                     .tabItem {
                         Image(systemName: tab.icon)
@@ -620,6 +610,20 @@ struct ContentView: View {
     private var undoBanner: some View {
         TaskUndoBanner()
             .padding(.horizontal, AppLayout.sectionPadding)
+    }
+
+    private var syncBanner: some View {
+        VStack(spacing: 6) {
+            if profileSyncPending && ConvexConfig.hasReadToken && lastReadError.isEmpty {
+                ProgressView("Syncing profile…")
+                    .ledgerType(.rowMeta)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Syncing \(activeMember.displayName)’s profile")
+            }
+            syncFailureBanner
+        }
+        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.top, 10)
     }
 
     @ViewBuilder
