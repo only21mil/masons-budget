@@ -129,6 +129,7 @@ struct ActivityView: View {
             if let summary = canonicalFinancials.income.value {
                 let rows = summary.rows.filter {
                     activeMember.canSee(dataOwnedBy: $0.owner) &&
+                        ActivityDateScope.includesIncomeDate($0.date, todayOnly: todayOnly, now: Date()) &&
                         (searchText.isEmpty || "\($0.source) \($0.note ?? "") \($0.date)".localizedCaseInsensitiveContains(searchText))
                 }
                 if rows.isEmpty {
@@ -286,5 +287,18 @@ struct ActivityView: View {
             "Bitcoin": theme.accent,
         ]
         return map[category] ?? theme.textMuted
+    }
+}
+
+/// Income dates are calendar dates, not UTC instants. Match the local ledger day.
+enum ActivityDateScope {
+    static func includesIncomeDate(_ date: String, todayOnly: Bool, now: Date, calendar: Calendar = .current) -> Bool {
+        guard todayOnly else { return true }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return date == formatter.string(from: now)
     }
 }

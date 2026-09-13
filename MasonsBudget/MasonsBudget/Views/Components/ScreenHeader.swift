@@ -50,6 +50,9 @@ struct ScreenHeader<Accessory: View>: View {
                 .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar(.visible, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) { accessory() }
+                }
         } else {
             header
         }

@@ -35,6 +35,25 @@ final class AppleScreenAdoptionTests: XCTestCase {
         XCTAssertEqual(HomeDashboardData.spentToday(rows, viewer: .maddox, now: today, calendar: calendar), 0)
     }
 
+    func testHomeBudgetRequiresCanonicalCurrentMonth() {
+        XCTAssertTrue(HomeDashboardData.isCurrentBudgetMonth("2026-09", currentMonth: "2026-09"))
+        XCTAssertTrue(HomeDashboardData.isCurrentBudgetMonth("September 2026", currentMonth: "2026-09"))
+        XCTAssertFalse(HomeDashboardData.isCurrentBudgetMonth("August 2026", currentMonth: "2026-09"))
+        XCTAssertFalse(HomeDashboardData.isCurrentBudgetMonth("2026-10", currentMonth: "2026-09"))
+        XCTAssertFalse(HomeDashboardData.isCurrentBudgetMonth("", currentMonth: "2026-09"))
+    }
+
+    func testTodayIncomeUsesLocalDayAndRootRetainsHistory() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: -6 * 3600))
+        // September 14 at 01:00 UTC is still September 13 locally.
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-14T01:00:00Z"))
+        XCTAssertTrue(ActivityDateScope.includesIncomeDate("2026-09-13", todayOnly: true, now: now, calendar: calendar))
+        XCTAssertFalse(ActivityDateScope.includesIncomeDate("2026-09-14", todayOnly: true, now: now, calendar: calendar))
+        XCTAssertFalse(ActivityDateScope.includesIncomeDate("2026-09-12", todayOnly: true, now: now, calendar: calendar))
+        XCTAssertTrue(ActivityDateScope.includesIncomeDate("2026-09-12", todayOnly: false, now: now, calendar: calendar))
+    }
+
     func testPaymentRailsUseBoltAndChainPresentation() {
         XCTAssertEqual(PaymentRailPresentation.allCases.map(\.rawValue), ["Bolt", "Chain"])
         XCTAssertEqual(ActivityView.TxFilter.lightning.rail, .bolt)

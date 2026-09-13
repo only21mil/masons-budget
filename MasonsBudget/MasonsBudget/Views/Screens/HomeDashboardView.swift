@@ -14,7 +14,8 @@ struct HomeDashboardView: View {
     @Query(sort: \NetWorthSnapshot.date) private var snapshots: [NetWorthSnapshot]
     @Query(sort: \Transaction.date, order: .reverse) private var transactions: [Transaction]
     @Query(sort: \TodoItem.priority, order: .reverse) private var todos: [TodoItem]
-    @Query private var categories: [BudgetCategory]
+    @State private var budgetPlan: ConvexBudgetDocumentRow?
+    @State private var budgetPlanViewer: FamilyMember?
     @State private var addingTask = false
 
     private var member: FamilyMember { FamilyMember(rawValue: memberRaw) ?? .victor }
@@ -53,7 +54,6 @@ struct HomeDashboardView: View {
         )
     }
     private var transactionSource: String { member.hasDedicatedChildFinanceFiles ? "mason-transactions" : "transactions" }
-    private var budgetSource: String { member.hasDedicatedChildFinanceFiles ? "mason-budget" : "budget" }
 
     /// The source version proves a successful load, including a genuinely empty ledger.
     private func hasLoaded(_ source: String) -> Bool {
@@ -254,9 +254,12 @@ struct HomeDashboardView: View {
     private var budgetPreview: some View {
         VStack(alignment: .leading, spacing: 12) {
             link(Date().formatted(.dateTime.month(.wide).year()) + " budget") { BudgetView() }
-            let scoped = categories.filter { member.sharesNetWorth(with: $0.ownerMember) && !$0.isIncome }
-            let planned = scoped.reduce(Decimal(0)) { $0 + $1.monthlyBudget }
-            if hasLoaded(budgetSource), hasLoaded(transactionSource), planned > 0 {
+            let currentMonth = CategoryDetailView.monthKey(for: Date(), calendar: Calendar(identifier: .gregorian))
+            if budgetPlanViewer == member, let budgetPlan,
+               member.sharesNetWorth(with: budgetPlan.owner),
+               HomeDashboardData.isCurrentBudgetMonth(budgetPlan.month, currentMonth: currentMonth),
+               hasLoaded(transactionSource), budgetPlan.plannedCategoryTotal > 0 {
+                let planned = budgetPlan.plannedCategoryTotal
                 let spent = transactions.filter {
                     member.sharesNetWorth(with: $0.ownerMember) && Calendar.current.isDate($0.date, equalTo: Date(), toGranularity: .month)
                 }.reduce(Decimal(0)) { $0 + $1.spendAmount }
@@ -264,8 +267,12 @@ struct HomeDashboardView: View {
                 LedgerProgressBar(fraction: NSDecimalNumber(decimal: spent / planned).doubleValue, fill: theme.accent, track: theme.border)
             } else {
                 Text("No budget plan available").ledgerType(.rowMeta)
-                BudgetPlanCarryAction(viewer: member, selectedMonth: Date()) { _ in }
             }
+            BudgetPlanCarryAction(viewer: member, selectedMonth: Date(), onLoaded: { document in
+                budgetPlan = document
+                budgetPlanViewer = member
+            }) { _ in }
+            .id("\(member.rawValue):\(lastSync)")
         }
         .foregroundStyle(theme.text).glassCard(padding: 16, radius: 4)
         .padding(.horizontal, AppLayout.sectionPadding)
@@ -295,6 +302,10 @@ struct IncomeActivityDetail: View {
 }
 
 enum HomeDashboardData {
+    static func isCurrentBudgetMonth(_ storedMonth: String, currentMonth: String) -> Bool {
+        BudgetPlanCarry.canonicalStoredMonth(storedMonth) == currentMonth
+    }
+
     static func spentToday(_ transactions: [Transaction], viewer: FamilyMember, now: Date, calendar: Calendar = .current) -> Decimal {
         transactions.filter { viewer.canSee(dataOwnedBy: $0.ownerMember) && calendar.isDate($0.date, inSameDayAs: now) }
             .reduce(Decimal(0)) { $0 + $1.spendAmount }

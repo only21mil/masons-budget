@@ -386,11 +386,12 @@ struct BudgetView: View {
 }
 
 /// Both Apple navigation roots use BudgetView and this plan-only action.
-private struct BudgetPlanCarryAction: View {
+struct BudgetPlanCarryAction: View {
     @Environment(\.theme) private var theme
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
     let viewer: FamilyMember
     let selectedMonth: Date
+    var onLoaded: (ConvexBudgetDocumentRow) -> Void = { _ in }
     let onCopied: (String) -> Void
 
     @State private var document: ConvexBudgetDocumentRow?
@@ -494,6 +495,7 @@ private struct BudgetPlanCarryAction: View {
             let refreshed = try await reader.budget(viewer: viewer)
             guard isActive, generation == requestGeneration, !Task.isCancelled else { return }
             document = refreshed
+            onLoaded(refreshed)
             if let acceptedIntent {
                 guard let month = BudgetPlanCarry.canonicalStoredMonth(refreshed.month),
                       let revision = refreshed.updatedAtMs,
