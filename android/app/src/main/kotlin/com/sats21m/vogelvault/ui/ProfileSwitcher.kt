@@ -81,7 +81,7 @@ fun ProfileSwitcher(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
-            onSettings?.let { open ->
+            onSettings?.takeIf { Destination.SETTINGS in destinationsFor(activeProfile) }?.let { open ->
                 LedgerMenuItem("Settings", onClick = { expanded = false; open() })
             }
             activeProfile.gatedSwitchTargets.forEach { target ->
