@@ -12,6 +12,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.assertIsSelected
@@ -105,6 +107,8 @@ class TaskStateProfileSwitchTest {
 
         switchTo(FamilyMember.RACHEL)
 
+        compose.onNode(hasScrollToIndexAction())
+            .performScrollToNode(hasText(context.getString(R.string.todo_new_task)))
         compose.onNode(
             hasText(context.getString(R.string.todo_new_task)),
         ).assertIsNotEnabled()

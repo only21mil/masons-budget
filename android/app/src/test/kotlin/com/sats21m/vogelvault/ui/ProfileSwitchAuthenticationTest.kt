@@ -9,6 +9,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -360,6 +361,7 @@ class ProfileSwitchAuthenticationTest {
                 .fetchSemanticsNodes().isNotEmpty(),
             "The refusal title for ${cause.name} was not shown.",
         )
+        compose.onNodeWithText(context.getString(cause.titleRes)).performClick()
         assertTrue(
             compose.onAllNodesWithText(context.getString(cause.detailRes))
                 .fetchSemanticsNodes().isNotEmpty(),

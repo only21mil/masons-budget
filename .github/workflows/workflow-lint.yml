@@ -108,6 +108,9 @@ jobs:
           node --test .github/workflows/scripts/tests/app_store_connect_preflight.test.mjs
           node --test .github/workflows/scripts/tests/release_check_gate.test.mjs
 
+      - name: Convex codegen safety tests with mocked remote boundaries
+        run: npm run codegen:test
+
       - name: Secret presence reporter tests
         run: python3 .github/workflows/scripts/tests/test_report_secret_presence.py
 

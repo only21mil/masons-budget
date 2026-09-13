@@ -143,11 +143,11 @@ class FinancialDisplayTest {
         assertEquals(MarketQuoteStatus.STALE, state.operationalBitcoinQuote()?.status)
         assertEquals(null, state.liveBitcoinQuote())
         assertEquals(
-            "market adapter · cached · 20 min ago · refresh failed: timeout",
+            "Market quote · cached · 20 min ago · refresh failed: timeout",
             state.operationalBitcoinQuote()?.quoteHint(now),
         )
         assertEquals(
-            "BTC, market adapter · cached · 20 min ago · refresh failed: timeout, STALE, $100,000.00",
+            "BTC, Market quote · cached · 20 min ago · refresh failed: timeout, STALE, $100,000.00",
             ledgerRowContentDescription(
                 primary = "BTC",
                 secondary = state.operationalBitcoinQuote()?.quoteHint(now),
@@ -156,13 +156,13 @@ class FinancialDisplayTest {
             ),
         )
         assertEquals(
-            "market adapter · now",
+            "Market quote · now",
             marketQuote(10_000_000L).quoteHint(
                 java.time.Instant.parse("2026-07-30T10:00:00Z").toEpochMilli(),
             ),
         )
         assertEquals(
-            "market adapter · unavailable",
+            "Market quote · unavailable",
             MarketQuote(
                 MarketSymbol.BTC,
                 null,

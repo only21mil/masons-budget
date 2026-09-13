@@ -7,6 +7,9 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -252,7 +255,9 @@ class ReadBootstrapConfigurationTest {
         }
         settle()
 
-        compose.onNodeWithText("Convex row reads are not active").fetchSemanticsNode()
+        val inactiveTitle = application.getString(R.string.convex_rows_inactive_title)
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(inactiveTitle))
+        compose.onNodeWithText(inactiveTitle).fetchSemanticsNode()
         assertEquals(
             0,
             compose.onAllNodesWithText("Convex row reads are enabled").fetchSemanticsNodes().size,
@@ -260,6 +265,7 @@ class ReadBootstrapConfigurationTest {
 
         application.ready = true
         settle()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Convex row reads are enabled"))
         compose.onNodeWithText("Convex row reads are enabled").fetchSemanticsNode()
     }
 
