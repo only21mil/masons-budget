@@ -31,6 +31,46 @@ class FinancialScreenValuesTest {
     }
 
     @Test
+    fun `income totals stop at local today and preserve historical months and household scope`() {
+        val today = calendarDate(Instant.parse("2026-09-14T00:30:00Z").toEpochMilli(),
+            java.time.ZoneId.of("America/Chicago"))
+        fun row(date: String, cents: Long, owner: FamilyMember = FamilyMember.VICTOR) =
+            IncomeEntry("$owner-$date", date, date.take(7), cents, "Payroll", null, owner)
+        val model = Fixtures.envelope(FamilyMember.VICTOR).copy(income = Slice(Freshness.LIVE,
+            listOf(row("2025-12-31", 900L), row("2026-08-31", 100L),
+                row("2026-09-13", 200L), row("2026-09-14", 300L), row("2026-09-30", 400L),
+                row("2026-10-01", 500L), row("2026-09-13", 600L, FamilyMember.MASON)), 1L, "test"))
+        assertEquals(200L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-09", today))
+        assertEquals(300L, model.yearToDateIncomeCents(FamilyMember.RACHEL, "2026-09", today))
+        assertEquals(100L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-08", today))
+        assertEquals(100L, model.yearToDateIncomeCents(FamilyMember.RACHEL, "2026-08", today))
+        assertEquals(600L, model.yearToDateIncomeCents(FamilyMember.MASON, "2026-09", today))
+        assertEquals(3, model.dashboardIncomeEntries(FamilyMember.RACHEL, "2026-09").size)
+        assertEquals(900L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-09", today.withDayOfMonth(30)))
+        val empty = model.copy(income = model.income.copy(value = emptyList()))
+        assertEquals(0L, empty.dashboardIncomeCents(FamilyMember.RACHEL, "2026-09", today))
+        assertEquals(0L, empty.yearToDateIncomeCents(FamilyMember.RACHEL, "2026-09", today))
+        val failed = model.copy(income = model.income.copy(status = Freshness.ERROR))
+        assertNull(failed.dashboardIncomeCents(FamilyMember.RACHEL, "2026-09", today))
+        assertNull(failed.yearToDateIncomeCents(FamilyMember.RACHEL, "2026-09", today))
+    }
+
+    @Test
+    fun `year boundary follows local day and excludes next year future income`() {
+        val instant = Instant.parse("2027-01-01T00:30:00Z").toEpochMilli()
+        val localToday = calendarDate(instant, java.time.ZoneId.of("America/Chicago"))
+        val utcToday = calendarDate(instant, java.time.ZoneOffset.UTC)
+        val model = Fixtures.envelope(FamilyMember.VICTOR).copy(income = Slice(Freshness.LIVE,
+            listOf(IncomeEntry("dec", "2026-12-31", "2026-12", 100L, "Payroll", null, FamilyMember.VICTOR),
+                IncomeEntry("jan", "2027-01-01", "2027-01", 200L, "Payroll", null, FamilyMember.VICTOR),
+                IncomeEntry("future", "2027-01-02", "2027-01", 400L, "Payroll", null, FamilyMember.VICTOR)), 1L, "test"))
+        assertEquals(100L, model.yearToDateIncomeCents(FamilyMember.RACHEL, "2026-12", localToday))
+        assertEquals(0L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2027-01", localToday))
+        assertEquals(200L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2027-01", utcToday))
+        assertEquals(200L, model.yearToDateIncomeCents(FamilyMember.RACHEL, "2027-01", utcToday))
+    }
+
+    @Test
     fun `dashboard income follows the selected month at month boundaries`() {
         val model = Fixtures.envelope(FamilyMember.VICTOR).copy(
             income = Slice(
@@ -101,13 +141,13 @@ class FinancialScreenValuesTest {
             ),
         )
 
-        assertEquals(111_111L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-06"))
-        assertEquals(555_555L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-07"))
-        assertEquals(666_666L, model.yearToDateIncomeCents(FamilyMember.RACHEL, "2026-07"))
-        assertEquals(0L, model.yearToDateIncomeCents(FamilyMember.MASON, "2026-07"))
-        assertEquals(444_444L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-08"))
-        assertEquals(0L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-09"))
-        assertNull(model.dashboardIncomeCents(FamilyMember.RACHEL, null))
+        assertEquals(111_111L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-06", java.time.LocalDate.of(2026, 9, 13)))
+        assertEquals(555_555L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-07", java.time.LocalDate.of(2026, 9, 13)))
+        assertEquals(666_666L, model.yearToDateIncomeCents(FamilyMember.RACHEL, "2026-07", java.time.LocalDate.of(2026, 9, 13)))
+        assertEquals(0L, model.yearToDateIncomeCents(FamilyMember.MASON, "2026-07", java.time.LocalDate.of(2026, 9, 13)))
+        assertEquals(444_444L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-08", java.time.LocalDate.of(2026, 9, 13)))
+        assertEquals(0L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-09", java.time.LocalDate.of(2026, 9, 13)))
+        assertNull(model.dashboardIncomeCents(FamilyMember.RACHEL, null, java.time.LocalDate.of(2026, 9, 13)))
         assertEquals(541_782_856L, model.netWorthBalanceForDisplay()?.totalSats)
         assertEquals(
             1L,
@@ -240,7 +280,7 @@ class FinancialScreenValuesTest {
     fun `required empty sources are unavailable while empty todos remain countable`() {
         val model = Fixtures.envelope(FamilyMember.VICTOR, Freshness.EMPTY)
 
-        assertNull(model.dashboardIncomeCents(FamilyMember.VICTOR, "2026-07"))
+        assertNull(model.dashboardIncomeCents(FamilyMember.VICTOR, "2026-07", java.time.LocalDate.of(2026, 9, 13)))
         assertNull(model.netWorthBalanceForDisplay())
         assertFalse(model.billPaysAvailableTo(FamilyMember.VICTOR))
         assertFalse(model.todos.suppressFigures)
