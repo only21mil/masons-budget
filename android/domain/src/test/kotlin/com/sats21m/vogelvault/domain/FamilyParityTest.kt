@@ -115,6 +115,14 @@ class FamilyParityTest {
     }
 
     @Test
+    fun `gated targets add adult exit without granting sibling access`() {
+        assertEquals(listOf(FamilyMember.VICTOR, FamilyMember.RACHEL, FamilyMember.MASON), FamilyMember.MASON.gatedSwitchTargets)
+        assertEquals(listOf(FamilyMember.VICTOR, FamilyMember.RACHEL, FamilyMember.MADDOX), FamilyMember.MADDOX.gatedSwitchTargets)
+        assertEquals(FamilyMember.entries, FamilyMember.VICTOR.gatedSwitchTargets)
+        assertEquals(FamilyMember.entries, FamilyMember.RACHEL.gatedSwitchTargets)
+    }
+
+    @Test
     fun `showsFullBudget tracks adulthood`() {
         for (case in memberCases("showsFullBudget")) {
             val subject = member(case["member"].asString)

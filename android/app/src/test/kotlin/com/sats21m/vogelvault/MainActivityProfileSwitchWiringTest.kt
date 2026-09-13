@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.view.WindowManager
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -33,6 +34,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowSystemClock
+import java.time.Duration
 
 /**
  * Guards the actual MainActivity-to-VaultApp authentication receiver.
@@ -80,7 +83,7 @@ class MainActivityProfileSwitchWiringTest {
             .performClick()
         compose.waitForIdle()
         compose.onNode(
-            hasText(FamilyMember.RACHEL.displayName) and
+            hasText(FamilyMember.MASON.displayName) and
                 hasClickAction() and
                 hasAnyAncestor(isPopup()),
         ).performClick()
@@ -100,6 +103,69 @@ class MainActivityProfileSwitchWiringTest {
             ).fetchSemanticsNodes().isEmpty(),
             "MainActivity composed VaultApp without its authentication receiver.",
         )
+    }
+
+    @Test
+    fun `production child profile requires authentication before returning to an adult`() {
+        val model = compose.activity.privateField<VaultViewModel>("model")
+        model.switchProfile(FamilyMember.MASON)
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription(context.getString(R.string.profile_switcher_open)).performClick()
+        compose.onNode(
+            hasText(FamilyMember.VICTOR.displayName) and hasClickAction() and hasAnyAncestor(isPopup()),
+        ).performClick()
+        compose.waitForIdle()
+        assertEquals(FamilyMember.MASON, model.state.value.activeProfile)
+        assertTrue(compose.activity.privateField<VaultLockController>("lockController").snapshot().isAuthenticating)
+    }
+
+    @Test
+    fun `production adult household switch skips authentication`() {
+        compose.onNodeWithContentDescription(context.getString(R.string.profile_switcher_open)).performClick()
+        compose.onNode(
+            hasText(FamilyMember.RACHEL.displayName) and hasClickAction() and hasAnyAncestor(isPopup()),
+        ).performClick()
+        compose.waitForIdle()
+        assertEquals(
+            FamilyMember.RACHEL,
+            compose.activity.privateField<VaultViewModel>("model").state.value.activeProfile,
+        )
+        assertFalse(compose.activity.privateField<VaultLockController>("lockController").snapshot().isAuthenticating)
+    }
+
+    @Test
+    fun `production share chooser return keeps the session but the next background locks`() {
+        val lock = compose.activity.privateField<VaultLockController>("lockController")
+        compose.activity.startActivityForResult(
+            Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain"), "Share"), 42, null,
+        )
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        assertTrue(lock.snapshot().isUnlocked)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        assertTrue(lock.snapshot().isUnlocked)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        assertFalse(lock.snapshot().isUnlocked)
+    }
+
+    @Test
+    fun `production share return after thirty seconds requires an unlock`() {
+        val lock = compose.activity.privateField<VaultLockController>("lockController")
+        compose.activity.startActivityForResult(
+            Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain"), "Share"), 42, null,
+        )
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(30))
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        assertFalse(lock.snapshot().isUnlocked)
+        assertTrue(lock.snapshot().isAuthenticating)
+    }
+
+    @Test
+    fun `unrelated app launched activity cannot grant return grace`() {
+        val lock = compose.activity.privateField<VaultLockController>("lockController")
+        compose.activity.startActivityForResult(Intent(Intent.ACTION_VIEW), 43, null)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        assertFalse(lock.snapshot().isUnlocked)
     }
 
     @Test

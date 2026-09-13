@@ -1,8 +1,10 @@
 package com.sats21m.vogelvault
 
+import android.app.Activity
 import android.app.KeyguardManager
 import android.content.ContextWrapper
 import android.os.Build
+import android.os.Looper
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
@@ -103,10 +105,53 @@ class MainActivityConnectionAuthenticationTest {
         activityController.pause().stop()
         assertTrue(lock.snapshot().isAuthenticating)
         assertFalse(connection.isCompleted)
-        activityController.start().resume()
+        activityController.restart().start().resume()
         registeredCallback().onAuthenticationSucceeded(successResult())
         assertTrue(connection.await())
         assertTrue(lock.snapshot().isUnlocked)
+    }
+
+    @Test
+    fun `Home during a profile prompt locks even when cancellation follows stop`() {
+        assertTrue(lock.beginProfileSwitch(FamilyMember.VICTOR, FamilyMember.MASON))
+        activityController.pause().stop()
+        assertFalse(lock.snapshot().isUnlocked)
+        assertTrue(lock.snapshot().isAuthenticating)
+        registeredCallback().onAuthenticationError(BiometricPrompt.ERROR_CANCELED, "Cancelled")
+        activityController.restart().start().resume()
+        assertFalse(lock.snapshot().isUnlocked)
+        assertTrue(lock.snapshot().isAuthenticating)
+    }
+
+    @Test
+    fun `Home after profile prompt cancellation locks the prior household session`() {
+        assertTrue(lock.beginProfileSwitch(FamilyMember.VICTOR, FamilyMember.MASON))
+        registeredCallback().onAuthenticationError(BiometricPrompt.ERROR_CANCELED, "Cancelled")
+        activityController.pause().stop()
+        activityController.restart().start().resume()
+        assertFalse(lock.snapshot().isUnlocked)
+        assertTrue(lock.snapshot().isAuthenticating)
+    }
+
+    @Test
+    fun `AndroidX credential launch permits cancellation return without another unlock`() {
+        assertTrue(lock.beginProfileSwitch(FamilyMember.VICTOR, FamilyMember.MASON))
+        val credentialFragment = launchAndroidXCredentialActivity()
+        activityController.pause().stop()
+        credentialFragment.onActivityResult(1, Activity.RESULT_CANCELED, null)
+        shadowOf(Looper.getMainLooper()).idle()
+        activityController.restart().start().resume()
+        assertTrue(lock.snapshot().isUnlocked)
+        assertFalse(lock.snapshot().isAuthenticating)
+        activityController.pause().stop()
+        assertFalse(lock.snapshot().isUnlocked)
+    }
+
+    @Test
+    fun `credential intent without an authentication request cannot grant grace`() {
+        activity.startActivityForResult(credentialIntent(), 43, null)
+        activityController.pause().stop()
+        assertFalse(lock.snapshot().isUnlocked)
     }
 
     @Test
@@ -170,6 +215,26 @@ class MainActivityConnectionAuthenticationTest {
         registeredCallback().onAuthenticationSucceeded(successResult())
         assertTrue(approved)
         assertFalse(lock.snapshot().isAuthenticating)
+    }
+
+    private fun credentialIntent() = checkNotNull(
+        activity.getSystemService(KeyguardManager::class.java)
+            .createConfirmDeviceCredentialIntent(null, null),
+    )
+
+    private fun launchAndroidXCredentialActivity(): androidx.fragment.app.Fragment {
+        // Exercise AndroidX's real Fragment -> Activity launch, including its
+        // KeyguardManager intent, rather than arming the controller in the test.
+        val fragment = activity.supportFragmentManager.fragments.single {
+            it.javaClass.name == "androidx.biometric.BiometricFragment"
+        }
+        fragment.javaClass.getDeclaredMethod("launchConfirmCredentialActivity")
+            .also { it.isAccessible = true }.invoke(fragment)
+        assertEquals(
+            credentialIntent().action,
+            shadowOf(activity).nextStartedActivityForResult.intent.action,
+        )
+        return fragment
     }
 
     private fun registeredCallback(): BiometricPrompt.AuthenticationCallback {

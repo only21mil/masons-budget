@@ -33,7 +33,7 @@ internal class VaultAuthenticationCoordinator(
                     publishLockState()
                     pending.resume(true)
                 } else {
-                    lockController.authenticationErrored(authenticationError())
+                    lockController.authenticationErrored(authenticationError(), allowReturnGrace = false)
                     publishLockState()
                 }
             } else {
@@ -71,7 +71,7 @@ internal class VaultAuthenticationCoordinator(
         if (!lockController.snapshot().isAuthenticating) return
         val pending = connection
         connection = null
-        lockController.authenticationErrored(authenticationError())
+        lockController.authenticationErrored(authenticationError(), allowReturnGrace = pending?.isActive != false)
         if (pending == null) onProfileRefused()
         publishLockState()
         if (pending?.isActive == true) pending.resume(false)

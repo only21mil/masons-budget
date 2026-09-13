@@ -1,9 +1,11 @@
 package com.sats21m.vogelvault
 
 import android.app.KeyguardManager
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -67,7 +69,7 @@ internal fun ledgerSystemBarAppearance(treatment: LedgerTreatment): LedgerSystem
     }
 
 class MainActivity : FragmentActivity(), ConnectionAuthenticationHost {
-    private val lockController = VaultLockController()
+    private val lockController = VaultLockController(SystemClock::elapsedRealtime)
     private val lockState = mutableStateOf(VaultLockSnapshot())
     private val profileSwitchRefusal = mutableStateOf<ProfileSwitchRefusal?>(null)
     private lateinit var authenticationCoordinator: VaultAuthenticationCoordinator
@@ -208,11 +210,10 @@ class MainActivity : FragmentActivity(), ConnectionAuthenticationHost {
                         VaultApp(
                             state = state,
                             onNavigate = model::navigate,
-                            // Applies a switch the gate has already authenticated,
-                            // and doubles as the shell's refresh of the active
-                            // profile. VaultViewModel.switchProfile still refuses a
-                            // target this profile may not reach.
-                            onSwitchProfile = model::switchProfile,
+                            // The switcher authorizes adult household changes;
+                            // all other changes first complete the system prompt.
+                            // The ViewModel checks the permitted destinations again.
+                            onSwitchProfile = model::switchAuthorizedProfile,
                             onRequestProfileSwitchAuthentication = profileSwitchGate::authenticate,
                             profileSwitchRefusal = profileSwitchRefusal.value,
                             onEnableRemoteRows = model::enableRemoteRows,
@@ -243,7 +244,28 @@ class MainActivity : FragmentActivity(), ConnectionAuthenticationHost {
 
     override fun onResume() {
         super.onResume()
+        lockController.foregrounded()
+        publishLockState()
         requestAppUnlock()
+    }
+
+    override fun startActivityForResult(intent: Intent, requestCode: Int, options: Bundle?) {
+        val isShare = intent.action == Intent.ACTION_CHOOSER &&
+            intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)?.action in
+            setOf(Intent.ACTION_SEND, Intent.ACTION_SEND_MULTIPLE)
+        // AndroidX launches the Keyguard fallback through this activity. Derive
+        // its action from the public factory; the platform action constant is hidden.
+        val isCredential = lockController.snapshot().isAuthenticating && intent.action != null &&
+            intent.action == getSystemService<KeyguardManager>()
+                ?.createConfirmDeviceCredentialIntent(null, null)?.action
+        val grantsReturnGrace = isShare || isCredential
+        if (grantsReturnGrace) lockController.externalActivityLaunched()
+        try {
+            super.startActivityForResult(intent, requestCode, options)
+        } catch (error: RuntimeException) {
+            if (grantsReturnGrace) lockController.externalActivityLaunchFailed()
+            throw error
+        }
     }
 
     override fun onStop() {

@@ -39,11 +39,15 @@ internal data class VaultLockSnapshot(
  * Keeping the authorization decision outside the callback plumbing makes it
  * testable that a profile never changes before authentication succeeds.
  */
-internal class VaultLockController {
+internal class VaultLockController(
+    private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000 },
+) {
     private var isUnlocked = false
     private var activeRequest: VaultAuthenticationRequest? = null
     private var backgroundedDuringAuthentication = false
     private var error: String? = null
+    private var externalLaunchAt: Long? = null
+    private var returnDeadline: Long? = null
 
     fun snapshot(): VaultLockSnapshot =
         VaultLockSnapshot(
@@ -83,17 +87,21 @@ internal class VaultLockController {
      * Returns the profile that may now be applied, if this was a switch request.
      */
     fun authenticationSucceeded(): FamilyMember? {
+        externalLaunchAt = null
         val target = (activeRequest as? VaultAuthenticationRequest.ProfileSwitch)?.target
         isUnlocked = true
         activeRequest = null
         backgroundedDuringAuthentication = false
+        returnDeadline = null
         error = null
         return target
     }
 
-    fun authenticationErrored(message: String) {
+    fun authenticationErrored(message: String, allowReturnGrace: Boolean = true) {
+        // A terminal callback before stop must not leave a launch armed for Home.
+        externalLaunchAt = null
         val wasUnlock = activeRequest is VaultAuthenticationRequest.AppUnlock
-        if (wasUnlock || backgroundedDuringAuthentication) {
+        if (wasUnlock || (backgroundedDuringAuthentication && (!allowReturnGrace || !withinReturnGrace()))) {
             isUnlocked = false
         }
         activeRequest = null
@@ -101,18 +109,44 @@ internal class VaultLockController {
         error = message
     }
 
-    /**
-     * Leaving the app always relocks it. A system credential activity may stop
-     * this activity while its request is alive; in that case the result callback
-     * decides whether the vault may reopen.
-     */
-    fun backgrounded() {
-        if (activeRequest == null) {
+    /** Only an allowed external activity launched by this host can arm return grace. */
+    fun externalActivityLaunched() {
+        if (isUnlocked) externalLaunchAt = nowMillis()
+    }
+
+    fun externalActivityLaunchFailed() {
+        externalLaunchAt = null
+    }
+
+    fun foregrounded() {
+        externalLaunchAt = null
+        if (returnDeadline != null && !withinReturnGrace() && activeRequest == null) {
             isUnlocked = false
-            error = null
-        } else {
-            backgroundedDuringAuthentication = true
         }
+        if (activeRequest == null) returnDeadline = null
+    }
+
+    /** Active system authentication keeps its callback owner alive across a credential activity. */
+    fun backgrounded() {
+        val now = nowMillis()
+        val launchedHere = externalLaunchAt?.let { now - it in 0 until RETURN_GRACE_MILLIS } == true
+        externalLaunchAt = null
+        // Preserve the callback owner, but a prompt alone does not explain a stop:
+        // Home also stops this host before Android delivers prompt cancellation.
+        if (activeRequest != null) backgroundedDuringAuthentication = true
+        if (launchedHere && isUnlocked) {
+            returnDeadline = now + RETURN_GRACE_MILLIS
+        } else {
+            isUnlocked = false
+            returnDeadline = null
+            error = null
+        }
+    }
+
+    private fun withinReturnGrace(): Boolean = returnDeadline?.let { nowMillis() < it } == true
+
+    private companion object {
+        const val RETURN_GRACE_MILLIS = 30_000L
     }
 }
 

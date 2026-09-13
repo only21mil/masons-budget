@@ -237,6 +237,9 @@ fun VaultApp(
                             VaultScreenContent(
                                 state = state,
                                 refusal = refusal,
+                                profileSwitcher = {
+                                    ProfileSwitcher(state.activeProfile, requestProfileSwitchAuthentication, onSwitchProfile)
+                                },
                                 current = current,
                                 onEnableRemoteRows = onEnableRemoteRows,
                                 onRemoteRowsConnected = onRemoteRowsConnected,
@@ -265,6 +268,9 @@ fun VaultApp(
                     VaultScreenContent(
                         state = state,
                         refusal = refusal,
+                        profileSwitcher = {
+                            ProfileSwitcher(state.activeProfile, requestProfileSwitchAuthentication, onSwitchProfile)
+                        },
                         current = current,
                         onEnableRemoteRows = onEnableRemoteRows,
                         onRemoteRowsConnected = onRemoteRowsConnected,
@@ -293,6 +299,7 @@ fun VaultApp(
 private fun VaultScreenContent(
     state: VaultUiState,
     refusal: ProfileSwitchRefusal?,
+    profileSwitcher: @Composable () -> Unit,
     current: Destination,
     onEnableRemoteRows: (String) -> Unit,
     onRemoteRowsConnected: () -> Unit,
@@ -318,6 +325,7 @@ private fun VaultScreenContent(
                 ScreenHost(
                     destination = current,
                     state = state,
+                    profileSwitcher = profileSwitcher,
                     onEnableRemoteRows = onEnableRemoteRows,
                     onRemoteRowsConnected = onRemoteRowsConnected,
                     onWriteSucceeded = onWriteSucceeded,
