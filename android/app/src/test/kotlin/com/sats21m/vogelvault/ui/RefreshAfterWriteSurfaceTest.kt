@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -87,9 +88,11 @@ class RefreshAfterWriteSurfaceTest {
             )
         }
         val interact = {
-            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
             compose.onNodeWithText("Amount").performTextInput("14.18")
-            compose.onNode(hasText("Save") and hasClickAction()).performScrollTo()
+            compose.onNodeWithText("Next").assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
+            compose.onNode(hasText("Save") and hasClickAction()).assertIsDisplayed()
                 .performSemanticsAction(SemanticsActions.OnClick)
             Unit
         }
@@ -232,7 +235,7 @@ class RefreshAfterWriteSurfaceTest {
         }
         val interact = {
             compose.onNodeWithText("Task title").performTextInput("Finish homework")
-            compose.onNode(hasText("Save task") and hasClickAction()).performScrollTo()
+            compose.onNode(hasText("Save task") and hasClickAction()).assertIsDisplayed()
                 .performSemanticsAction(SemanticsActions.OnClick)
             Unit
         }
@@ -342,15 +345,16 @@ class RefreshAfterWriteSurfaceTest {
             ScreenHost(
                 destination = Destination.ACTIVITY,
                 state = state,
+                quickAddRequested = true,
                 onWriteSucceeded = onWriteSucceeded,
             )
         }
         val interact = {
-            compose.onNodeWithText("+ Add").performClick()
-            settle()
-            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
             compose.onNodeWithText("Amount").performTextInput("14.18")
-            compose.onNode(hasText("Save") and hasClickAction()).performScrollTo()
+            compose.onNodeWithText("Next").assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
+            compose.onNode(hasText("Save") and hasClickAction()).assertIsDisplayed()
                 .performSemanticsAction(SemanticsActions.OnClick)
             Unit
         }
@@ -386,7 +390,7 @@ class RefreshAfterWriteSurfaceTest {
             compose.onNodeWithText("Add task").performScrollTo().performClick()
             settle()
             compose.onNodeWithText("Task title").performTextInput("Finish homework")
-            compose.onNode(hasText("Save task") and hasClickAction()).performScrollTo()
+            compose.onNode(hasText("Save task") and hasClickAction()).assertIsDisplayed()
                 .performSemanticsAction(SemanticsActions.OnClick)
             Unit
         }

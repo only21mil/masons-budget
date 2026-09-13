@@ -13,6 +13,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
@@ -395,7 +396,7 @@ class TaskListsCrudScreenTest {
             .performTextInput("Schedule annual physical")
         compose.onNode(
             hasText(application.getString(R.string.tasks_save)) and hasClickAction(),
-        ).assertIsEnabled().performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        ).assertIsEnabled().assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick)
         settle()
         compose.waitUntil(timeoutMillis = 5_000L) { application.poster.requestCount > 0 }
 

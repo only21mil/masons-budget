@@ -25,7 +25,10 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
@@ -194,11 +197,15 @@ class BudgetCategoryDrilldownComposeTest {
 
     @Test
     fun `Budget income editor exposes the atomic Bitcoin buy action`() {
-        compose.onNodeWithText("+ Add").performClick()
+        render(model.state.value, quickAddRequested = true)
         settle()
         compose.onNodeWithText("Income", useUnmergedTree = true).performClick()
         settle()
 
+        compose.onNodeWithText("Amount").performTextInput("100.00")
+        compose.onNodeWithText("Next").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Payment, date, note and Bitcoin").performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Add as Bitcoin buy").fetchSemanticsNode()
     }
 
@@ -316,13 +323,14 @@ class BudgetCategoryDrilldownComposeTest {
         assertEquals(0, nodesWithText("Neighborhood Market"))
     }
 
-    private fun render(state: VaultUiState) {
+    private fun render(state: VaultUiState, quickAddRequested: Boolean = false) {
         compose.runOnUiThread {
             activityController.get().setContent {
                 VogelVaultTheme {
                     Box(Modifier.size(width = 411.dp, height = 900.dp)) {
                         ScreenHost(
                             destination = state.destination,
+                            quickAddRequested = quickAddRequested,
                             state = state,
                             displayUnit = DisplayUnit.USD,
                         )
