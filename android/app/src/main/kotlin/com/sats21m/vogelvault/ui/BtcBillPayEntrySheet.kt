@@ -116,6 +116,7 @@ internal fun btcBillPayWriteRequest(
         ?: return WriteDraftResult.Invalid("Sats must be a positive whole number.")
     val priceCents = Money.exactPositiveMinorUnitsOrNull(priceUsd, scale = 2, allowZero = false)
         ?: return WriteDraftResult.Invalid("BTC price must be positive with at most two decimal places.")
+    if (feeUsd.isBlank()) return WriteDraftResult.Invalid("Enter the fee River charged, or 0.")
     val feeCents = Money.exactPositiveMinorUnitsOrNull(feeUsd, scale = 2, allowZero = true)
         ?: return WriteDraftResult.Invalid("Fee must be non-negative with at most two decimal places.")
 
@@ -201,7 +202,7 @@ internal fun BtcBillPayEntrySheet(
     var amountUsd by rememberSaveable(*stateKeys) { mutableStateOf(prefill?.amountUsd.orEmpty()) }
     var sats by rememberSaveable(*stateKeys) { mutableStateOf("") }
     var priceUsd by rememberSaveable(*stateKeys) { mutableStateOf("") }
-    var feeUsd by rememberSaveable(*stateKeys) { mutableStateOf("0") }
+    var feeUsd by rememberSaveable(*stateKeys) { mutableStateOf("") }
     var note by rememberSaveable(*stateKeys) { mutableStateOf("") }
     var reference by rememberSaveable(*stateKeys) { mutableStateOf("") }
     var message by rememberSaveable(*stateKeys) { mutableStateOf<String?>(null) }
@@ -338,6 +339,7 @@ internal fun BtcBillPayEntrySheet(
             { feeUsd = it },
             R.string.btc_bill_pay_fee_label,
             KeyboardType.Decimal,
+            placeholder = stringResource(R.string.btc_bill_pay_fee_placeholder),
         )
         BillPayEditorField(note, { note = it }, R.string.btc_bill_pay_note_label)
         BillPayEditorField(reference, { reference = it }, R.string.btc_bill_pay_reference_label)
@@ -353,11 +355,13 @@ private fun BillPayEditorField(
     onValueChange: (String) -> Unit,
     labelRes: Int,
     keyboardType: KeyboardType = KeyboardType.Text,
+    placeholder: String? = null,
 ) {
     LedgerTextField(
         value = value,
         onValueChange = onValueChange,
         label = stringResource(labelRes),
+        placeholder = placeholder,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
