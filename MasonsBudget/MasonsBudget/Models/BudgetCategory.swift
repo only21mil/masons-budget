@@ -20,8 +20,17 @@ final class BudgetCategory {
         "Auto & Transport": 99,
     ]
 
+    var displayName: String {
+        LedgerMapper.wireBudgetCategoryName(from: name, owner: ownerMember)
+    }
+
+    func matches(_ transaction: Transaction) -> Bool {
+        ownerMember.sharesNetWorth(with: transaction.ownerMember) &&
+            LedgerMapper.wireBudgetCategoryName(from: transaction.category, owner: transaction.ownerMember) == displayName
+    }
+
     var displayRank: Int {
-        Self.displayPriority[name] ?? 50
+        Self.displayPriority[displayName] ?? 50
     }
 
     var ownerMember: FamilyMember {

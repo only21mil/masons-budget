@@ -28,7 +28,7 @@ struct BudgetView: View {
     }
 
     private var myCategories: [BudgetCategory] {
-        categories.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
+        categories.filter { activeMember.sharesNetWorth(with: $0.ownerMember) && !$0.isIncome }
     }
 
     private var selectedMonth: Date {
@@ -120,9 +120,6 @@ struct BudgetView: View {
 
                 spentCard
                     .padding(.horizontal, AppLayout.sectionPadding)
-                    .padding(.bottom, AppLayout.cardSpacing)
-
-                budgetVsActualSection
                     .padding(.bottom, AppLayout.cardSpacing)
 
                 categoriesSection
@@ -294,54 +291,6 @@ struct BudgetView: View {
 
     // MARK: - Budget vs Actual
 
-    private var budgetVsActualSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("BUDGET vs ACTUAL")
-                .ledgerType(.sectionLabel)
-                .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
-
-            VStack(spacing: 6) {
-                ForEach(myCategories.filter { $0.monthlyBudget > 0 }, id: \.name) { cat in
-                    budgetVsActualRow(cat: cat)
-                }
-            }
-            .glassCard(padding: 12, radius: 18)
-            .padding(.horizontal, AppLayout.sectionPadding)
-        }
-    }
-
-    private func budgetVsActualRow(cat: BudgetCategory) -> some View {
-        let spent = spentInCategory(cat.name)
-        let budget = cat.monthlyBudget
-        let maxVal = max(spent, budget)
-        let budgetPct = maxVal > 0 ? NSDecimalNumber(decimal: budget / maxVal).doubleValue : 0
-        let spentPct = maxVal > 0 ? NSDecimalNumber(decimal: spent / maxVal).doubleValue : 0
-        let over = spent > budget
-
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(cat.name)
-                    .ledgerType(.rowPrimary)
-                    .foregroundStyle(theme.text)
-                    .lineLimit(1)
-                Spacer()
-                Text("\(AppFormatter.formatCurrency(spent)) / \(AppFormatter.formatCurrency(budget))")
-                    .ledgerType(.rowMeta)
-                    .foregroundStyle(over ? theme.danger : theme.textMuted)
-            }
-            LedgerProgressBar(
-                fraction: spentPct,
-                trackFraction: budgetPct,
-                height: 6,
-                fillHeight: 4,
-                fill: over ? theme.danger : theme.accent,
-                track: theme.surface2,
-            )
-        }
-        .padding(.vertical, 2)
-    }
-
     // MARK: - Categories
 
     private var categoriesSection: some View {
@@ -352,6 +301,12 @@ struct BudgetView: View {
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
             VStack(spacing: 10) {
+                if myCategories.isEmpty {
+                    Text("No budget categories yet. Create categories in the desktop app, then refresh here.")
+                        .ledgerType(.rowMeta)
+                        .foregroundStyle(theme.textMuted)
+                        .glassCard(padding: AppLayout.paddingCompact, radius: AppLayout.radiusMedium)
+                }
                 ForEach(myCategories, id: \.name) { cat in
                     NavigationLink {
                         CategoryDetailView(category: cat, selectedMonth: selectedMonth)
@@ -366,7 +321,7 @@ struct BudgetView: View {
     }
 
     private func categoryCard(cat: BudgetCategory) -> some View {
-        let spent = spentInCategory(cat.name)
+        let spent = spentInCategory(cat)
         let limit = cat.monthlyBudget
         let pct = limit > 0 ? NSDecimalNumber(decimal: min(spent / limit, 2)).doubleValue : 0
         let over = spent > limit
@@ -387,7 +342,7 @@ struct BudgetView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     HStack(spacing: 8) {
-                        Text(cat.name)
+                        Text(cat.displayName)
                             .ledgerType(.rowPrimary)
                             .foregroundStyle(theme.text)
                         Text(statusLabel)
@@ -404,6 +359,10 @@ struct BudgetView: View {
                         .foregroundStyle(theme.text)
                 }
 
+                Text("Spent \(AppFormatter.formatCurrency(spent)) · Limit \(AppFormatter.formatCurrency(limit)) · Remaining \(AppFormatter.formatCurrency(limit - spent))")
+                    .ledgerType(.rowMeta)
+                    .foregroundStyle(theme.textMuted)
+
                 HStack(spacing: 10) {
                     LedgerProgressBar(fraction: pct, height: 6, fill: statusColor, track: theme.surface2)
 
@@ -417,9 +376,9 @@ struct BudgetView: View {
         .glassCard(padding: AppLayout.paddingCompact, radius: AppLayout.radiusMedium)
     }
 
-    private func spentInCategory(_ name: String) -> Decimal {
+    private func spentInCategory(_ category: BudgetCategory) -> Decimal {
         monthTransactions
-            .filter { $0.category == name && $0.isSpend }
+            .filter { category.matches($0) && $0.isSpend }
             .reduce(Decimal(0)) { $0 + $1.spendAmount }
     }
 }

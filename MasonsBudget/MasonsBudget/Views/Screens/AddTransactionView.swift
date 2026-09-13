@@ -397,15 +397,15 @@ struct AddTransactionView: View {
                             id: \.name,
                         ) { cat in
                             Button {
-                                selectedCategory = cat.name
+                                selectedCategory = cat.displayName
                             } label: {
-                                Label(cat.name, systemImage: cat.icon)
+                                Label(cat.displayName, systemImage: cat.icon)
                             }
                         }
                     } label: {
                         HStack(spacing: 8) {
                             if !selectedCategory.isEmpty {
-                                let cat = scopedCategories.first(where: { $0.name == selectedCategory })
+                                let cat = scopedCategories.first(where: { $0.displayName == selectedCategory })
                                 CatGlyphView(kind: cat?.icon ?? "wrench", size: 11, color: theme.onAccent)
                                     .frame(width: 18, height: 18)
                                     .background(theme.accentFill)
