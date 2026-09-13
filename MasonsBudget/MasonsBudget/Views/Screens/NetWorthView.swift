@@ -4,6 +4,7 @@ import SwiftUI
 struct NetWorthView: View {
     @Environment(\.theme) var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
+    @AppStorage(MarketQuoteService.cacheKey) private var quoteCache = Data()
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
@@ -19,11 +20,13 @@ struct NetWorthView: View {
     }
 
     private var btcPrice: Decimal {
-        BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
+        BTCPriceService.storedPrice ?? 0
     }
 
     private var canonicalBTC: CanonicalBTCBalance? {
-        canonicalFinancials.btcBalance.value
+        guard let balance = canonicalFinancials.btcBalance.value,
+              activeMember.sharesNetWorth(with: balance.owner) else { return nil }
+        return balance
     }
 
     private var myRetirementAccounts: [HoldingAccount] {
@@ -80,35 +83,41 @@ struct NetWorthView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                ScreenHeader(title: "Net Worth", eyebrow: "12-month view")
+        TimelineView(.periodic(from: .now, by: 60)) { _ in
+            ScrollView {
+                VStack(spacing: 0) {
+                    ScreenHeader(title: "Net Worth", eyebrow: "Recorded history")
 
-                if canonicalBTC != nil {
-                    totalCard
+                    quoteStatus
                         .padding(.horizontal, AppLayout.sectionPadding)
-                        .padding(.bottom, AppLayout.cardSpacing)
+                        .padding(.bottom, 12)
 
-                    timelineSection
-                        .padding(.bottom, AppLayout.cardSpacing)
+                    if canonicalBTC != nil, btcPrice > 0 {
+                        totalCard
+                            .padding(.horizontal, AppLayout.sectionPadding)
+                            .padding(.bottom, AppLayout.cardSpacing)
 
-                    holdingsSection
-                } else {
-                    RequiredFinancialSourceView(
-                        title: "Net Worth",
-                        message: "The required Bitcoin balance document is empty or unavailable.",
-                    )
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                        timelineSection
+                            .padding(.bottom, AppLayout.cardSpacing)
+
+                        holdingsSection
+                    } else {
+                        RequiredFinancialSourceView(
+                            title: "Net Worth",
+                            message: "A Bitcoin balance and an available Bitcoin price are needed to calculate net worth.",
+                        )
+                        .padding(.horizontal, AppLayout.sectionPadding)
+                    }
+
+                    if !myRetirementAccounts.isEmpty, btcPrice > 0 {
+                        retirementSection
+                            .padding(.top, AppLayout.cardSpacing)
+                    }
                 }
-
-                if !myRetirementAccounts.isEmpty {
-                    retirementSection
-                        .padding(.top, AppLayout.cardSpacing)
-                }
+                .padding(.bottom, 100)
             }
-            .padding(.bottom, 100)
+            .background(theme.bg)
         }
-        .background(theme.bg)
     }
 
     // MARK: - Total Card with Bar Chart
@@ -122,20 +131,25 @@ struct NetWorthView: View {
             AmountView(sats: totalSats, unit: unit, role: .heroNumeral, btcPrice: btcPrice)
 
             HStack(spacing: 8) {
-                let change = yearlyStackUsdChange
-                let positive = change >= 0
-                Image(systemName: positive ? AppIcon.arrowUp : "arrow.down.right")
-                    .font(AppFont.icon(size: 11, weight: .semibold))
-                    .foregroundStyle(positive ? theme.success : theme.danger)
-                Text("\(positive ? "+" : "")\(AppFormatter.formatCurrency(change))")
-                    .ledgerType(.rowFigure)
-                    .foregroundStyle(positive ? theme.success : theme.danger)
-                Text("past year")
+                if let change = NetWorthHistory.change(timelineData) {
+                    let positive = change >= 0
+                    Image(systemName: positive ? AppIcon.arrowUp : "arrow.down.right")
+                        .font(AppFont.icon(size: 11, weight: .semibold))
+                        .foregroundStyle(positive ? theme.success : theme.danger)
+                    Text("\(positive ? "+" : "")\(AppFormatter.formatCurrency(change))")
+                        .ledgerType(.rowFigure)
+                        .foregroundStyle(positive ? theme.success : theme.danger)
+                }
+                Text(NetWorthHistory.spanLabel(timelineData))
                     .ledgerType(.kpiSub)
                     .foregroundStyle(theme.textMuted)
             }
             .padding(.top, 2)
 
+            Text("Bitcoin value at each observation")
+                .ledgerType(.rowMeta)
+                .foregroundStyle(theme.textMuted)
+                .padding(.top, 12)
             barChart
                 .padding(.top, 18)
 
@@ -145,38 +159,25 @@ struct NetWorthView: View {
         .glassCard(padding: 18, radius: 22)
     }
 
-    // Snapshots store the BTC stack's USD value AT CAPTURE TIME. Deriving a
-    // historical BTC amount by dividing the stored value by today's price
-    // back-projects the stack through every price move since and plots price
-    // drift as if it were stack change — so the series stays in capture-time
-    // USD, and the change math stays in Decimal end to end.
-    private var monthlyBtcStackUsd: [Decimal] {
-        let mySnaps = snapshots.filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
-        let cal = Calendar.current
-        let now = Date()
-        var values: [Decimal] = []
-        for offset in stride(from: -11, through: 0, by: 1) {
-            guard let monthDate = cal.date(byAdding: .month, value: offset, to: now) else { continue }
-            let snap = mySnaps.first(where: { cal.isDate($0.date, equalTo: monthDate, toGranularity: .month) })
-            if let s = snap {
-                values.append(s.btcValue)
-            } else if offset == 0 {
-                values.append(totalBtcUsd)
-            } else {
-                values.append(values.last ?? 0)
-            }
-        }
-        return values.isEmpty ? [totalBtcUsd] : values
-    }
+    private var monthlyBtcStackUsd: [Decimal] { timelineData.map(\.btc) }
 
     private var monthlyBtcValues: [CGFloat] {
         monthlyBtcStackUsd.map { CGFloat(NSDecimalNumber(decimal: $0).doubleValue) }
     }
 
-    private var yearlyStackUsdChange: Decimal {
-        let values = monthlyBtcStackUsd
-        guard let first = values.first, let last = values.last else { return 0 }
-        return last - first
+    private var quoteStatus: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(MarketQuote.Symbol.allCases, id: \.rawValue) { symbol in
+                    Text(MarketQuoteService.label(symbol, now: context.date))
+                        .ledgerType(.rowMeta)
+                        .foregroundStyle(theme.textMuted)
+                }
+                Text("Holdings use their last saved value when a stock price is unavailable.")
+                    .ledgerType(.rowMeta)
+                    .foregroundStyle(theme.textMuted)
+            }
+        }
     }
 
     private var barChart: some View {
@@ -194,7 +195,7 @@ struct NetWorthView: View {
                     .frame(height: max(6, 80 * height))
                     .overlay(alignment: .top) {
                         if isLast {
-                            Text(String(format: "%.2f", val))
+                            Text(AppFormatter.formatCurrency(monthlyBtcStackUsd[idx]))
                                 .ledgerType(.rowMeta)
                                 .foregroundStyle(theme.accent)
                                 .offset(y: -18)
@@ -206,17 +207,12 @@ struct NetWorthView: View {
     }
 
     private var monthLabels: some View {
-        let cal = Calendar.current
-        let now = Date()
         let df = DateFormatter()
         df.dateFormat = "MMM"
-        let labels: [String] = (0 ..< 12).map { offset in
-            let d = cal.date(byAdding: .month, value: offset - 11, to: now) ?? now
-            return df.string(from: d)
-        }
+        let labels = timelineData.map { df.string(from: $0.date) }
         return HStack(spacing: 4) {
             ForEach(Array(labels.enumerated()), id: \.offset) { idx, label in
-                Text(idx % 2 == 1 ? label : "")
+                Text(labels.count < 7 || idx % 2 == 1 ? label : "")
                     .ledgerType(.rowMeta)
                     .foregroundStyle(theme.textMuted)
                     .frame(maxWidth: .infinity)
@@ -226,30 +222,19 @@ struct NetWorthView: View {
 
     // MARK: - Timeline Chart
 
-    private var timelineData: [(date: Date, total: Decimal, btc: Decimal, holdings: Decimal)] {
-        let mySnaps = snapshots
+    private var timelineData: [NetWorthHistoryPoint] {
+        let captured = snapshots
             .filter { activeMember.sharesNetWorth(with: $0.ownerMember) }
-            .sorted { $0.date < $1.date }
-        let cal = Calendar.current
-        let now = Date()
-        var data: [(date: Date, total: Decimal, btc: Decimal, holdings: Decimal)] = []
-
-        for offset in stride(from: -11, through: 0, by: 1) {
-            guard let monthDate = cal.date(byAdding: .month, value: offset, to: now) else { continue }
-            if let snap = mySnaps.first(where: { cal.isDate($0.date, equalTo: monthDate, toGranularity: .month) }) {
-                data.append((date: snap.date, total: snap.totalValue, btc: snap.btcValue, holdings: snap.holdingsValue))
-            } else if offset == 0 {
-                let btcUsd = totalBtc * btcPrice
-                let total = btcUsd + totalRetirementUsd
-                data.append((date: now, total: total, btc: btcUsd, holdings: totalRetirementUsd))
-            } else if let last = data.last {
-                data.append((date: monthDate, total: last.total, btc: last.btc, holdings: last.holdings))
-            } else {
-                data.append((date: monthDate, total: 0, btc: 0, holdings: 0))
-            }
-        }
-        return data
+            .map { NetWorthHistoryPoint(date: $0.date, total: $0.totalValue, btc: $0.btcValue, holdings: $0.holdingsValue) }
+        return NetWorthHistory.recentMonths(
+            snapshots: captured,
+            current: NetWorthHistoryPoint(date: Date(), total: totalBtcUsd + totalRetirementUsd,
+                                          btc: totalBtcUsd, holdings: totalRetirementUsd),
+        )
     }
+
+    private var timelineMinimum: Decimal { timelineData.flatMap { [$0.total, $0.btc] }.min() ?? 0 }
+    private var timelineMaximum: Decimal { timelineData.flatMap { [$0.total, $0.btc] }.max() ?? 0 }
 
     private var timelineSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -259,9 +244,16 @@ struct NetWorthView: View {
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
 
             VStack(alignment: .leading, spacing: 12) {
+                Text(AppFormatter.formatCurrency(timelineMaximum))
+                    .ledgerType(.rowMeta)
+                    .foregroundStyle(theme.textMuted)
                 timelineChart
                     .frame(height: 160)
-
+                    .accessibilityLabel("Net worth history")
+                    .accessibilityValue("\(NetWorthHistory.spanLabel(timelineData)). \(timelineData.count) observed months. Minimum \(AppFormatter.formatCurrency(timelineMinimum)); maximum \(AppFormatter.formatCurrency(timelineMaximum)).")
+                Text(AppFormatter.formatCurrency(timelineMinimum))
+                    .ledgerType(.rowMeta)
+                    .foregroundStyle(theme.textMuted)
                 timelineLegend
             }
             .glassCard()
@@ -272,17 +264,18 @@ struct NetWorthView: View {
     private var timelineChart: some View {
         let data = timelineData
         return Canvas { context, size in
-            guard data.count > 1 else { return }
+            guard !data.isEmpty else { return }
             let totals = data.map { NSDecimalNumber(decimal: $0.total).doubleValue }
             let btcVals = data.map { NSDecimalNumber(decimal: $0.btc).doubleValue }
 
-            let maxVal = totals.max() ?? 1
-            let minVal = (totals.min() ?? 0) * 0.9
-            let range = maxVal - minVal
-            guard range > 0 else { return }
+            let maxVal = NSDecimalNumber(decimal: timelineMaximum).doubleValue
+            let minVal = NSDecimalNumber(decimal: timelineMinimum).doubleValue
+            let range = max(maxVal - minVal, 1)
 
             func pointFor(_ val: Double, at index: Int) -> CGPoint {
-                let x = size.width * CGFloat(index) / CGFloat(data.count - 1)
+                let duration = data[data.count - 1].date.timeIntervalSince(data[0].date)
+                let elapsed = data[index].date.timeIntervalSince(data[0].date)
+                let x = duration > 0 ? size.width * CGFloat(elapsed / duration) : size.width / 2
                 let y = size.height - ((CGFloat(val) - CGFloat(minVal)) / CGFloat(range)) * size.height * 0.85 - size.height * 0.075
                 return CGPoint(x: x, y: y)
             }
@@ -324,7 +317,7 @@ struct NetWorthView: View {
                 let change = last.total - first.total
                 let pct = (change / first.total) * 100
                 let positive = change >= 0
-                Text("\(positive ? "+" : "")\(NSDecimalNumber(decimal: pct).intValue)% 12mo")
+                Text("\(positive ? "+" : "")\(NSDecimalNumber(decimal: pct).intValue)% · \(NetWorthHistory.spanLabel(data))")
                     .ledgerType(.rowMeta)
                     .foregroundStyle(positive ? theme.success : theme.danger)
             }

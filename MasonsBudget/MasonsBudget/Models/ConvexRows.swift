@@ -20,6 +20,8 @@ enum ConvexRowQuery: Sendable {
     case btcBalanceDocuments(viewer: FamilyMember, scope: ConvexRowScope)
     case budget(viewer: FamilyMember)
     case btcSnapshotMetadata(viewer: FamilyMember, scope: ConvexRowScope)
+    case finance(viewer: FamilyMember)
+    case marketQuotes
     case rowCounts
 
     var path: String {
@@ -33,6 +35,8 @@ enum ConvexRowQuery: Sendable {
         case .btcBalanceDocuments: "tables:listBtcBalanceDocuments"
         case .budget: "tables:getBudgetDocument"
         case .btcSnapshotMetadata: "tables:getBtcSnapshotMetadata"
+        case .finance: "tables:getFinanceDocument"
+        case .marketQuotes: "marketQuotes:getSnapshot"
         case .rowCounts: "tables:rowCounts"
         }
     }
@@ -55,13 +59,16 @@ enum ConvexRowQuery: Sendable {
             ["viewer": viewer.rawValue, "scope": scope.rawValue]
         case let .budget(viewer):
             ["viewer": viewer.rawValue, "scope": ConvexRowScope.netWorth.rawValue]
-        case .rowCounts:
+        case let .finance(viewer):
+            ["viewer": viewer.rawValue, "scope": ConvexRowScope.visible.rawValue]
+        case .rowCounts, .marketQuotes:
             [:]
         }
     }
 }
 
 enum ConvexRowDecodeError: LocalizedError, Equatable {
+    case invalidShares
     case incompleteSnapshot
     case inconsistentMonth
     case invalidPriority
@@ -71,6 +78,8 @@ enum ConvexRowDecodeError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
+        case .invalidShares:
+            "A holding quantity does not match the decimal shares contract."
         case .incompleteSnapshot:
             "A bounded row response cannot replace the local snapshot."
         case .inconsistentMonth:

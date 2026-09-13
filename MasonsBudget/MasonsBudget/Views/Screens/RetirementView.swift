@@ -4,10 +4,12 @@ import SwiftUI
 struct RetirementView: View {
     @Environment(\.theme) var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
+    @AppStorage(MarketQuoteService.cacheKey) private var quoteCache = Data()
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
     @Query private var holdingAccounts: [HoldingAccount]
+    @Query private var budgetSnapshots: [MonthlyBudgetSnapshot]
     @Query private var lots: [CostBasisLot]
     @Query(sort: \BudgetCategory.sortOrder) private var budgetCategories: [BudgetCategory]
 
@@ -18,7 +20,7 @@ struct RetirementView: View {
     }
 
     private var btcPrice: Decimal {
-        BTCPriceService.storedPrice ?? BTCPriceService.fallbackPriceUSD
+        BTCPriceService.storedPrice ?? 0
     }
 
     private var unit: DisplayUnit {
@@ -26,7 +28,9 @@ struct RetirementView: View {
     }
 
     private var canonicalBTC: CanonicalBTCBalance? {
-        canonicalFinancials.btcBalance.value
+        guard let balance = canonicalFinancials.btcBalance.value,
+              activeMember.sharesNetWorth(with: balance.owner) else { return nil }
+        return balance
     }
 
     private var totalBtc: Decimal {
@@ -93,55 +97,74 @@ struct RetirementView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                ScreenHeader(title: "Retirement", eyebrow: "The Long Stack")
+        TimelineView(.periodic(from: .now, by: 60)) { _ in
+            ScrollView {
+                VStack(spacing: 0) {
+                    ScreenHeader(title: "Retirement", eyebrow: "The Long Stack")
 
-                if canonicalBTC != nil {
-                    goalsCard
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(MarketQuote.Symbol.allCases, id: \.rawValue) { symbol in
+                            Text(MarketQuoteService.label(symbol))
+                                .ledgerType(.rowMeta)
+                                .foregroundStyle(theme.textMuted)
+                        }
+                        Text("Holdings use their last saved value when a stock price is unavailable.")
+                            .ledgerType(.rowMeta)
+                            .foregroundStyle(theme.textMuted)
+                    }
+                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.bottom, 12)
+
+                    if canonicalBTC != nil, btcPrice > 0 {
+                        if activeMember.isAdult, btcPrice > 0 {
+                            goalsCard
+                                .padding(.horizontal, AppLayout.sectionPadding)
+                                .padding(.bottom, AppLayout.cardSpacing)
+                        }
+
+                        storageSection
+                            .padding(.bottom, AppLayout.cardSpacing)
+                    } else {
+                        RequiredFinancialSourceView(
+                            title: "Bitcoin Retirement Balance",
+                            message: "A Bitcoin balance and an available Bitcoin price are needed to show these values.",
+                        )
                         .padding(.horizontal, AppLayout.sectionPadding)
                         .padding(.bottom, AppLayout.cardSpacing)
+                    }
 
-                    storageSection
-                        .padding(.bottom, AppLayout.cardSpacing)
-                } else {
-                    RequiredFinancialSourceView(
-                        title: "Bitcoin Retirement Balance",
-                        message: "The required Bitcoin balance document is empty or unavailable.",
-                    )
-                    .padding(.horizontal, AppLayout.sectionPadding)
-                    .padding(.bottom, AppLayout.cardSpacing)
+                    if !visibleHoldings.isEmpty, btcPrice > 0 {
+                        holdingsSection
+                            .padding(.bottom, AppLayout.cardSpacing)
+                    }
+
+                    if activeMember.isAdult {
+                        if canonicalBTC != nil, currentIncomeAmount != nil, btcPrice > 0 {
+                            projectionsSection
+                                .padding(.bottom, AppLayout.cardSpacing)
+                        } else {
+                            RequiredFinancialSourceView(
+                                title: "Retirement Projection",
+                                message: "A household projection needs a Bitcoin balance, an available Bitcoin price, and income for this month.",
+                            )
+                            .padding(.horizontal, AppLayout.sectionPadding)
+                            .padding(.bottom, AppLayout.cardSpacing)
+                        }
+
+                    }
+                    if btcPrice > 0 { lotsSection }
                 }
-
-                if !visibleHoldings.isEmpty {
-                    holdingsSection
-                        .padding(.bottom, AppLayout.cardSpacing)
-                }
-
-                if canonicalBTC != nil, currentIncomeCents != nil {
-                    projectionsSection
-                        .padding(.bottom, AppLayout.cardSpacing)
-                } else {
-                    RequiredFinancialSourceView(
-                        title: "Retirement Projection",
-                        message: "A projection requires both canonical Bitcoin and income sources.",
-                    )
-                    .padding(.horizontal, AppLayout.sectionPadding)
-                    .padding(.bottom, AppLayout.cardSpacing)
-                }
-
-                lotsSection
+                .padding(.bottom, 170)
             }
-            .padding(.bottom, 170)
+            .background(theme.bg)
         }
-        .background(theme.bg)
     }
 
     // MARK: - Goals Card
 
     private var goalsCard: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("2026 GOALS")
+            Text("HOUSEHOLD ASSUMPTIONS · 2026 GOALS")
                 .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.onAccent)
 
@@ -400,19 +423,22 @@ struct RetirementView: View {
             .reduce(Decimal(0)) { $0 + $1.monthlyBudget }
     }
 
-    private var currentIncomeCents: Int64? {
-        guard let income = canonicalFinancials.income.value else { return nil }
+    private var currentIncomeAmount: Decimal? {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM"
-        return income.cents(forMonth: formatter.string(from: Date()))
+        let month = formatter.string(from: Date())
+        formatter.dateFormat = "MMMM yyyy"
+        let snapshotKey = formatter.string(from: Date())
+        let snapshot = budgetSnapshots.first { $0.monthKey == snapshotKey }
+        return RetirementProjectionInputs.income(
+            viewer: activeMember, summary: canonicalFinancials.income.value, month: month,
+            matchingSnapshotIncome: snapshot?.mtdIncome,
+        )
     }
 
-    private var monthlyIncomeNet: Decimal {
-        guard let currentIncomeCents else { return 0 }
-        return decimalMinorUnits(currentIncomeCents, scale: 2)
-    }
+    private var monthlyIncomeNet: Decimal { currentIncomeAmount ?? 0 }
 
     private var monthlySurplusForBtc: Decimal {
         let surplus = monthlyIncomeNet - monthlyBudgetTotal
@@ -501,7 +527,7 @@ struct RetirementView: View {
 
     private var projectionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("PROJECTIONS")
+            Text("HOUSEHOLD PROJECTION")
                 .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
                 .padding(.horizontal, AppLayout.sectionPadding + 4)
@@ -634,8 +660,12 @@ struct RetirementView: View {
 
     private var projectionAssumptions: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Assumptions")
+            Text("Household assumptions")
                 .ledgerType(.sectionLabel)
+                .foregroundStyle(theme.textMuted)
+
+            Text("Fixed household plan inputs. These are estimates, not a forecast.")
+                .ledgerType(.body)
                 .foregroundStyle(theme.textMuted)
 
             ForEach(assumptionLines, id: \.self) { line in
