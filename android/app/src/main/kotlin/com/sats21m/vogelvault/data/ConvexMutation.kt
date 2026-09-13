@@ -102,7 +102,7 @@ internal sealed class ConvexMutation(val path: String) {
         val income: LinkedIncomeInput,
         val baseUpdatedAtMs: Long? = null,
     ) : ConvexMutation("tables:upsertIncomeFromDevice") {
-        init { require(owner.isAdult && income.owner == owner.ledgerOwner) }
+        init { require(income.owner == owner.ledgerOwner) }
         override fun arguments(): JsonObject = buildMap<String, JsonElement> {
             put("owner", JsonPrimitive(owner.ledgerOwner.key))
             put("sourceFile", JsonPrimitive("income"))
@@ -150,11 +150,11 @@ internal sealed class ConvexMutation(val path: String) {
     ) : ConvexMutation(kind.path) {
         init {
             require(entityId.isNotBlank() && baseUpdatedAtMs > 0L)
-            require(owner.isAdult)
+            require(kind != BitcoinDeleteKind.BILL_PAY || owner.isAdult)
         }
         override fun arguments(): JsonObject = jsonObject(
             "owner" to JsonPrimitive(owner.ledgerOwner.key),
-            "sourceFile" to JsonPrimitive(kind.sourceFile),
+            "sourceFile" to JsonPrimitive(if (kind == BitcoinDeleteKind.BUY) owner.btcBuysDataFileName else kind.sourceFile),
             "entityId" to JsonPrimitive(entityId),
             "baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs),
         )
