@@ -10,6 +10,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import com.sats21m.vogelvault.R
@@ -100,6 +101,10 @@ class OrdinaryTransactionLegacyLeaseTest {
                 .performSemanticsAction(SemanticsActions.OnClick)
             shadowOf(Looper.getMainLooper()).idle()
             compose.waitForIdle()
+            compose.onNodeWithText("Amount").performTextInput("100.00")
+            compose.onNodeWithText("Next").performSemanticsAction(SemanticsActions.OnClick)
+            compose.onNodeWithText("Payment, date, note and Bitcoin")
+                .performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
             compose
                 .onNodeWithText(application.getString(R.string.budget_income_add_as_bitcoin_buy))
                 .performScrollTo()
