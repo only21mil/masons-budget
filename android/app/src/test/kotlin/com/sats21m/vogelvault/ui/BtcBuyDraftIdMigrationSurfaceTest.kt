@@ -108,7 +108,7 @@ class OrdinaryTransactionLegacyLeaseTest {
             shadowOf(Looper.getMainLooper()).idle()
             compose.waitForIdle()
             compose
-                .onNodeWithText("Enter a merchant or transfer destination")
+                .onNodeWithText("Enter an income source")
                 .fetchSemanticsNode()
 
             assertEquals(LEGACY_ID, preferences.getString(LEGACY_KEY, null))

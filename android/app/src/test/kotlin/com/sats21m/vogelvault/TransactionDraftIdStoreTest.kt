@@ -206,7 +206,8 @@ class TransactionDraftIdStoreTest {
                 }
             }
 
-        assertEquals(6, callSites.size, callSites.joinToString("\n"))
+        // Standalone income and ordinary transactions each rotate their own lease.
+        assertEquals(7, callSites.size, callSites.joinToString("\n"))
         callSites.forEach { (path, line, previousLine) ->
             val callPrefix = line.substringBefore("rotateAfterAcceptance(")
             val acceptedWriteGuard = "result !is ConvexResult.Ok ||"

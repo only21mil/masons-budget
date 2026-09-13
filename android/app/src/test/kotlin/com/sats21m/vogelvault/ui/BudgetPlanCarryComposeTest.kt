@@ -6,12 +6,15 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
@@ -101,8 +104,8 @@ class BudgetPlanCarryComposeTest {
     fun `a plan behind the current month offers the copy, a current plan does not`() {
         application.currentMonth = "2026-08"
         show(liveState())
-        compose.onNodeWithText("Copy July plan to August").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("August has no budget plan yet").performScrollTo().assertIsDisplayed()
+        scrollToText("Copy July plan to August").assertIsDisplayed()
+        scrollToText("August has no budget plan yet").assertIsDisplayed()
 
         application.currentMonth = "2026-07"
         show(liveState())
@@ -121,7 +124,7 @@ class BudgetPlanCarryComposeTest {
         application.currentMonth = "2026-08"
         show(liveState())
 
-        compose.onNodeWithText("Copy July plan to August").performScrollTo().performClick()
+        scrollToText("Copy July plan to August").performClick()
         settle()
         compose.onNodeWithText("Confirm copy to August").assertIsDisplayed()
         compose.onNodeWithText("Keep July").assertIsDisplayed()
@@ -148,12 +151,12 @@ class BudgetPlanCarryComposeTest {
         application.currentMonth = "2026-08"
         show(liveState())
 
-        compose.onNodeWithText("Copy July plan to August").performScrollTo().performClick()
+        scrollToText("Copy July plan to August").performClick()
         settle()
         compose.onNodeWithText("Keep July").performClick()
         settle()
 
-        compose.onNodeWithText("Copy July plan to August").performScrollTo().assertIsDisplayed()
+        scrollToText("Copy July plan to August").assertIsDisplayed()
         assertEquals(0, nodesWithText("Confirm copy to August"))
         assertEquals(0, application.poster.bodies.size)
     }
@@ -167,7 +170,7 @@ class BudgetPlanCarryComposeTest {
         )
         show(liveState())
 
-        compose.onNodeWithText("Copy July plan to August").performScrollTo().performClick()
+        scrollToText("Copy July plan to August").performClick()
         settle()
         compose.onNodeWithText("Confirm copy to August").performClick()
         settle()
@@ -187,6 +190,11 @@ class BudgetPlanCarryComposeTest {
         val base = VaultUiState.of(FamilyMember.VICTOR, Destination.BUDGET, Freshness.LIVE)
         val budget = requireNotNull(base.data.budget.value).copy(updatedAtMs = revision)
         return base.copy(data = base.data.copy(budget = base.data.budget.copy(value = budget)))
+    }
+
+    private fun scrollToText(text: String): SemanticsNodeInteraction {
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text))
+        return compose.onNodeWithText(text)
     }
 
     private fun nodesWithText(text: String): Int =

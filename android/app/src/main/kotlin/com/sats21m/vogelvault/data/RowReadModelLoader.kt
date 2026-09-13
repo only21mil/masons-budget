@@ -157,6 +157,7 @@ class RowReadModelLoader(
             RowReadProjection.INCOME.sourceName,
             stamp,
             IncomeRow::toDomain,
+            completeEmptyIsLive = true,
         )
         val billPaySlice = btcBillPays.await().toMappedSlice(
             emptyList(),
