@@ -511,13 +511,29 @@ enum LedgerChromeSpec {
             ]
         }
 
+        /// UIKit owns the tab bar height. Bound only its caption to standard
+        /// text sizes; accessibility names and the native large content viewer remain intact.
+        static func tabTitleAttributes(ink: KeyPath<LedgerPalette, Color>) -> [NSAttributedString.Key: Any] {
+            let specification = LedgerChromeSpec.tabLabel
+            let face = UIFont(name: specification.weight.postScriptName, size: specification.size)
+                ?? UIFont.systemFont(ofSize: specification.size)
+            let metrics = UIFontMetrics(forTextStyle: .caption2)
+            let largestStandardTraits = UITraitCollection(preferredContentSizeCategory: .extraExtraExtraLarge)
+            let maximumPointSize = metrics.scaledFont(for: face, compatibleWith: largestStandardTraits).pointSize
+            return [
+                .font: metrics.scaledFont(for: face, maximumPointSize: maximumPointSize),
+                .kern: specification.tracking,
+                .foregroundColor: color(ink),
+            ]
+        }
+
         @MainActor
         static func install() {
             let tabItem = UITabBarItemAppearance()
             tabItem.normal.iconColor = color(\.tertiaryForeground)
-            tabItem.normal.titleTextAttributes = attributes(LedgerChromeSpec.tabLabel, style: .caption2, ink: \.tertiaryForeground)
+            tabItem.normal.titleTextAttributes = tabTitleAttributes(ink: \.tertiaryForeground)
             tabItem.selected.iconColor = color(\.accentForeground)
-            tabItem.selected.titleTextAttributes = attributes(LedgerChromeSpec.tabLabel, style: .caption2, ink: \.accentForeground)
+            tabItem.selected.titleTextAttributes = tabTitleAttributes(ink: \.accentForeground)
             for state in [tabItem.normal, tabItem.selected] {
                 state.badgeBackgroundColor = color(\.accentFill)
                 state.badgeTextAttributes = attributes(LedgerChromeSpec.badge, style: .caption2, ink: \.foregroundOnAccentFill)

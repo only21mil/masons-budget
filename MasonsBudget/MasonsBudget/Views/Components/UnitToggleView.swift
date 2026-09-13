@@ -26,6 +26,7 @@ enum UnitToggleSize {
 struct UnitToggleView: View {
     @Binding var unit: DisplayUnit
     var size: UnitToggleSize = .sm
+    var expandsToFillWidth = false
 
     @Environment(\.theme) var theme
 
@@ -37,14 +38,17 @@ struct UnitToggleView: View {
                 } label: {
                     Text(u.label)
                         .ledgerType(size.role)
+                        .lineLimit(1)
                         .foregroundStyle(unit == u ? theme.onAccent : theme.textMuted)
                         .frame(minWidth: LedgerMetrics.minimumHitTarget, minHeight: LedgerMetrics.minimumHitTarget)
+                        .frame(maxWidth: expandsToFillWidth ? .infinity : nil)
                         .padding(.horizontal, size.horizontalPadding)
                         .background(unit == u ? theme.accentFill : .clear)
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Show amounts in \(u.label)")
+                .accessibilityAddTraits(unit == u ? .isSelected : [])
             }
         }
         .padding(2)
