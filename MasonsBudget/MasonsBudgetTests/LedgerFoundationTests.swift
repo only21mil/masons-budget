@@ -333,7 +333,7 @@ final class LedgerFoundationTests: XCTestCase {
         XCTAssertEqual(LedgerChromeSpec.tabLabel.weight, .semibold)
         XCTAssertEqual(LedgerChromeSpec.tabLabel.trackingEm, 0.06, accuracy: 0.0001)
         XCTAssertTrue(LedgerChromeSpec.tabLabel.uppercase)
-        XCTAssertEqual(LedgerChromeSpec.badge.size, 11)
+        XCTAssertEqual(LedgerChromeSpec.badge.size, 12.5)
         XCTAssertEqual(LedgerChromeSpec.badge.weight, .semibold)
         XCTAssertEqual(LedgerChromeSpec.inlineTitle.size, 15)
         XCTAssertEqual(LedgerChromeSpec.inlineTitle.weight, .semibold)
