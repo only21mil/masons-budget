@@ -199,7 +199,7 @@ struct ActivityView: View {
             }
         } else {
             ForEach(grouped, id: \.0) { day, rows in
-                Section(day.formatted(.dateTime.year().month().day())) {
+                Section {
                     ForEach(rows) { tx in
                         txRow(tx: tx)
                             .listRowInsets(EdgeInsets())
@@ -220,6 +220,9 @@ struct ActivityView: View {
                                 Button("Delete", role: .destructive) { deleting = tx }.disabled(mutationInFlight)
                             }
                     }
+                } header: {
+                    Text(day.formatted(.dateTime.year().month().day()))
+                        .ledgerType(.sectionLabel)
                 }
             }
         }

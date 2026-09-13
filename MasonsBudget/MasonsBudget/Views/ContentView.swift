@@ -176,20 +176,8 @@ struct ContentView: View {
             if syncedMember == selectedMemberRaw { profileSyncPending = false }
         }
         .onDisappear { cancelReadRetry() }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 6) {
-                if profileSyncPending && ConvexConfig.hasReadToken && lastReadError.isEmpty {
-                    ProgressView("Syncing profile…")
-                        .ledgerType(.rowMeta)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Syncing \(activeMember.displayName)’s profile")
-                }
-                syncFailureBanner
-            }
-                .padding(.horizontal, AppLayout.sectionPadding)
-                .padding(.top, 10)
-        }
         #if os(macOS)
+        .safeAreaInset(edge: .top, spacing: 0) { syncBanner }
         .safeAreaInset(edge: .bottom) { undoBanner }
         #endif
         .sheet(isPresented: $showAddTransaction) {
@@ -232,17 +220,22 @@ struct ContentView: View {
         private var iOSBody: some View {
             TabView(selection: $selectedTab) {
                 ForEach(AppTab.allCases) { tab in
-                    NavigationStack {
-                        screenForTab(tab)
-                            .environment(\.ledgerRootTitle, tab.label)
-                            .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
-                                avatarButton
-                                syncStatusGlyph
-                                addButton
-                            }))
-                            .toolbar(.hidden, for: .navigationBar)
+                    VStack(spacing: 0) {
+                        // Keep status above both roots and destinations without relying on
+                        // NavigationStack to forward a safe-area inset to its scroll content.
+                        syncBanner
+                        NavigationStack {
+                            screenForTab(tab)
+                                .environment(\.ledgerRootTitle, tab.label)
+                                .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
+                                    avatarButton
+                                    syncStatusGlyph
+                                    addButton
+                                }))
+                                .toolbar(.hidden, for: .navigationBar)
+                        }
+                        .safeAreaInset(edge: .bottom) { undoBanner }
                     }
-                    .safeAreaInset(edge: .bottom) { undoBanner }
                     .tabItem {
                         Image(systemName: tab.icon)
                         Text(tab.tabTitle)
@@ -622,6 +615,20 @@ struct ContentView: View {
             .padding(.horizontal, AppLayout.sectionPadding)
     }
 
+    private var syncBanner: some View {
+        VStack(spacing: 6) {
+            if profileSyncPending && ConvexConfig.hasReadToken && lastReadError.isEmpty {
+                ProgressView("Syncing profile…")
+                    .ledgerType(.rowMeta)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Syncing \(activeMember.displayName)’s profile")
+            }
+            syncFailureBanner
+        }
+        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.top, 10)
+    }
+
     @ViewBuilder
     private var syncFailureBanner: some View {
         if let message = Self.readSyncMessage(hasReadToken: ConvexConfig.hasReadToken, lastError: lastReadError) {
@@ -734,7 +741,7 @@ struct ContentView: View {
     @ViewBuilder
     private func screenForTab(_ tab: AppTab) -> some View {
         switch tab {
-        case .home: HomeDashboardView()
+        case .home: HomeDashboardView(hasReadToken: ConvexConfig.hasReadToken)
         case .budget: BudgetView()
         case .activity: ActivityView()
         case .tasks: TasksView()
