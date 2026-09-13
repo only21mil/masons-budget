@@ -1,17 +1,17 @@
-# Historical captures
+# Screenshot evidence
 
-The PNG files in this directory show the 2026-04-30 app, as identified by the
-2026-09-13 mobile audit. They predate the current Vogel Vault interface and are
-not current design references or evidence that the mobile fix plan works.
+The [2026-09-13 handoff](2026-09-13/README.md) is the current screenshot reference
+for the reviewed mobile fixes. It contains an Android Roborazzi packet and
+approved synthetic iPhone Simulator captures, with a separate native Android
+example. Open the [image index](2026-09-13/index.md) for all 94 frames.
 
-Keep these files until approved replacement captures exist. Replacement needs
-an Android Roborazzi design packet and an iPhone capture set from an approved
-build. Record each capture's platform, build or commit, date, viewport, and test
-result before retiring the old set. No replacement captures were produced by
-the documentation correction.
+The 12 PNG files directly in this directory show the historical 2026-04-30 app,
+as identified by the mobile audit. They predate the current Vogel Vault
+interface and are not current design references or acceptance evidence.
+Their paths and bytes remain unchanged for history. The
+[historical hash inventory](2026-09-13/historical-png-sha256.json) records them
+using repository-relative paths.
 
-The Android packet test source is
+The Android packet source is
 [DesignPacketTest.kt](../android/app/src/test/kotlin/com/sats21m/vogelvault/DesignPacketTest.kt).
 The layout contract is [FOUNDATIONS.md](../Design/FOUNDATIONS.md).
-A test source or an old golden image does not establish current physical-device
-verification.

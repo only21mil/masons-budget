@@ -1,0 +1,1433 @@
+{
+  "schema_version": 1,
+  "capture_date": "2026-09-13",
+  "synthetic_only": true,
+  "copy_policy": "Original bytes unchanged; no resizing, cropping, generation, or new capture.",
+  "candidate_base_commit": "36c7e98ce0dd26e29cef2393baa5478dd043d60e",
+  "candidate_base_tree": "a790e70a54e44400b4ef3abf958044357e2d67ad",
+  "visual_acceptance": {
+    "receipt": "vv_resume/visual_acceptance brief11f-w -> passed",
+    "verdict": "PASS within scoped synthetic evidence; Apple editor matrix 12/12 and Android editor matrix 18/18 accepted",
+    "authority_artifact_id": "visual-acceptance/fable-final-closure.md",
+    "authority_sha256": "3376428198973df7865f15905061253f2cb30ecd6a3a59f71e34fd0b84bb1fc2",
+    "selection_artifact_sha256": "07698940dfb69528bebe6114d58507a5115f9eaab30419bc0b6de06d83c08a4a",
+    "note": "Curated screenshot handoff, not the complete native acceptance archive. Older accepted cells retain their own source identities; no claim that the combined delivery tree was installed."
+  },
+  "groups": {
+    "roborazzi-35712": {
+      "producer_manifest_id": "android-acceptance/roborazzi-35712-manifest.json",
+      "producer_manifest_sha256": "2b1a3e4efae01c4c6ada6e564bc77a75b2f2cf82c4fe45abc10540a4be1dcdf4",
+      "source_commit": "35712b0688f866884240b6163ff29b8a26360235",
+      "source_tree": "846de349787dd8056f8584b5d0917b79a6a68ac2",
+      "kind": "synthetic JVM Roborazzi rendering, not native execution",
+      "overlay": false,
+      "command": "./android/gradlew -p android :app:recordRoborazziDebug --tests '*DesignPacketFoldedTest' --tests '*DesignPacketUnfoldedTest' --offline --console=plain",
+      "android_sdk": 34,
+      "device": "Robolectric configured viewport, no physical device",
+      "qualifiers": {
+        "folded": "w411dp-h891dp-normal-long-notround-any-420dpi-keyshidden-nonav",
+        "unfolded": "w841dp-h945dp-normal-long-notround-any-420dpi-keyshidden-nonav"
+      },
+      "test_result": "producer recordRoborazziDebug passed"
+    },
+    "roborazzi-81235441": {
+      "producer_manifest_id": "android-acceptance/roborazzi-81235441-manifest.json",
+      "producer_manifest_sha256": "fb96fcebede1e6a0ff83d673534a0cd6597b5c6a32aae2b21bec84a30447a4f7",
+      "source_commit": "812354414febba725078595ecadf4f9d5fb73540",
+      "source_tree": "5fd0f11704028345c243e38ea38cd48969d87c8a",
+      "kind": "synthetic JVM Roborazzi rendering, not native execution",
+      "overlay": false,
+      "command": "./android/gradlew -p android :app:recordRoborazziDebug --tests '*DesignPacketFoldedTest.terminalTreatmentRootAndStatusTokens' --tests '*DesignPacketUnfoldedTest.twoPaneDashboardAndBudget' --offline --console=plain",
+      "android_sdk": 34,
+      "device": "Robolectric configured viewport, no physical device",
+      "qualifiers": {
+        "folded": "w411dp-h891dp-normal-long-notround-any-420dpi-keyshidden-nonav",
+        "unfolded": "w841dp-h945dp-normal-long-notround-any-420dpi-keyshidden-nonav"
+      },
+      "test_result": "producer recordRoborazziDebug passed"
+    },
+    "apple-editors": {
+      "producer_manifest_id": "apple-acceptance/i14-final-editor-manifest.json",
+      "producer_manifest_sha256": "e729a55a3cfbcca9d77ac8242556e8be2e3afab2bc00fb73d547b947b1529687",
+      "kind": "native iOS Simulator raw simctl framebuffer",
+      "version": "0.5.0",
+      "build": "44",
+      "distribution": "unsigned Debug simulator acceptance only",
+      "os": "iOS 26.5 (23F77)",
+      "toolchain": "Xcode 26.6 (17F113)",
+      "devices": {
+        "compact": {
+          "model": "iPhone SE (3rd generation)",
+          "viewport_pt": [
+            375,
+            667
+          ],
+          "scale": 2
+        },
+        "wide": {
+          "model": "iPhone 17 Pro Max",
+          "viewport_pt": [
+            440,
+            956
+          ],
+          "scale": 3
+        }
+      },
+      "fixture": "approved synthetic, offline HTTP refusal, unpaired, canonical store unloaded, lock disabled, onboarding skipped",
+      "overlay": "reviewed acceptance v5",
+      "overlay_sha256": "1b7b4a9d0c61f81accca2f9b093a86df5d6559ed6421de99b91aefc32df38cf5",
+      "source_commit": "0716b7411c14aee80360f3e30ad80286a535bc5c",
+      "source_tree": "2b346c3f391ebbad11c8695bd7e6bf3ba68dd225",
+      "installed_debug_dylib_sha256": "0e210b766c6b812cb80016fd4fefd1dd96c8b357f8bd2f8a9dc59acda5ffd1ed",
+      "test_result": "18 focused native tests passed",
+      "navigation": "direct editor fixture bypasses production entry flow"
+    },
+    "apple-category": {
+      "producer_manifest_id": "apple-category-acceptance/manifest.json",
+      "producer_manifest_sha256": "3bd2728007ca60d5c29d9ca3741cfd86dd5107066476595d200042847df92290",
+      "kind": "native iOS Simulator raw simctl framebuffer",
+      "version": "0.5.0",
+      "build": "44",
+      "distribution": "unsigned Debug simulator acceptance only",
+      "os": "iOS 26.5 (23F77)",
+      "toolchain": "Xcode 26.6 (17F113)",
+      "devices": {
+        "compact": {
+          "model": "iPhone SE (3rd generation)",
+          "viewport_pt": [
+            375,
+            667
+          ],
+          "scale": 2
+        },
+        "wide": {
+          "model": "iPhone 17 Pro Max",
+          "viewport_pt": [
+            440,
+            956
+          ],
+          "scale": 3
+        }
+      },
+      "fixture": "approved synthetic, offline HTTP refusal, unpaired, canonical store unloaded, lock disabled, onboarding skipped",
+      "overlay": "reviewed acceptance v5",
+      "overlay_sha256": "1b7b4a9d0c61f81accca2f9b093a86df5d6559ed6421de99b91aefc32df38cf5",
+      "source_commit": "abd13cd70bb33db906578f75e458ee120de4df3f",
+      "source_tree": "21bd52cd8ff3078e0b46ad930c804da43bea63b5",
+      "installed_debug_dylib_sha256": "ba1725b28c5aef1766ef358f7c965a38a177cd60d1179eed9eaf6a2d75a9b4d1",
+      "test_result": "18 focused native tests passed",
+      "navigation": "direct editor fixture bypasses production entry flow"
+    },
+    "apple-home": {
+      "producer_manifest_id": "ios-home-large-text-repair/manifest.json",
+      "producer_manifest_sha256": "4d2ff6ec19b26ac2a66707bae36810deb6b500a591910cec705fe2009c515bc4",
+      "kind": "native iOS Simulator raw simctl framebuffer",
+      "version": "0.5.0",
+      "build": "44",
+      "distribution": "unsigned Debug simulator acceptance only",
+      "os": "iOS 26.5 (23F77)",
+      "toolchain": "Xcode 26.6 (17F113)",
+      "devices": {
+        "compact": {
+          "model": "iPhone SE (3rd generation)",
+          "viewport_pt": [
+            375,
+            667
+          ],
+          "scale": 2
+        },
+        "wide": {
+          "model": "iPhone 17 Pro Max",
+          "viewport_pt": [
+            440,
+            956
+          ],
+          "scale": 3
+        }
+      },
+      "fixture": "approved synthetic, offline HTTP refusal, unpaired, canonical store unloaded, lock disabled, onboarding skipped",
+      "overlay": "reviewed acceptance v5",
+      "overlay_sha256": "1b7b4a9d0c61f81accca2f9b093a86df5d6559ed6421de99b91aefc32df38cf5",
+      "source_commit": "fa0d853b6b0942510ce1e65aff31233645a0d361",
+      "source_tree": "3af7fcb8fd10eea72215c53c163f2dd60e916e44",
+      "installed_debug_dylib_sha256": "d37f99ab9cbad98d587b44fe169ee010c53f9aa5b03f4842bfdc5c7f8943ddbf",
+      "test_result": "3 affected chrome tests passed on final revision; prior broader tests retain earlier revision attribution",
+      "navigation": "fixture Home without direct-editor launch flags"
+    },
+    "android-native-final": {
+      "producer_manifest_id": "android-acceptance/final-filter-empty-provenance.json",
+      "producer_manifest_sha256": "4cd54395677ef4b89e4fff2853c33e32440fafc543c7b50771be6a264862b34c",
+      "kind": "native Android Emulator framebuffer",
+      "source_commit": "47b97f256a9d205eff281ed4d84c32ab58c2d754",
+      "source_tree": "8a0ccd032d076bc9637b01a68df820d4822782ec",
+      "android_subtree": "7c284c3477bd1ebb58dbd1eab3563c74d9a84cc3",
+      "apk_sha256": "e2928766a9398ba46f74b551326a0360573464beeb10411e67bd02638b995069",
+      "version": "0.1.1",
+      "version_code": 2,
+      "os": "Android 16, BE2A.250530.026.F3/13894323, sdk_gphone64_x86_64 emulator",
+      "device": "configured emulator cover width, not measured Galaxy hardware",
+      "viewport_px": [
+        906,
+        2284
+      ],
+      "density_dpi": 420,
+      "font_scale": "1.0",
+      "device_state": "2",
+      "physical_display_px": [
+        2208,
+        1840
+      ],
+      "overlay": "reviewed acceptance r5",
+      "overlay_activity_sha256": "563a090d0daaa0b19a4ecc094dbf41eb6c52b51e88237f4c84e1aaed643a0e21",
+      "overlay_rows_sha256": "82f7146a0b07cc282be42e3af2e417b71ff0e072c00ad5344b28b50ca6b89edc",
+      "fixture": {
+        "stateful": false,
+        "editor_fixture": true,
+        "freshness": "LIVE",
+        "profile": "VICTOR",
+        "appearance": "DAYLIGHT"
+      },
+      "os_theme": "light",
+      "test_result": "Final filtered-empty visual accepted; native Clear separately restored 21 fixture rows"
+    }
+  },
+  "images": [
+    {
+      "path": "android-roborazzi/folded-activity-mason-normal.png",
+      "sha256": "888ea06df9bbdb3c040787509e32cb5d7273627cabcd40fe605b37390fcd873c",
+      "bytes": 104713,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-activity-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-activity-victor-empty.png",
+      "sha256": "fe9d9c348fb2668f28f675c9dc75d0abfc409d0d207d79c1a317a92b1966cbc6",
+      "bytes": 78855,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-activity-victor-empty.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-activity-victor-error.png",
+      "sha256": "0dd9f159065dcdb9d7bd61550392998c9acc83472936db265bd854155498d106",
+      "bytes": 82341,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-activity-victor-error.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-activity-victor-loading.png",
+      "sha256": "aeed2ce1958c6816ba10c4f22b7f516c0bd64e39da65c5355ad57b97a4efebd8",
+      "bytes": 68083,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-activity-victor-loading.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-activity-victor-normal.png",
+      "sha256": "5eee3cc3b4552431de71390e7c9ba66fec16b81098d6d57b0b73baf2a496431e",
+      "bytes": 119306,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-activity-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-activity-victor-stale.png",
+      "sha256": "abe44b63a3283f7966116a61d6d8bf6842ab0e67e2b9d6d8f624d5c8c2bb4d2c",
+      "bytes": 124890,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-activity-victor-stale.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-bitcoin-mason-normal.png",
+      "sha256": "e658b3614a867650afd4c97fbd5ee4f14557aa156ef9e87ac242a5c848fb0569",
+      "bytes": 99791,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-bitcoin-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-bitcoin-victor-btc.png",
+      "sha256": "79c57e05a65ecf79c4cd116a46be38f88adecb4996f74b790da34fed632853b7",
+      "bytes": 107002,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-bitcoin-victor-btc.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-bitcoin-victor-normal.png",
+      "sha256": "79c57e05a65ecf79c4cd116a46be38f88adecb4996f74b790da34fed632853b7",
+      "bytes": 107002,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-bitcoin-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-bitcoin-victor-sats.png",
+      "sha256": "fea0c454d95c7aaf197c2b73b1c6f2584eaeda85da9c3f73d86a77d1f8fdfa31",
+      "bytes": 107117,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-bitcoin-victor-sats.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-bitcoin-victor-usd-no-price.png",
+      "sha256": "c2ac06b58f4277bab5c10b646e4216d26be9e386554b25c5a94e5e2116204bf3",
+      "bytes": 95926,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-bitcoin-victor-usd-no-price.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-bitcoin-victor-usd.png",
+      "sha256": "bba7a196967b20ee48d724178d54ab2bfd4e7e12a0eba2d2552c97602c780c5e",
+      "bytes": 100486,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-bitcoin-victor-usd.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-btc_bill_pays-mason-normal.png",
+      "sha256": "3863ae751ffe7da6be6cb7df1711e2f839934d76a7e2fec06d08fd6968a9987a",
+      "bytes": 75939,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-btc_bill_pays-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-btc_bill_pays-victor-normal.png",
+      "sha256": "8cd3c0aeb811839ee6d51b82c9ab7e890e90d3bb9ac8db6a1ca27bb03c6543ed",
+      "bytes": 111509,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-btc_bill_pays-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-btc_buys-mason-normal.png",
+      "sha256": "92ee6a2372a1926dfd2363fc4c87c6977e37000c32b4f030db75c38e47b2b7ce",
+      "bytes": 103220,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-btc_buys-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-btc_buys-victor-normal.png",
+      "sha256": "0e1f0909953ff454a97c22bfdedaed49b2d0a536364bc6d53d498ef1f16eabbc",
+      "bytes": 134601,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-btc_buys-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-budget-maddox-normal.png",
+      "sha256": "a93e9aea84116fe1477787f5836e0ad2aa7bcb026b85bdb1ad36874e61151511",
+      "bytes": 100067,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-budget-maddox-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-budget-mason-normal.png",
+      "sha256": "a853e585a6c5153a548f325618db78fef18c34e8c82fd0bb1aa2233e0b940e10",
+      "bytes": 94470,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-budget-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-budget-victor-2026-06.png",
+      "sha256": "7105f09556818e1a7500ebc1ae752ba56b4679694182293e9a25bbb8c93bfa43",
+      "bytes": 91798,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-budget-victor-2026-06.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-budget-victor-empty.png",
+      "sha256": "738f94388afde3418fd6e3ac7401c702f25078ae2911f1c9b404d64d21d87a59",
+      "bytes": 93706,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-budget-victor-empty.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-budget-victor-error.png",
+      "sha256": "078cd010b199f6f0c58922cedcd597215fda162e035006c7c54ce1a2f000d8e0",
+      "bytes": 86128,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-budget-victor-error.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-budget-victor-loading.png",
+      "sha256": "e0e8f844eadfbef116612f976e7353abc3f39cd3238a31c9e419bd16af31fbc5",
+      "bytes": 72027,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-budget-victor-loading.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-budget-victor-normal.png",
+      "sha256": "448bb6c46343f3bfec71fa0eca757039428c5c7cb1fe051bf7ada1936460efe9",
+      "bytes": 106405,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-budget-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-budget-victor-stale.png",
+      "sha256": "b30888f55c1f4c972044e7ad913d9ec5b62cfdaf25bf2a698aacf411ea16ac7f",
+      "bytes": 108987,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-budget-victor-stale.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-dashboard-mason-normal.png",
+      "sha256": "2f287cc29aebcda529089e6d54135921b6e69406207fe1a3d392f5843bc4f2e1",
+      "bytes": 100945,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-dashboard-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-dashboard-victor-empty.png",
+      "sha256": "f6a84375150c8ce63f39b1f775e2f81923c55258d122980fe6c1b68bc5df17bd",
+      "bytes": 91931,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-dashboard-victor-empty.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-dashboard-victor-error.png",
+      "sha256": "fe6ed47bf9e30d8c3512a20a1b849bf67154a602b2ead52e8dcb1bea5738eaaf",
+      "bytes": 85967,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-dashboard-victor-error.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-dashboard-victor-loading.png",
+      "sha256": "a63a530d9b266904a6d122b609f238da7630db02b4e75b0b6734b79fc14eb8cd",
+      "bytes": 81400,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-dashboard-victor-loading.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-dashboard-victor-normal.png",
+      "sha256": "dd5291287014f214ff7a17d78fe6da2102156d2c7e29a6d14f0b20e9af8b50fb",
+      "bytes": 101627,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-dashboard-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-dashboard-victor-stale.png",
+      "sha256": "778ca9d226fc6271abd4e4ca3e9b012891f52bdac978e8b54e75b9b6a446a34c",
+      "bytes": 103345,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-dashboard-victor-stale.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-dashboard-victor-terminal.png",
+      "sha256": "43556255e19b9ae1967512ca88056ae7eb0270fef755c569c524fead2b503e75",
+      "bytes": 93106,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-81235441",
+      "producer_image_id": "android-acceptance/roborazzi-81235441/folded-dashboard-victor-terminal.png",
+      "reuse": "Affected four-image rerun supersedes the original entry."
+    },
+    {
+      "path": "android-roborazzi/folded-export-mason-normal.png",
+      "sha256": "2f287cc29aebcda529089e6d54135921b6e69406207fe1a3d392f5843bc4f2e1",
+      "bytes": 100945,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-export-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-export-victor-normal.png",
+      "sha256": "c590d9f5a8031b46d3e768412c7b68cc0ebdfe0dafd8ede1c95c63e2dc51c752",
+      "bytes": 70433,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-export-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-family-mason-normal.png",
+      "sha256": "2f287cc29aebcda529089e6d54135921b6e69406207fe1a3d392f5843bc4f2e1",
+      "bytes": 100945,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-family-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-family-victor-normal.png",
+      "sha256": "dc096117d39084034c27ce5d3e41fd4e4526a270ce6d9ddbf3a6fbf6d1538012",
+      "bytes": 124082,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-family-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-net_worth-mason-normal.png",
+      "sha256": "d2c289711eeeff9d73b4a2d204023c1b6dcd817d747401fb6e930158a536ea20",
+      "bytes": 106403,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-net_worth-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-net_worth-victor-empty.png",
+      "sha256": "43ff9268ec4538038d7ba11c3801d07df5ea0f605dc85114dbf301ab30f8daab",
+      "bytes": 105475,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-net_worth-victor-empty.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-net_worth-victor-error.png",
+      "sha256": "cb90fe47b2c173c393c962aac36a4caf89449fb50e15af4e57fe1064874242dc",
+      "bytes": 106562,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-net_worth-victor-error.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-net_worth-victor-loading.png",
+      "sha256": "7f67cd69eb8add98da863689b6fba8d9a3652c9a0946f2782a7438541b7974cc",
+      "bytes": 105010,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-net_worth-victor-loading.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-net_worth-victor-normal.png",
+      "sha256": "9305be15f9c57d386ff85be08f7b1005a2da02a1712ea8053919a34c21b9287a",
+      "bytes": 105429,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-net_worth-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-net_worth-victor-stale.png",
+      "sha256": "024732d4dacad77a846d53d5e10789448a19248ab214081890d6e154d13b82e7",
+      "bytes": 106477,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-net_worth-victor-stale.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-retirement-mason-normal.png",
+      "sha256": "2461fddc97549ffd28f7dbc053d1488366339954333b0171900dd901ea4f2177",
+      "bytes": 115883,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-retirement-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-retirement-victor-normal.png",
+      "sha256": "d46ecc782d8452a32efc2377983d8f9c744e001fb6fbc012b91c61678d8d7fe4",
+      "bytes": 114007,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-retirement-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-settings-mason-normal.png",
+      "sha256": "2f287cc29aebcda529089e6d54135921b6e69406207fe1a3d392f5843bc4f2e1",
+      "bytes": 100945,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-settings-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-settings-victor-normal.png",
+      "sha256": "cbebe82e447eba8489249e08ce982dda298f6ef264d7b4c450b2839cec07c348",
+      "bytes": 115918,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-settings-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-status-and-unavailable-tokens-terminal.png",
+      "sha256": "87a17e3d042867bd54ad5d06e095435a115a8b46cdba4f015c82222f7091829f",
+      "bytes": 54880,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-81235441",
+      "producer_image_id": "android-acceptance/roborazzi-81235441/folded-status-and-unavailable-tokens-terminal.png",
+      "reuse": "Affected four-image rerun supersedes the original entry."
+    },
+    {
+      "path": "android-roborazzi/folded-status-and-unavailable-tokens.png",
+      "sha256": "e70b3e7fc6c732573eb1baa8524103e35dda5deaf19324b14fa7a717ff058e77",
+      "bytes": 56259,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-status-and-unavailable-tokens.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-tasks-mason-normal.png",
+      "sha256": "d71efc46b978ec8f9d7e56cb4bcc032f7ce116d13c5396845082901e41ba335e",
+      "bytes": 87574,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-tasks-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-tasks-victor-normal.png",
+      "sha256": "e40041653ed73ed3937dc14d914b6ff7f6d86c30b708f1880cc72ffb7e548a75",
+      "bytes": 85135,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-tasks-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-today-mason-normal.png",
+      "sha256": "75249623f354a83b315d7c212e7e5030df7d953e537d66c846411c219e949b8e",
+      "bytes": 105093,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-today-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/folded-today-victor-normal.png",
+      "sha256": "4db1a9906b7b385b34689c38c5bf09b666b9f01fa7a6d5c662532b06cd2fabc3",
+      "bytes": 104185,
+      "pixel_size": [
+        1078,
+        2338
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/folded-today-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-activity-victor-normal.png",
+      "sha256": "9ffc4e4d4d7bedf0412242f3c01e41cf21ae123094e8a715f2c280fe6dc75744",
+      "bytes": 163219,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-activity-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-bitcoin-victor-normal.png",
+      "sha256": "4ce8692ed733e716e7e89eac0e2ebb5d82ba0cd0b834d156273e77c63d5f83e6",
+      "bytes": 153307,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-bitcoin-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-btc_bill_pays-victor-normal.png",
+      "sha256": "7b13570f225066509b064665d4bc2b0f21b4c5243479433783ba8918a7b32448",
+      "bytes": 126295,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-btc_bill_pays-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-btc_buys-victor-normal.png",
+      "sha256": "f2df6c66c068f644836ce04f3fad6ade745df564d12739452c62f93bfb4ece37",
+      "bytes": 215499,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-btc_buys-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-budget-victor-2026-06.png",
+      "sha256": "78d17f62c26acedfd8858afa6cf517440612178c80ab2203060b2b5a609d3d8e",
+      "bytes": 133914,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-budget-victor-2026-06.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-budget-victor-normal.png",
+      "sha256": "bd3e34e54927305bb8d4358ac4bb2d73157fb423155beb5f4204b2e558fd7c58",
+      "bytes": 150167,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-budget-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-budget-victor-two-pane.png",
+      "sha256": "bd3e34e54927305bb8d4358ac4bb2d73157fb423155beb5f4204b2e558fd7c58",
+      "bytes": 150167,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-81235441",
+      "producer_image_id": "android-acceptance/roborazzi-81235441/unfolded-budget-victor-two-pane.png",
+      "reuse": "Affected four-image rerun supersedes the original entry."
+    },
+    {
+      "path": "android-roborazzi/unfolded-dashboard-mason-normal.png",
+      "sha256": "c7b40596599c34130ec1a860816b10d0df66e9ae4bc17aab3fd1d139d6f6ca72",
+      "bytes": 151649,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-dashboard-mason-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-dashboard-victor-normal.png",
+      "sha256": "1d0f952c59acbf39285eaecc6ce301974bffa1c7297383e1821c0eff1d74f379",
+      "bytes": 154711,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-dashboard-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-dashboard-victor-terminal.png",
+      "sha256": "1c29be407d6fa3d06985150b5e7ee01b71d352d8abc3e70c08163d979981a2f3",
+      "bytes": 147620,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-dashboard-victor-terminal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-dashboard-victor-two-pane.png",
+      "sha256": "1d0f952c59acbf39285eaecc6ce301974bffa1c7297383e1821c0eff1d74f379",
+      "bytes": 154711,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-81235441",
+      "producer_image_id": "android-acceptance/roborazzi-81235441/unfolded-dashboard-victor-two-pane.png",
+      "reuse": "Affected four-image rerun supersedes the original entry."
+    },
+    {
+      "path": "android-roborazzi/unfolded-export-victor-normal.png",
+      "sha256": "1a5ad9a7df8af06a0392948747ebedcc20e377934147a0f17e2c22a6925e9b00",
+      "bytes": 89610,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-export-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-family-victor-normal.png",
+      "sha256": "5ddfc85c9b9f12360360c66d9e7b666db7eaa088a7cd3715d7764d90753445a6",
+      "bytes": 162860,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-family-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-net_worth-victor-normal.png",
+      "sha256": "6961f6de745e56a69b11a0061fc1a32e1578d63d6ea4070bbf0b5eb05f85955d",
+      "bytes": 152987,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-net_worth-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-retirement-victor-normal.png",
+      "sha256": "2a9819a2726adbaea2256ff5b9cbcb8602ff3c969d45dcc518cb727295370dbd",
+      "bytes": 155286,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-retirement-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-settings-victor-normal.png",
+      "sha256": "d380d5b2e30084b116ed53540826c0e316599c9be912a42583cf347f8e430eab",
+      "bytes": 161852,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-settings-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-tasks-victor-normal.png",
+      "sha256": "31058d7e71e7fee78375a8ca4d0b3df41cac9b0098e9b0f3a0d0d35aad560f7b",
+      "bytes": 132569,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-tasks-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "android-roborazzi/unfolded-today-victor-normal.png",
+      "sha256": "3d1db770e9a1dd59be2d6e7d64f27bc02b199f01610e0f97a4016c7daf582980",
+      "bytes": 119419,
+      "pixel_size": [
+        2207,
+        2480
+      ],
+      "provenance_group": "roborazzi-35712",
+      "producer_image_id": "android-acceptance/roborazzi-35712/unfolded-today-victor-normal.png",
+      "reuse": "Retained full-packet cell at its original revision; subsequent focused root/navigation changes use four replacements. Final A21 changes only an editor predicate that this generator does not open."
+    },
+    {
+      "path": "iphone/editors/compact-i14-account-dark-matrix-error-keyboard-raw.png",
+      "sha256": "9a25197b27a1dadd9973ef67d02f35f4c501782725131cf66a31a8d8081889d8",
+      "bytes": 114500,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/compact-i14-account-dark-matrix-error-keyboard-raw.png",
+      "editor": "account",
+      "size": "compact",
+      "theme": "dark",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/editors/compact-i14-account-light-matrix-error-keyboard-raw.png",
+      "sha256": "2e5be83439170adcf224c31a00992068876450e28a1028dcdc0d92f31c4053d9",
+      "bytes": 114542,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/compact-i14-account-light-matrix-error-keyboard-raw.png",
+      "editor": "account",
+      "size": "compact",
+      "theme": "light",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/editors/wide-i14-account-dark-matrix-keyboard-raw.png",
+      "sha256": "0b883afc8a44ce9ffd3d6f388fb183567e094788690fa027a0be2413aaacd13b",
+      "bytes": 244630,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/wide-i14-account-dark-matrix-keyboard-raw.png",
+      "editor": "account",
+      "size": "wide",
+      "theme": "dark",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/editors/wide-i14-account-light-retake-matrix-settled-raw.png",
+      "sha256": "ee240c922afd3df2ae444938649abb0fa036bcc10160a60cf17857ef05954cd5",
+      "bytes": 258596,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/wide-i14-account-light-retake-matrix-settled-raw.png",
+      "editor": "account",
+      "size": "wide",
+      "theme": "light",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/editors/compact-i14-transfer-dark-error-keyboard-raw.png",
+      "sha256": "15d383f70116888a8bfc6f78d37694fed25c41e881f1eaeaa44f1b3759f2ea0d",
+      "bytes": 91368,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/compact-i14-transfer-dark-error-keyboard-raw.png",
+      "editor": "transfer",
+      "size": "compact",
+      "theme": "dark",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/editors/compact-i14-transfer-light-matrix-error-keyboard-raw.png",
+      "sha256": "820142c425b78cf4d9356d0c76dd4bd264b150948b5b45c1dc6c830130cc8509",
+      "bytes": 91837,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/compact-i14-transfer-light-matrix-error-keyboard-raw.png",
+      "editor": "transfer",
+      "size": "compact",
+      "theme": "light",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/editors/wide-i14-transfer-dark-matrix-settled-raw.png",
+      "sha256": "2aeb442bf46b5f115b164ef70299b8a3a8d4648e55d27fac96473e06287b0638",
+      "bytes": 223007,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/wide-i14-transfer-dark-matrix-settled-raw.png",
+      "editor": "transfer",
+      "size": "wide",
+      "theme": "dark",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/editors/wide-i14-transfer-light-matrix-settled-raw.png",
+      "sha256": "0b877a0ff99f54565723888ebfb5663ebebbb1c823a27e6f21f15c72e1d6af2c",
+      "bytes": 237254,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/wide-i14-transfer-light-matrix-settled-raw.png",
+      "editor": "transfer",
+      "size": "wide",
+      "theme": "light",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/editors/compact-i14-billpay-dark-matrix-error-keyboard-raw.png",
+      "sha256": "a7df5d2f6f7b48188b55a097b170aed7b1b70ea3ac47347b6dca9dd345f52b38",
+      "bytes": 100027,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/compact-i14-billpay-dark-matrix-error-keyboard-raw.png",
+      "editor": "billpay",
+      "size": "compact",
+      "theme": "dark",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/editors/compact-i14-billpay-light-matrix-error-keyboard-raw.png",
+      "sha256": "3b78561abfd06d9005a070f1d6f3843ac62da4a1cd07e8d17f27b0488b6aa015",
+      "bytes": 100970,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/compact-i14-billpay-light-matrix-error-keyboard-raw.png",
+      "editor": "billpay",
+      "size": "compact",
+      "theme": "light",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/editors/wide-i14-billpay-dark-matrix-error-keyboard-raw.png",
+      "sha256": "b1b291fbbb8a47d9b6f2522dc00be01ee2224f9edf56d5dc3f20b51df4f4140d",
+      "bytes": 229682,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/wide-i14-billpay-dark-matrix-error-keyboard-raw.png",
+      "editor": "billpay",
+      "size": "wide",
+      "theme": "dark",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/editors/wide-i14-billpay-light-matrix-error-keyboard-raw.png",
+      "sha256": "a3e6b669b0236cd6c2bf56bae278b18e1db03a3c413816b024e3bdf5460b2e3a",
+      "bytes": 239457,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-editors",
+      "producer_image_id": "apple-acceptance/wide-i14-billpay-light-matrix-error-keyboard-raw.png",
+      "editor": "billpay",
+      "size": "wide",
+      "theme": "light",
+      "dynamic_type": "large",
+      "state": "keyboard, inline validation, visible disabled Save",
+      "reuse": "Accepted I14 editor cell; later I15 Category visuals are supplemented separately and I16 Home changes have separate final captures."
+    },
+    {
+      "path": "iphone/category/compact-i15-dark-start-raw.png",
+      "sha256": "e2189a781b29c31ce4a1678b25f509268d2866513cf4721e854e7d9c03463aa5",
+      "bytes": 104831,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-category",
+      "producer_image_id": "apple-category-acceptance/compact-i15-dark-start-raw.png",
+      "size": "compact",
+      "theme": "dark",
+      "dynamic_type": "large",
+      "state": "Category placeholder",
+      "reuse": "Accepted I15 Category supplement to I14 matrix, not recaptured on I16."
+    },
+    {
+      "path": "iphone/category/compact-i15-dark-selected-raw.png",
+      "sha256": "1f16f4f3aae0e20bcac5eced19c41d44499854e6578264cb30972c7171e7858d",
+      "bytes": 104136,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-category",
+      "producer_image_id": "apple-category-acceptance/compact-i15-dark-selected-raw.png",
+      "size": "compact",
+      "theme": "dark",
+      "dynamic_type": "large",
+      "state": "Category populated",
+      "reuse": "Accepted I15 Category supplement to I14 matrix, not recaptured on I16."
+    },
+    {
+      "path": "iphone/category/compact-i15-light-placeholder-raw.png",
+      "sha256": "244fcebe01555afadb9c454e569947186b8c5bfd4518f553218fa54afa72fbfe",
+      "bytes": 111580,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-category",
+      "producer_image_id": "apple-category-acceptance/compact-i15-light-placeholder-raw.png",
+      "size": "compact",
+      "theme": "light",
+      "dynamic_type": "large",
+      "state": "Category placeholder",
+      "reuse": "Accepted I15 Category supplement to I14 matrix, not recaptured on I16."
+    },
+    {
+      "path": "iphone/category/compact-i15-light-populated-raw.png",
+      "sha256": "d34dfbdcb3e1d82cf9e930cf2c9b8d6d00185944dd9c2fb35a5e242fcedcc3c7",
+      "bytes": 110789,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-category",
+      "producer_image_id": "apple-category-acceptance/compact-i15-light-populated-raw.png",
+      "size": "compact",
+      "theme": "light",
+      "dynamic_type": "large",
+      "state": "Category populated",
+      "reuse": "Accepted I15 Category supplement to I14 matrix, not recaptured on I16."
+    },
+    {
+      "path": "iphone/category/wide-i15-dark-placeholder-raw.png",
+      "sha256": "e24b0a23cf4a1b7e4557462729d0f7277f13a5c06ef4201facafd0be80091ce9",
+      "bytes": 243553,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-category",
+      "producer_image_id": "apple-category-acceptance/wide-i15-dark-placeholder-raw.png",
+      "size": "wide",
+      "theme": "dark",
+      "dynamic_type": "large",
+      "state": "Category placeholder",
+      "reuse": "Accepted I15 Category supplement to I14 matrix, not recaptured on I16."
+    },
+    {
+      "path": "iphone/category/wide-i15-dark-populated-raw.png",
+      "sha256": "18bab1c1956abcdfe27aa5ed8d491cf45759f59219b32a30508f930fd8a20b1b",
+      "bytes": 242482,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-category",
+      "producer_image_id": "apple-category-acceptance/wide-i15-dark-populated-raw.png",
+      "size": "wide",
+      "theme": "dark",
+      "dynamic_type": "large",
+      "state": "Category populated",
+      "reuse": "Accepted I15 Category supplement to I14 matrix, not recaptured on I16."
+    },
+    {
+      "path": "iphone/category/wide-i15-light-placeholder-raw.png",
+      "sha256": "eec0ccdfd12679ffc4feaa2b0e0735875ddc46f5d9afdf8f629b140aa85716a4",
+      "bytes": 262846,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-category",
+      "producer_image_id": "apple-category-acceptance/wide-i15-light-placeholder-raw.png",
+      "size": "wide",
+      "theme": "light",
+      "dynamic_type": "large",
+      "state": "Category placeholder",
+      "reuse": "Accepted I15 Category supplement to I14 matrix, not recaptured on I16."
+    },
+    {
+      "path": "iphone/category/wide-i15-light-populated-raw.png",
+      "sha256": "e0c8219a9be1df4094b6674d8e3560f3ee45a062fb9c7f1bd79815cddf22bbe7",
+      "bytes": 262551,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-category",
+      "producer_image_id": "apple-category-acceptance/wide-i15-light-populated-raw.png",
+      "size": "wide",
+      "theme": "light",
+      "dynamic_type": "large",
+      "state": "Category populated",
+      "reuse": "Accepted I15 Category supplement to I14 matrix, not recaptured on I16."
+    },
+    {
+      "path": "iphone/home/wide-i16-fallback-dark-accessibility-large-home-raw.png",
+      "sha256": "13ccfb7b3ee72678918289a0f3014a76445ca73b5c4956ed69030fce43693353",
+      "bytes": 343915,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-home",
+      "producer_image_id": "ios-home-large-text-repair/wide-i16-fallback-dark-accessibility-large-home-raw.png",
+      "size": "wide",
+      "theme": "dark",
+      "dynamic_type": "accessibility-large",
+      "state": "Home with unavailable synthetic monetary hero",
+      "reuse": "Final I16 fallback Home capture selected by final visual closure."
+    },
+    {
+      "path": "iphone/home/compact-i16-fallback-dark-accessibility-large-home-raw.png",
+      "sha256": "30f4d7f8892f1b1adb027c1a6d5d84b92253a2f265116cdde733e3dc16909c77",
+      "bytes": 149572,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-home",
+      "producer_image_id": "ios-home-large-text-repair/compact-i16-fallback-dark-accessibility-large-home-raw.png",
+      "size": "compact",
+      "theme": "dark",
+      "dynamic_type": "accessibility-large",
+      "state": "Home with unavailable synthetic monetary hero",
+      "reuse": "Final I16 fallback Home capture selected by final visual closure."
+    },
+    {
+      "path": "iphone/home/wide-i16-fallback-dark-large-home-raw.png",
+      "sha256": "fa3b3aec1c4093e51901050a4ba62aa5ff625c628595c0976934e6b2c3d74e28",
+      "bytes": 265159,
+      "pixel_size": [
+        1320,
+        2868
+      ],
+      "provenance_group": "apple-home",
+      "producer_image_id": "ios-home-large-text-repair/wide-i16-fallback-dark-large-home-raw.png",
+      "size": "wide",
+      "theme": "dark",
+      "dynamic_type": "large",
+      "state": "Home with unavailable synthetic monetary hero",
+      "reuse": "Final I16 fallback Home capture selected by final visual closure."
+    },
+    {
+      "path": "iphone/home/compact-i16-fallback-light-large-home-raw.png",
+      "sha256": "2078bac5b30f7c73b3a9f96a2139182bd3272002258518344b402c839e5937cf",
+      "bytes": 185091,
+      "pixel_size": [
+        750,
+        1334
+      ],
+      "provenance_group": "apple-home",
+      "producer_image_id": "ios-home-large-text-repair/compact-i16-fallback-light-large-home-raw.png",
+      "size": "compact",
+      "theme": "light",
+      "dynamic_type": "large",
+      "state": "Home with unavailable synthetic monetary hero",
+      "reuse": "Final I16 fallback Home capture selected by final visual closure."
+    },
+    {
+      "path": "android-native/final-filter-empty.png",
+      "sha256": "7dc988301a004c22c0a22eb1b04b864ea868411bc91b8f03d53c2b7e6acf3699",
+      "bytes": 91552,
+      "pixel_size": [
+        906,
+        2284
+      ],
+      "provenance_group": "android-native-final",
+      "producer_image_id": "android-acceptance/final-filter-empty.png",
+      "state": "filtered Activity empty result",
+      "reuse": "Final native source 47b frame replaces historical r2 filtered-empty evidence."
+    }
+  ]
+}
