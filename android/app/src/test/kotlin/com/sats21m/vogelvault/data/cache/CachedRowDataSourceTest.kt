@@ -637,6 +637,11 @@ private class FakeRows : RowQueryRepository {
             else -> ConvexResult.Disabled
         }
 
+    override suspend fun listBtcTransfers(
+        viewer: FamilyMember, scope: RowVisibilityScope, month: String?, limit: Int?,
+    ): ConvexResult<RowSnapshot<com.sats21m.vogelvault.domain.BtcTransfer>> =
+        ConvexResult.Ok(RowSnapshot(emptyList(), true))
+
     override suspend fun listBtcBuys(
         viewer: FamilyMember,
         scope: RowVisibilityScope,

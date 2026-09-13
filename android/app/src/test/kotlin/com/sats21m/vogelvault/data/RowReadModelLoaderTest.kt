@@ -23,6 +23,17 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 
 class RowReadModelLoaderTest {
+    @Test fun `transfer slices distinguish empty complete incomplete and failed reads`() = runBlocking {
+        val empty = RowReadModelLoader(FakeRows()).load(FamilyMember.VICTOR)
+        assertEquals(Freshness.LIVE, empty.btcTransfers.status)
+        val incomplete = RowReadModelLoader(FakeRows(transfers = ConvexResult.Ok(RowSnapshot(emptyList(), false))))
+            .load(FamilyMember.VICTOR)
+        assertEquals(Freshness.ERROR, incomplete.btcTransfers.status)
+        val failed = RowReadModelLoader(FakeRows(transfers = ConvexResult.Unauthorized)).load(FamilyMember.VICTOR)
+        assertEquals(Freshness.ERROR, failed.btcTransfers.status)
+        assertEquals(true, failed.rowReadDiagnostics.any { it.projection == RowReadProjection.BITCOIN_TRANSFERS })
+    }
+
     @Test
     fun `English and canonical budget months derive the correct non-zero June actuals`() = runBlocking {
         for (wireMonth in listOf("June 2026", "2026-06")) {
@@ -310,7 +321,7 @@ class RowReadModelLoaderTest {
         assertEquals(Freshness.LIVE, model.btcBillPays.status)
         assertEquals(true, model.incomeFiguresUnavailable)
         assertEquals(true, model.netWorthFiguresUnavailable)
-        assertEquals(true, model.billPayLedgerUnavailable)
+        assertEquals(false, model.billPayLedgerUnavailable)
         assertEquals(false, model.todos.suppressFigures, "zero todos remains countable")
         assertEquals(Freshness.EMPTY, model.budget.status)
         assertEquals(emptyList(), model.transactions.value)
@@ -568,6 +579,8 @@ private class FakeRows(
         ConvexResult.Ok(RowSnapshot(emptyList(), true)),
     private val accounts: ConvexResult<RowSnapshot<BtcAccount>> =
         ConvexResult.Ok(RowSnapshot(emptyList(), true)),
+    private val transfers: ConvexResult<RowSnapshot<com.sats21m.vogelvault.domain.BtcTransfer>> =
+        ConvexResult.Ok(RowSnapshot(emptyList(), true)),
     private val income: ConvexResult<RowSnapshot<IncomeRow>> =
         ConvexResult.Ok(RowSnapshot(emptyList(), true)),
     private val billPays: ConvexResult<RowSnapshot<BtcBillPayRow>> =
@@ -606,6 +619,10 @@ private class FakeRows(
         incomeReads += 1
         return income
     }
+
+    override suspend fun listBtcTransfers(
+        viewer: FamilyMember, scope: RowVisibilityScope, month: String?, limit: Int?,
+    ): ConvexResult<RowSnapshot<com.sats21m.vogelvault.domain.BtcTransfer>> = transfers
 
     override suspend fun listBtcBuys(
         viewer: FamilyMember,

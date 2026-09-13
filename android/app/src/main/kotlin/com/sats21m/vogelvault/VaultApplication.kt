@@ -77,9 +77,9 @@ internal class TransactionDraftIdStore(
             ?.toMutableMap()
             ?: mutableMapOf()
 
-    fun currentId(scope: String): String = synchronized(lock) {
+    fun currentId(scope: String, newId: () -> String = { "android-${UUID.randomUUID()}" }): String = synchronized(lock) {
         pendingIdsByScope[scope]
-            ?: "android-${UUID.randomUUID()}".also { pendingId ->
+            ?: newId().also { pendingId ->
                 if (preferences != null) {
                     check(preferences.edit().putString(scope, pendingId).commit()) {
                         "pending draft id could not be persisted"

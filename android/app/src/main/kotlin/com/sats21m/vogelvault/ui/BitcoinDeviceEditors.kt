@@ -29,7 +29,9 @@ import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.components.LedgerTextField
 import com.sats21m.vogelvault.ui.theme.VaultSpace
-import java.time.Instant
+import com.sats21m.vogelvault.domain.BtcAccount
+import java.time.LocalDate
+import java.util.UUID
 import kotlinx.coroutines.launch
 
 /** Sheet-level defense when access changes after a navigation button was rendered. */
@@ -105,6 +107,8 @@ internal fun BitcoinDeleteAction(
 @Composable
 internal fun BtcAccountEntrySheet(
     viewer: FamilyMember,
+    accounts: List<BtcAccount>,
+    balanceAsOf: String?,
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
 ) {
@@ -113,6 +117,9 @@ internal fun BtcAccountEntrySheet(
     var custodyWire by rememberSaveable(viewer) { mutableStateOf(Custody.SELF_CUSTODY.key) }
     var working by remember { mutableStateOf(false) }
     var failure by rememberSaveable { mutableStateOf<String?>(null) }
+    val leaseScope = "bitcoin-account:${viewer.ledgerOwner.key}"
+    var pendingKey by rememberSaveable(viewer) { mutableStateOf<String?>(null) }
+    val validation = accountNameError(label, accounts, pendingKey)
     ModalBottomSheet(onDismissRequest = { if (!working) onDismiss() }) {
         Column(Modifier.fillMaxWidth().padding(VaultSpace.md), verticalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
             Text("Add Bitcoin account")
@@ -121,20 +128,21 @@ internal fun BtcAccountEntrySheet(
                 return@Column
             }
             if (WriteAccessNotice(viewer, DeviceCapability.BITCOIN)) return@Column
-            LedgerTextField(value = label, onValueChange = { label = it }, label = "Account name", enabled = !working)
+            LedgerTextField(value = label, onValueChange = { label = it }, label = "Account name", placeholder = "Coldcard, River, Phoenix", enabled = !working)
             Custody.entries.forEach { custody ->
                 TextButton(onClick = { custodyWire = custody.key }, enabled = !working) {
                     Text(if (custodyWire == custody.key) "✓ ${custody.label}" else custody.label)
                 }
             }
-            Text("New accounts start at zero. Transfer Bitcoin into this account after saving it.")
+            Text("Starts at 0 sats. Buys, bill pays, and transfers change the balance.")
+            validation?.let { Text(it) }
             failure?.let { Text(it) }
-            VaultButton(label = if (working) "Saving…" else "Save", enabled = !working && label.isNotBlank(), onClick = {
+            VaultButton(label = if (working) "Saving…" else "Save", enabled = !working && validation == null, onClick = {
                 val app = application ?: return@VaultButton
-                val leaseScope = "bitcoin-account:${viewer.key}"
-                val accountKey = app.transactionDraftIds.currentId(leaseScope)
+                val accountKey = app.transactionDraftIds.currentId(leaseScope) { newAccountKey(label, viewer.ledgerOwner) }
+                pendingKey = accountKey
                 val account = BtcAccountInput(accountKey, viewer.ledgerOwner, label.trim(),
-                    Custody.entries.first { it.key == custodyWire }, 0L, 0L, Instant.now().toString())
+                    Custody.entries.first { it.key == custodyWire }, 0L, 0L, accountAsOf(balanceAsOf))
                 working = true
                 app.applicationScope.launch {
                     val result = app.deviceMutationClient.mutate(ConvexMutation.UpsertBtcAccountFromDevice(account))
@@ -154,3 +162,18 @@ internal fun BtcAccountEntrySheet(
         }
     }
 }
+
+internal fun accountNameError(name: String, accounts: List<BtcAccount>, pendingKey: String? = null): String? = when {
+    name.trim().isEmpty() -> "Enter an account name."
+    accounts.any { it.key != pendingKey && it.label.trim().equals(name.trim(), ignoreCase = true) } ->
+        "An account with this name already exists."
+    else -> null
+}
+
+internal fun newAccountKey(name: String, owner: FamilyMember): String {
+    val slug = name.trim().lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty { "account" }
+    return "$slug-${owner.ledgerOwner.key}-${UUID.randomUUID().toString().replace("-", "").take(6)}"
+}
+
+internal fun accountAsOf(loadedAsOf: String?, today: LocalDate = LocalDate.now()): String =
+    loadedAsOf ?: "${today}T00:00:00.000Z"

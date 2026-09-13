@@ -485,8 +485,8 @@ internal fun EditableBudgetCategoryRow(
 }
 
 @Composable
-internal fun BtcBuyEntryAction(onClick: () -> Unit) {
-    VaultButton(label = stringResource(R.string.btc_buy_add_action), onClick = onClick, modifier = Modifier.fillMaxWidth())
+internal fun BtcBuyEntryAction(onClick: () -> Unit, enabled: Boolean = true) {
+    VaultButton(label = stringResource(R.string.btc_buy_add_action), onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth())
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

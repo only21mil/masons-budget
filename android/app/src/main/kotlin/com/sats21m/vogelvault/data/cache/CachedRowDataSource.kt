@@ -15,6 +15,7 @@ import com.sats21m.vogelvault.data.RowReadModelLoader
 import com.sats21m.vogelvault.data.RowSnapshot
 import com.sats21m.vogelvault.data.RowVisibilityScope
 import com.sats21m.vogelvault.domain.BtcAccount
+import com.sats21m.vogelvault.domain.BtcTransfer
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.Custody
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -330,6 +331,11 @@ private class CachingRowQueryRepository(
         }
         return result
     }
+
+    override suspend fun listBtcTransfers(
+        viewer: FamilyMember, scope: RowVisibilityScope, month: String?, limit: Int?,
+    ): ConvexResult<RowSnapshot<BtcTransfer>> =
+        reportUnauthorized(remote.listBtcTransfers(viewer, scope, month, limit))
 
     override suspend fun listBtcBillPays(
         viewer: FamilyMember,

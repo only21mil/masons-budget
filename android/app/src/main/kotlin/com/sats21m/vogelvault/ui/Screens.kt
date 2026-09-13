@@ -39,10 +39,14 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.DeviceCapability
+import com.sats21m.vogelvault.data.DeviceCapabilities
+import com.sats21m.vogelvault.data.BitcoinDeleteKind
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.BillPayBudgetEffect
 import com.sats21m.vogelvault.domain.BtcBillPay
+import com.sats21m.vogelvault.domain.BtcTransfer
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.BudgetSpend
 import com.sats21m.vogelvault.domain.DisplayUnit
@@ -186,6 +190,7 @@ fun ScreenHost(
     val remoteReadReady by
         vaultApplication?.effectiveReadReady?.collectAsStateWithLifecycle()
             ?: remember { mutableStateOf(false) }
+    val capabilities = vaultApplication?.deviceCapabilities ?: DeviceCapabilities()
     val transactionActions = remember(vaultApplication) { vaultApplication?.transactionActions }
     val budgetMonth = state.data.budget.value?.month
     val profile = state.activeProfile
@@ -226,6 +231,7 @@ fun ScreenHost(
     var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
     var showBtcBillPayEditor by rememberSaveable { mutableStateOf(false) }
     var showBtcTransferEditor by rememberSaveable { mutableStateOf(false) }
+    var showBtcAccountEditor by rememberSaveable { mutableStateOf(false) }
     var btcBillPayPrefill by remember(state.activeProfile) { mutableStateOf<BillPayPrefill?>(null) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
@@ -312,11 +318,14 @@ fun ScreenHost(
         )
     }
 
+    if (showBtcAccountEditor) {
+        BtcAccountEntrySheet(state.activeProfile, state.data.btcAccounts.value, state.data.btcBalance.value?.asOf, { showBtcAccountEditor = false }, onWriteSucceeded)
+    }
     if (addingTransaction) {
         AddTransactionSheet(
             state = state,
             onDismiss = { addingTransaction = false },
-            allowIncomeBitcoinBuy = destination == Destination.BUDGET,
+            allowIncomeBitcoinBuy = destination == Destination.BUDGET && capabilities.allows(profile, DeviceCapability.BITCOIN),
             onOpenIncomeBitcoinBuy = { income ->
                 addingTransaction = false
                 incomeBitcoinBuySeed = income
@@ -359,6 +368,7 @@ fun ScreenHost(
             displayUnit = displayUnit,
             onDisplayUnitChange = onDisplayUnitChange,
             onAddTransaction = { addingTransaction = true },
+            addUnavailableReason = capabilities.unavailableReason(profile, DeviceCapability.TRANSACTIONS),
         )
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
@@ -423,6 +433,7 @@ fun ScreenHost(
                             state = state,
                             scope = drilldownScope,
                             onEdit = editorSeed?.let { seed -> { budgetEditor = seed } },
+                            editUnavailableReason = capabilities.unavailableReason(profile, DeviceCapability.BUDGET),
                             transactions =
                                 transactionsInput.budgetCategoryTransactionsFor(
                                     viewer = state.activeProfile,
@@ -454,12 +465,16 @@ fun ScreenHost(
                             showBtcBillPayEditor = true
                         },
                         onAddTransfer = { showBtcTransferEditor = true },
+                        capabilities = capabilities,
+                        onAddAccount = { showBtcAccountEditor = true },
+                        onWriteSucceeded = onWriteSucceeded,
                     )
-                Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle)
+                Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle, onWriteSucceeded = onWriteSucceeded)
                 Destination.BTC_BILL_PAYS -> btcBillPaysScreen(
                     state,
                     displayUnit,
                     btcBillPaysTitle,
+                    onWriteSucceeded = onWriteSucceeded,
                     onAddBillPay = {
                         btcBillPayPrefill = null
                         showBtcBillPayEditor = true
@@ -532,6 +547,7 @@ fun ScreenHost(
     if (selectedTransaction != null && transactionActions != null) {
         TransactionDetailScreen(
             transaction = selectedTransaction,
+            viewer = state.activeProfile,
             actions = transactionActions,
             onClose = { selectedTransactionKey = null },
             onChanged = onWriteSucceeded,
@@ -550,6 +566,7 @@ private fun ScreenActionBar(
     displayUnit: DisplayUnit,
     onDisplayUnitChange: (DisplayUnit) -> Unit,
     onAddTransaction: () -> Unit,
+    addUnavailableReason: String? = null,
 ) {
     val tokens = LocalLedgerTheme.current
     val canAdd = destination in ADD_TRANSACTION_DESTINATIONS
@@ -572,8 +589,11 @@ private fun ScreenActionBar(
                 )
             }
             if (canAdd) {
-                VaultButton(label = stringResource(R.string.add_transaction_action), onClick = onAddTransaction)
+                VaultButton(label = stringResource(R.string.add_transaction_action), onClick = onAddTransaction, enabled = addUnavailableReason == null)
             }
+        }
+        if (canAdd && addUnavailableReason != null) {
+            Text(addUnavailableReason, modifier = Modifier.padding(horizontal = tokens.density.screenGutter), style = MaterialTheme.typography.bodySmall)
         }
         HorizontalHairline()
     }
@@ -1037,8 +1057,12 @@ private fun VaultLazyListScope.budget(
     // the contract withholds the action otherwise.
     if (slice.status == Freshness.LIVE) {
         item {
+            val app = LocalContext.current.applicationContext as? VaultApplication
+            val reason = (app?.deviceCapabilities ?: DeviceCapabilities())
+                .unavailableReason(state.activeProfile, DeviceCapability.BUDGET)
             BudgetPlanCarryAction(
                 activeProfile = state.activeProfile,
+                unavailableReason = reason,
                 budget = budget,
                 selectedMonth = derived.month,
                 onCopied = onPlanCopied,
@@ -1139,8 +1163,10 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
     onSelectTransaction: (Transaction) -> Unit,
     /** Null when this month or read is not writable; the button is then absent, not disabled. */
     onEdit: (() -> Unit)? = null,
+    editUnavailableReason: String? = null,
 ) {
     item {
+        if (onEdit != null && editUnavailableReason != null) Text(editUnavailableReason, style = MaterialTheme.typography.bodySmall)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) {
                 Text(stringResource(R.string.budget_category_transactions_back))
@@ -1150,6 +1176,7 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
                 VaultButton(
                     label = stringResource(R.string.budget_category_edit_action),
                     onClick = onEdit,
+                    enabled = editUnavailableReason == null,
                     secondary = true,
                 )
             }
@@ -1319,6 +1346,9 @@ private fun VaultLazyListScope.bitcoin(
     onAddBuy: () -> Unit,
     onAddBillPay: () -> Unit,
     onAddTransfer: () -> Unit,
+    capabilities: DeviceCapabilities,
+    onAddAccount: () -> Unit,
+    onWriteSucceeded: () -> Unit,
 ) {
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
@@ -1362,6 +1392,14 @@ private fun VaultLazyListScope.bitcoin(
         )
     }
     item { StaleNotice(slice.status) }
+    val canWriteBitcoin = capabilities.allows(state.activeProfile, DeviceCapability.BITCOIN)
+    item {
+        val reason = capabilities.unavailableReason(state.activeProfile, DeviceCapability.BITCOIN)
+        if (state.activeProfile.isAdult) {
+            TextButton(onClick = onAddAccount, enabled = reason == null) { Text("Add account") }
+            if (reason != null) Text(reason, style = MaterialTheme.typography.bodySmall)
+        }
+    }
     accountList(
         sectionKey = "bitcoin-accounts",
         title = "Accounts in net worth",
@@ -1372,10 +1410,10 @@ private fun VaultLazyListScope.bitcoin(
         quote = quote,
     )
     if (state.data.btcBuys.status == Freshness.LIVE) {
-        item { BtcBuyEntryAction(onAddBuy) }
+        item { BtcBuyEntryAction(onAddBuy, enabled = canWriteBitcoin) }
     }
-    if (canAddBtcBillPay(state.data.btcBillPays.status, state.activeProfile)) {
-        item { BtcBillPayEntryAction(onAddBillPay) }
+    if (!state.data.billPayLedgerUnavailable && canAddBtcBillPay(state.data.btcBillPays.status, state.activeProfile)) {
+        item { BtcBillPayEntryAction(onAddBillPay, enabled = canWriteBitcoin) }
     }
     val transferAccounts = projection.transferAccounts.filter {
         it.owner == state.activeProfile.ledgerOwner
@@ -1385,7 +1423,7 @@ private fun VaultLazyListScope.bitcoin(
         state.data.btcAccounts.status == Freshness.LIVE &&
         transferAccounts.size >= 2
     ) {
-        item { BtcTransferEntryAction(onAddTransfer) }
+        item { BtcTransferEntryAction(onAddTransfer, enabled = canWriteBitcoin) }
     }
     if (state.data.btcBuys.suppressFigures) {
         item {
@@ -1413,6 +1451,8 @@ private fun VaultLazyListScope.bitcoin(
                 figure = formatBtcBuyAmount(buy, displayUnit),
                 figureColor = LocalLedgerTheme.current.colors.foreground,
             )
+            if (state.data.btcBuys.status == Freshness.LIVE) BitcoinDeleteAction(
+                state.activeProfile, BitcoinDeleteKind.BUY, buy.id, buy.owner, buy.updatedAtMs, onWriteSucceeded)
         }
     }
     if (!state.data.billPaysAvailableTo(state.activeProfile)) {
@@ -1436,8 +1476,29 @@ private fun VaultLazyListScope.bitcoin(
                 figureColor = LocalLedgerTheme.current.colors.loss,
                 badge = payment.platform,
             )
+            if (state.data.btcBillPays.status == Freshness.LIVE) BitcoinDeleteAction(
+                state.activeProfile, BitcoinDeleteKind.BILL_PAY, payment.id, payment.owner, payment.updatedAtMs, onWriteSucceeded)
         }
     }
+    val transfers = state.data.btcTransfers
+    val visibleTransfers = transfers.value.visibleTo(state.activeProfile)
+    if (transfers.suppressFigures || visibleTransfers.isEmpty()) {
+        item { Panel("Transfers", transfers.source) {
+            StateBlock(if (transfers.suppressFigures) transfers.status else Freshness.EMPTY)
+        } }
+    } else {
+        keyedPanel(sectionKey = "bitcoin-transfers", title = "Transfers", source = transfers.source,
+            rows = visibleTransfers, rowKey = { "${it.owner.key}:${it.id}" }, revealKey = transfers.updatedAt) { transfer ->
+            val accounts = state.data.btcAccounts.value.visibleTo(state.activeProfile)
+            fun accountLabel(key: String) = accounts.firstOrNull { it.owner == transfer.owner && it.key == key }?.label ?: key
+            LedgerRow(primary = "${accountLabel(transfer.fromAccountKey)} → ${accountLabel(transfer.toAccountKey)}",
+                secondary = "${transfer.date} · Fee ${Money.formatSats(transfer.feeSats)}",
+                figure = state.formatBitcoin(transfer.sats, displayUnit))
+            if (transfers.status == Freshness.LIVE) BitcoinDeleteAction(state.activeProfile,
+                BitcoinDeleteKind.TRANSFER, transfer.id, transfer.owner, transfer.updatedAtMs, onWriteSucceeded)
+        }
+    }
+
 }
 
 @Composable

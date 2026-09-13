@@ -41,6 +41,8 @@ import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.draftIdWriteOutcome
 import com.sats21m.vogelvault.onServerAccepted
+import com.sats21m.vogelvault.data.DeviceCapabilities
+import com.sats21m.vogelvault.data.DeviceCapability
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.convexWriteFailureMessage
@@ -484,6 +486,8 @@ internal fun AddTransactionSheet(
     val transactionDraftIds = application?.transactionDraftIds ?: fallbackTransactionDraftIds
     val btcBuyDraftIds = application?.btcBuyDraftIds
     val transactionGateway = remember(application) { application?.transactionDeviceMutationGateway }
+    val writeUnavailableReason = (application?.deviceCapabilities ?: DeviceCapabilities())
+        .unavailableReason(state.activeProfile, DeviceCapability.TRANSACTIONS)
     val saveScope = remember(application) { application?.applicationScope }
     val uiActive = remember { AtomicBoolean(true) }
     DisposableEffect(Unit) {
@@ -737,6 +741,7 @@ internal fun AddTransactionSheet(
                 maxLines = 4,
             )
 
+            writeUnavailableReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             errorMessage?.let {
                 Text(it, color = LocalLedgerTheme.current.colors.loss, style = MaterialTheme.typography.bodySmall)
             }
@@ -774,7 +779,7 @@ internal fun AddTransactionSheet(
                                 }
                             }
                         },
-                        enabled = !saving && type == AddTransactionType.INCOME,
+                        enabled = !saving && writeUnavailableReason == null && type == AddTransactionType.INCOME,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(stringResource(R.string.budget_income_add_as_bitcoin_buy))
@@ -866,7 +871,7 @@ internal fun AddTransactionSheet(
                             }
                         }
                     },
-                    enabled = !saving,
+                    enabled = !saving && writeUnavailableReason == null,
                     modifier = Modifier.weight(1f),
                 )
             }

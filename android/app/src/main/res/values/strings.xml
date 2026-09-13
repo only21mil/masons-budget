@@ -312,4 +312,5 @@
     <string name="read_bootstrap_recovery">Connection recovery</string>
     <string name="read_bootstrap_read_token">Read access token</string>
     <string name="read_bootstrap_save_read">Restore read access</string>
+    <string name="convex_projection_bitcoin_transfers">Bitcoin transfers</string>
 </resources>

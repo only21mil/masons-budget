@@ -18,6 +18,36 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class RowQueryRepositoryTest {
     @Test
+    fun `transfer query preserves exact quantities scope and revision without spend`() = runBlocking {
+        val poster = RecordingPoster(rowSuccess(
+            """[{"transferId":"move-1","owner":"victor","date":"2026-09-13","month":"2026-09","fromAccountKey":"river","toAccountKey":"cold","sats":${convexInt64(987654321)},"feeSats":${convexInt64(123)},"note":"Cold storage","updatedAtMs":1800000000000}]""",
+        ))
+        val result = repositoryWith(poster).listBtcTransfers(FamilyMember.RACHEL, RowVisibilityScope.VISIBLE, "2026-09")
+        val row = (result as ConvexResult.Ok).value.rows.single()
+        assertEquals(987654321L, row.sats)
+        assertEquals(123L, row.feeSats)
+        assertEquals(1800000000000L, row.updatedAtMs)
+        assertEquals(0L, row.incomeCentsDelta)
+        assertEquals(0L, row.spendCentsDelta)
+        assertEquals(-123L, row.netWorthDeltaSats)
+        val args = sentArgs(poster)
+        assertEquals("rachel", args["viewer"]!!.jsonPrimitive.content)
+        assertEquals("visible", args["scope"]!!.jsonPrimitive.content)
+        assertEquals("2026-09", args["month"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `invalid transfer quantities and same-account movements fail closed`() = runBlocking {
+        for ((destination, sats, fee) in listOf(Triple("river", 100L, 0L), Triple("cold", 0L, 0L), Triple("cold", 100L, -1L))) {
+            val poster = RecordingPoster(rowSuccess(
+                """[{"transferId":"move-1","owner":"victor","date":"2026-09-13","month":"2026-09","fromAccountKey":"river","toAccountKey":"$destination","sats":${convexInt64(sats)},"feeSats":${convexInt64(fee)},"updatedAtMs":1800000000000}]""",
+            ))
+            val result = repositoryWith(poster).listBtcTransfers(FamilyMember.VICTOR, RowVisibilityScope.VISIBLE)
+            kotlin.test.assertIs<ConvexResult.Failed>(result)
+        }
+    }
+
+    @Test
     fun `transaction rows decode exact int64 money and preserve completeness`() {
         val poster = RecordingPoster(
             rowSuccess(

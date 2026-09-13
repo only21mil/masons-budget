@@ -136,6 +136,7 @@ data class VaultUiState(
             data.income.status to data.income.updatedAt,
             data.btcBalance.status to data.btcBalance.updatedAt,
             data.btcBillPays.status to data.btcBillPays.updatedAt,
+            data.btcTransfers.status to data.btcTransfers.updatedAt,
             financeStatus to financeDocument?.updatedAtMs,
             marketQuoteStatus to null,
         )
@@ -150,6 +151,7 @@ data class VaultUiState(
                 data.income.value.isNotEmpty() ||
                 data.btcBalance.value != null ||
                 data.btcBillPays.value.isNotEmpty() ||
+                data.btcTransfers.value.isNotEmpty() ||
                 financeDocument != null ||
                 marketQuotes != null
 
@@ -613,6 +615,7 @@ private val RowReadProjection.labelRes: Int
         RowReadProjection.INCOME -> R.string.convex_projection_income
         RowReadProjection.BITCOIN_BALANCE -> R.string.convex_projection_bitcoin_balance
         RowReadProjection.BITCOIN_BILL_PAYS -> R.string.convex_projection_bitcoin_bill_pays
+        RowReadProjection.BITCOIN_TRANSFERS -> R.string.convex_projection_bitcoin_transfers
         RowReadProjection.FINANCE -> R.string.convex_projection_finance
         RowReadProjection.MARKET_QUOTES -> R.string.convex_projection_market_quotes
     }
@@ -627,6 +630,7 @@ private fun loadingModel(profile: FamilyMember): ReadModel {
         btcAccounts = loading(empty.btcAccounts),
         btcBuys = loading(empty.btcBuys),
         todos = loading(empty.todos),
+        btcTransfers = loading(empty.btcTransfers),
         btcPriceCents = 0L,
     )
 }
@@ -644,5 +648,6 @@ private fun ReadModel.withCacheFallback(cached: ReadModel?): ReadModel {
         btcAccounts = btcAccounts.fallbackTo(cached.btcAccounts),
         btcBuys = btcBuys.fallbackTo(cached.btcBuys),
         todos = todos.fallbackTo(cached.todos),
+        btcTransfers = btcTransfers.fallbackTo(cached.btcTransfers),
     )
 }

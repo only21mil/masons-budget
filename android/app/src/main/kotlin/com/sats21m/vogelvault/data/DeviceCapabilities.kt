@@ -15,14 +15,17 @@ internal data class DeviceCapabilities(
     val granted: Set<String> = emptySet(),
 ) {
     fun allows(profile: FamilyMember, capability: DeviceCapability): Boolean =
-        this.profile == profile && capability.wire in granted
+        matchesProfile(profile, capability) && capability.wire in granted
 
     fun unavailableReason(profile: FamilyMember, capability: DeviceCapability): String? = when {
         this.profile == null -> "Connect this phone before changing ${capability.action}."
-        this.profile != profile -> "Connect this phone for ${profile.displayName} to make changes."
+        !matchesProfile(profile, capability) -> "Connect this phone for ${profile.displayName} to make changes."
         capability.wire !in granted -> "This phone has read-only access to ${capability.action}."
         else -> null
     }
+
+    private fun matchesProfile(viewer: FamilyMember, capability: DeviceCapability): Boolean =
+        profile == viewer || (capability != DeviceCapability.TODOS && profile?.isAdult == true && viewer.isAdult)
 
     companion object {
         val supported = DeviceCapability.entries.map { it.wire }.toSet()

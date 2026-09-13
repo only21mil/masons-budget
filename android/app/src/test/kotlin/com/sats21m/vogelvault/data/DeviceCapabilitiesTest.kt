@@ -26,6 +26,18 @@ class DeviceCapabilitiesTest {
     }
 
     @Test
+    fun `adult money grants cover the household while tasks and children stay profile bound`() {
+        val granted = DeviceCapabilities(FamilyMember.RACHEL, DeviceCapabilities.supported)
+        for (capability in listOf(DeviceCapability.TRANSACTIONS, DeviceCapability.BUDGET, DeviceCapability.BITCOIN)) {
+            assertTrue(granted.allows(FamilyMember.VICTOR, capability))
+            assertNull(granted.unavailableReason(FamilyMember.VICTOR, capability))
+            assertFalse(granted.allows(FamilyMember.MASON, capability))
+            assertFalse(DeviceCapabilities(FamilyMember.MASON, DeviceCapabilities.supported).allows(FamilyMember.VICTOR, capability))
+        }
+        assertFalse(granted.allows(FamilyMember.VICTOR, DeviceCapability.TODOS))
+    }
+
+    @Test
     fun `device Bitcoin deletes retain server revision and correct source`() {
         for (kind in BitcoinDeleteKind.entries) {
             val mutation = ConvexMutation.DeleteBitcoinFromDevice(kind, "record", FamilyMember.RACHEL, 123L)
