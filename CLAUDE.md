@@ -1,12 +1,16 @@
 # Vogel Vault coding-agent instructions
 
-Read `AGENTS.md` in this repo before doing any work. It carries the app-specific
-rules, the family/visibility contract, and the release path.
+Follow `AGENTS.md` in this repo. Reuse its instructions when supplied in context
+or already read this session. Read it before work when those instructions are
+missing, stale, or lost after compaction. Load task-scoped references when their
+triggers apply, including all applicable safety and review instructions.
+`AGENTS.md` carries the app-specific rules, family/visibility contract, and
+release path.
 
 Two things to know before you touch anything:
 
-- **Tracking is GitHub only.** Branch, then open a pull request. Do not use
-  Linear. Do not commit to `main`.
+- **Tracking follows the Buzz-first rules in `AGENTS.md`.** GitHub is the CI
+  mirror. Do not use Linear or commit to `main`.
 - **Nothing is kept locally.** Clone where you need it, push the branch, delete
   the checkout. Builds run in GitHub Actions, not on a workstation.
 
@@ -14,7 +18,7 @@ Two things to know before you touch anything:
 
 Do not start a distributable app build without Victor's explicit approval.
 
-Freely: fix bugs, file GitHub issues, edit code, run static checks and tests.
+Freely: fix bugs, file Buzz issues, edit code, run static checks and tests.
 
 Stop and ask before: bumping the build number for distribution, archiving,
 exporting, uploading to TestFlight or the App Store, notarizing, or any other
