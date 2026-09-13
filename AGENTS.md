@@ -43,7 +43,7 @@ This is **The Vogel Vault** (internal repo name still "Mason's Budget App"). Swi
 - Bundle id: `com.sats21m.masonsbudget` · Team `384ZGKG4GB`
 - Releases go to TestFlight through GitHub Actions. See "Build, archive,
   TestFlight" below. Both schemes ship together.
-- Swift types retain `MC2` names for compatibility with the surviving blob schema. `MasonsBudget/MasonsBudget/Services/MC2DTOs.swift`, `MC2Mapper.swift`, `MC2Reader.swift`, and `MC2SyncService.swift` remain load-bearing until every shipped client has moved off `dataFiles`; do not rename, remove, or change their decoding contract casually.
+- `Services/LegacyBlobDTOs.swift` defines the surviving blob schema; `Services/MC2DTOs.swift` retains historical Swift type aliases. `LedgerMapper.swift`, `ConvexDataReader.swift`, and `ConvexSyncService.swift` map and sync the current data. These paths are relative to `MasonsBudget/MasonsBudget/`. Preserve the legacy decoding contract while shipped clients still consume `dataFiles`.
 - Native app writeback exists through `AppWriteSyncService` for approved app-originated transactions/todos when `ConvexConfig.isConfigured` is true. Do **not** put shared Convex write tokens in Swift source, UserDefaults, or bundled config; app writeback must use the approved configured path only. Any production write or migration remains approval-gated.
 - The reviewed monthly-import route lives in
   `docs/production-monthly-import.md`. It is the only admin ingestion path:
@@ -80,7 +80,7 @@ extension FamilyMember {
 }
 ```
 
-**Use `canSee(dataOwnedBy:)` everywhere — view filters AND sync mappers. NEVER strict equality.** Strict `==` breaks Rachel's profile because canonical adult records use `owner: "victor"`; an `accountOwner == .rachel` check filters them all out and leaves her tabs empty. We hit this exact bug in v0.3 (see `MC2Mapper.mapFinances`).
+**Use `canSee(dataOwnedBy:)` everywhere — view filters AND sync mappers. NEVER strict equality.** Strict `==` breaks Rachel's profile because canonical adult records use `owner: "victor"`; an `accountOwner == .rachel` check filters them all out and leaves her tabs empty. We hit this exact bug in v0.3 (the current mapping is `LedgerMapper.mapFinances`).
 
 Records persisted to SwiftData are tagged with the **canonical** owner from the JSON (adults → `.victor`, mason_401k → `.mason`). Visibility is then resolved at query time via `canSee`. Don't tag records with the active member just because that member triggered the sync.
 
@@ -90,19 +90,29 @@ Profile switching is in `Views/Screens/ProfileSwitcherView.swift`. Kids cannot s
 
 ## Code surface map
 
+Paths below are relative to `MasonsBudget/MasonsBudget/`.
+
 | Area | File |
 |---|---|
 | Family enum + visibility | `Models/SharedEnums.swift` |
-| Legacy blob DTOs (the `MC2` name is compatibility, not a live service) | `Services/MC2DTOs.swift` |
-| Map blob DTO → SwiftData model | `Services/MC2Mapper.swift` |
-| Convex blob sync orchestration | `Services/MC2SyncService.swift` |
+| Legacy blob DTOs | `Services/LegacyBlobDTOs.swift` |
+| Historical `MC2` type aliases | `Services/MC2DTOs.swift` |
+| Map blob DTO → SwiftData model | `Services/LedgerMapper.swift` |
+| Convex sync orchestration | `Services/ConvexSyncService.swift` |
 | Convex HTTP client | `Services/ConvexClient.swift` |
-| Convex `dataFiles` reader | `Services/MC2Reader.swift` |
+| Convex row reader with legacy `dataFiles` fallbacks | `Services/ConvexDataReader.swift` |
 | App entry | `App/MasonsBudgetApp.swift` |
 | Screens / tabs | `Views/Screens/*.swift` |
 | Charts | `Views/Components/*.swift` |
 
-Sync entry points in `MC2SyncService.syncAll()` are split by member. Mason path: `syncSonBalances`, `syncMasonBudget`, `syncMasonTransactions`, `syncMasonBTCBuys`, `syncFinances`. Adult path: `syncTransactions`, `syncBudget`, `syncBTCAccounts`, `syncBTCBuys`, `syncBTCBillPays`, `syncFinances`. The wipe-and-replace pattern (`replaceAll(...)`) is intentional — profile switches re-sync from scratch.
+`ConvexSyncService.syncAll()` syncs todos for every member. Adults also sync
+transactions, budget, BTC accounts, child balances, BTC buys, bill pays, and
+finances. Mason's dedicated path syncs child balances, his budget, transactions,
+BTC buys, and finances. Maddox currently receives only shared todos through his
+visibility scope. Replacement helpers reconcile by record type, owner scope, and snapshot source.
+They protect active optimistic writes and can remove failed pending rows after
+authoritative reads. Preserve these reconciliation rules when changing sync
+behavior.
 
 ---
 
@@ -199,9 +209,10 @@ archive, signing, or upload. It reports every tool it cannot find rather than
 passing silently, so a bare checkout will show failures for absent tooling; that
 is the script working, not the repo being broken.
 
-SourceKit/LSP "Cannot find type" diagnostics on `MC2DTOs` / `MC2Mapper` /
-`MC2SyncService` are **persistent index noise**, not real errors. Trust
-`xcodebuild`.
+SourceKit/LSP "Cannot find type" diagnostics have historically included stale
+index references to the former `MC2Mapper` and `MC2SyncService` names. The current
+files are `LedgerMapper.swift` and `ConvexSyncService.swift`. Verify against the
+approved unsigned Apple CI checks; an editor diagnostic alone is not a build result.
 
 ---
 
@@ -235,9 +246,11 @@ MC2 was the Python service that originally owned the family-finance JSON and
 pushed projections into Convex. Its file names, field names, record shapes, and
 adult-versus-child conventions survive in the only remaining copy of the data
 and therefore shape DTOs, mappers, fixtures, and tests throughout this codebase.
-Names such as `MC2DTOs`, `MC2Mapper`, `MC2Reader`, `MC2SyncService`, and legacy
-UserDefaults keys preserve that blob compatibility; they do not imply a live
-upstream, companion service, or companion repository. Treat Convex and this
+`MC2DTOs.swift` retains source-compatibility aliases, and legacy UserDefaults
+keys remain. Historical references to `MC2Mapper`, `MC2Reader`, and
+`MC2SyncService` refer to code now named `LedgerMapper`, `ConvexDataReader`, and
+`ConvexSyncService`. These names do not imply a live upstream, companion service,
+or companion repository. Treat Convex and this
 repository as the current data boundary, and preserve the old JSON decoding
 contract while shipped clients still consume `dataFiles`.
 
