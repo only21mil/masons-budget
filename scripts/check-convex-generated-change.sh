@@ -7,8 +7,8 @@
 # Honest limit: every checked artifact is writable repository text. This cannot
 # prove codegen ran, cannot distinguish generated declarations from a convincing
 # hand edit, and cannot prove that types inside an existing module are fresh.
-# scripts/verify-convex-generated-freshness.sh supplies the stronger local check
-# by actually invoking authenticated codegen from a clean generated tree.
+# Remote generation is separately approval-gated and may persist deployment
+# preparation state. See docs/convex-codegen-safety.md.
 
 set -euo pipefail
 
@@ -46,13 +46,12 @@ if [[ "$recorded_schema_checksum" != "$expected_schema_checksum" ]]; then
   cat >&2 <<'EOF'
 ERROR: convex/schema.sha256 does not attest the current convex/schema.ts.
 
-Regenerate and commit the generated declarations from the repository root:
-  set -a; . "$HOME/.config/sats/secrets.env"; set +a
-  npm run codegen
-  git add convex/_generated convex/schema.sha256
+Remote regeneration requires separate Victor approval for this revision and
+target because it may persist schema/index preparation state. Follow
+docs/convex-codegen-safety.md, then review and commit the generated files.
 
-This CI check is credential-free. The local codegen command must succeed before
-it writes the schema checksum; a checksum can still be forged manually, so this
+This CI check is credential-free. The approved remote preparation must succeed
+before it writes the schema checksum; a checksum can still be forged manually, so this
 is a smoke alarm rather than proof that codegen ran.
 EOF
   exit 1
@@ -116,10 +115,9 @@ NODE
 then
   cat >&2 <<'EOF'
 
-Regenerate and commit the generated declarations from the repository root:
-  set -a; . "$HOME/.config/sats/secrets.env"; set +a
-  npm run codegen
-  git add convex/_generated
+Remote regeneration requires separate Victor approval for this revision and
+target because it may persist schema/index preparation state. Follow
+docs/convex-codegen-safety.md, then review and commit the generated files.
 
 This inventory comparison is deterministic but still cannot prove codegen ran
 or that declarations within an existing module were generated rather than
@@ -164,13 +162,12 @@ fi
 cat >&2 <<'EOF'
 ERROR: convex/schema.ts changed without a corresponding schema.sha256 attestation change.
 
-Regenerate and commit the generated declarations from the repository root:
-  set -a; . "$HOME/.config/sats/secrets.env"; set +a
-  npm run codegen
-  git add convex/_generated convex/schema.sha256
+Remote regeneration requires separate Victor approval for this revision and
+target because it may persist schema/index preparation state. Follow
+docs/convex-codegen-safety.md, then review and commit the generated files.
 
 This CI check is only a credential-free heuristic. Even a matching changed
-checksum can be forged by hand. The authenticated codegen command above is what
-determines whether the committed declarations are fresh.
+checksum can be forged by hand. This check never regenerates declarations or
+contacts Convex. It does not prove full declaration freshness.
 EOF
 exit 1
