@@ -5,6 +5,7 @@ import SwiftUI
 /// task sections, and the Projects + Areas lists into a single hub. Reuses `TaskRowView`
 /// and `TaskSmartListView` so the row/list behaviour stays in one place for SAT-1335.
 struct TasksView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) var theme
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
@@ -228,7 +229,7 @@ struct TasksView: View {
             Text("PROJECTS")
                 .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter + 4)
 
             if derivedProjects.isEmpty {
                 emptyState(icon: "tray", headline: "No projects yet",
@@ -248,7 +249,7 @@ struct TasksView: View {
                     }
                 }
                 .glassCard(padding: 0)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
             }
         }
     }
@@ -308,9 +309,9 @@ struct TasksView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
         .glassCard(padding: 0)
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
     }
 
     private var areasList: some View {
@@ -318,7 +319,7 @@ struct TasksView: View {
             Text("AREAS")
                 .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter + 4)
 
             if derivedAreas.isEmpty {
                 emptyState(icon: "square.stack.3d.up", headline: "No areas yet",
@@ -366,7 +367,7 @@ struct TasksView: View {
                     }
                 }
                 .glassCard(padding: 0)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
             }
         }
     }

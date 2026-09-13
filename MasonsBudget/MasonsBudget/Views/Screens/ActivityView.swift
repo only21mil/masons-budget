@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct ActivityView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.modelContext) private var modelContext
     @Environment(\.theme) var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
@@ -176,7 +177,7 @@ struct ActivityView: View {
                     }
                 }
             }
-            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
         }
     }
 

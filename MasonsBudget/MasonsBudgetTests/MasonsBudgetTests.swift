@@ -840,6 +840,12 @@ final class MasonsBudgetTests: XCTestCase {
 
         XCTAssertEqual(Set(adultCategories.map(\.ownerMember)), Set([.victor, .rachel]))
         XCTAssertEqual(childCategories.map(\.ownerMember), [.mason])
+        let spouseCategories = try context.fetch(FetchDescriptor(predicate: BudgetCategory.predicate(for: .rachel)))
+        let invalidCategories = try context.fetch(FetchDescriptor(predicate: BudgetCategory.predicate(for: nil)))
+        let otherChildCategories = try context.fetch(FetchDescriptor(predicate: BudgetCategory.predicate(for: .maddox)))
+        XCTAssertEqual(Set(spouseCategories.map(\.ownerMember)), Set([.victor, .rachel]))
+        XCTAssertTrue(invalidCategories.isEmpty)
+        XCTAssertTrue(otherChildCategories.isEmpty)
     }
 
     func testBTCAccountInit() throws {

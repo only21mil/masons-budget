@@ -3,6 +3,7 @@ import SwiftData
 import SwiftUI
 
 struct HomeDashboardView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @Environment(CanonicalFinancialSourceStore.self) private var financials
     @AppStorage("selected_family_member") private var memberRaw = FamilyMember.victor.rawValue
@@ -133,7 +134,7 @@ struct HomeDashboardView: View {
         }
         .foregroundStyle(theme.text)
         .glassCard(padding: 16, radius: 4)
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
     }
 
     private var custody: some View {
@@ -167,7 +168,7 @@ struct HomeDashboardView: View {
             }
         }
         .foregroundStyle(theme.text)
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
     }
     @ViewBuilder private var bitcoinLinks: some View {
         link("Accounts") { BitcoinOverviewView() }
@@ -188,9 +189,10 @@ struct HomeDashboardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .glassCard(padding: 16, radius: 4)
+            .accessibilityElement(children: .combine)
         }
         .buttonStyle(.plain).foregroundStyle(theme.text)
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
     }
 
     private var todayPreview: some View {
@@ -204,7 +206,7 @@ struct HomeDashboardView: View {
 
             ForEach(Array(todayTasks.prefix(4))) { todo in
                 TaskRowView(todo: todo)
-                    .listRowInsets(EdgeInsets(top: 0, leading: AppLayout.sectionPadding, bottom: 0, trailing: AppLayout.sectionPadding))
+                    .listRowInsets(EdgeInsets(top: 0, leading: ledgerTokens.metrics.screenGutter, bottom: 0, trailing: ledgerTokens.metrics.screenGutter))
             }
             if todayTasks.isEmpty { Text("No tasks due today").ledgerType(.rowMeta) }
             InlineAddTaskBar(defaultDueDate: Date(), isExpanded: $addingTask)
@@ -213,7 +215,7 @@ struct HomeDashboardView: View {
         .foregroundStyle(theme.text)
         .listRowBackground(theme.surface)
         .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets(top: 0, leading: AppLayout.sectionPadding + 16, bottom: 0, trailing: AppLayout.sectionPadding + 16))
+        .listRowInsets(EdgeInsets(top: 0, leading: ledgerTokens.metrics.screenGutter + 16, bottom: 0, trailing: ledgerTokens.metrics.screenGutter + 16))
     }
 
     private struct RecentEntry: Identifiable {
@@ -259,7 +261,7 @@ struct HomeDashboardView: View {
             if financials.income.value == nil { Text("Income unavailable").ledgerType(.rowMeta) }
         }
         .foregroundStyle(theme.text).glassCard(padding: 16, radius: 4)
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
     }
     private func recentRow(_ title: String, date: Date, amount: Decimal) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -293,7 +295,7 @@ struct HomeDashboardView: View {
             .id("\(member.rawValue):\(lastSync)")
         }
         .foregroundStyle(theme.text).glassCard(padding: 16, radius: 4)
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
     }
     private func link(_ title: String, @ViewBuilder destination: @escaping () -> some View) -> some View {
         NavigationLink { LedgerDrilldown(title: title, content: destination) } label: {

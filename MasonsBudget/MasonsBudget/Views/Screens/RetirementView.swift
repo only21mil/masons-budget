@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct RetirementView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage(MarketQuoteService.cacheKey) private var quoteCache = Data()
@@ -112,13 +113,13 @@ struct RetirementView: View {
                             .ledgerType(.rowMeta)
                             .foregroundStyle(theme.textMuted)
                     }
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     .padding(.bottom, 12)
 
                     if canonicalBTC != nil, btcPrice > 0 {
                         if activeMember.isAdult, btcPrice > 0 {
                             goalsCard
-                                .padding(.horizontal, AppLayout.sectionPadding)
+                                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                                 .padding(.bottom, AppLayout.cardSpacing)
                         }
 
@@ -129,7 +130,7 @@ struct RetirementView: View {
                             title: "Bitcoin Retirement Balance",
                             message: "A Bitcoin balance and an available Bitcoin price are needed to show these values.",
                         )
-                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                         .padding(.bottom, AppLayout.cardSpacing)
                     }
 
@@ -147,7 +148,7 @@ struct RetirementView: View {
                                 title: "Retirement Projection",
                                 message: "A household projection needs a Bitcoin balance, an available Bitcoin price, and income for this month.",
                             )
-                            .padding(.horizontal, AppLayout.sectionPadding)
+                            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                             .padding(.bottom, AppLayout.cardSpacing)
                         }
 
@@ -221,7 +222,7 @@ struct RetirementView: View {
             Text("STORAGE")
                 .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter + 4)
 
             VStack(spacing: 0) {
                 NavigationLink {
@@ -249,7 +250,7 @@ struct RetirementView: View {
                 .buttonStyle(.plain)
             }
             .glassCard(padding: 0, radius: 18)
-            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
         }
     }
 
@@ -295,7 +296,7 @@ struct RetirementView: View {
                 Spacer()
                 AmountView(sats: totalHoldingsSats, unit: unit, role: .rowFigure, accent: true, btcPrice: btcPrice)
             }
-            .padding(.horizontal, AppLayout.sectionPadding + 4)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter + 4)
 
             VStack(spacing: 0) {
                 ForEach(Array(visibleHoldings.enumerated()), id: \.element.name) { idx, account in
@@ -306,7 +307,7 @@ struct RetirementView: View {
                 }
             }
             .glassCard(padding: 0, radius: 18)
-            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
         }
     }
 
@@ -530,7 +531,7 @@ struct RetirementView: View {
             Text("HOUSEHOLD PROJECTION")
                 .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter + 4)
 
             VStack(spacing: 16) {
                 horizonPicker
@@ -542,7 +543,7 @@ struct RetirementView: View {
                 projectionAssumptions
             }
             .glassCard()
-            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
         }
     }
 
@@ -584,6 +585,7 @@ struct RetirementView: View {
                 .ledgerType(.body)
                 .foregroundStyle(theme.textMuted)
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var projectionBreakdown: some View {
@@ -599,7 +601,7 @@ struct RetirementView: View {
                 sats: holdingsSats,
                 subtitle: "IBIT 15% · VOO 10% · 100% match",
             )
-            Divider().background(theme.border)
+            LedgerRule(level: .row)
             projectionAmountRow(
                 label: "Bitcoin",
                 icon: "bitcoinsign.circle.fill",
@@ -686,7 +688,7 @@ struct RetirementView: View {
             Text("LOTS")
                 .ledgerType(.sectionLabel)
                 .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter + 4)
 
             VStack(spacing: 0) {
                 if visibleLots.isEmpty {
@@ -704,7 +706,7 @@ struct RetirementView: View {
                 }
             }
             .glassCard(padding: 0)
-            .padding(.horizontal, AppLayout.sectionPadding)
+            .padding(.horizontal, ledgerTokens.metrics.screenGutter)
         }
     }
 

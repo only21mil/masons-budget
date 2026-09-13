@@ -362,19 +362,12 @@ enum AppFormatter {
 // MARK: - Glass Card Modifier
 
 struct GlassCard: ViewModifier {
-    @Environment(\.theme) var theme
+    // Preserve legacy call sites while the shared panel owns radius and rules.
     var padding: CGFloat = AppLayout.paddingDefault
     var radius: CGFloat = AppLayout.radiusLarge
 
     func body(content: Content) -> some View {
-        content
-            .padding(padding)
-            .background(theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(theme.border, lineWidth: 1),
-            )
+        LedgerPanel(padding: padding) { content }
     }
 }
 

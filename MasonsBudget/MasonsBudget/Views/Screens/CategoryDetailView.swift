@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct CategoryDetailView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -85,7 +86,7 @@ struct CategoryDetailView: View {
                 }
                 .foregroundStyle(theme.text)
                 .glassCard(padding: AppLayout.paddingCompact, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 VStack(spacing: 0) {
                     HStack {
@@ -126,7 +127,7 @@ struct CategoryDetailView: View {
                     .padding(14)
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 VStack(spacing: 0) {
                     ForEach(Array(categoryTransactions.prefix(20).enumerated()), id: \.element.id) { idx, tx in
@@ -162,7 +163,7 @@ struct CategoryDetailView: View {
                     }
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 if canDelete {
                     VStack(alignment: .leading, spacing: 10) {
@@ -185,7 +186,7 @@ struct CategoryDetailView: View {
                         .buttonStyle(.bordered)
                         .disabled(deletion.isDeleting)
                     }
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                 }
             }
             .padding(.bottom, 100)
@@ -207,7 +208,7 @@ struct CategoryDetailView: View {
                 Button("Cancel", role: .cancel) {}
                 Button("Delete", role: .destructive) { deleteCategory() }
             } message: {
-                Text("This deletes the current canonical budget category after its server revision is verified.")
+                Text("Deletes this category from your current budget.")
             }
             .onChange(of: deletion.accepted) { _, accepted in
                 guard accepted else { return }

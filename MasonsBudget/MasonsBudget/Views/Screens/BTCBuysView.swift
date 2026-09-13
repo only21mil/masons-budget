@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct BTCBuysView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) var theme
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
@@ -65,9 +66,9 @@ struct BTCBuysView: View {
                         } else { Text("Pull to refresh your buys.").ledgerType(.rowMeta) }
                     }
                     .foregroundStyle(theme.text)
-                    .frame(maxWidth: .infinity).padding(AppLayout.sectionPadding)
+                    .frame(maxWidth: .infinity).padding(ledgerTokens.metrics.screenGutter)
                 } else { summaryCard }
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     .padding(.bottom, AppLayout.cardSpacing)
 
                 ForEach(grouped, id: \.0) { month, buys in
@@ -90,7 +91,7 @@ struct BTCBuysView: View {
                         }
                         .glassCard(padding: 0, radius: AppLayout.radiusMedium)
                     }
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     .padding(.bottom, AppLayout.cardSpacing)
                 }
             }

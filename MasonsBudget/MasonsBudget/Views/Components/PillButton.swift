@@ -11,15 +11,17 @@ struct PillButton: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .ledgerType(.button)
+                .ledgerType(.chip)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
+                .frame(minWidth: LedgerMetrics.minimumHitTarget, minHeight: LedgerMetrics.minimumHitTarget)
                 .foregroundStyle(foregroundColor)
                 .background(backgroundColor)
                 .clipShape(Capsule())
                 .ledgerAnimation(.chipAndNavigation, value: isActive)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     private var foregroundColor: Color {

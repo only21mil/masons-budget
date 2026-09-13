@@ -109,6 +109,7 @@ final class AppleScreenAdoptionTests: XCTestCase {
     }
 
     func testOnboardingEndsWithSyncSetup() {
+        XCTAssertEqual(OnboardingStep.all[1].title, "One household, separate profiles")
         XCTAssertEqual(OnboardingStep.all.count, 4)
         XCTAssertEqual(OnboardingStep.all.map(\.eyebrow), ["01 · LEDGER", "02 · FAMILY", "03 · READY", "04 · CONNECT"])
         XCTAssertEqual(OnboardingStep.progressLabel(for: 0), "Step 1 of 4")

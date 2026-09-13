@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct BitcoinOverviewView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
@@ -28,15 +29,15 @@ struct BitcoinOverviewView: View {
 
                 if let balance {
                     stackCard(balance)
-                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                         .padding(.bottom, AppLayout.cardSpacing)
 
                     custodyCards(balance)
-                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                         .padding(.bottom, AppLayout.cardSpacing)
 
                     accountsCard(balance)
-                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                     VStack(spacing: 14) {
                         if isAdult { Button("Transfer Bitcoin") { compose = .transfer }.disabled(!AppWritebackConfig.canWriteBitcoin) }
                         NavigationLink("Bill payments") { BTCBillPayView() }
@@ -46,16 +47,16 @@ struct BitcoinOverviewView: View {
                             NavigationLink("Manage accounts") { BitcoinEntryHistoryView(entity: .account, title: "Accounts") }
                         }
                     }
-                    .padding(AppLayout.sectionPadding)
+                    .padding(ledgerTokens.metrics.screenGutter)
                 } else if case .loading = canonicalFinancials.btcBalance {
                     LedgerSkeletonRows()
-                        .padding(.horizontal, AppLayout.sectionPadding)
+                        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                 } else {
                     RequiredFinancialSourceView(
                         title: "Bitcoin",
-                        message: "The required Bitcoin balance document is empty or unavailable.",
+                        message: "Your Bitcoin balance is empty or unavailable.",
                     )
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                 }
             }
             .padding(.bottom, 112)
@@ -241,6 +242,7 @@ private enum BitcoinComposeRoute: String, Identifiable {
 }
 
 struct BitcoinPriceView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @Environment(\.ledgerTokens) private var tokens
     @Environment(\.ledgerEffects) private var effects
@@ -308,7 +310,7 @@ struct BitcoinPriceView: View {
                     }
                 }
                 .glassCard(padding: 18, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 VStack(spacing: 0) {
                     priceRow("SOURCE", value: source.isEmpty ? "Fallback" : source)
@@ -316,7 +318,7 @@ struct BitcoinPriceView: View {
                     priceRow("UPDATED", value: updatedLabel)
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
                 Button {
                     refresh()
@@ -334,7 +336,7 @@ struct BitcoinPriceView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(theme.accent)
                 .disabled(isRefreshing)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
             }
             .padding(.bottom, 100)
         }
@@ -373,6 +375,7 @@ struct BitcoinPriceView: View {
 }
 
 struct BitcoinTransferView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @Environment(\.dismiss) private var dismiss
@@ -429,7 +432,7 @@ struct BitcoinTransferView: View {
                     DatePicker("Date", selection: $date, displayedComponents: .date).padding(14)
                 }
                 .glassCard(padding: 0, radius: AppLayout.radiusMedium)
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                 if let totalDebit, let sats = Int64(amount), sats > 0 {
                     Text("From loses \(totalDebit) sats · To gains \(sats) sats").ledgerType(.rowMeta)
                 }
@@ -448,7 +451,7 @@ struct BitcoinTransferView: View {
                 Spacer()
                 Button(isSaving ? "Saving" : "Save transfer", action: save).buttonStyle(.borderedProminent).disabled(!canSave)
             }
-            .padding(AppLayout.sectionPadding).background(theme.surface)
+            .padding(ledgerTokens.metrics.screenGutter).background(theme.surface)
         }
     }
 
@@ -489,6 +492,7 @@ struct BitcoinTransferView: View {
 }
 
 struct AddBitcoinAccountView: View {
+    @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
@@ -531,11 +535,12 @@ struct AddBitcoinAccountView: View {
                     if !didLoadDocument { Button("Load account details") { Task { await loadDocument() } } }
                     VStack(spacing: 14) {
                         TextField("Coldcard, River, Phoenix", text: $label).ledgerType(.textInput)
-                        Picker("Custody", selection: $custody) {
-                            Text("Self custody").tag(BTCCustody.selfCustody)
-                            Text("Exchange").tag(BTCCustody.exchange)
+                        HStack(spacing: LedgerMetrics.siblingChipSpacing) {
+                            PillButton(label: "Self custody", isActive: custody == .selfCustody, accent: true) { custody = .selfCustody }
+                            PillButton(label: "Exchange", isActive: custody == .exchange, accent: true) { custody = .exchange }
                         }
-                        .pickerStyle(.segmented)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("Custody")
                         if existing == nil { Text("Starts at 0 sats. Buys, bill pays, and transfers change the balance.").ledgerType(.rowMeta) }
                     }
                     .glassCard(padding: 14, radius: AppLayout.radiusMedium)
@@ -543,7 +548,7 @@ struct AddBitcoinAccountView: View {
                     if let message { Text(message).foregroundStyle(theme.warn) }
                     if existing != nil { Button("Delete account", role: .destructive) { showingDelete = true } }
                 }
-                .padding(.horizontal, AppLayout.sectionPadding)
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
             }
             .background(theme.bg)
             .disabled(isSaving)
@@ -555,7 +560,7 @@ struct AddBitcoinAccountView: View {
                     Spacer()
                     Button(isSaving ? "Saving" : "Save account", action: save).buttonStyle(.borderedProminent).disabled(!canSave)
                 }
-                .padding(AppLayout.sectionPadding).background(theme.surface)
+                .padding(ledgerTokens.metrics.screenGutter).background(theme.surface)
             }
             .task(id: memberRaw) { await loadDocument() }
             .confirmationDialog("Delete this account?", isPresented: $showingDelete, titleVisibility: .visible) {
