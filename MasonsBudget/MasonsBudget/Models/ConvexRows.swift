@@ -719,6 +719,14 @@ struct CanonicalIncomeSummary: Sendable {
         return Decimal(monthCents[month, default: 0]) / 100
     }
 
+    /// Historical monthly snapshots do not contain cumulative annual income.
+    func yearToDate(forMonth month: String, currentMonth: String, snapshotYTD: Decimal?) -> Decimal? {
+        if rows.isEmpty { return month == currentMonth ? snapshotYTD : nil }
+        let year = String(month.prefix(4))
+        return monthCents.filter { $0.key.hasPrefix(year + "-") && $0.key <= month }
+            .reduce(Decimal(0)) { $0 + Decimal($1.value) / 100 }
+    }
+
     let monthCents: [String: Int64]
     let yearCents: [Int: Int64]
 

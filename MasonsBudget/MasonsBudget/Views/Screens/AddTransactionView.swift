@@ -761,7 +761,7 @@ struct AddTransactionView: View {
         ) { [writeFeedback, canonicalFinancials, dismiss] result in
             if result.isOk {
                 _ = writeFeedback.finish(result, operation: "Income")
-                Task { await canonicalFinancials.load(viewer: member) }
+                canonicalFinancials.requestReload()
                 dismiss()
             } else {
                 // Income has no optimistic transaction or background retry owner.

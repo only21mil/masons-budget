@@ -146,8 +146,10 @@ struct BudgetView: View {
         let month = CategoryDetailView.monthKey(for: selectedMonth)
         let summary = incomeSummary
         let snapshot = snapshot(for: selectedMonth)
-        let year = Calendar.current.component(.year, from: selectedMonth)
-        let ytd = summary.flatMap { $0.rows.isEmpty ? snapshot?.ytdIncome : Decimal($0.yearCents[year, default: 0]) / 100 }
+        let ytd = summary?.yearToDate(
+            forMonth: month, currentMonth: CategoryDetailView.monthKey(for: Date()),
+            snapshotYTD: snapshot?.ytdIncome,
+        )
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("INCOME").ledgerType(.sectionLabel)
