@@ -1,4 +1,3 @@
-import LocalAuthentication
 import SwiftUI
 
 struct ProfileSwitcherView: View {
@@ -7,7 +6,7 @@ struct ProfileSwitcherView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
 
-    @State private var authError: String?
+    @EnvironmentObject private var authentication: AppAuthenticationSession
 
     private var activeMember: FamilyMember {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
@@ -31,7 +30,7 @@ struct ProfileSwitcherView: View {
                     .padding(.horizontal, ledgerTokens.metrics.screenGutter)
 
 
-                    if let authError {
+                    if let authError = authentication.error {
                         Text(authError)
                             .ledgerType(.body)
                             .foregroundStyle(theme.danger)
@@ -48,11 +47,15 @@ struct ProfileSwitcherView: View {
             #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { dismiss() }
+                        Button("Close") {
+                            authentication.cancelPendingAuthentication()
+                            dismiss()
+                        }
                             .foregroundStyle(theme.accent)
                     }
                 }
         }
+        .onDisappear { authentication.cancelPendingAuthentication() }
     }
 
     private func profileRow(_ member: FamilyMember) -> some View {
@@ -100,34 +103,10 @@ struct ProfileSwitcherView: View {
             .padding(.vertical, ledgerTokens.metrics.rowVerticalPadding)
         }
         .buttonStyle(.plain)
-        .disabled(!isAllowed || isSelected)
+        .disabled(!isAllowed || isSelected || authentication.isAuthenticating || !authentication.isActive)
     }
 
     private func select(_ member: FamilyMember) {
-        guard activeMember.allowedSwitchTargets.contains(member), member != activeMember else { return }
-        guard activeMember.requiresAuthToSwitch else {
-            selectedMemberRaw = member.rawValue
-            dismiss()
-            return
-        }
-
-        let context = LAContext()
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            authError = "Authentication is required before switching profiles."
-            return
-        }
-
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Switch Vogel Vault profile") { success, _ in
-            DispatchQueue.main.async {
-                if success {
-                    selectedMemberRaw = member.rawValue
-                    authError = nil
-                    dismiss()
-                } else {
-                    authError = "Authentication failed. Try again to switch profiles."
-                }
-            }
-        }
+        authentication.select(member) { dismiss() }
     }
 }
