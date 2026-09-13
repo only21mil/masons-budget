@@ -297,21 +297,24 @@ struct BTCBillPayComposeView: View {
                         }.padding(14)
                         if effect == .budgetCategory {
                             Hairline()
-                            Menu {
-                                Picker("Category", selection: $category) {
-                                    Text("Select category").tag("")
-                                    ForEach(householdCategories, id: \.self) { Text($0).tag($0) }
+                            HStack {
+                                Text("CATEGORY").ledgerType(.kpiLabel).foregroundStyle(theme.textMuted)
+                                Spacer()
+                                Menu {
+                                    Picker("Category", selection: $category) {
+                                        Text("Select category").tag("")
+                                        ForEach(householdCategories, id: \.self) { Text($0).tag($0) }
+                                    }
+                                    .pickerStyle(.inline)
+                                } label: {
+                                    pickerLabel(category.isEmpty ? "Select category" : category)
                                 }
-                                .pickerStyle(.inline)
-                            } label: {
-                                pickerLabel(category.isEmpty ? "Select category" : category)
-                            }
-                            .buttonStyle(.plain)
-                            .menuIndicator(.hidden)
-                            .tint(theme.accent)
-                            .accessibilityLabel("Category")
-                            .accessibilityValue(category.isEmpty ? "Select category" : category)
-                            .padding(14)
+                                .buttonStyle(.plain)
+                                .menuIndicator(.hidden)
+                                .tint(theme.accent)
+                                .accessibilityLabel("Category")
+                                .accessibilityValue(category.isEmpty ? "Select category" : category)
+                            }.padding(14)
                         }
                         Hairline()
                         composeField("AMOUNT USD", prompt: "$0.00", text: $amount)
