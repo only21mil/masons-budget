@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - iOS Tabs
 
 enum AppTab: String, CaseIterable, Identifiable {
-    case home, budget, today, vault, more
+    case home, activity, budget, tasks
 
     var id: String {
         rawValue
@@ -12,21 +12,19 @@ enum AppTab: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .home: "Bitcoin"
+        case .home: "Home"
         case .budget: "Budget"
-        case .today: "Today"
-        case .vault: "Vault"
-        case .more: "More"
+        case .activity: "Activity"
+        case .tasks: "Tasks"
         }
     }
 
     var icon: String {
         switch self {
-        case .home: "bitcoinsign.circle"
+        case .home: "house.fill"
         case .budget: "chart.bar.fill"
-        case .today: "checkmark.circle.fill"
-        case .vault: "lock.shield.fill"
-        case .more: "ellipsis.circle"
+        case .activity: "bolt.fill"
+        case .tasks: "checkmark.circle.fill"
         }
     }
 
@@ -41,7 +39,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 
 enum MacNav: String, CaseIterable, Identifiable {
     case dashboard, price, budget, activity, btcBuys, billPay, transfer, retirement, netWorth
-    case today, inbox, upcoming, flagged, projects, family, awards, settings, syncSetup, export
+    case today, inbox, upcoming, flagged, tasks, family, awards, settings, syncSetup, export
 
     var id: String {
         rawValue
@@ -62,7 +60,7 @@ enum MacNav: String, CaseIterable, Identifiable {
         case .inbox: "Inbox"
         case .upcoming: "Upcoming"
         case .flagged: "Flagged"
-        case .projects: "Projects"
+        case .tasks: "Tasks"
         case .family: "Family"
         case .awards: "Awards"
         case .settings: "Settings"
@@ -86,7 +84,7 @@ enum MacNav: String, CaseIterable, Identifiable {
         case .inbox: "tray"
         case .upcoming: "calendar"
         case .flagged: "flag.fill"
-        case .projects: "tray.fill"
+        case .tasks: "tray.fill"
         case .family: "person.3.fill"
         case .awards: "medal.fill"
         case .settings: "gearshape"
@@ -96,7 +94,7 @@ enum MacNav: String, CaseIterable, Identifiable {
     }
 
     static let moneyItems: [MacNav] = [.dashboard, .price, .budget, .activity, .btcBuys, .billPay, .transfer, .retirement, .netWorth]
-    static let taskItems: [MacNav] = [.today, .inbox, .upcoming, .flagged, .projects]
+    static let taskItems: [MacNav] = [.today, .inbox, .upcoming, .flagged, .tasks]
     static let toolItems: [MacNav] = [.family, .awards, .settings, .syncSetup, .export]
 }
 
@@ -122,6 +120,12 @@ struct ContentView: View {
     @State private var readRetryTask: Task<Void, Never>?
     @State private var showAddTransaction = false
     @State private var showProfileSwitcher = false
+    @State private var showAccountMenu = false
+    @State private var showTaskEntry = false
+    @State private var showAddChoices = false
+    @State private var entryUnavailable = false
+    @State private var showEntrySetup = false
+    @State private var addType: TransactionActivityType = .spend
 
     #if os(macOS)
         @State private var macNav: MacNav? = .dashboard
@@ -183,6 +187,27 @@ struct ContentView: View {
         .sheet(isPresented: $showProfileSwitcher) {
             ProfileSwitcherView()
         }
+        .sheet(isPresented: $showAccountMenu) {
+            NavigationStack { MoreMenuView() }
+        }
+        .sheet(isPresented: $showTaskEntry) {
+            NavigationStack {
+                TaskSmartListView(filter: .inbox, initiallyAdding: true)
+                    .environment(\.ledgerRootTitle, "")
+                    .navigationTitle("New task")
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showTaskEntry = false } } }
+            }
+        }
+        .alert("Entry unavailable", isPresented: $entryUnavailable) {
+            Button("Open Sync Setup") { showEntrySetup = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This device needs permission for that entry in the selected profile.")
+        }
+        .sheet(isPresented: $showEntrySetup) { NavigationStack { SyncSetupView() } }
+        .confirmationDialog("Add entry", isPresented: $showAddChoices, titleVisibility: .visible) {
+            addChoices
+        }
     }
 
     // MARK: - iOS
@@ -193,27 +218,18 @@ struct ContentView: View {
                 ForEach(AppTab.allCases) { tab in
                     NavigationStack {
                         screenForTab(tab)
-                            .toolbar {
-                                ToolbarItem(placement: .topBarLeading) {
-                                    avatarButton
-                                }
-                                ToolbarItem(placement: .principal) {
-                                    UnitToggleView(unit: unitBinding, size: .sm)
-                                }
-                                ToolbarItem(placement: .topBarTrailing) {
-                                    HStack(spacing: 8) {
-                                        syncStatusGlyph
-                                        addButton
-                                    }
-                                }
-                            }
-                            .toolbarBackground(theme.bg, for: .navigationBar)
+                            .environment(\.ledgerRootTitle, tab.label)
+                            .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
+                                avatarButton
+                                syncStatusGlyph
+                                addButton
+                            }))
+                            .toolbar(.hidden, for: .navigationBar)
                     }
                     .tabItem {
                         Image(systemName: tab.icon)
                         Text(tab.tabTitle)
                     }
-                    .badge(tab == .more ? AppleMoreScreen.allCases.count : 0)
                     .tag(tab)
                 }
             }
@@ -316,7 +332,7 @@ struct ContentView: View {
                 case .inbox: TaskSmartListView(filter: .inbox)
                 case .upcoming: TaskSmartListView(filter: .upcoming)
                 case .flagged: TaskSmartListView(filter: .flagged)
-                case .projects: ProjectsView()
+                case .tasks: TasksView()
                 case .family: FamilyView()
                 case .awards: AwardsView()
                 case .settings: SettingsView()
@@ -479,7 +495,7 @@ struct ContentView: View {
 
     private var avatarButton: some View {
         Button {
-            showProfileSwitcher = true
+            showAccountMenu = true
         } label: {
             RoundedRectangle(cornerRadius: 10)
                 .fill(theme.accentFill)
@@ -492,22 +508,49 @@ struct ContentView: View {
                 .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Switch profile")
+        .frame(minWidth: 44, minHeight: 44)
+        .accessibilityLabel("Profile and settings")
     }
 
     private var addButton: some View {
-        Button {
-            showAddTransaction = true
+        Menu {
+            addChoices
         } label: {
             Image(systemName: "plus")
                 .font(AppFont.icon(size: 14, weight: .semibold))
                 .foregroundStyle(theme.onAccent)
                 .frame(width: 32, height: 32)
                 .background(theme.accentFill)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .shadow(color: Color(hex: 0xF7931A).opacity(0.35), radius: 3, y: 2)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .frame(minWidth: 44, minHeight: 44)
+        } primaryAction: {
+            if selectedTab == .tasks { openTask() }
+            else { openAdd(.spend) }
         }
-        .accessibilityLabel("New transaction")
+        .accessibilityLabel(selectedTab == .tasks ? "Add task" : "Add expense")
+        .accessibilityAction(named: "Choose entry type") { showAddChoices = true }
+    }
+
+    @ViewBuilder
+    private var addChoices: some View {
+        Button("Expense", systemImage: "minus.circle") { openAdd(.spend) }
+        Button("Income", systemImage: "plus.circle") { openAdd(.income) }
+        Button("Buy BTC", systemImage: "bitcoinsign.circle") { openAdd(.btcBuy) }
+        Button("Task", systemImage: "checkmark.circle") { openTask() }
+    }
+
+    private func openTask() {
+        guard AppWritebackConfig.canWriteTasks else { entryUnavailable = true; return }
+        showTaskEntry = true
+    }
+
+    private func openAdd(_ type: TransactionActivityType) {
+        let allowed = type == .btcBuy
+            ? activeMember.isAdult && AppWritebackConfig.canWriteBitcoin
+            : AppWritebackConfig.canWriteLedger
+        guard allowed else { entryUnavailable = true; return }
+        addType = type
+        showAddTransaction = true
     }
 
     @ViewBuilder
@@ -676,16 +719,15 @@ struct ContentView: View {
     @ViewBuilder
     private func screenForTab(_ tab: AppTab) -> some View {
         switch tab {
-        case .home: BitcoinOverviewView()
+        case .home: HomeDashboardView()
         case .budget: BudgetView()
-        case .today: TodayView()
-        case .vault: RetirementView()
-        case .more: MoreMenuView()
+        case .activity: ActivityView()
+        case .tasks: TasksView()
         }
     }
 
     private var addTransactionSheet: some View {
-        AddTransactionView()
+        AddTransactionView(initialType: addType)
             .presentationDetents([.large])
     }
 }

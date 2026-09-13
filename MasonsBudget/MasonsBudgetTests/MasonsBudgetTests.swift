@@ -21,7 +21,7 @@ final class MasonsBudgetTests: XCTestCase {
 
     func testAppTabCases() {
         let tabs = AppTab.allCases
-        XCTAssertEqual(tabs, [.home, .budget, .today, .vault, .more])
+        XCTAssertEqual(tabs, [.home, .activity, .budget, .tasks])
         for tab in tabs {
             XCTAssertFalse(tab.label.isEmpty, "\(tab) should have a label")
             XCTAssertFalse(tab.icon.isEmpty, "\(tab) should have an icon")
@@ -29,7 +29,7 @@ final class MasonsBudgetTests: XCTestCase {
 
         XCTAssertTrue(MacNav.moneyItems.contains(.activity))
         XCTAssertTrue(MacNav.moneyItems.contains(.netWorth))
-        XCTAssertTrue(MacNav.taskItems.contains(.projects))
+        XCTAssertEqual(MacNav.taskItems, [.today, .inbox, .upcoming, .flagged, .tasks])
         XCTAssertEqual(MacNav.toolItems, [.family, .awards, .settings, .syncSetup, .export])
         XCTAssertEqual(MacNav.syncSetup.label, "Sync Setup")
         XCTAssertFalse(MacNav.syncSetup.icon.isEmpty)
