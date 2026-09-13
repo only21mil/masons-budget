@@ -65,8 +65,15 @@ struct BudgetView: View {
         }.reduce(Decimal(0)) { $0 + $1.spendAmount }
     }
 
+    private var incomeSummary: CanonicalIncomeSummary? {
+        guard let summary = canonicalFinancials.income.value,
+              summary.rows.allSatisfy({ activeMember.sharesNetWorth(with: $0.owner) })
+        else { return nil }
+        return summary
+    }
+
     private func incomeForOffset(_ offset: Int) -> Decimal? {
-        guard let income = canonicalFinancials.income.value else { return nil }
+        guard let income = incomeSummary else { return nil }
         let cal = Calendar.current
         let date = cal.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
         let df = DateFormatter()
@@ -137,10 +144,10 @@ struct BudgetView: View {
 
     private var incomeSection: some View {
         let month = CategoryDetailView.monthKey(for: selectedMonth)
-        let summary = canonicalFinancials.income.value
+        let summary = incomeSummary
         let snapshot = snapshot(for: selectedMonth)
         let year = Calendar.current.component(.year, from: selectedMonth)
-        let ytd = summary.map { $0.rows.isEmpty ? snapshot?.ytdIncome : Decimal($0.yearCents[year, default: 0]) / 100 } ?? nil
+        let ytd = summary.flatMap { $0.rows.isEmpty ? snapshot?.ytdIncome : Decimal($0.yearCents[year, default: 0]) / 100 }
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("INCOME").ledgerType(.sectionLabel)
