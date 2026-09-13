@@ -492,14 +492,15 @@ jobs:
       # than Gradle. Cache and prefetch them explicitly, then run Robolectric
       # offline below. A cold runner still needs Maven once, but curl retries
       # transient faults and SHA-512 verification rejects partial/corrupt files.
-      - name: Restore Robolectric API 34 and 35 runtimes
+      - name: Restore Robolectric API 29, 34 and 35 runtimes
         if: steps.probe.outputs.app == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ${{ runner.temp }}/robolectric-dependencies/android-all-instrumented-15-robolectric-12650502-i7.jar
             ${{ runner.temp }}/robolectric-dependencies/android-all-instrumented-14-robolectric-10818077-i7.jar
-          key: robolectric-${{ runner.os }}-android-all-instrumented-15-robolectric-12650502-i7-android-all-instrumented-14-robolectric-10818077-i7
+            ${{ runner.temp }}/robolectric-dependencies/android-all-instrumented-10-robolectric-5803371-i7.jar
+          key: robolectric-${{ runner.os }}-android-all-instrumented-10-robolectric-5803371-i7-android-all-instrumented-15-robolectric-12650502-i7-android-all-instrumented-14-robolectric-10818077-i7
 
       - name: Prefetch Robolectric API 35 runtime
         if: steps.probe.outputs.app == 'true'
@@ -543,6 +544,41 @@ jobs:
           ROBOLECTRIC_RUNTIME: android-all-instrumented-14-robolectric-10818077-i7.jar
           ROBOLECTRIC_RUNTIME_SHA512: 7cdc0b1306e7865f1acd25a363073149654caee5b8e278c5ae37ff4724185724eff39f0b0111800b521e640bb28698d9d2e655134a801569a0f07470e7b5f455
           ROBOLECTRIC_RUNTIME_URL: https://repo.maven.apache.org/maven2/org/robolectric/android-all-instrumented/14-robolectric-10818077-i7/android-all-instrumented-14-robolectric-10818077-i7.jar
+        run: |
+          set -euo pipefail
+          mkdir -p "$ROBOLECTRIC_DEPENDENCY_DIR"
+          runtime_path="$ROBOLECTRIC_DEPENDENCY_DIR/$ROBOLECTRIC_RUNTIME"
+
+          if printf '%s  %s\n' "$ROBOLECTRIC_RUNTIME_SHA512" "$runtime_path" |
+            sha512sum --check --status; then
+            echo "Using checksum-verified cached $ROBOLECTRIC_RUNTIME."
+            exit 0
+          fi
+
+          partial_path="${runtime_path}.partial"
+          rm -f "$partial_path"
+          trap 'rm -f "$partial_path"' EXIT
+          curl \
+            --fail \
+            --location \
+            --retry 5 \
+            --retry-all-errors \
+            --retry-delay 2 \
+            --connect-timeout 15 \
+            --max-time 600 \
+            --output "$partial_path" \
+            "$ROBOLECTRIC_RUNTIME_URL"
+          printf '%s  %s\n' "$ROBOLECTRIC_RUNTIME_SHA512" "$partial_path" |
+            sha512sum --check
+          mv "$partial_path" "$runtime_path"
+
+      - name: Prefetch Robolectric API 29 runtime
+        if: steps.probe.outputs.app == 'true'
+        env:
+          ROBOLECTRIC_DEPENDENCY_DIR: ${{ runner.temp }}/robolectric-dependencies
+          ROBOLECTRIC_RUNTIME: android-all-instrumented-10-robolectric-5803371-i7.jar
+          ROBOLECTRIC_RUNTIME_SHA512: d8907eec0646ae1b71ec306cc61449c76c61a7a08eaca44eb4aa30937cfcf5dcaf7d0938cbea76b3bd85a83646b012ff499faa11cea45e32df7aff62e791951f
+          ROBOLECTRIC_RUNTIME_URL: https://repo.maven.apache.org/maven2/org/robolectric/android-all-instrumented/10-robolectric-5803371-i7/android-all-instrumented-10-robolectric-5803371-i7.jar
         run: |
           set -euo pipefail
           mkdir -p "$ROBOLECTRIC_DEPENDENCY_DIR"
@@ -700,7 +736,7 @@ jobs:
 
       # Required PR verification: every app unit test except the screenshot
       # packet. This includes the real Robolectric cache/config tests and runs
-      # against prefetched API 34 and 35 runtimes with network resolution
+      # against prefetched API 29, 34 and 35 runtimes with network resolution
       # disabled.
       - name: Verify declared Robolectric SDK runtimes are prefetched
         if: steps.probe.outputs.app == 'true'
@@ -709,6 +745,7 @@ jobs:
         run: |
           set -euo pipefail
           declare -A runtime_by_sdk=(
+            [29]='android-all-instrumented-10-robolectric-5803371-i7.jar'
             [34]='android-all-instrumented-14-robolectric-10818077-i7.jar'
             [35]='android-all-instrumented-15-robolectric-12650502-i7.jar'
           )

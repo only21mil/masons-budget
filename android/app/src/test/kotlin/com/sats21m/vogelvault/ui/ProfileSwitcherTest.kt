@@ -3,12 +3,13 @@ package com.sats21m.vogelvault.ui
 import com.sats21m.vogelvault.domain.FamilyMember
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ProfileSwitcherTest {
     @Test
-    fun `adult switch waits for authentication completion`() {
+    fun `adult to adult switch does not require authentication`() {
         var switchedTo: FamilyMember? = null
         val request = profileSwitchRequest(
             current = FamilyMember.VICTOR,
@@ -17,7 +18,7 @@ class ProfileSwitcherTest {
         )
 
         assertEquals(null, switchedTo)
-        assertTrue(requireNotNull(request).requiresAuthentication)
+        assertFalse(requireNotNull(request).requiresAuthentication)
 
         request.authorize()
 
@@ -25,14 +26,20 @@ class ProfileSwitcherTest {
     }
 
     @Test
-    fun `child cannot create an adult switch request`() {
+    fun `child adult entry requires device authentication`() {
         val request = profileSwitchRequest(
             current = FamilyMember.MASON,
             target = FamilyMember.VICTOR,
             onAuthorized = {},
         )
 
-        assertNull(request)
+        assertTrue(requireNotNull(request).requiresAuthentication)
+    }
+
+    @Test
+    fun `children cannot switch directly to a sibling`() {
+        assertNull(profileSwitchRequest(FamilyMember.MASON, FamilyMember.MADDOX) {})
+        assertNull(profileSwitchRequest(FamilyMember.MADDOX, FamilyMember.MASON) {})
     }
 
     @Test

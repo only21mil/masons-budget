@@ -15,6 +15,7 @@ import androidx.compose.ui.test.performClick
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.ReadBootstrapStatus
+import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -44,6 +45,8 @@ class ReadBootstrapConfigurationTest {
     private var connectedCalls = 0
     private var connectedAccess: BootstrapAccess? = null
     private var contentKey = 0
+    private var authenticationAllowed = true
+    private var authenticationCalls = 0
 
     @Before
     fun start() {
@@ -52,6 +55,8 @@ class ReadBootstrapConfigurationTest {
         connectedCalls = 0
         connectedAccess = null
         contentKey = 0
+        authenticationAllowed = true
+        authenticationCalls = 0
         controller = Robolectric.buildActivity(ComponentActivity::class.java)
         controller.get().setTheme(R.style.Theme_VogelVault)
         controller.setup()
@@ -136,7 +141,7 @@ class ReadBootstrapConfigurationTest {
         compose.onNodeWithText("Reset secure connection").performClick()
         settle()
         compose.onNodeWithText(
-            "Resetting removes this installation’s access. Reconnecting requires a newly approved build.",
+            "This pairing can only be used once. Reset removes the saved connection. Reconnect with a new approved build or restore read access in Connection recovery.",
         ).fetchSemanticsNode()
         assertEquals(0, application.removeCalls)
         compose.onNodeWithText("Confirm reset").performClick()
@@ -146,6 +151,26 @@ class ReadBootstrapConfigurationTest {
         assertEquals(BootstrapAccess.NONE, ReadOnlyBootstrapEnrollment(application).currentAccess())
         compose.onNodeWithText("This installation is not connected to household data.")
             .fetchSemanticsNode()
+    }
+
+    @Test
+    fun `reset leaves credentials intact when fresh authentication is cancelled`() {
+        application.ready = true
+        authenticationAllowed = false
+        show(allowReset = true)
+        compose.onNodeWithText("Reset secure connection").performClick()
+        compose.onNodeWithText("Confirm reset").performClick()
+        settle()
+        assertEquals(1, authenticationCalls)
+        assertEquals(0, application.removeCalls)
+    }
+
+    @Test
+    fun `another profile reports its binding rather than claiming write access`() {
+        application.ready = true
+        application.todoCredentialPresent = true
+        assertEquals(BootstrapAccess.OTHER_PROFILE, ReadOnlyBootstrapEnrollment(application).currentAccess(FamilyMember.RACHEL))
+        assertEquals(BootstrapAccess.READ_AND_TODO_WRITE, ReadOnlyBootstrapEnrollment(application).currentAccess(FamilyMember.VICTOR))
     }
 
     @Test
@@ -170,7 +195,7 @@ class ReadBootstrapConfigurationTest {
         compose.onNodeWithText("Connect securely").performClick()
         settle()
 
-        compose.onNodeWithText("Connected for household data and todo changes.")
+        compose.onNodeWithText("Connected for household data. Tasks can be changed only for the paired profile.")
             .fetchSemanticsNode()
         assertEquals(BootstrapAccess.READ_AND_TODO_WRITE, connectedAccess)
     }
@@ -255,6 +280,7 @@ class ReadBootstrapConfigurationTest {
                         },
                         allowReset = allowReset,
                         enrollment = enrollment,
+                        authenticate = { authenticationCalls += 1; authenticationAllowed },
                     )
                 }
             }
@@ -275,12 +301,14 @@ private class RecordingEnrollment(
 
     override fun isBundledEnrollmentAvailable(): Boolean = true
 
-    override fun currentAccess(): BootstrapAccess = access
+    override fun currentAccess(profile: FamilyMember): BootstrapAccess = access
 
-    override suspend fun connect(): BootstrapConnectionResult {
+    override suspend fun connect(profile: FamilyMember): BootstrapConnectionResult {
         access = next.access
         return next
     }
+
+    override suspend fun unpair(): Boolean = true
 
     override fun reset(): BootstrapAccess {
         access = BootstrapAccess.NONE
@@ -314,6 +342,8 @@ class RecordingReadBootstrapApplication : VaultApplication() {
     }
 
     override fun hasTodoWriteCredential(): Boolean = todoCredentialPresent
+
+    override fun hasTodoWriteCredential(profile: FamilyMember): Boolean = todoCredentialPresent && profile == FamilyMember.VICTOR
 
     override fun removeStoredConvexCredential(): Boolean {
         removeCalls += 1

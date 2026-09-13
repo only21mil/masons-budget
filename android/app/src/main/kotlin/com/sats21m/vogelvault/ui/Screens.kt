@@ -166,6 +166,7 @@ fun ScreenHost(
     ledgerSettings: LedgerUiSettings = LedgerUiSettings(),
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit = {},
     modifier: Modifier = Modifier,
+    profileSwitcher: @Composable () -> Unit = {},
     taskListsContent: @Composable (VaultUiState, List<TodoItem>) -> Unit = { taskState, todos ->
         TaskListsScreen(
             state = taskState,
@@ -477,11 +478,12 @@ fun ScreenHost(
                     // default, so filtering and refreshing cannot diverge.
                     taskListsContent(state, collections.visibleTodos)
                 }
-                Destination.FAMILY -> family(state)
+                Destination.FAMILY -> family(state, profileSwitcher)
                 Destination.SETTINGS -> settings(
                     state,
                     remoteReadReady,
                     onRemoteRowsConnected,
+                    onEnableRemoteRows,
                     ledgerSettings,
                     onLedgerSettingsChange,
                 )
@@ -1644,7 +1646,13 @@ internal fun familyScopeSummary(profile: FamilyMember): FamilyScopeSummary =
         )
     }
 
-private fun VaultLazyListScope.family(state: VaultUiState) {
+private fun VaultLazyListScope.family(
+    state: VaultUiState,
+    profileSwitcher: @Composable () -> Unit,
+) {
+    item {
+        Panel("Switch profile") { profileSwitcher() }
+    }
     val scope = familyScopeSummary(state.activeProfile)
     item {
         Panel("Active profile scope", state.activeProfile.displayName) {
@@ -1693,20 +1701,6 @@ private fun VaultLazyListScope.family(state: VaultUiState) {
             }
         }
     }
-    item {
-        Panel("Can this profile switch?", "Derived from allowedSwitchTargets") {
-            Column {
-                FamilyMember.entries.forEachIndexed { index, member ->
-                    if (index > 0) HorizontalHairline()
-                    LedgerRow(
-                        primary = member.displayName,
-                        figure = if (member.allowedSwitchTargets.size > 1) "all" else "self only",
-                        figureColor = LocalLedgerTheme.current.colors.foregroundSecondary,
-                    )
-                }
-            }
-        }
-    }
 }
 
 // ── Settings ────────────────────────────────────────────────────────────────
@@ -1715,6 +1709,7 @@ private fun VaultLazyListScope.settings(
     state: VaultUiState,
     remoteReadReady: Boolean,
     onRemoteRowsConnected: () -> Unit,
+    onEnableRemoteRows: (String) -> Unit,
     ledgerSettings: LedgerUiSettings,
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit,
 ) {
@@ -1752,7 +1747,9 @@ private fun VaultLazyListScope.settings(
                 remoteReadReady = remoteReadReady,
                 onConnected = { onRemoteRowsConnected() },
                 modifier = Modifier.padding(vertical = VaultSpace.md),
-                allowReset = true,
+                allowReset = state.activeProfile.isAdult,
+                profile = state.activeProfile,
+                onSaveReadToken = onEnableRemoteRows,
             )
         }
     }
