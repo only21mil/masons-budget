@@ -62,6 +62,9 @@ import java.time.ZoneId
  */
 private const val UNFILED_TODO_PROJECT = "Inbox"
 
+/** A refreshed revision keeps the same arrival; a missing revision disables it. */
+internal fun todayRowRevealKey(updatedAt: Long?): String? = updatedAt?.let { "today" }
+
 /** Where a todo is filed: its project, else its area, else nowhere. */
 internal fun filing(todo: TodoItem): String? =
     todo.project
@@ -258,7 +261,7 @@ internal fun TodoScreen(
                 }
             } else {
                 itemsIndexed(localTodos, key = { _, todo -> todo.id }) { index, todo ->
-                    Box(Modifier.ledgerRowReveal(index, slice.updatedAt?.let { "today:$it" })) {
+                    Box(Modifier.ledgerRowReveal(index, todayRowRevealKey(slice.updatedAt))) {
                         TodoRow(
                             todo = todo,
                             viewer = viewer,

@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -469,6 +470,14 @@ internal fun TodoRow(
                             color = colors.foregroundTertiary,
                         )
                     }
+            }
+            if (todo.flagged) {
+                Icon(
+                    com.sats21m.vogelvault.ui.components.LedgerGlyphs.Flag,
+                    contentDescription = null, // The row's stateDescription already announces the flag.
+                    tint = colors.bitcoin,
+                    modifier = Modifier.testTag("todo-flag-${todo.id}"),
+                )
             }
         }
     }
