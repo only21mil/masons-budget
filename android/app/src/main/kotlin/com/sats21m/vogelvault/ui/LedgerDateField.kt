@@ -44,10 +44,15 @@ internal fun LedgerDateField(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     optional: Boolean = false,
+    labelContent: (@Composable () -> Unit)? = null,
 ) {
     var showPicker by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth()) {
-        Text(label, style = LocalLedgerTheme.current.type.kpiLabel)
+        if (labelContent != null) {
+            labelContent()
+        } else {
+            Text(label, style = LocalLedgerTheme.current.type.kpiLabel)
+        }
         OutlinedButton(onClick = { showPicker = true }, enabled = enabled,
             shape = RoundedCornerShape(LedgerRadii.control), modifier = Modifier.fillMaxWidth()) {
             Text(value.ifBlank { "Choose date" })

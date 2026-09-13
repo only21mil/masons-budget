@@ -9,7 +9,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
 import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -23,6 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
@@ -156,6 +158,7 @@ internal fun BtcTransferEntrySheet(
             enabled = !submitting,
             onValueChange = { date = it },
             label = stringResource(R.string.btc_transfer_date_label),
+            labelContent = { TransferFieldLabel(stringResource(R.string.btc_transfer_date_label)) },
         )
         if (eligibleAccounts.size < 2) {
             Text(
@@ -208,7 +211,7 @@ private fun BtcAccountPicker(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium)
+        TransferFieldLabel(label)
         Box {
             androidx.compose.material3.OutlinedButton(
                 onClick = { expanded = true },
@@ -234,6 +237,17 @@ private fun BtcAccountPicker(
             }
         }
     }
+}
+
+@Composable
+private fun TransferFieldLabel(label: String) {
+    val tokens = LocalLedgerTheme.current
+    Text(
+        label.uppercase(),
+        style = tokens.type.kpiLabel,
+        color = tokens.colors.foregroundSecondary,
+        modifier = Modifier.clearAndSetSemantics { text = AnnotatedString(label) },
+    )
 }
 
 @Composable
