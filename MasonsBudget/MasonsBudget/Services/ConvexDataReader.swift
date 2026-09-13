@@ -70,8 +70,77 @@ actor ConvexDataReader {
     }
 
     /// Read the BTC balance snapshot from Convex.
-    func readBTCSnapshot() async throws -> LegacyBTCSnapshotDTO {
-        try await client.fetchFile("btc-balance-snapshot", as: LegacyBTCSnapshotDTO.self)
+    func readBTCSnapshot(viewer: FamilyMember = .victor) async throws -> LegacyBTCSnapshotDTO {
+        try await rowOrBlob(
+            { try await balanceDocument(viewer: viewer).legacySnapshot() },
+            blob: { try await client.fetchFile("btc-balance-snapshot", as: LegacyBTCSnapshotDTO.self) },
+        )
+    }
+
+    private func balanceDocument(viewer: FamilyMember, owner: FamilyMember? = nil) async throws -> ConvexBTCBalanceDocumentRow {
+        if let owner, !viewer.canSee(dataOwnedBy: owner) { throw ConvexRowDecodeError.ownerOutOfScope }
+        let scope: ConvexRowScope = owner == nil ? .netWorth : .visible
+        let envelope = try await client.fetchRows(
+            .btcBalanceDocuments(viewer: viewer, scope: scope),
+            as: ConvexRowEnvelope<ConvexBTCBalanceDocumentRow>.self,
+        )
+        let visibleRows = try envelope.completeRows()
+        guard visibleRows.allSatisfy({ row in
+            scope == .visible ? viewer.canSee(dataOwnedBy: row.owner) : viewer.sharesNetWorth(with: row.owner)
+        }) else {
+            throw ConvexRowDecodeError.ownerOutOfScope
+        }
+        let rows = visibleRows.filter { row in
+            owner.map { $0.sharesNetWorth(with: row.owner) } ?? viewer.sharesNetWorth(with: row.owner)
+        }
+        guard let document = rows.first else { throw ConvexRowDecodeError.missingDocument }
+        guard rows.count == 1 else { throw ConvexRowDecodeError.ambiguousDocument }
+        return document
+    }
+
+    /// Account rows retain dynamic account keys and canonical owners, including children.
+    func readBalanceAccounts(viewer: FamilyMember, owner: FamilyMember? = nil) async throws -> [SyncedBTCAccount] {
+        let targetOwner = owner ?? viewer.ledgerOwner
+        guard viewer.canSee(dataOwnedBy: targetOwner) else { throw ConvexRowDecodeError.ownerOutOfScope }
+        return try await rowOrBlob(
+            {
+                // Require a balance document: an empty account list alone cannot prove zero.
+                let document = try await balanceDocument(viewer: viewer, owner: targetOwner)
+                let visibleRows = try await rowReader.btcAccounts(viewer: viewer, scope: .visible)
+                let rows = visibleRows.filter { targetOwner.sharesNetWorth(with: $0.owner) }
+                guard Set(rows.map(\.key)).count == rows.count,
+                      rows.count == document.accounts.count,
+                      rows.allSatisfy({ row in
+                          row.owner == document.owner && document.accounts.contains {
+                              $0.key == row.key && $0.sats == row.sats && $0.custody == row.custody
+                          }
+                      })
+                else { throw ConvexRowDecodeError.incompleteSnapshot }
+                return rows.map {
+                    SyncedBTCAccount(key: $0.key, label: $0.label, custody: $0.custody,
+                               btc: decimalMinorUnits($0.sats, scale: 8),
+                               fiat: $0.fiatCents.map { decimalMinorUnits($0, scale: 2) } ?? 0,
+                               owner: $0.owner)
+                }
+            },
+            blob: {
+                if targetOwner.isAdult {
+                    let dto = try await client.fetchFile("btc-balance-snapshot", as: LegacyBTCSnapshotDTO.self)
+                    return dto.accounts.map { key, account in
+                        SyncedBTCAccount(key: key, label: account.label,
+                                         custody: BTCCustody(rawValue: account.custody) ?? .exchange,
+                                         btc: account.btc, fiat: account.fiat, owner: .victor)
+                    }
+                }
+                guard targetOwner == .mason else { throw ConvexRowDecodeError.missingDocument }
+                let dto = try await client.fetchFile("son-balances", as: LegacySonBalancesDTO.self)
+                return [
+                    SyncedBTCAccount(key: "son-strike-mason", label: "Strike", custody: .exchange, btc: dto.strike, fiat: 0, owner: .mason),
+                    SyncedBTCAccount(key: "son-river-mason", label: "River", custody: .exchange, btc: dto.river, fiat: 0, owner: .mason),
+                    SyncedBTCAccount(key: "son-coldcard-mason", label: "Multisig", custody: .selfCustody, btc: dto.coldcard, fiat: 0, owner: .mason),
+                ]
+            },
+        )
     }
 
     /// Read all BTC buy records from Convex. The batch source records whether
@@ -106,8 +175,16 @@ actor ConvexDataReader {
     }
 
     /// Read retirement/brokerage data from Convex.
-    func readFinances() async throws -> LegacyFinancesDTO {
-        try await client.fetchFile("finances", as: LegacyFinancesDTO.self)
+    func readFinances(viewer: FamilyMember = .victor) async throws -> LegacyFinancesDTO {
+        try await rowOrBlob(
+            {
+                let envelope = try await client.fetchRows(
+                    .finance(viewer: viewer), as: ConvexFinanceDocumentEnvelope.self,
+                )
+                return try envelope.legacyDTO(viewer: viewer)
+            },
+            blob: { try await client.fetchFile("finances", as: LegacyFinancesDTO.self) },
+        )
     }
 
     /// Read Mason's BTC balances from Convex.
