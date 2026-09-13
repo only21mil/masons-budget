@@ -162,52 +162,22 @@ struct TasksView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                ScreenHeader(title: "Tasks", eyebrow: eyebrow) {
-                    Button {
-                        showingDraft = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(AppFont.iconLarge)
-                            .foregroundStyle(theme.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("New task")
-                }
-
-                shortcutGrid
-                    .padding(.horizontal, AppLayout.sectionPadding)
-                    .padding(.bottom, AppLayout.cardSpacing)
-
-                InlineAddTaskBar(isExpanded: $showingDraft)
-                    .padding(.horizontal, AppLayout.sectionPadding)
-                    .padding(.bottom, AppLayout.cardSpacing)
-
-                if !todayTodos.isEmpty {
-                    section(title: "TODAY", todos: todayTodos)
-                        .padding(.bottom, AppLayout.cardSpacing)
-                }
-                if !thisWeekTodos.isEmpty {
-                    section(title: "THIS WEEK", todos: thisWeekTodos)
-                        .padding(.bottom, AppLayout.cardSpacing)
-                }
-                if !longTermTodos.isEmpty {
-                    section(title: "LONG TERM", todos: longTermTodos)
-                        .padding(.bottom, AppLayout.cardSpacing)
-                }
-
-                projectsList
-                    .padding(.bottom, AppLayout.cardSpacing)
-
-                areasList
-            }
-            .padding(.bottom, 100)
+        List {
+            ScreenHeader(title: "Tasks", eyebrow: eyebrow)
+                .listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
+            shortcutGrid.listRowSeparator(.hidden)
+            InlineAddTaskBar(isExpanded: $showingDraft).listRowSeparator(.hidden)
+            if !todayTodos.isEmpty { section(title: "Today", todos: todayTodos) }
+            if !thisWeekTodos.isEmpty { section(title: "This week", todos: thisWeekTodos) }
+            if !longTermTodos.isEmpty { section(title: "Long term", todos: longTermTodos) }
+            projectsList.listRowSeparator(.hidden)
+            areasList.listRowSeparator(.hidden)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .background(theme.bg)
+        .modifier(LedgerListRefresh())
     }
-
-    // MARK: - Shortcut Grid
 
     private var shortcutGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
@@ -242,22 +212,12 @@ struct TasksView: View {
     // MARK: - Task Section
 
     private func section(title: String, todos: [TodoItem]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .ledgerType(.sectionLabel)
-                .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
-
-            VStack(spacing: 0) {
-                ForEach(Array(todos.enumerated()), id: \.element.id) { idx, todo in
-                    TaskRowView(todo: todo)
-                    if idx < todos.count - 1 {
-                        Hairline(indent: 48)
-                    }
-                }
+        Section(title) {
+            ForEach(todos) { todo in
+                TaskRowView(todo: todo)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(theme.surface)
             }
-            .glassCard(padding: 0)
-            .padding(.horizontal, AppLayout.sectionPadding)
         }
     }
 

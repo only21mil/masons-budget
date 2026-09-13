@@ -173,11 +173,9 @@ struct ContentView: View {
                 .padding(.horizontal, AppLayout.sectionPadding)
                 .padding(.top, 10)
         }
-        .overlay(alignment: .bottom) {
-            TaskUndoBanner()
-                .padding(.horizontal, AppLayout.sectionPadding)
-                .padding(.bottom, taskUndoBottomPadding)
-        }
+        #if os(macOS)
+        .safeAreaInset(edge: .bottom) { undoBanner }
+        #endif
         .sheet(isPresented: $showAddTransaction) {
             addTransactionSheet
         }
@@ -193,6 +191,8 @@ struct ContentView: View {
         .sheet(isPresented: $showTaskEntry) {
             NavigationStack {
                 TaskSmartListView(filter: .inbox, initiallyAdding: true)
+                    // Keep recovery visible on pushed destinations, above the native tab bar.
+                    .safeAreaInset(edge: .bottom) { undoBanner }
                     .environment(\.ledgerRootTitle, "")
                     .navigationTitle("New task")
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showTaskEntry = false } } }
@@ -226,6 +226,7 @@ struct ContentView: View {
                             }))
                             .toolbar(.hidden, for: .navigationBar)
                     }
+                    .safeAreaInset(edge: .bottom) { undoBanner }
                     .tabItem {
                         Image(systemName: tab.icon)
                         Text(tab.tabTitle)
@@ -599,12 +600,9 @@ struct ContentView: View {
         }
     }
 
-    private var taskUndoBottomPadding: CGFloat {
-        #if os(iOS)
-            84
-        #else
-            18
-        #endif
+    private var undoBanner: some View {
+        TaskUndoBanner()
+            .padding(.horizontal, AppLayout.sectionPadding)
     }
 
     @ViewBuilder

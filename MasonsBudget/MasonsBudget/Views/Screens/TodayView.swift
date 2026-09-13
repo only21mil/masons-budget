@@ -81,34 +81,38 @@ struct TodayView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                ScreenHeader(title: "Today", eyebrow: todayEyebrow)
-
-                moneyOutCard
-                    .padding(.horizontal, AppLayout.sectionPadding)
-                    .padding(.bottom, AppLayout.cardSpacing)
-
-                tasksSection
-                    .padding(.bottom, AppLayout.cardSpacing)
-
-                if !completedToday.isEmpty {
-                    completedSection
-                        .padding(.bottom, AppLayout.cardSpacing)
-                }
-
-                if !shortTermTodos.isEmpty {
-                    shortTermSection
-                        .padding(.bottom, AppLayout.cardSpacing)
-                }
-
-                if !longTermTodos.isEmpty {
-                    longTermSection
-                }
+        List {
+            ScreenHeader(title: "Today", eyebrow: todayEyebrow)
+                .listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
+            moneyOutCard.listRowSeparator(.hidden)
+            Section("Today · \(todayTodos.count) remaining") {
+                if todayTodos.isEmpty { Text("All clear for today").ledgerType(.rowPrimary) }
+                taskRows(todayTodos)
+                addTaskRow
             }
-            .padding(.bottom, 100)
+            if !completedToday.isEmpty {
+                Section("Completed today") { taskRows(completedToday) }
+            }
+            if !shortTermTodos.isEmpty {
+                Section("This week") { taskRows(shortTermTodos) }
+            }
+            if !longTermTodos.isEmpty {
+                Section("Long term") { taskRows(longTermTodos) }
+            }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .foregroundStyle(theme.text)
         .background(theme.bg)
+        .modifier(LedgerListRefresh())
+    }
+
+    private func taskRows(_ rows: [TodoItem]) -> some View {
+        ForEach(rows) { todo in
+            TaskRowView(todo: todo)
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(theme.surface)
+        }
     }
 
     static func isDueTodayOrOverdue(_ dueDate: Date?, now: Date = Date(), calendar: Calendar = .current) -> Bool {
@@ -154,120 +158,6 @@ struct TodayView: View {
             }
         }
         .glassCard(padding: 16, radius: AppLayout.radiusMedium)
-    }
-
-    // MARK: - Today Tasks
-
-    private var tasksSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("TODAY")
-                    .ledgerType(.sectionLabel)
-                    .foregroundStyle(theme.textMuted)
-                Spacer()
-                Text("\(todayTodos.count) remaining")
-                    .ledgerType(.rowMeta)
-                    .foregroundStyle(theme.textMuted)
-            }
-            .padding(.horizontal, AppLayout.sectionPadding + 4)
-
-            VStack(spacing: 0) {
-                if todayTodos.isEmpty {
-                    HStack {
-                        Image(systemName: "checkmark.circle")
-                            .font(AppFont.iconSmall)
-                            .foregroundStyle(theme.success)
-                        Text("All clear for today")
-                            .ledgerType(.rowPrimary)
-                            .foregroundStyle(theme.textMuted)
-                        Spacer()
-                    }
-                    .padding(14)
-                } else {
-                    ForEach(Array(todayTodos.enumerated()), id: \.element.id) { idx, todo in
-                        TaskRowView(todo: todo)
-                            .ledgerRowReveal(index: idx)
-                        if idx < todayTodos.count - 1 {
-                            Hairline(indent: 48)
-                        }
-                    }
-                }
-
-                addTaskRow
-            }
-            .glassCard(padding: 0)
-            .padding(.horizontal, AppLayout.sectionPadding)
-        }
-    }
-
-    // MARK: - Short Term (This Week)
-
-    private var shortTermSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("THIS WEEK")
-                .ledgerType(.sectionLabel)
-                .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
-
-            VStack(spacing: 0) {
-                ForEach(Array(shortTermTodos.enumerated()), id: \.element.id) { idx, todo in
-                    TaskRowView(todo: todo)
-                    if idx < shortTermTodos.count - 1 {
-                        Hairline(indent: 48)
-                    }
-                }
-            }
-            .glassCard(padding: 0)
-            .padding(.horizontal, AppLayout.sectionPadding)
-        }
-    }
-
-    private var completedSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("COMPLETED TODAY")
-                    .ledgerType(.sectionLabel)
-                    .foregroundStyle(theme.textMuted)
-                Spacer()
-                Text("\(completedToday.count) done")
-                    .ledgerType(.rowMeta)
-                    .foregroundStyle(theme.success)
-            }
-            .padding(.horizontal, AppLayout.sectionPadding + 4)
-
-            VStack(spacing: 0) {
-                ForEach(Array(completedToday.enumerated()), id: \.element.id) { idx, todo in
-                    TaskRowView(todo: todo)
-                    if idx < completedToday.count - 1 {
-                        Hairline(indent: 48)
-                    }
-                }
-            }
-            .glassCard(padding: 0)
-            .padding(.horizontal, AppLayout.sectionPadding)
-        }
-    }
-
-    // MARK: - Long Term
-
-    private var longTermSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("LONG TERM")
-                .ledgerType(.sectionLabel)
-                .foregroundStyle(theme.textMuted)
-                .padding(.horizontal, AppLayout.sectionPadding + 4)
-
-            VStack(spacing: 0) {
-                ForEach(Array(longTermTodos.enumerated()), id: \.element.id) { idx, todo in
-                    TaskRowView(todo: todo)
-                    if idx < longTermTodos.count - 1 {
-                        Hairline(indent: 48)
-                    }
-                }
-            }
-            .glassCard(padding: 0)
-            .padding(.horizontal, AppLayout.sectionPadding)
-        }
     }
 
     private var addTaskRow: some View {
