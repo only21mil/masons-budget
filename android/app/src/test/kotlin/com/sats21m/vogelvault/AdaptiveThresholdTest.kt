@@ -119,53 +119,13 @@ class DestinationVisibilityTest {
     }
 
     @Test
-    fun `folded navigation partitions every destination into primary or More`() {
+    fun `both postures use the same five primary destinations without More`() {
         val destinations = Destination.entries.toList()
-        val primary = foldedPrimaryDestinations(destinations)
-        val overflow = foldedOverflowDestinations(destinations)
-
-        assertEquals(4, primary.size)
-        assertEquals(
-            listOf(
-                Destination.BTC_BUYS,
-                Destination.BTC_BILL_PAYS,
-                Destination.NET_WORTH,
-                Destination.RETIREMENT,
-                Destination.EXPORT,
-                Destination.TODAY,
-                Destination.TASKS,
-                Destination.FAMILY,
-                Destination.SETTINGS,
-            ),
-            overflow,
-        )
-        assertEquals(destinations, primary + overflow)
-        assertEquals(destinations.size, (primary + overflow).distinct().size)
-        assertTrue(Destination.SETTINGS in overflow)
-    }
-
-    @Test
-    fun `unfolded rail shows six primary destinations and sends the rest under More`() {
-        val destinations = Destination.entries.toList()
-        val primary = railPrimaryDestinations(destinations)
-        val overflow = railOverflowDestinations(destinations)
-
-        assertEquals(RAIL_PRIMARY_ORDER, primary)
-        assertEquals(RAIL_ITEM_COUNT, primary.size + 1)
-        assertEquals(
-            listOf(
-                Destination.BTC_BUYS,
-                Destination.BTC_BILL_PAYS,
-                Destination.NET_WORTH,
-                Destination.RETIREMENT,
-                Destination.EXPORT,
-                Destination.FAMILY,
-                Destination.SETTINGS,
-            ),
-            overflow,
-        )
-        assertEquals(destinations.toSet(), (primary + overflow).toSet())
-        assertEquals(destinations.size, (primary + overflow).distinct().size)
+        val expected = listOf(Destination.DASHBOARD, Destination.ACTIVITY, Destination.BUDGET, Destination.BITCOIN, Destination.TODAY)
+        assertEquals(expected, foldedPrimaryDestinations(destinations))
+        assertEquals(expected, railPrimaryDestinations(destinations))
+        assertTrue(foldedOverflowDestinations(destinations).isEmpty())
+        assertTrue(railOverflowDestinations(destinations).isEmpty())
     }
 
     @Test
@@ -183,7 +143,7 @@ class DestinationVisibilityTest {
     fun `folded navigation does not add More when all destinations fit`() {
         val destinations = Destination.entries.take(5)
 
-        assertEquals(destinations, foldedPrimaryDestinations(destinations))
+        assertEquals(destinations.filter { it in RAIL_PRIMARY_ORDER }, foldedPrimaryDestinations(destinations))
         assertTrue(foldedOverflowDestinations(destinations).isEmpty())
     }
 
