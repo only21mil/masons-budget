@@ -20,6 +20,8 @@ private final class AcceptedRevisionBox: @unchecked Sendable {
 
 @MainActor
 enum AppWriteSyncService {
+    typealias LedgerWriter = @MainActor @Sendable (String, FamilyMember, String, [String: Any], Bool) async throws -> Void
+
     typealias TransactionRowWrite = @MainActor @Sendable (
         LegacyTransactionDTO,
         FamilyMember,
@@ -70,13 +72,14 @@ enum AppWriteSyncService {
             statusStore: nil,
             automaticRetries: maxRetries,
             retryDelayNanoseconds: retryDelay,
-            preflight: { writeBlocker(requiresSyncToken: true) },
+            preflight: { writeBlocker(requiresSyncToken: false) },
             write: { payload, canonicalOwner, fileName in
                 let client = makeClient()
                 return try await client.upsertTransactionRow(
                     payload,
                     owner: canonicalOwner,
                     sourceFile: fileName,
+                    fromDevice: true,
                 )
             },
             tracksOptimisticCreate: tracksOptimisticCreate,
@@ -123,7 +126,9 @@ enum AppWriteSyncService {
         // Only AddTransactionView explicitly opts into the durable create
         // marker. CSV, voice, detail edits and generated paycheck rows already
         // carry different lifecycle/provenance and must never be inferred into it.
+        let acceptedRevision = AcceptedRevisionBox()
         let deliverResult: @MainActor @Sendable (ConvexWriteResult) -> Void = { result in
+            if result.isOk { transaction.updatedAtMs = acceptedRevision.value }
             if tracksOptimisticCreate, result.isRetryable {
                 // This marker is persisted with the optimistic row. If the
                 // in-memory Retry action is dismissed or lost on app exit, a
@@ -158,7 +163,10 @@ enum AppWriteSyncService {
             // The server fences the next edit and delete on the revision it just
             // accepted. Install it now or an immediate add -> edit is rejected
             // until some later sync happens to refresh the row.
-            onAcceptedRevision: { accepted in transaction.updatedAtMs = accepted },
+            onAcceptedRevision: { accepted in
+                acceptedRevision.value = accepted
+                transaction.updatedAtMs = accepted
+            },
         )
     }
 
@@ -307,13 +315,14 @@ enum AppWriteSyncService {
         runWriteOperation(
             label: "Delete transaction",
             attemptLabel: "delete tx \(id)",
-            preflight: { writeBlocker(requiresSyncToken: true) },
+            preflight: { writeBlocker(requiresSyncToken: false) },
             attempt: {
                 try await makeClient().deleteTransactionRow(
                     id: id,
                     owner: owner,
                     sourceFile: fileName,
                     baseUpdatedAtMs: baseUpdatedAtMs,
+                    fromDevice: true,
                 )
                 return nil
             },
@@ -350,8 +359,12 @@ enum AppWriteSyncService {
             owner: canonicalOwner,
             to: fileName,
             onOperationStart: onOperationStart,
-            onAcceptedRevision: { buy.updatedAtMs = $0 },
-            onResult: onResult,
+            onResult: { result in
+                // Device buy acknowledgements carry no revision. Do not leave
+                // the pre-edit revision attached to the accepted new payload.
+                if result.isOk { buy.updatedAtMs = nil }
+                onResult?(result)
+            },
         )
     }
 
@@ -366,13 +379,14 @@ enum AppWriteSyncService {
         runWriteOperation(
             label: "Save BTC buy",
             attemptLabel: "push btc buy \(payload.id)",
-            preflight: { writeBlocker(requiresSyncToken: true) },
+            preflight: { writeBlocker(requiresSyncToken: false) },
             onOperationStart: onOperationStart,
             attempt: {
                 try await makeClient().upsertBTCBuyRow(
                     payload,
                     owner: owner,
                     sourceFile: fileName,
+                    fromDevice: true,
                 )
             },
             onAcceptedRevision: onAcceptedRevision,
@@ -673,13 +687,14 @@ enum AppWriteSyncService {
         runWriteOperation(
             label: "Save budget",
             attemptLabel: "update category \(name)",
-            preflight: { writeBlocker(requiresSyncToken: true) },
+            preflight: { writeBlocker(requiresSyncToken: false) },
             attempt: {
                 try await makeClient().upsertBudgetCategoryRow(
                     name: name,
                     icon: icon,
                     budget: budget,
                     viewer: viewer,
+                    fromDevice: true,
                 )
                 return nil
             },
@@ -705,17 +720,168 @@ enum AppWriteSyncService {
         )
     }
 
+    static func pushIncome(
+        id: String, date: Date, amount: Decimal, source: String, note: String?, member: FamilyMember,
+        writer: LedgerWriter? = nil,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+    ) {
+        runWriteOperation(label: "Save income", preflight: { writeBlocker(requiresSyncToken: false) }, attempt: {
+            let cents = try positiveCents(amount, field: "income.amount")
+            var row: [String: Any] = [
+                "id": id, "owner": member.ledgerOwner.rawValue, "date": ledgerDate(date),
+                "amountCents": ConvexTaggedInt64Encoder.encode(cents), "source": source,
+            ]
+            if let note, !note.isEmpty { row["note"] = note }
+            try await performLedgerWrite(
+                path: "tables:upsertIncomeFromDevice", owner: member, entityID: id,
+                arguments: ["sourceFile": "income", "income": row],
+                writer: writer,
+            )
+            return nil
+        }, onResult: onResult)
+    }
+
+    static func pushBillPay(
+        id: String, date: Date, merchant: String, category: String,
+        effect: BTCBillPayBudgetEffect, amount: Decimal, sats: Int64, price: Decimal,
+        fee: Decimal, member: FamilyMember, note: String? = nil, reference: String? = nil,
+        writer: LedgerWriter? = nil,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+    ) {
+        runWriteOperation(label: "Save bill payment", preflight: { writeBlocker(requiresSyncToken: false) }, attempt: {
+            guard member.isAdult else { throw AppWritebackError.remote(.ownerMismatch) }
+            guard sats > 0 else { throw ConvexRowMutationError.fractionalMinorUnit(field: "billPay.sats") }
+            let feeCents = try ExactMoney.manualFeeCents(from: fee, field: "billPay.fee")
+            var row: [String: Any] = [
+                "id": id, "owner": member.ledgerOwner.rawValue, "date": ledgerDate(date),
+                "merchant": merchant, "category": effect == .creditCardPayment ? "Credit Card Payment" : category,
+                "budgetEffect": effect.rawValue, "platform": "river_bitcoin_bill_pay",
+                "amountUsdCents": ConvexTaggedInt64Encoder.encode(try positiveCents(amount, field: "billPay.amount")),
+                "btcSpentSats": ConvexTaggedInt64Encoder.encode(sats),
+                "btcPriceCents": ConvexTaggedInt64Encoder.encode(try positiveCents(price, field: "billPay.price")),
+                "feeUsdCents": ConvexTaggedInt64Encoder.encode(feeCents),
+            ]
+            if let note, !note.isEmpty { row["note"] = note }
+            if let reference, !reference.isEmpty { row["reference"] = reference }
+            try await performLedgerWrite(
+                path: "tables:upsertBtcBillPayFromDevice", owner: member, entityID: id,
+                arguments: ["sourceFile": "bitcoin-bill-pays", "billPay": row],
+                writer: writer,
+            )
+            return nil
+        }, onResult: onResult)
+    }
+
+    static func pushTransfer(
+        id: String, date: Date, from: String, to: String, sats: Int64, feeSats: Int64,
+        member: FamilyMember,
+        writer: LedgerWriter? = nil,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+    ) {
+        runWriteOperation(label: "Save transfer", preflight: { writeBlocker(requiresSyncToken: false) }, attempt: {
+            guard member.isAdult else { throw AppWritebackError.remote(.ownerMismatch) }
+            guard !from.isEmpty, !to.isEmpty, from != to, sats > 0, feeSats >= 0 else {
+                throw AppWritebackError.remote(.validationFailed)
+            }
+            try await performLedgerWrite(
+                path: "tables:upsertBtcTransferFromDevice", owner: member, entityID: id,
+                arguments: ["sourceFile": "btc-transfers", "transfer": [
+                    "id": id, "owner": member.ledgerOwner.rawValue, "date": ledgerDate(date),
+                    "fromAccountKey": from, "toAccountKey": to,
+                    "sats": ConvexTaggedInt64Encoder.encode(sats), "feeSats": ConvexTaggedInt64Encoder.encode(feeSats),
+                ]],
+                writer: writer,
+            )
+            return nil
+        }, onResult: onResult)
+    }
+
+    static func pushAccount(
+        key: String, label: String, custody: BTCCustody, sats: Int64, asOf: String,
+        member: FamilyMember, baseUpdatedAtMs: Double? = nil,
+        writer: LedgerWriter? = nil,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+    ) {
+        runWriteOperation(label: "Save account", preflight: { writeBlocker(requiresSyncToken: false) }, attempt: {
+            guard member.isAdult else { throw AppWritebackError.remote(.ownerMismatch) }
+            let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedLabel.isEmpty, sats >= 0 else { throw AppWritebackError.remote(.validationFailed) }
+            var args: [String: Any] = ["sourceFile": "btc-balance-snapshot", "account": [
+                "key": key, "owner": member.ledgerOwner.rawValue, "label": trimmedLabel,
+                "custody": custody.rawValue, "sats": ConvexTaggedInt64Encoder.encode(sats), "asOf": asOf,
+            ]]
+            if let baseUpdatedAtMs { args["baseUpdatedAtMs"] = baseUpdatedAtMs }
+            try await performLedgerWrite(path: "tables:upsertBtcAccountFromDevice", owner: member,
+                                         entityID: key, arguments: args, writer: writer)
+            return nil
+        }, onResult: onResult)
+    }
+
+    enum BitcoinEntity: String, Sendable {
+        case buy = "BtcBuy", billPay = "BtcBillPay", transfer = "BtcTransfer", account = "BtcAccount"
+
+        func sourceFile(owner: FamilyMember) -> String {
+            switch self {
+            case .buy: owner.ledgerOwner.btcBuysDataFileName
+            case .billPay: "bitcoin-bill-pays"
+            case .transfer: "btc-transfers"
+            case .account: owner.isAdult ? "btc-balance-snapshot" : "son-balances"
+            }
+        }
+    }
+
+    static func deleteBitcoinEntry(
+        _ entity: BitcoinEntity, id: String, owner: FamilyMember, baseUpdatedAtMs: Double?,
+        writer: LedgerWriter? = nil,
+        onResult: (@MainActor @Sendable (ConvexWriteResult) -> Void)? = nil,
+    ) {
+        runWriteOperation(label: "Delete Bitcoin entry", preflight: { writeBlocker(requiresSyncToken: false) }, attempt: {
+            guard let baseUpdatedAtMs, baseUpdatedAtMs.isFinite, baseUpdatedAtMs > 0 else {
+                throw AppWritebackError.remote(.revisionRequired)
+            }
+            try await performLedgerWrite(
+                path: "tables:delete\(entity.rawValue)FromDevice", owner: owner, entityID: id,
+                arguments: ["sourceFile": entity.sourceFile(owner: owner), "entityId": id, "baseUpdatedAtMs": baseUpdatedAtMs],
+                deleting: true,
+                writer: writer,
+            )
+            return nil
+        }, onResult: onResult)
+    }
+
+    private static func performLedgerWrite(
+        path: String, owner: FamilyMember, entityID: String, arguments: [String: Any],
+        deleting: Bool = false, writer: LedgerWriter?,
+    ) async throws {
+        if let writer {
+            try await writer(path, owner, entityID, arguments, deleting)
+        } else {
+            try await AppWritebackClient().writeLedger(
+                path: path, owner: owner, entityID: entityID, arguments: arguments, deleting: deleting,
+            )
+        }
+    }
+
+    private static func ledgerDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+
+    private static func positiveCents(_ amount: Decimal, field: String) throws -> Int64 {
+        let cents = try ConvexClient.exactMinorUnits(amount, field: field)
+        guard cents > 0 else { throw ConvexRowMutationError.fractionalMinorUnit(field: field) }
+        return cents
+    }
+
     /// The states that refuse a write before any network I/O, or `nil` to proceed.
     ///
-    /// `requiresSyncToken` is true for the row mutation API, which has no
-    /// paired-device fallback. Refusing there with `.unauthorized` matches
-    /// Android's `ConvexMutationClient`, which checks its token before building a
-    /// request instead of discovering the rejection three retries later.
+    /// Interactive writes always pass false and authenticate through the paired
+    /// device. The true branch remains for administrator compatibility checks.
     static func writeBlocker(requiresSyncToken: Bool) -> ConvexWriteResult? {
         if !ConvexConfig.writesEnabled { return .disabled }
-        // No `.notConfigured` case: the deployment URL is a compiled constant,
-        // so a Convex write can never run unconfigured (`.notConfigured`
-        // remains reserved for `AppWritebackError.invalidBaseURL` remapping).
         if requiresSyncToken, !ConvexConfig.hasSyncToken { return .unauthorized }
         return nil
     }

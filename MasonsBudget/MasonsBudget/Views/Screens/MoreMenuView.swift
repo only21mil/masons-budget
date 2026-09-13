@@ -169,7 +169,7 @@ struct SyncSetupView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                ScreenHeader(title: "Sync Setup", eyebrow: "Convex Writeback")
+                ScreenHeader(title: "Sync Setup", eyebrow: "Connect this device")
 
                 VStack(spacing: 14) {
                     field("Pairing URL (optional)", text: $pairingURL)
@@ -239,9 +239,13 @@ struct SyncSetupView: View {
                     .glassCard(padding: 14, radius: AppLayout.radiusMedium)
                     .padding(.horizontal, AppLayout.sectionPadding)
 
-                ConvexSyncTokenCard()
-                    .glassCard(padding: 14, radius: AppLayout.radiusMedium)
-                    .padding(.horizontal, AppLayout.sectionPadding)
+                DisclosureGroup("Diagnostics") {
+                    Text("Device pairing handles everyday changes. The administrator credential is retained here for compatibility.")
+                        .ledgerType(.rowMeta)
+                    ConvexSyncTokenCard()
+                }
+                .glassCard(padding: 14, radius: AppLayout.radiusMedium)
+                .padding(.horizontal, AppLayout.sectionPadding)
 
                 if let statusMessage {
                     Text(statusMessage)
