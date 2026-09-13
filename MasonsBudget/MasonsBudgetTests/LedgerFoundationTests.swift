@@ -355,16 +355,20 @@ final class LedgerFoundationTests: XCTestCase {
     #if canImport(UIKit)
         func testTabCaptionsPreserveStandardSizingAndStopGrowingAtAccessibilitySizes() {
             var sizes: [CGFloat] = []
+            // This unhosted test target does not register the app's bundled fonts.
+            let expectedFace = UIFont(name: LedgerChromeSpec.tabLabel.weight.postScriptName, size: LedgerChromeSpec.tabLabel.size)
+                ?? UIFont.systemFont(ofSize: LedgerChromeSpec.tabLabel.size)
             for category in [UIContentSizeCategory.large, .extraExtraExtraLarge, .accessibilityLarge, .accessibilityExtraExtraExtraLarge] {
-                UITraitCollection(preferredContentSizeCategory: category).performAsCurrent {
-                    let attributes = LedgerChrome.tabTitleAttributes(ink: \.accentForeground)
-                    guard let font = attributes[.font] as? UIFont else {
-                        XCTFail("Tab title must retain its font")
-                        return
-                    }
-                    XCTAssertEqual(font.fontName, LedgerChromeSpec.tabLabel.weight.postScriptName)
-                    sizes.append(font.pointSize)
+                let attributes = LedgerChrome.tabTitleAttributes(
+                    ink: \.accentForeground,
+                    compatibleWith: UITraitCollection(preferredContentSizeCategory: category),
+                )
+                guard let font = attributes[.font] as? UIFont else {
+                    XCTFail("Tab title must retain its font")
+                    return
                 }
+                XCTAssertEqual(font.fontName, expectedFace.fontName)
+                sizes.append(font.pointSize)
             }
             XCTAssertEqual(sizes.count, 4)
             guard sizes.count == 4 else { return }
