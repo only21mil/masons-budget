@@ -183,6 +183,9 @@ class RowReadModelLoader(
             btcPriceAsOf = latestBuy?.date,
             income = incomeSlice,
             btcBalance = balanceSlice,
+            btcBalanceReadOwner = viewer.ledgerOwner.takeIf {
+                balanceSlice.status == Freshness.LIVE || balanceSlice.status == Freshness.EMPTY
+            },
             btcBillPays = billPaySlice,
             btcTransfers = btcTransfers.await().toMappedSlice(emptyList(),
                 RowReadProjection.BITCOIN_TRANSFERS.sourceName, stamp, { it }, completeEmptyIsLive = true),
@@ -237,6 +240,7 @@ private fun BtcBalanceDocumentRow.toDomain(): BtcBalance = BtcBalance(
     selfCustodySats = totals.selfCustodySats,
     fiatValuation = totals.fiatValuation,
     balanceConfidence = balanceConfidence,
+    updatedAtMs = updatedAtMs,
 )
 
 private val englishBudgetMonths = mapOf(
@@ -384,7 +388,6 @@ private fun ConvexResult<RowSnapshot<BtcBalanceDocumentRow>>.toBtcBalanceSlice(
                 errorSlice(null, source, RowReadFailure.MALFORMED_PAYLOAD)
             else -> liveSlice(value.rows.single().toDomain(), source, stamp)
         }
-        ConvexResult.Missing -> emptySlice(null, source)
         else -> failureSlice(null, source)
     }
 }

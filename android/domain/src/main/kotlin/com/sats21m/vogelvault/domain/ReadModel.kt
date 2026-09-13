@@ -260,6 +260,8 @@ data class BtcBalance(
     val fiatValuation: FiatValuation? = legacyFiatValuation(totalSats, fiatCents),
     /** Confidence in the sats balance only. */
     val balanceConfidence: String? = null,
+    /** Revision of this exact scoped document, paired with [asOf]. */
+    val updatedAtMs: Long? = null,
 ) : Owned {
     val fiatFiguresUnavailable: Boolean get() = fiatValuation == null
 }
@@ -371,6 +373,8 @@ data class ReadModel(
         Slice(Freshness.EMPTY, emptyList(), null, "Convex rows · bitcoin bill pays"),
     val btcTransfers: Slice<List<BtcTransfer>> =
         Slice(Freshness.EMPTY, emptyList(), null, "Convex rows · bitcoin transfers"),
+    /** Owner queried for a successful balance read, including an empty document result. */
+    val btcBalanceReadOwner: FamilyMember? = null,
 ) {
     val incomeFiguresUnavailable: Boolean
         get() = income.requiredProjectionUnavailable || income.value.isEmpty()

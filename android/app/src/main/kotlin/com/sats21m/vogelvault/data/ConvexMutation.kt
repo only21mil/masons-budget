@@ -136,14 +136,20 @@ internal sealed class ConvexMutation(val path: String) {
         )
     }
 
-    data class UpsertBtcAccountFromDevice(val account: BtcAccountInput) :
+    data class UpsertBtcAccountFromDevice(val account: BtcAccountInput, val baseUpdatedAtMs: Long? = null) :
         ConvexMutation("tables:upsertBtcAccountFromDevice") {
-        init { require(account.owner.isAdult && account.sats >= 0L) }
+        init {
+            require(account.owner.isAdult && account.sats >= 0L)
+            require(baseUpdatedAtMs == null || baseUpdatedAtMs > 0L)
+        }
         override fun arguments(): JsonObject = jsonObject(
             "owner" to JsonPrimitive(account.owner.ledgerOwner.key),
             "sourceFile" to JsonPrimitive("btc-balance-snapshot"),
             "account" to JsonObject(account.toJson().filterKeys { it != "fiatCents" }),
-        )
+        ).let { args ->
+            if (baseUpdatedAtMs == null) args
+            else JsonObject(args + ("baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs)))
+        }
     }
 
     data class DeleteBitcoinFromDevice(

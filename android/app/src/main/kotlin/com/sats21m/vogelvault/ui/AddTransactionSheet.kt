@@ -486,8 +486,6 @@ internal fun AddTransactionSheet(
     val transactionDraftIds = application?.transactionDraftIds ?: fallbackTransactionDraftIds
     val btcBuyDraftIds = application?.btcBuyDraftIds
     val transactionGateway = remember(application) { application?.transactionDeviceMutationGateway }
-    val writeUnavailableReason = (application?.deviceCapabilities ?: DeviceCapabilities())
-        .unavailableReason(state.activeProfile, DeviceCapability.TRANSACTIONS)
     val saveScope = remember(application) { application?.applicationScope }
     val uiActive = remember { AtomicBoolean(true) }
     DisposableEffect(Unit) {
@@ -532,6 +530,9 @@ internal fun AddTransactionSheet(
     val paymentSource = paymentSourceForAddTransaction(
         type = type,
         current = PaymentSource.fromWireOrDefault(paymentSourceWire),
+    )
+    val writeUnavailableReason = transactionRouteUnavailableReason(
+        application?.deviceCapabilities ?: DeviceCapabilities(), state.activeProfile, paymentSource,
     )
     val inputUnit = if (paymentSource.route == PaymentSourceRoute.BILL_PAY) {
         DisplayUnit.USD
@@ -611,27 +612,6 @@ internal fun AddTransactionSheet(
                 },
             )
 
-            LedgerTextField(
-                value = merchant,
-                onValueChange = {
-                    merchant = it
-                    errorMessage = null
-                },
-                label = stringResource(R.string.add_transaction_merchant),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-
-            DropdownField(
-                label = stringResource(R.string.add_transaction_category),
-                selected = selectedCategory,
-                options = categories,
-                onSelect = {
-                    category = it
-                    errorMessage = null
-                },
-            )
-
             DropdownField(
                 label = "Payment source",
                 selected = paymentSource.label,
@@ -665,6 +645,32 @@ internal fun AddTransactionSheet(
                 },
             )
             PaymentRail(paymentSource)
+            if (writeUnavailableReason != null) {
+                Text(writeUnavailableReason)
+                TextButton(onClick = onDismiss) { Text("Close") }
+                return@Column
+            }
+
+            LedgerTextField(
+                value = merchant,
+                onValueChange = {
+                    merchant = it
+                    errorMessage = null
+                },
+                label = stringResource(R.string.add_transaction_merchant),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+
+            DropdownField(
+                label = stringResource(R.string.add_transaction_category),
+                selected = selectedCategory,
+                options = categories,
+                onSelect = {
+                    category = it
+                    errorMessage = null
+                },
+            )
 
             if (paymentSource.route == PaymentSourceRoute.BILL_PAY) {
                 Text(
@@ -779,7 +785,7 @@ internal fun AddTransactionSheet(
                                 }
                             }
                         },
-                        enabled = !saving && writeUnavailableReason == null && type == AddTransactionType.INCOME,
+                        enabled = !saving && type == AddTransactionType.INCOME,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(stringResource(R.string.budget_income_add_as_bitcoin_buy))
@@ -803,6 +809,9 @@ internal fun AddTransactionSheet(
                         if (saving) R.string.add_transaction_saving else R.string.add_transaction_save,
                     ),
                     onClick = {
+                        transactionRouteUnavailableReason(
+                            application?.deviceCapabilities ?: DeviceCapabilities(), state.activeProfile, paymentSource,
+                        )?.let { refuse(it); return@VaultButton }
                         val selectedDate = runCatching { LocalDate.parse(dateIso) }.getOrElse {
                             refuse("Enter a valid date")
                             return@VaultButton
@@ -871,7 +880,7 @@ internal fun AddTransactionSheet(
                             }
                         }
                     },
-                    enabled = !saving && writeUnavailableReason == null,
+                    enabled = !saving,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -984,3 +993,13 @@ internal fun amountPrefix(unit: DisplayUnit): String = when (unit) {
     DisplayUnit.BTC -> "BTC"
     DisplayUnit.SATS -> "SATS"
 }
+
+/** Fiat transactions need no Bitcoin grant; any Bitcoin posting needs both. */
+internal fun transactionRouteUnavailableReason(
+    capabilities: DeviceCapabilities,
+    viewer: FamilyMember,
+    source: PaymentSource,
+): String? = capabilities.unavailableReason(viewer, DeviceCapability.TRANSACTIONS)
+    ?: if (source.route != PaymentSourceRoute.CARD_TRANSACTION) {
+        capabilities.unavailableReason(viewer, DeviceCapability.BITCOIN)
+    } else null

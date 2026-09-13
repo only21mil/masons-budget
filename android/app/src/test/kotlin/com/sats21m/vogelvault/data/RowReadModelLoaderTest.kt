@@ -23,6 +23,16 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
 
 class RowReadModelLoaderTest {
+    @Test
+    fun `null balance response is unavailable while complete empty snapshot permits creation`() = runBlocking {
+        val unavailable = RowReadModelLoader(FakeRows(balanceDocuments = ConvexResult.Missing)).load(FamilyMember.VICTOR)
+        assertEquals(Freshness.ERROR, unavailable.btcBalance.status)
+        assertNull(unavailable.btcBalanceReadOwner)
+        val empty = RowReadModelLoader(FakeRows()).load(FamilyMember.VICTOR)
+        assertEquals(Freshness.EMPTY, empty.btcBalance.status)
+        assertEquals(FamilyMember.VICTOR, empty.btcBalanceReadOwner)
+    }
+
     @Test fun `transfer slices distinguish empty complete incomplete and failed reads`() = runBlocking {
         val empty = RowReadModelLoader(FakeRows()).load(FamilyMember.VICTOR)
         assertEquals(Freshness.LIVE, empty.btcTransfers.status)
@@ -171,6 +181,7 @@ class RowReadModelLoaderTest {
         assertEquals(RowVisibilityScope.NET_WORTH, repository.balanceDocumentScope)
         assertEquals(RowVisibilityScope.VISIBLE, repository.billPayScope)
         assertEquals(3_489_347L, model.income.value.single().amountCents)
+        assertEquals(102L, model.btcBalance.value?.updatedAtMs)
         assertEquals(541_782_856L, model.btcBalance.value?.totalSats)
         assertEquals(
             1L,

@@ -19,9 +19,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.BitcoinDeleteKind
-import com.sats21m.vogelvault.data.BtcAccountInput
+import com.sats21m.vogelvault.data.PendingBtcAccount
+import com.sats21m.vogelvault.domain.BtcBalance
+import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.domain.Slice
 import com.sats21m.vogelvault.data.ConvexMutation
 import com.sats21m.vogelvault.data.ConvexResult
+import com.sats21m.vogelvault.data.ConvexFailure
+import com.sats21m.vogelvault.data.ConvexServerRejection
 import com.sats21m.vogelvault.data.DeviceCapabilities
 import com.sats21m.vogelvault.data.DeviceCapability
 import com.sats21m.vogelvault.data.convexWriteFailureMessage
@@ -107,8 +112,8 @@ internal fun BitcoinDeleteAction(
 @Composable
 internal fun BtcAccountEntrySheet(
     viewer: FamilyMember,
-    accounts: List<BtcAccount>,
-    balanceAsOf: String?,
+    balance: Slice<BtcBalance?>,
+    balanceReadOwner: FamilyMember?,
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
 ) {
@@ -117,9 +122,15 @@ internal fun BtcAccountEntrySheet(
     var custodyWire by rememberSaveable(viewer) { mutableStateOf(Custody.SELF_CUSTODY.key) }
     var working by remember { mutableStateOf(false) }
     var failure by rememberSaveable { mutableStateOf<String?>(null) }
-    val leaseScope = "bitcoin-account:${viewer.ledgerOwner.key}"
-    var pendingKey by rememberSaveable(viewer) { mutableStateOf<String?>(null) }
-    val validation = accountNameError(label, accounts, pendingKey)
+    var conflictedSnapshot by rememberSaveable(viewer) { mutableStateOf<String?>(null) }
+    val restored = remember(viewer, application) { runCatching { application?.btcAccountDrafts?.current(viewer) } }
+    var pending by remember(viewer) { mutableStateOf(restored.getOrNull()) }
+    val snapshot = accountWriteSnapshot(viewer, balance, balanceReadOwner)
+    val validation = if (pending != null) null else accountNameError(label, snapshot.getOrNull()?.accounts.orEmpty())
+    val readFailure = if (pending != null) null else snapshot.exceptionOrNull()?.message
+        ?: if (conflictedSnapshot != null && snapshot.getOrNull()?.identity == conflictedSnapshot) {
+            "The balance changed. Close and refresh Bitcoin before trying again."
+        } else null
     ModalBottomSheet(onDismissRequest = { if (!working) onDismiss() }) {
         Column(Modifier.fillMaxWidth().padding(VaultSpace.md), verticalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
             Text("Add Bitcoin account")
@@ -128,28 +139,48 @@ internal fun BtcAccountEntrySheet(
                 return@Column
             }
             if (WriteAccessNotice(viewer, DeviceCapability.BITCOIN)) return@Column
-            LedgerTextField(value = label, onValueChange = { label = it }, label = "Account name", placeholder = "Coldcard, River, Phoenix", enabled = !working)
+            if (restored.isFailure || readFailure != null) {
+                Text(readFailure ?: "The pending account request could not be read on this phone.")
+                TextButton(onClick = onDismiss) { Text("Close") }
+                return@Column
+            }
+            LedgerTextField(value = pending?.label ?: label, onValueChange = { label = it }, label = "Account name", placeholder = "Coldcard, River, Phoenix", enabled = !working && pending == null)
             Custody.entries.forEach { custody ->
-                TextButton(onClick = { custodyWire = custody.key }, enabled = !working) {
-                    Text(if (custodyWire == custody.key) "✓ ${custody.label}" else custody.label)
+                TextButton(onClick = { custodyWire = custody.key }, enabled = !working && pending == null) {
+                    Text(if ((pending?.custodyKey ?: custodyWire) == custody.key) "✓ ${custody.label}" else custody.label)
                 }
             }
             Text("Starts at 0 sats. Buys, bill pays, and transfers change the balance.")
             validation?.let { Text(it) }
             failure?.let { Text(it) }
+            if (pending != null) Text("Retry sends the saved account request with its original balance revision.")
             VaultButton(label = if (working) "Saving…" else "Save", enabled = !working && validation == null, onClick = {
                 val app = application ?: return@VaultButton
-                val accountKey = app.transactionDraftIds.currentId(leaseScope) { newAccountKey(label, viewer.ledgerOwner) }
-                pendingKey = accountKey
-                val account = BtcAccountInput(accountKey, viewer.ledgerOwner, label.trim(),
-                    Custody.entries.first { it.key == custodyWire }, 0L, 0L, accountAsOf(balanceAsOf))
+                val denial = app.deviceCapabilities.unavailableReason(viewer, DeviceCapability.BITCOIN)
+                if (denial != null) { failure = denial; return@VaultButton }
+                val request = runCatching {
+                    pending ?: snapshot.getOrThrow().let { loaded ->
+                        app.btcAccountDrafts.stage(viewer, PendingBtcAccount(
+                            newAccountKey(label, viewer), viewer.ledgerOwner.key, label.trim(),
+                            custodyWire, loaded.asOf, loaded.baseUpdatedAtMs,
+                        ))
+                    }
+                }.getOrElse {
+                    failure = "Account request could not be prepared. Close and refresh before trying again."
+                    return@VaultButton
+                }
+                pending = request
                 working = true
                 app.applicationScope.launch {
-                    val result = app.deviceMutationClient.mutate(ConvexMutation.UpsertBtcAccountFromDevice(account))
+                    val result = app.deviceMutationClient.mutate(request.mutation())
                     working = false
                     failure = convexWriteFailureMessage("Account not saved", result)
+                    if (accountRevisionRejected(result) && app.btcAccountDrafts.release(viewer, request)) {
+                        conflictedSnapshot = "${request.baseUpdatedAtMs}:${request.asOf}"
+                        pending = null
+                    }
                     if (result is ConvexResult.Ok) {
-                        if (app.transactionDraftIds.rotateAfterAcceptance(leaseScope, accountKey)) {
+                        if (app.btcAccountDrafts.release(viewer, request)) {
                             onWriteSucceeded()
                             onDismiss()
                         } else {
@@ -177,3 +208,39 @@ internal fun newAccountKey(name: String, owner: FamilyMember): String {
 
 internal fun accountAsOf(loadedAsOf: String?, today: LocalDate = LocalDate.now()): String =
     loadedAsOf ?: "${today}T00:00:00.000Z"
+
+internal data class BtcAccountWriteSnapshot(
+    val asOf: String,
+    val baseUpdatedAtMs: Long?,
+    val accounts: List<BtcAccount>,
+) {
+    val identity: String get() = "$baseUpdatedAtMs:$asOf"
+}
+
+internal fun accountRevisionRejected(result: ConvexResult<*>): Boolean =
+    (result as? ConvexResult.Failed)?.failure.let { failure ->
+        failure is ConvexFailure.ServerRejected && failure.kind in setOf(
+            ConvexServerRejection.TASK_CHANGED, ConvexServerRejection.REVISION_REQUIRED,
+        )
+    }
+
+/** Only a complete successful empty read establishes that the create contract is safe. */
+internal fun accountWriteSnapshot(
+    viewer: FamilyMember,
+    balance: Slice<BtcBalance?>,
+    readOwner: FamilyMember?,
+): Result<BtcAccountWriteSnapshot> = runCatching {
+    require(viewer.isAdult) { "Only the household profiles can add Bitcoin accounts." }
+    require(readOwner == viewer.ledgerOwner) { "Refresh the Bitcoin balance for this household before adding an account." }
+    val document = balance.value
+    if (balance.status == Freshness.EMPTY && document == null) {
+        BtcAccountWriteSnapshot(accountAsOf(null), null, emptyList())
+    } else {
+        require(balance.status == Freshness.LIVE && document != null &&
+            document.owner.ledgerOwner == viewer.ledgerOwner &&
+            (document.updatedAtMs ?: 0L) > 0L && document.asOf.isNotBlank()) {
+            "Refresh the Bitcoin balance before adding an account."
+        }
+        BtcAccountWriteSnapshot(document.asOf, document.updatedAtMs, document.accounts)
+    }
+}

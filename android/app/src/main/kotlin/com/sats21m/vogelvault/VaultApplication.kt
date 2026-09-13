@@ -185,6 +185,12 @@ open class VaultApplication : Application() {
         )
     }
 
+    internal val btcAccountDrafts by lazy {
+        com.sats21m.vogelvault.data.BtcAccountDraftStore(
+            getSharedPreferences("btc-account-drafts", Context.MODE_PRIVATE),
+        )
+    }
+
     /** Shared by every sheet instance until Convex confirms the pending row. */
     internal val transactionDraftIds: TransactionDraftIdStore by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,

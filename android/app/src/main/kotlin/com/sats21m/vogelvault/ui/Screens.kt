@@ -319,7 +319,7 @@ fun ScreenHost(
     }
 
     if (showBtcAccountEditor) {
-        BtcAccountEntrySheet(state.activeProfile, state.data.btcAccounts.value, state.data.btcBalance.value?.asOf, { showBtcAccountEditor = false }, onWriteSucceeded)
+        BtcAccountEntrySheet(state.activeProfile, state.data.btcBalance, state.data.btcBalanceReadOwner, { showBtcAccountEditor = false }, onWriteSucceeded)
     }
     if (addingTransaction) {
         AddTransactionSheet(
