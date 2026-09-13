@@ -103,6 +103,8 @@ class FinancialScreenValuesTest {
 
         assertEquals(111_111L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-06"))
         assertEquals(555_555L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-07"))
+        assertEquals(666_666L, model.yearToDateIncomeCents(FamilyMember.RACHEL, "2026-07"))
+        assertEquals(0L, model.yearToDateIncomeCents(FamilyMember.MASON, "2026-07"))
         assertEquals(444_444L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-08"))
         assertEquals(0L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-09"))
         assertNull(model.dashboardIncomeCents(FamilyMember.RACHEL, null))

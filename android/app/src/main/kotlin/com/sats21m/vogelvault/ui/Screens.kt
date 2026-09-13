@@ -151,6 +151,11 @@ internal fun ReadModel.dashboardIncomeCents(
     return if (incomeFiguresUnavailable || month == null) null else rows.sumLongOrNull { it.amountCents }
 }
 
+internal fun ReadModel.yearToDateIncomeCents(viewer: FamilyMember, month: String): Long? =
+    if (incomeFiguresUnavailable) null else income.value.netWorthScopeFor(viewer)
+        .filter { it.month.take(4) == month.take(4) && it.month <= month }
+        .sumLongOrNull { it.amountCents }
+
 internal fun ReadModel.netWorthBalanceForDisplay(): BtcBalance? =
     btcBalance.value?.takeUnless { netWorthFiguresUnavailable }
 
@@ -811,7 +816,7 @@ private fun VaultLazyListScope.dashboard(
             title = "Income",
             source = state.data.income.source,
             rows = projection.incomeEntries.take(6),
-            rowKey = IncomeEntry::id,
+            rowKey = { "${it.owner.key}:${it.id}" },
         ) { entry ->
             LedgerRow(
                 primary = entry.sourceName,
@@ -1012,9 +1017,6 @@ internal fun calendarMonth(now: Long, zone: java.time.ZoneId = java.time.ZoneId.
 
 private fun VaultLazyListScope.incomeSection(state: VaultUiState, month: String, onAddIncome: () -> Unit) {
     val rows = state.data.dashboardIncomeEntries(state.activeProfile, month)
-    val currentYear = month.take(4)
-    val yearRows = state.data.income.value.netWorthScopeFor(state.activeProfile)
-        .filter { it.month.startsWith("$currentYear-") }
     item {
         Panel("Income · ${monthLabel(month)}") {
             val app = LocalContext.current.applicationContext as? VaultApplication
@@ -1025,7 +1027,7 @@ private fun VaultLazyListScope.incomeSection(state: VaultUiState, month: String,
                     rows.sumLongOrNull { it.amountCents }?.let(Money::formatUsd) ?: "Unavailable"
                 }),
                 Kpi("Year to date", figure(state.data.incomeFiguresUnavailable) {
-                    yearRows.sumLongOrNull { it.amountCents }?.let(Money::formatUsd) ?: "Unavailable"
+                    state.data.yearToDateIncomeCents(state.activeProfile, month)?.let(Money::formatUsd) ?: "Unavailable"
                 }),
             ))
         }
@@ -1051,7 +1053,7 @@ private fun VaultLazyListScope.incomeRows(
         title = "Income",
         source = state.data.income.source,
         rows = rows.sortedByDescending { it.date },
-        rowKey = IncomeEntry::id,
+        rowKey = { "${it.owner.key}:${it.id}" },
         revealKey = state.data.income.updatedAt,
     ) { entry ->
         LedgerRow(primary = entry.sourceName, secondary = entry.date,
