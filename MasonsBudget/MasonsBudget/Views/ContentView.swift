@@ -107,6 +107,7 @@ struct ContentView: View {
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("appearance_mode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @Environment(\.theme) var theme
+    @Environment(\.modelContext) private var modelContext
 
     @Query private var holdingAccounts: [HoldingAccount]
 
@@ -114,6 +115,11 @@ struct ContentView: View {
     @State private var canonicalFinancials = CanonicalFinancialSourceStore()
     @StateObject private var syncStatus = SyncStatusStore.shared
     @StateObject private var taskUndoStore = TaskUndoStore.shared
+    @AppStorage(ConvexSyncService.lastSyncErrorKey) private var lastReadError = ""
+    @AppStorage(ConvexSyncService.lastSyncKey) private var lastReadSuccess: Double = 0
+    @State private var showSyncSetup = false
+    @State private var retryingRead = false
+    @State private var readRetryTask: Task<Void, Never>?
     @State private var showAddTransaction = false
     @State private var showProfileSwitcher = false
 
@@ -141,6 +147,7 @@ struct ContentView: View {
     }
 
     var body: some View {
+        let financialLoadID = canonicalFinancials.loadID(viewer: activeMember, lastReadSuccess: lastReadSuccess)
         Group {
             #if os(iOS)
                 iOSBody
@@ -152,10 +159,12 @@ struct ContentView: View {
         .environmentObject(syncStatus)
         .environmentObject(taskUndoStore)
         .overlay { LedgerTextureOverlay() }
-        .task(id: activeMember) {
-            await canonicalFinancials.load(viewer: activeMember)
+        .task(id: financialLoadID) {
+            await canonicalFinancials.load(viewer: financialLoadID.viewer)
         }
-        .overlay(alignment: .top) {
+        .onChange(of: activeMember) { _, _ in cancelReadRetry() }
+        .onDisappear { cancelReadRetry() }
+        .safeAreaInset(edge: .top, spacing: 0) {
             syncFailureBanner
                 .padding(.horizontal, AppLayout.sectionPadding)
                 .padding(.top, 10)
@@ -167,6 +176,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showAddTransaction) {
             addTransactionSheet
+        }
+        .sheet(isPresented: $showSyncSetup, onDismiss: canonicalFinancials.requestReload) {
+            NavigationStack { SyncSetupView() }
         }
         .sheet(isPresented: $showProfileSwitcher) {
             ProfileSwitcherView()
@@ -554,7 +566,33 @@ struct ContentView: View {
 
     @ViewBuilder
     private var syncFailureBanner: some View {
-        if syncStatus.phase == .failed, let message = syncStatus.lastError {
+        if let message = Self.readSyncMessage(hasReadToken: ConvexConfig.hasReadToken, lastError: lastReadError) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message)
+                    .ledgerType(.rowPrimary)
+                if lastReadSuccess > 0 {
+                    Text("Last synced \(Date(timeIntervalSince1970: lastReadSuccess).formatted(date: .abbreviated, time: .shortened))")
+                        .ledgerType(.rowMeta)
+                        .foregroundStyle(theme.textMuted)
+                }
+                HStack {
+                    Button("Open Sync Setup") { showSyncSetup = true }
+                        .frame(minHeight: 44)
+                    if ConvexConfig.hasReadToken {
+                        Button(retryingRead ? "Refreshing…" : "Retry") {
+                            retryRead()
+                        }
+                        .frame(minHeight: 44)
+                        .disabled(retryingRead)
+                    }
+                }
+                .ledgerType(.button)
+                .foregroundStyle(theme.accent)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(theme.surface)
+        } else if syncStatus.phase == .failed, let message = syncStatus.lastError {
             HStack(spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(AppFont.icon(size: 14, weight: .bold))
@@ -604,6 +642,33 @@ struct ContentView: View {
             )
             .shadow(color: Color.black.opacity(0.12), radius: 8, y: 4)
         }
+    }
+
+    private func retryRead() {
+        cancelReadRetry()
+        let viewer = activeMember
+        retryingRead = true
+        readRetryTask = Task {
+            await ConvexSyncService(context: modelContext).syncAll()
+            guard !Task.isCancelled, activeMember == viewer else { return }
+            // A failed download still gets a canonical retry. A successful
+            // download also reloads through the lastReadSuccess task identity.
+            canonicalFinancials.requestReload()
+            retryingRead = false
+            readRetryTask = nil
+        }
+    }
+
+    private func cancelReadRetry() {
+        readRetryTask?.cancel()
+        readRetryTask = nil
+        retryingRead = false
+    }
+
+    static func readSyncMessage(hasReadToken: Bool, lastError: String) -> String? {
+        if !hasReadToken { return "Connect this device to load your household data." }
+        if !lastError.isEmpty { return "Some household data could not refresh. Your last downloaded data is still available." }
+        return nil
     }
 
     // MARK: - Screen Routing

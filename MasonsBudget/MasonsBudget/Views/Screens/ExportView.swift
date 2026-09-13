@@ -15,6 +15,7 @@ struct ExportView: View {
 
     @State private var showShareSheet = false
     @State private var exportURL: URL?
+    @State private var showExportError = false
 
     private var activeMember: FamilyMember {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
@@ -68,6 +69,11 @@ struct ExportView: View {
             .padding(.bottom, 100)
         }
         .background(theme.bg)
+        .alert("Export failed", isPresented: $showExportError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The file could not be saved. Check available storage and try again.")
+        }
         .sheet(isPresented: $showShareSheet) {
             if let url = exportURL {
                 ShareSheetView(url: url)
@@ -188,6 +194,9 @@ struct ExportView: View {
             exportURL = fileURL
             showShareSheet = true
         } catch {
+            exportURL = nil
+            showShareSheet = false
+            showExportError = true
             Self.exportLog.error("Failed to write one export file to temporary storage")
         }
     }

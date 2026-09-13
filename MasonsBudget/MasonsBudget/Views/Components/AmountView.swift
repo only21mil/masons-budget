@@ -73,9 +73,12 @@ struct AmountView: View {
 
 struct RequiredFinancialSourceView: View {
     @Environment(\.theme) private var theme
+    @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
 
     let title: String
     let message: String
+    var onRetry: (() -> Void)?
+    @State private var showSyncSetup = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -88,8 +91,24 @@ struct RequiredFinancialSourceView: View {
             Text(message)
                 .ledgerType(.body)
                 .foregroundStyle(theme.textMuted)
+            Text("Open Sync Setup to check your household connection.")
+                .ledgerType(.body)
+                .foregroundStyle(theme.textMuted)
+            HStack {
+                if let onRetry {
+                    Button("Retry", action: onRetry)
+                        .frame(minHeight: 44)
+                }
+                Button("Open Sync Setup") { showSyncSetup = true }
+                    .frame(minHeight: 44)
+            }
+            .ledgerType(.button)
+            .foregroundStyle(theme.accent)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard()
+        .sheet(isPresented: $showSyncSetup, onDismiss: canonicalFinancials.requestReload) {
+            NavigationStack { SyncSetupView() }
+        }
     }
 }
