@@ -191,6 +191,7 @@ struct ContentView: View {
         .sheet(isPresented: $showTaskEntry) {
             NavigationStack {
                 TaskSmartListView(filter: .inbox, initiallyAdding: true)
+                    // Keep recovery visible on pushed destinations, above the native tab bar.
                     .safeAreaInset(edge: .bottom) { undoBanner }
                     .environment(\.ledgerRootTitle, "")
                     .navigationTitle("New task")
@@ -217,7 +218,6 @@ struct ContentView: View {
                 ForEach(AppTab.allCases) { tab in
                     NavigationStack {
                         screenForTab(tab)
-                            .safeAreaInset(edge: .bottom) { undoBanner }
                             .environment(\.ledgerRootTitle, tab.label)
                             .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
                                 avatarButton
@@ -226,6 +226,7 @@ struct ContentView: View {
                             }))
                             .toolbar(.hidden, for: .navigationBar)
                     }
+                    .safeAreaInset(edge: .bottom) { undoBanner }
                     .tabItem {
                         Image(systemName: tab.icon)
                         Text(tab.tabTitle)
