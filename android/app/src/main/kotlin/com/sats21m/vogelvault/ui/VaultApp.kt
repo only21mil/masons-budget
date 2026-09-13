@@ -355,11 +355,14 @@ private fun VaultScreenContent(
         val fabHeight = (panePlan.listHeight?.let {
             it - (contentOriginY - panePlan.windowOriginY)
         } ?: maxHeight).coerceIn(0.dp, maxHeight)
+        // Independently converted Dp bounds can differ at fractional densities
+        // while laying out at the same physical pixel edge.
+        val fabReachesBottom = with(density) { fabHeight.roundToPx() == maxHeight.roundToPx() }
         Box(Modifier.width(panePlan.listWidth.takeIf { it > 0.dp } ?: maxWidth)
             .height(fabHeight).align(Alignment.TopStart)
             // Folded content already ends above the inset-aware bottom bar.
             // A tabletop list ending above the hinge also needs no system inset.
-            .then(if (panePlan.railWidth > 0.dp && fabHeight == maxHeight) {
+            .then(if (panePlan.railWidth > 0.dp && fabReachesBottom) {
                 Modifier.windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom))
             } else Modifier)) {
             androidx.compose.material3.FloatingActionButton(
