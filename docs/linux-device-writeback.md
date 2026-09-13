@@ -92,7 +92,7 @@ fails with `OWNER_SOURCE_MISMATCH`.
 
 `lastSeenAt` moves only after an authorized mutation succeeds. Authentication,
 capability, owner, validation, and collision failures leave it unchanged.
-Income and retirement remain read-only.
+Standalone income uses `tables:upsertIncomeFromDevice` and `tables:deleteIncomeFromDevice` with `transactions:write`. The credential fixes the ledger owner: adults share Victor, children write only their own income. Linked income-plus-buy pairs remain immutable through these routes. Retirement remains read-only.
 
 ## Delete convergence
 

@@ -244,6 +244,7 @@ export default defineSchema({
   // surviving legacy blob cannot resurrect an explicitly deleted entity.
   rowTombstones: defineTable({
     entityType: v.union(
+      v.literal("income"),
       v.literal("transaction"),
       v.literal("todo"),
       v.literal("budgetCategory"),
@@ -456,6 +457,7 @@ export default defineSchema({
     migrationSourceIndex: v.optional(v.float64()),
   })
     .index("by_source_key", ["sourceFile", "sourceKey"])
+    .index("by_source_income_id", ["sourceFile", "incomeId"])
     .index("by_owner_month", ["owner", "month"])
     .index("by_owner_month_date_income_id", [
       "owner",

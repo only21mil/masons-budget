@@ -1958,6 +1958,7 @@ function buildBtcBuyRow(
 
 type UpsertOutcome = "inserted" | "updated";
 type RowEntityType =
+  | "income"
   | "transaction"
   | "todo"
   | "budgetCategory"
@@ -3078,6 +3079,9 @@ async function upsertLinkedIncomeRow(
   ctx: MutationCtx,
   row: LinkedIncomeRow,
 ): Promise<UpsertOutcome> {
+  if (await findRowTombstone(ctx, "income", "income", row.incomeId)) {
+    deviceFailure("ENTITY_DELETED", "Deleted income cannot be recreated as a linked buy.", "income", row.incomeId);
+  }
   const existing = await ctx.db
     .query("income")
     .withIndex("by_source_key", (q) =>
@@ -5962,6 +5966,123 @@ async function deleteBtcAccountCore(
   );
   return removed;
 }
+
+// Standalone income follows the credential-bound ledger, without posting Bitcoin.
+const standaloneIncomeInput = v.object({
+  id: v.string(), owner: familyMemberValidator, date: v.string(),
+  amountCents: v.int64(), source: v.string(), note: v.optional(v.string()),
+});
+
+async function standaloneIncomeState(ctx: MutationCtx, entityId: string, owner: FamilyMember) {
+  const existing = await ctx.db.query("income")
+    .withIndex("by_source_income_id", (q) => q.eq("sourceFile", "income").eq("incomeId", entityId))
+    .unique();
+  const buy = await ctx.db.query("btcBuys")
+    .withIndex("by_source_buy_id", (q) => q.eq("sourceFile", "bitcoin-buys").eq("buyId", entityId))
+    .unique();
+  if (buy?.linkedIncomeId === entityId) {
+    deviceFailure("VALIDATION_FAILED", "Linked income requires paired correction or deletion.", "income", entityId);
+  }
+  if (existing && existing.owner !== owner) {
+    deviceFailure("OWNER_MISMATCH", "Income does not belong to the requested ledger.", "income", entityId);
+  }
+  const tombstone = await findRowTombstone(ctx, "income", "income", entityId);
+  return { existing, tombstone };
+}
+
+function requireIncomeOwner(device: { profile?: DeviceProfile }, owner: FamilyMember, entityId: string) {
+  return requireMoneyOwnerBinding(device, owner, "income", entityId);
+}
+
+export const upsertIncomeFromDevice = mutation({
+  args: {
+    deviceId: v.string(), deviceToken: v.string(), owner: familyMemberValidator,
+    sourceFile: v.literal("income"), baseUpdatedAtMs: v.optional(v.float64()),
+    income: standaloneIncomeInput,
+  },
+  returns: deviceUpsertResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(ctx, args.deviceId, args.deviceToken, "transactions:write");
+    requireDeviceRevision(args.baseUpdatedAtMs, false);
+    const input = args.income;
+    requireDeviceIdentifier(input.id, "income.id");
+    requireDeviceText(input.source, "income.source");
+    if (!input.source.trim()) {
+      deviceFailure("VALIDATION_FAILED", "Income source must not be blank.", "income", input.id);
+    }
+    requireDeviceOptionalText(input.note, "income.note");
+    requireDevicePositive(input.amountCents, "income.amountCents");
+    const owner = requireIncomeOwner(device, args.owner, input.id);
+    if (input.owner !== args.owner) {
+      deviceFailure("OWNER_MISMATCH", "Income owner does not match request owner.", "income", input.id);
+    }
+    const now = Date.now();
+    const date = requireIsoDate(input.date, "income.date", now, 30, rejectDeviceDate);
+    const { existing, tombstone } = await standaloneIncomeState(ctx, input.id, owner);
+    if (tombstone) {
+      deviceFailure("ENTITY_DELETED", "Deleted income cannot be recreated.", "income", input.id);
+    }
+    const fields = { owner, date, month: monthOf(date), amountCents: input.amountCents,
+      source: input.source, note: optionalText(input.note) };
+    let outcome: UpsertOutcome;
+    if (existing) {
+      const same = existing.date === fields.date && existing.amountCents === fields.amountCents &&
+        existing.source === fields.source && existing.note === fields.note;
+      if (!same) {
+        if (args.baseUpdatedAtMs === undefined) {
+          deviceFailure("REVISION_REQUIRED", "Income updates require baseUpdatedAtMs.", "income", input.id);
+        }
+        if (args.baseUpdatedAtMs !== existing.updatedAtMs) {
+          deviceFailure("ENTITY_CONFLICT", "Income changed after it was read.", "income", input.id);
+        }
+        await lockRuntimeSource(ctx, "income");
+        await ctx.db.patch(existing._id, { ...fields, updatedAtMs: nextUpdatedAtMs(existing.updatedAtMs) });
+      }
+      outcome = "updated";
+    } else {
+      if (args.baseUpdatedAtMs !== undefined) {
+        deviceFailure("ENTITY_NOT_FOUND", "Income to update does not exist.", "income", input.id);
+      }
+      await lockRuntimeSource(ctx, "income");
+      await ctx.db.insert("income", { ...fields, sourceKey: `id:${input.id}`,
+        incomeId: input.id, sourceFile: "income", updatedAtMs: now });
+      outcome = "inserted";
+    }
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: input.id, outcome };
+  },
+});
+
+export const deleteIncomeFromDevice = mutation({
+  args: {
+    deviceId: v.string(), deviceToken: v.string(), owner: familyMemberValidator,
+    sourceFile: v.literal("income"), entityId: v.string(), baseUpdatedAtMs: v.float64(),
+  },
+  returns: deviceDeleteResultValidator,
+  handler: async (ctx, args) => {
+    const device = await authenticateDevice(ctx, args.deviceId, args.deviceToken, "transactions:write");
+    requireDeviceRevision(args.baseUpdatedAtMs, true);
+    requireDeviceIdentifier(args.entityId, "entityId");
+    const owner = requireIncomeOwner(device, args.owner, args.entityId);
+    const { existing, tombstone } = await standaloneIncomeState(ctx, args.entityId, owner);
+    if (!existing) {
+      if (tombstone?.owner === owner && tombstone.deletedFromUpdatedAtMs === args.baseUpdatedAtMs) {
+        await markDeviceSeen(ctx, device);
+        return { ok: true as const, entityId: args.entityId, removed: false };
+      }
+      deviceFailure(tombstone ? "ENTITY_CONFLICT" : "ENTITY_NOT_FOUND",
+        "Income deletion does not match an existing revision.", "income", args.entityId);
+    }
+    if (existing.updatedAtMs !== args.baseUpdatedAtMs) {
+      deviceFailure("ENTITY_CONFLICT", "Income changed after it was read.", "income", args.entityId);
+    }
+    await lockRuntimeSource(ctx, "income");
+    await ctx.db.delete(existing._id);
+    await upsertRowTombstone(ctx, "income", "income", args.entityId, owner, args.baseUpdatedAtMs);
+    await markDeviceSeen(ctx, device);
+    return { ok: true as const, entityId: args.entityId, removed: true };
+  },
+});
 
 export const upsertTransactionFromDevice = mutation({
   args: {
