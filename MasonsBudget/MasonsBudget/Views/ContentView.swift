@@ -229,9 +229,9 @@ struct ContentView: View {
                                 addButton
                             }))
                             .toolbar(.hidden, for: .navigationBar)
+                            // Reserve status space on the root content inside NavigationStack.
+                            .safeAreaInset(edge: .top, spacing: 0) { syncBanner }
                     }
-                    // TabView does not forward an outer top inset to its navigation stacks.
-                    .safeAreaInset(edge: .top, spacing: 0) { syncBanner }
                     .safeAreaInset(edge: .bottom) { undoBanner }
                     .tabItem {
                         Image(systemName: tab.icon)
