@@ -220,6 +220,13 @@ class ReadModelTest {
     }
 
     @Test
+    fun `complete empty income is an authoritative zero`() {
+        val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        assertFalse(base.copy(income = base.income.copy(value = emptyList())).incomeFiguresUnavailable)
+        assertTrue(base.copy(income = base.income.copy(status = Freshness.ERROR)).incomeFiguresUnavailable)
+    }
+
+    @Test
     fun `an empty envelope really is empty`() {
         val empty = Fixtures.envelope(FamilyMember.VICTOR, Freshness.EMPTY)
         assertTrue(empty.transactions.value.isEmpty())

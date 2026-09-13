@@ -377,7 +377,7 @@ data class ReadModel(
     val btcBalanceReadOwner: FamilyMember? = null,
 ) {
     val incomeFiguresUnavailable: Boolean
-        get() = income.requiredProjectionUnavailable || income.value.isEmpty()
+        get() = income.requiredProjectionUnavailable
 
     val netWorthFiguresUnavailable: Boolean
         get() = btcBalance.requiredProjectionUnavailable || btcBalance.value == null
