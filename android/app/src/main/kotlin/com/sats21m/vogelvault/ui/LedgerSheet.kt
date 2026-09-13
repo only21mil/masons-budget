@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
@@ -32,7 +33,11 @@ internal fun LedgerSheet(
 ) {
     val region = LocalLedgerSheetRegion.current
     ModalBottomSheet(onDismissRequest = onDismissRequest,
-        modifier = Modifier.testTag("ledger-sheet-surface"),
+        // Bound the constraints entering Material's draggable anchors as well as
+        // the native window. A posted window resize alone can leave the expanded
+        // anchor measured against the full display, below a horizontal hinge.
+        modifier = Modifier.testTag("ledger-sheet-surface")
+            .then(if (region != null) Modifier.heightIn(max = region.height) else Modifier),
         sheetMaxWidth = region?.width?.coerceAtMost(640.dp) ?: 640.dp,
         contentWindowInsets = { if (region == null) BottomSheetDefaults.windowInsets else WindowInsets(0, 0, 0, 0) },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
