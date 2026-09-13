@@ -255,11 +255,11 @@ struct HomeDashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             link(Date().formatted(.dateTime.month(.wide).year()) + " budget") { BudgetView() }
             let currentMonth = CategoryDetailView.monthKey(for: Date(), calendar: Calendar(identifier: .gregorian))
+            let planned = HomeDashboardData.plannedExpenseTotal(budgetPlan?.categories ?? [])
             if budgetPlanViewer == member, let budgetPlan,
                member.sharesNetWorth(with: budgetPlan.owner),
                HomeDashboardData.isCurrentBudgetMonth(budgetPlan.month, currentMonth: currentMonth),
-               hasLoaded(transactionSource), budgetPlan.plannedCategoryTotal > 0 {
-                let planned = budgetPlan.plannedCategoryTotal
+               hasLoaded(transactionSource), planned > 0 {
                 let spent = transactions.filter {
                     member.sharesNetWorth(with: $0.ownerMember) && Calendar.current.isDate($0.date, equalTo: Date(), toGranularity: .month)
                 }.reduce(Decimal(0)) { $0 + $1.spendAmount }
@@ -302,6 +302,11 @@ struct IncomeActivityDetail: View {
 }
 
 enum HomeDashboardData {
+    static func plannedExpenseTotal(_ categories: [ConvexBudgetDocumentRow.Category]) -> Decimal {
+        categories.filter { $0.name.caseInsensitiveCompare("Income") != .orderedSame }
+            .reduce(Decimal(0)) { $0 + Decimal($1.budgetCents) / 100 }
+    }
+
     static func isCurrentBudgetMonth(_ storedMonth: String, currentMonth: String) -> Bool {
         BudgetPlanCarry.canonicalStoredMonth(storedMonth) == currentMonth
     }

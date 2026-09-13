@@ -35,6 +35,19 @@ final class AppleScreenAdoptionTests: XCTestCase {
         XCTAssertEqual(HomeDashboardData.spentToday(rows, viewer: .maddox, now: today, calendar: calendar), 0)
     }
 
+    func testHomeBudgetExcludesIncomeCategoriesRegardlessOfCase() {
+        let expenses: [ConvexBudgetDocumentRow.Category] = [
+            .init(name: "Housing", icon: nil, budgetCents: 200_000),
+            .init(name: "Food", icon: nil, budgetCents: 100_025),
+        ]
+        for incomeName in ["Income", "income", "INCOME", "iNcOmE"] {
+            let income = ConvexBudgetDocumentRow.Category(name: incomeName, icon: nil, budgetCents: 500_000)
+            XCTAssertEqual(HomeDashboardData.plannedExpenseTotal(expenses + [income]), Decimal(300025) / 100)
+            XCTAssertEqual(HomeDashboardData.plannedExpenseTotal([income]), 0)
+        }
+        XCTAssertEqual(HomeDashboardData.plannedExpenseTotal([]), 0)
+    }
+
     func testHomeBudgetRequiresCanonicalCurrentMonth() {
         XCTAssertTrue(HomeDashboardData.isCurrentBudgetMonth("2026-09", currentMonth: "2026-09"))
         XCTAssertTrue(HomeDashboardData.isCurrentBudgetMonth("September 2026", currentMonth: "2026-09"))
