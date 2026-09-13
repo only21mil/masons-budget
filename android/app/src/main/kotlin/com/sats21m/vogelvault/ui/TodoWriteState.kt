@@ -372,9 +372,11 @@ internal fun TodoRow(
     onToggleFlag: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    openEnabled: Boolean = enabled,
+    openDescription: String? = null,
 ) {
     val colors = LocalLedgerTheme.current.colors
-    val editDescription = stringResource(R.string.todo_edit_named, todo.title)
+    val editDescription = openDescription ?: stringResource(R.string.todo_edit_named, todo.title)
     val todoStateDescription = stringResource(
         when {
             todo.done && todo.flagged -> R.string.todo_state_completed_flagged
@@ -391,7 +393,7 @@ internal fun TodoRow(
                 contentDescription = editDescription
                 stateDescription = todoStateDescription
             }
-            .clickable(enabled = enabled, role = Role.Button, onClick = onEdit)
+            .clickable(enabled = openEnabled, role = Role.Button, onClick = onEdit)
             .padding(horizontal = VaultSpace.sm, vertical = VaultSpace.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {

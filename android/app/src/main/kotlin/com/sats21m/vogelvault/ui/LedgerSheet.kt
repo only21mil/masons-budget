@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,6 +14,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
@@ -27,8 +30,13 @@ internal fun LedgerSheet(
     actions: @Composable () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val region = LocalLedgerSheetRegion.current
     ModalBottomSheet(onDismissRequest = onDismissRequest,
+        modifier = Modifier.testTag("ledger-sheet-surface"),
+        sheetMaxWidth = region?.width?.coerceAtMost(640.dp) ?: 640.dp,
+        contentWindowInsets = { if (region == null) BottomSheetDefaults.windowInsets else WindowInsets(0, 0, 0, 0) },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ConstrainLedgerDialogWindow()
         Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = VaultSpace.md)) {
             Text(title, style = LocalLedgerTheme.current.type.drilldownTitle,
                 modifier = Modifier.padding(bottom = VaultSpace.md))

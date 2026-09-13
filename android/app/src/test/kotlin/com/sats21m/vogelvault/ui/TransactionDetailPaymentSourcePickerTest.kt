@@ -214,6 +214,8 @@ class TransactionDetailPaymentSourcePickerTest {
             }
         }
         compose.waitForIdle()
+        compose.onNode(hasText("Edit") and hasClickAction()).performClick()
+        compose.waitForIdle()
     }
 
     private fun transaction(

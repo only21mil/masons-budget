@@ -56,6 +56,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -74,7 +78,6 @@ import com.sats21m.vogelvault.ui.components.HorizontalHairline
 import com.sats21m.vogelvault.ui.components.LedgerGlyphs
 import com.sats21m.vogelvault.ui.components.StatusBanner
 import com.sats21m.vogelvault.ui.components.VerticalHairline
-import com.sats21m.vogelvault.ui.theme.LocalIsUnfolded
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.LedgerColors
 import com.sats21m.vogelvault.ui.theme.VaultBitcoin
@@ -134,8 +137,8 @@ const val UNFOLDED_MIN_WIDTH_DP = 600
  */
 const val UNFOLDED_CONTENT_MAX_WIDTH_DP = 560
 
-/** A7 keeps the existing rail geometry; A8 applies the Fold glyph rail. */
-const val RAIL_WIDTH_DP = 130
+/** Fable glyph rail width on the inner display. */
+const val RAIL_WIDTH_DP = 72
 internal const val RAIL_ITEM_COUNT = 5
 
 internal const val VAULT_RAIL_TEST_TAG = "vault-navigation-rail"
@@ -145,7 +148,7 @@ internal const val VAULT_SCREEN_CONTENT_TEST_TAG = "vault-screen-content"
 private val RAIL_EDGE_MARKER_WIDTH = 2.dp
 private val RAIL_GLYPH_SIZE = 24.dp
 private val RAIL_ITEM_HEIGHT = 48.dp
-private val RAIL_GLYPH_INSET = 14.dp
+private val RAIL_GLYPH_INSET = 22.dp
 private val RAIL_LABEL_GAP = 10.dp
 
 internal val RAIL_PRIMARY_ORDER: List<Destination> = listOf(
@@ -176,6 +179,7 @@ internal fun ledgerNavigationUnselectedTint(colors: LedgerColors): Color = color
  * @param profileSwitchRefusal the cause reported by that receiver, shown to the
  * user. A rejected switch names its cause.
  */
+@OptIn(androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi::class)
 @Composable
 fun VaultApp(
     state: VaultUiState,
@@ -192,6 +196,8 @@ fun VaultApp(
     ledgerSettings: LedgerUiSettings = LedgerUiSettings(),
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit = {},
     modifier: Modifier = Modifier,
+    hingeOverride: LedgerHinge? = null,
+    safeDrawingInsets: WindowInsets = WindowInsets.safeDrawing,
 ) {
     // An unwired shell refuses loudly instead of swallowing the request: the user
     // learns the switch did not happen, and so does anyone testing this screen.
@@ -221,24 +227,51 @@ fun VaultApp(
     }
     BackHandler(routeParents.isNotEmpty(), onBack = navigateBack)
     val tokens = LocalLedgerTheme.current
+    val observedHinge = rememberLedgerHinge()
+    val density = LocalDensity.current
+    var contentOrigin by remember { mutableStateOf(Offset.Zero) }
     BoxWithConstraints(modifier.fillMaxSize().background(tokens.colors.background)) {
-        val unfolded = maxWidth.value >= UNFOLDED_MIN_WIDTH_DP
-
-        CompositionLocalProvider(LocalIsUnfolded provides unfolded) {
-            val destinations = destinationsFor(state.activeProfile)
-            val current = state.destination.takeIf { it in destinations } ?: Destination.DASHBOARD
-            val selectedPrimary = routeParents.firstOrNull()?.let(Destination::valueOf) ?: current
-
-            if (unfolded) {
-                Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                    VaultRail(destinations, selectedPrimary, navigatePrimary)
-                    VerticalHairline(Modifier.fillMaxHeight())
-                    Column(Modifier.weight(1f)) {
-                        VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile, { navigateWithin(Destination.SETTINGS) }) {
-                            onWriteSucceeded()
+        val widthClass = androidx.compose.material3.windowsizeclass.WindowSizeClass.calculateFromSize(
+            androidx.compose.ui.unit.DpSize(maxWidth, maxHeight),
+        ).widthSizeClass
+        val expanded = widthClass != androidx.compose.material3.windowsizeclass.WindowWidthSizeClass.Compact
+        val destinations = destinationsFor(state.activeProfile)
+        val current = state.destination.takeIf { it in destinations } ?: Destination.DASHBOARD
+        val selectedPrimary = routeParents.firstOrNull()?.let(Destination::valueOf) ?: current
+        val hinge = hingeOverride ?: observedHinge
+        val sheetRegion = ledgerSheetRegion(maxWidth, maxHeight, hinge)
+        BoxWithConstraints(
+            Modifier.fillMaxSize()
+                .windowInsetsPadding(safeDrawingInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+                .onGloballyPositioned { contentOrigin = it.positionInWindow() },
+        ) {
+            // Measure the inset content and translate the window hinge to that same
+            // origin. The rail and both panes now share the available width.
+            val originX = with(density) { contentOrigin.x.toDp() }
+            val originY = with(density) { contentOrigin.y.toDp() }
+            val localHinge = hinge?.let {
+                val origin = if (it.horizontal) originY else originX
+                it.copy(start = it.start - origin, end = it.end - origin)
+            }
+            val plan = ledgerPanePlan(maxWidth, maxHeight, expanded, current in DETAIL_DESTINATIONS, localHinge)
+                .copy(windowOriginY = originY)
+            CompositionLocalProvider(LocalLedgerPanePlan provides plan, LocalLedgerSheetRegion provides sheetRegion) {
+                // One call site owns ScreenHost in every posture. Resizing changes
+                // constraints and chrome, never the composition that owns editors.
+                Column(Modifier.fillMaxSize().padding(start = plan.leadingInset, top = plan.topInset)) {
+                    Row(Modifier.weight(1f)) {
+                        if (plan.railWidth > 0.dp) {
+                            Box(Modifier.width(plan.railWidth).then(plan.listHeight?.let { Modifier.height(it) } ?: Modifier.fillMaxHeight())) {
+                                VaultRail(destinations, selectedPrimary, navigatePrimary)
+                            }
                         }
-                        HorizontalHairline()
-                        Row(Modifier.weight(1f)) {
+                        Column(Modifier.weight(1f)) {
+                            Box(Modifier.width(plan.listWidth)) {
+                                VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile, { navigateWithin(Destination.SETTINGS) }) {
+                                    onWriteSucceeded()
+                                }
+                            }
+                            HorizontalHairline(Modifier.width(plan.listWidth))
                             VaultScreenContent(
                                 state = state,
                                 refusal = refusal,
@@ -257,44 +290,14 @@ fun VaultApp(
                                 onDisplayUnitChange = onDisplayUnitChange,
                                 ledgerSettings = ledgerSettings,
                                 onLedgerSettingsChange = onLedgerSettingsChange,
-                                contentMaxWidth = UNFOLDED_CONTENT_MAX_WIDTH_DP.dp,
-                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
                             )
-                            if (showsLedgerSidebar(current, unfolded)) {
-                                VerticalHairline(Modifier.fillMaxHeight())
-                                LedgerSidebar(state = state, displayUnit = displayUnit)
-                            }
                         }
                     }
-                }
-            } else {
-                Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
-                    VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile, { navigateWithin(Destination.SETTINGS) }) {
-                        onWriteSucceeded()
+                    if (plan.railWidth == 0.dp) {
+                        HorizontalHairline(Modifier.width(plan.listWidth))
+                        Box(Modifier.width(plan.listWidth)) { VaultBottomBar(destinations, selectedPrimary, navigatePrimary) }
                     }
-                    HorizontalHairline()
-                    VaultScreenContent(
-                        state = state,
-                        refusal = refusal,
-                        profileSwitcher = {
-                            ProfileSwitcher(state.activeProfile, requestProfileSwitchAuthentication, onSwitchProfile)
-                        },
-                        current = current,
-                                onNavigate = navigateWithin,
-                                primaryReset = primaryReset,
-                                onBack = navigateBack.takeIf { routeParents.isNotEmpty() },
-                        onEnableRemoteRows = onEnableRemoteRows,
-                        onRemoteRowsConnected = onRemoteRowsConnected,
-                        onWriteSucceeded = onWriteSucceeded,
-                        onStartRiverBillPay = onStartRiverBillPay,
-                        displayUnit = displayUnit,
-                        onDisplayUnitChange = onDisplayUnitChange,
-                        ledgerSettings = ledgerSettings,
-                        onLedgerSettingsChange = onLedgerSettingsChange,
-                        modifier = Modifier.weight(1f),
-                    )
-                    HorizontalHairline()
-                    VaultBottomBar(destinations, selectedPrimary, navigatePrimary)
                 }
             }
         }
@@ -328,12 +331,19 @@ private fun VaultScreenContent(
     contentMaxWidth: Dp? = null,
 ) {
     var quickAddRequested by rememberSaveable(state.activeProfile) { mutableStateOf(false) }
-    Box(modifier) {
+    val panePlan = LocalLedgerPanePlan.current
+    val density = LocalDensity.current
+    var contentOriginY by remember { mutableStateOf(0.dp) }
+    BoxWithConstraints(modifier.onGloballyPositioned { coordinates ->
+        contentOriginY = with(density) { coordinates.positionInWindow().y.toDp() }
+    }) {
         Column(Modifier.fillMaxSize()) {
-            ProfileSwitchRefusalNotice(refusal)
-            AuthorizationNotice(state)
-            RowReadFailureNotice(state, onWriteSucceeded)
-            RefreshFailureNotice(state, onWriteSucceeded)
+            Column(Modifier.width(LocalLedgerPanePlan.current.listWidth)) {
+                ProfileSwitchRefusalNotice(refusal)
+                AuthorizationNotice(state)
+                RowReadFailureNotice(state, onWriteSucceeded)
+                RefreshFailureNotice(state, onWriteSucceeded)
+            }
             // The cap goes on the screen, not the notices: a warning banner spans
             // the column, the ledger column does not.
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -362,11 +372,19 @@ private fun VaultScreenContent(
                 )
             }
         }
-        androidx.compose.material3.FloatingActionButton(
-            onClick = { quickAddRequested = true },
-            containerColor = LocalLedgerTheme.current.colors.bitcoin,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(VaultSpace.md).testTag("quick-add-fab"),
-        ) { Text("+", modifier = Modifier.semantics { contentDescription = "Add transaction" }) }
+        // The shell already applied the rail and leading/top insets. Keep the
+        // button in the list pane, including the usable tabletop height.
+        val fabHeight = (panePlan.listHeight?.let {
+            it - (contentOriginY - panePlan.windowOriginY)
+        } ?: maxHeight).coerceIn(0.dp, maxHeight)
+        Box(Modifier.width(panePlan.listWidth.takeIf { it > 0.dp } ?: maxWidth)
+            .height(fabHeight).align(Alignment.TopStart)) {
+            androidx.compose.material3.FloatingActionButton(
+                onClick = { quickAddRequested = true },
+                containerColor = LocalLedgerTheme.current.colors.bitcoin,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(VaultSpace.md).testTag("quick-add-fab"),
+            ) { Text("+", modifier = Modifier.semantics { contentDescription = "Add transaction" }) }
+        }
         LedgerAtmosphere()
     }
 }
@@ -519,15 +537,7 @@ private fun RailItem(
         )
         Spacer(Modifier.width(RAIL_GLYPH_INSET))
         Icon(icon, contentDescription = label, tint = ink, modifier = Modifier.size(RAIL_GLYPH_SIZE))
-        Spacer(Modifier.width(RAIL_LABEL_GAP))
-        Text(
-            label.uppercase(),
-            style = tokens.type.tabLabel,
-            color = ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(end = VaultSpace.sm),
-        )
+
     }
 }
 

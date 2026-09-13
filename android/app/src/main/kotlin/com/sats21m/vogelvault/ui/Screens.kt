@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -194,6 +195,7 @@ fun ScreenHost(
             state = taskState,
             todos = todos,
             onWriteSucceeded = onWriteSucceeded,
+            adaptive = true,
         )
     },
 ) {
@@ -287,15 +289,11 @@ fun ScreenHost(
             visibleTodos = todosInput.todosFor(profile),
         )
     }
-    val activitySearch = if (destination == Destination.ACTIVITY) {
-        rememberActivitySearchProjection(
+    val activitySearch = rememberActivitySearchProjection(
             transactions = collections.visibleTransactions,
             profile = state.activeProfile,
             incomeEntries = incomeInput.visibleTo(profile),
         )
-    } else {
-        null
-    }
     val dashboardIncomeEntries = remember(profile, dashboardMonth, incomeInput) {
         state.data.dashboardIncomeEntries(profile, dashboardMonth)
     }
@@ -433,163 +431,206 @@ fun ScreenHost(
     // itself; nothing about writing passes through this shell.
     if (destination == Destination.TODAY) {
         key(state.activeProfile) {
-            Column(modifier) {
-                TextButton(onClick = { onNavigate(Destination.TASKS) }) { Text("Task lists") }
-                TodoScreen(state = state, onWriteSucceeded = onWriteSucceeded, modifier = Modifier.weight(1f), listState = listState)
-            }
+            LedgerPanes(
+                plan = LocalLedgerPanePlan.current,
+                showCompactDetail = false,
+                modifier = modifier.fillMaxSize(),
+                detail = {},
+                list = {
+                    Column(Modifier.fillMaxSize()) {
+                        TextButton(onClick = { onNavigate(Destination.TASKS) }) { Text("Task lists") }
+                        TodoScreen(state = state, onWriteSucceeded = onWriteSucceeded, modifier = Modifier.weight(1f), listState = listState)
+                    }
+                },
+            )
         }
         return
     }
 
-    Column(modifier.fillMaxWidth()) {
-        onBack?.let { back -> TextButton(onClick = back) { Text("Back") } }
-        ScreenActionBar(
-            destination = destination,
-            displayUnit = displayUnit,
-            onDisplayUnitChange = onDisplayUnitChange,
-        )
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter),
-        ) {
-            vaultContent {
-            item {
-                ScreenHeader(destination, state, budgetSelectedMonth)
+    if (destination == Destination.TASKS) {
+        Column(modifier.fillMaxSize()) {
+            onBack?.let { back -> TextButton(onClick = back) { Text("Back") } }
+            Box(Modifier.weight(1f).fillMaxWidth()) { taskListsContent(state, collections.visibleTodos) }
+        }
+        return
+    }
+
+    val panePlan = LocalLedgerPanePlan.current
+    val drilldownScope = budgetDrilldownMonth?.let { month ->
+        budgetDrilldownCategory?.let { BudgetCategoryDrilldownScope(month, it) }
+    }
+    val selectedTransaction = collections.visibleTransactions.firstOrNull { it.selectionKey == selectedTransactionKey }
+    val hasDetail = selectedTransaction != null || (destination == Destination.BUDGET && drilldownScope != null)
+    BackHandler(selectedTransaction != null) { selectedTransactionKey = null }
+    val detailContent: @Composable () -> Unit = {
+        if (selectedTransaction != null) {
+            key(selectedTransaction.selectionKey) {
+                TransactionDetailScreen(
+                    transaction = selectedTransaction,
+                    viewer = state.activeProfile,
+                    actions = transactionActions,
+                    onClose = { selectedTransactionKey = null },
+                    onChanged = onWriteSucceeded,
+                    embedded = true,
+                )
             }
-            when (destination) {
-                Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit, { target ->
-                    if (target == Destination.BUDGET) {
-                        picked = dashboardMonth
-                        budgetDrilldownMonth = null
-                        budgetDrilldownCategory = null
-                    }
-                    onNavigate(target)
-                }) { selectedTransactionKey = it.selectionKey }
-                Destination.ACTIVITY -> {
-                    activity(state, checkNotNull(activitySearch), displayUnit) {
-                        selectedTransactionKey = it.selectionKey
-                    }
-                }
-                Destination.BUDGET -> {
-                    val drilldownScope =
-                        budgetDrilldownMonth?.let { selectedMonth ->
-                            budgetDrilldownCategory?.let { category ->
-                                BudgetCategoryDrilldownScope(selectedMonth, category)
+        } else if (destination == Destination.BUDGET && drilldownScope != null) {
+            LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter)) {
+                vaultContent {
+                    // Editing lives on the drilldown. Only the current budget
+                    // document month is writable, and only from a live read.
+                    val editorSeed = state.data.budget.value?.let { budget ->
+                        budgetSpend
+                            ?.takeIf {
+                                drilldownScope.month == budget.month &&
+                                    state.data.budget.status == Freshness.LIVE
                             }
-                        }
-                    if (drilldownScope == null) {
-                        budget(
-                            state,
-                            months,
-                            budgetSpend,
-                            selectedMonth = budgetSelectedMonth,
-                            onSelectMonth = { picked = it },
-                            onAddIncome = { addingIncome = true; addingTransaction = true },
-                            onOpenCategory = { scope ->
-                                budgetDrilldownMonth = scope.month
-                                budgetDrilldownCategory = scope.category
-                            },
-                            onPlanCopied = { month ->
-                                picked = month
-                                onWriteSucceeded()
-                            },
-                        )
-                    } else {
-                        // Editing lives on the drilldown. Only the current budget
-                        // document month is writable, and only from a live read.
-                        val editorSeed = state.data.budget.value?.let { budget ->
-                            budgetSpend
-                                ?.takeIf {
-                                    drilldownScope.month == budget.month &&
-                                        state.data.budget.status == Freshness.LIVE
-                                }
-                                ?.categories
-                                ?.firstOrNull { it.name == drilldownScope.category }
-                                ?.let { category ->
-                                    BudgetCategoryEditorSeed(
-                                        viewer = state.activeProfile,
-                                        displayedMonth = drilldownScope.month,
-                                        budgetDocumentMonth = budget.month,
-                                        category = category,
-                                        budget = budget,
-                                        sourceFile = budgetCategoryDeleteSourceFile(state.activeProfile),
-                                    )
-                                }
-                        }
-                        budgetCategoryDrilldown(
-                            state = state,
-                            scope = drilldownScope,
-                            onEdit = editorSeed?.let { seed -> { budgetEditor = seed } },
-                            editUnavailableReason = capabilities.unavailableReason(profile, DeviceCapability.BUDGET),
-                            transactions =
-                                transactionsInput.budgetCategoryTransactionsFor(
+                            ?.categories
+                            ?.firstOrNull { it.name == drilldownScope.category }
+                            ?.let { category ->
+                                BudgetCategoryEditorSeed(
                                     viewer = state.activeProfile,
-                                    month = drilldownScope.month,
-                                    category = drilldownScope.category,
-                                ),
-                            billPays =
-                                billPaysInput.budgetCategoryBillPaysFor(
-                                    viewer = state.activeProfile,
-                                    month = drilldownScope.month,
-                                    category = drilldownScope.category,
-                                ),
-                            onBack = {
+                                    displayedMonth = drilldownScope.month,
+                                    budgetDocumentMonth = budget.month,
+                                    category = category,
+                                    budget = budget,
+                                    sourceFile = budgetCategoryDeleteSourceFile(state.activeProfile),
+                                )
+                            }
+                    }
+                    budgetCategoryDrilldown(
+                        state = state,
+                        scope = drilldownScope,
+                        onEdit = editorSeed?.let { seed -> { budgetEditor = seed } },
+                        editUnavailableReason = capabilities.unavailableReason(profile, DeviceCapability.BUDGET),
+                        transactions =
+                            transactionsInput.budgetCategoryTransactionsFor(
+                                viewer = state.activeProfile,
+                                month = drilldownScope.month,
+                                category = drilldownScope.category,
+                            ),
+                        billPays =
+                            billPaysInput.budgetCategoryBillPaysFor(
+                                viewer = state.activeProfile,
+                                month = drilldownScope.month,
+                                category = drilldownScope.category,
+                            ),
+                        onBack = {
+                            budgetDrilldownMonth = null
+                            budgetDrilldownCategory = null
+                        },
+                        onSelectTransaction = { selectedTransactionKey = it.selectionKey },
+                    )
+                }
+            }
+        } else LedgerDetailPrompt(destination)
+    }
+    LedgerPanes(
+        plan = panePlan,
+        showCompactDetail = hasDetail,
+        modifier = modifier.fillMaxSize(),
+        detail = detailContent,
+        list = {
+            Column(Modifier.fillMaxSize()) {
+                onBack?.let { back -> TextButton(onClick = back) { Text("Back") } }
+                ScreenActionBar(
+                    destination = destination,
+                    displayUnit = displayUnit,
+                    onDisplayUnitChange = onDisplayUnitChange,
+                )
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter),
+                ) {
+                    vaultContent {
+                    item {
+                        ScreenHeader(destination, state, budgetSelectedMonth)
+                    }
+                    when (destination) {
+                        Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit, { target ->
+                            if (target == Destination.BUDGET) {
+                                picked = dashboardMonth
                                 budgetDrilldownMonth = null
                                 budgetDrilldownCategory = null
+                            }
+                            onNavigate(target)
+                        }) { selectedTransactionKey = it.selectionKey }
+                        Destination.ACTIVITY -> {
+                            activity(state, checkNotNull(activitySearch), displayUnit) {
+                                selectedTransactionKey = it.selectionKey
+                            }
+                        }
+                        Destination.BUDGET -> {
+                                budget(
+                                    state,
+                                    months,
+                                    budgetSpend,
+                                    selectedMonth = budgetSelectedMonth,
+                                    onSelectMonth = { picked = it },
+                                    onAddIncome = { addingIncome = true; addingTransaction = true },
+                                    onOpenCategory = { scope ->
+                                        selectedTransactionKey = null
+                                        budgetDrilldownMonth = scope.month
+                                        budgetDrilldownCategory = scope.category
+                                    },
+                                    onPlanCopied = { month ->
+                                        picked = month
+                                        onWriteSucceeded()
+                                    },
+                                )
+
+                        }
+                        Destination.BITCOIN ->
+                            bitcoin(
+                                state,
+                                bitcoinProjection,
+                                displayUnit,
+                                onAdd = { showBitcoinAdd = true },
+                                onNavigate = onNavigate,
+                                capabilities = capabilities,
+                                onAddAccount = { showBtcAccountEditor = true },
+                                onWriteSucceeded = onWriteSucceeded,
+                            )
+                        Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle, onWriteSucceeded = onWriteSucceeded)
+                        Destination.BTC_BILL_PAYS -> btcBillPaysScreen(
+                            state,
+                            displayUnit,
+                            btcBillPaysTitle,
+                            onWriteSucceeded = onWriteSucceeded,
+                            onAddBillPay = {
+                                btcBillPayPrefill = null
+                                showBtcBillPayEditor = true
                             },
-                            onSelectTransaction = { selectedTransactionKey = it.selectionKey },
+                        )
+                        Destination.NET_WORTH -> netWorth(state, displayUnit)
+                        Destination.RETIREMENT -> retirement(state, displayUnit)
+                        Destination.EXPORT -> item { ExportScreen(state) }
+                        // Rendered above, outside the shared ledger column.
+                        Destination.TODAY -> Unit
+                        Destination.TASKS -> item {
+                            // ScreenHost is the privacy boundary: a destination never
+                            // receives rows its active profile cannot see. The refresh
+                            // callback travels with the rows via taskListsContent's
+                            // default, so filtering and refreshing cannot diverge.
+                            taskListsContent(state, collections.visibleTodos)
+                        }
+                        Destination.FAMILY -> family(state, profileSwitcher)
+                        Destination.SETTINGS -> settings(
+                            state,
+                            remoteReadReady,
+                            onRemoteRowsConnected,
+                            onEnableRemoteRows,
+                            ledgerSettings,
+                            onLedgerSettingsChange,
+                            onNavigate,
                         )
                     }
+                    }
                 }
-                Destination.BITCOIN ->
-                    bitcoin(
-                        state,
-                        bitcoinProjection,
-                        displayUnit,
-                        onAdd = { showBitcoinAdd = true },
-                        onNavigate = onNavigate,
-                        capabilities = capabilities,
-                        onAddAccount = { showBtcAccountEditor = true },
-                        onWriteSucceeded = onWriteSucceeded,
-                    )
-                Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle, onWriteSucceeded = onWriteSucceeded)
-                Destination.BTC_BILL_PAYS -> btcBillPaysScreen(
-                    state,
-                    displayUnit,
-                    btcBillPaysTitle,
-                    onWriteSucceeded = onWriteSucceeded,
-                    onAddBillPay = {
-                        btcBillPayPrefill = null
-                        showBtcBillPayEditor = true
-                    },
-                )
-                Destination.NET_WORTH -> netWorth(state, displayUnit)
-                Destination.RETIREMENT -> retirement(state, displayUnit)
-                Destination.EXPORT -> item { ExportScreen(state) }
-                // Rendered above, outside the shared ledger column.
-                Destination.TODAY -> Unit
-                Destination.TASKS -> item {
-                    // ScreenHost is the privacy boundary: a destination never
-                    // receives rows its active profile cannot see. The refresh
-                    // callback travels with the rows via taskListsContent's
-                    // default, so filtering and refreshing cannot diverge.
-                    taskListsContent(state, collections.visibleTodos)
-                }
-                Destination.FAMILY -> family(state, profileSwitcher)
-                Destination.SETTINGS -> settings(
-                    state,
-                    remoteReadReady,
-                    onRemoteRowsConnected,
-                    onEnableRemoteRows,
-                    ledgerSettings,
-                    onLedgerSettingsChange,
-                    onNavigate,
-                )
             }
-            }
-        }
-    }
+        },
+    )
     budgetEditor?.let { seed ->
         BudgetCategoryEditorSheet(
             seed = seed,
@@ -606,19 +647,7 @@ fun ScreenHost(
         )
     }
 
-    val selectedTransaction =
-        collections.visibleTransactions.firstOrNull {
-            it.selectionKey == selectedTransactionKey
-        }
-    if (selectedTransaction != null && transactionActions != null) {
-        TransactionDetailScreen(
-            transaction = selectedTransaction,
-            viewer = state.activeProfile,
-            actions = transactionActions,
-            onClose = { selectedTransactionKey = null },
-            onChanged = onWriteSucceeded,
-        )
-    }
+
 }
 
 /**
