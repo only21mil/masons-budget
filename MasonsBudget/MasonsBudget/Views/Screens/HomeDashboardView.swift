@@ -64,18 +64,29 @@ struct HomeDashboardView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { _ in
-            ScrollView {
-                VStack(spacing: AppLayout.cardSpacing) {
+            List {
+                Group {
                     ScreenHeader(title: "Home", eyebrow: member.displayName)
                     hero
                     custody
                     spentToday
-                    todayPreview
+                }
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: AppLayout.cardSpacing, trailing: 0))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+
+                todayPreview
+
+                Group {
                     recentActivity
                     budgetPreview
                 }
-                .padding(.bottom, AppLayout.cardSpacing)
+                .listRowInsets(EdgeInsets(top: AppLayout.cardSpacing, leading: 0, bottom: 0, trailing: 0))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .background(theme.bg)
         }
     }
@@ -183,19 +194,26 @@ struct HomeDashboardView: View {
     }
 
     private var todayPreview: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        Section {
             HStack {
                 Text("Today · \(todayTasks.count)").ledgerType(.sectionLabel)
                 Spacer()
                 link("See all") { TaskSmartListView(filter: .today) }
             }
-            ForEach(Array(todayTasks.prefix(4))) { TaskRowView(todo: $0) }
+            .padding(.vertical, 12)
+
+            ForEach(Array(todayTasks.prefix(4))) { todo in
+                TaskRowView(todo: todo)
+                    .listRowInsets(EdgeInsets(top: 0, leading: AppLayout.sectionPadding, bottom: 0, trailing: AppLayout.sectionPadding))
+            }
             if todayTasks.isEmpty { Text("No tasks due today").ledgerType(.rowMeta) }
             InlineAddTaskBar(defaultDueDate: Date(), isExpanded: $addingTask)
+                .padding(.bottom, 12)
         }
         .foregroundStyle(theme.text)
-        .glassCard(padding: 16, radius: 4)
-        .padding(.horizontal, AppLayout.sectionPadding)
+        .listRowBackground(theme.surface)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 0, leading: AppLayout.sectionPadding + 16, bottom: 0, trailing: AppLayout.sectionPadding + 16))
     }
 
     private struct RecentEntry: Identifiable {

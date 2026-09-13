@@ -56,31 +56,13 @@ struct TaskRowView: View {
     @Environment(\.theme) var theme
     @Environment(\.modelContext) private var modelContext
 
-    // Custom trailing swipe (SAT-1405): native .swipeActions only fire inside a List, but
-    // the task screens render rows in a page-level ScrollView+VStack. This reveal works in
-    // that context. The contextMenu (long-press) + checkbox remain as equivalent fallbacks.
-    @State private var settledOffset: CGFloat = 0
-    @GestureState private var dragOffset: CGFloat = 0
-    private static let swipeActionWidth: CGFloat = 72
-    private var revealWidth: CGFloat {
-        Self.swipeActionWidth * 2
-    }
-
-    private var swipeOffset: CGFloat {
-        min(0, max(-revealWidth, settledOffset + dragOffset))
-    }
-
     var body: some View {
-        ZStack(alignment: .trailing) {
-            trailingSwipeActions
-
-            rowForeground
-                .background(theme.surface)
-                .offset(x: swipeOffset)
-                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: settledOffset)
-                .gesture(swipeGesture)
+        rowForeground
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive, action: deleteSelf) { Label("Delete", systemImage: "trash") }
+            Button(action: toggleFlag) { Label(todo.isFlagged ? "Unflag" : "Flag", systemImage: AppIcon.flagFilled) }
+                .tint(theme.accentFill)
         }
-        .clipped()
         .contextMenu {
             Button(action: toggleDone) {
                 Label(todo.isDone ? "Mark not done" : "Mark done",
@@ -97,6 +79,9 @@ struct TaskRowView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
+        .accessibilityAction(named: todo.isDone ? "Mark not done" : "Mark done", toggleDone)
+        .accessibilityAction(named: todo.isFlagged ? "Unflag" : "Flag", toggleFlag)
+        .accessibilityAction(named: "Delete", deleteSelf)
     }
 
     private var rowForeground: some View {
@@ -115,65 +100,6 @@ struct TaskRowView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-    }
-
-    private var trailingSwipeActions: some View {
-        HStack(spacing: 0) {
-            swipeActionButton(
-                label: todo.isFlagged ? "Unflag" : "Flag",
-                icon: AppIcon.flagFilled,
-                tint: theme.accentFill,
-                ink: theme.onAccent,
-                action: toggleFlag,
-            )
-            swipeActionButton(
-                label: "Delete",
-                icon: "trash",
-                tint: theme.danger,
-                ink: theme.bg,
-                action: deleteSelf,
-            )
-        }
-    }
-
-    private func swipeActionButton(
-        label: String,
-        icon: String,
-        tint: Color,
-        ink: Color,
-        action: @escaping () -> Void,
-    ) -> some View {
-        Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { settledOffset = 0 }
-            action()
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(AppFont.iconSmall)
-                Text(label)
-                    .ledgerType(.tabLabel)
-            }
-            .foregroundStyle(ink)
-            .frame(width: Self.swipeActionWidth)
-            .frame(maxHeight: .infinity)
-            .background(tint)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-    }
-
-    private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 18, coordinateSpace: .local)
-            .updating($dragOffset) { value, state, _ in
-                // Only claim predominantly-horizontal drags so vertical scrolling passes through.
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                state = value.translation.width
-            }
-            .onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                let proposed = settledOffset + value.translation.width
-                settledOffset = proposed < -revealWidth / 2 ? -revealWidth : 0
-            }
     }
 
     private var rowContent: some View {
@@ -310,37 +236,26 @@ struct TaskSmartListView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                ScreenHeader(title: filter.title, eyebrow: "Tasks")
-
-                InlineAddTaskBar(
-                    defaultDueDate: defaultDueDate,
-                    defaultFlagged: defaultFlagged,
-                    isExpanded: $showingDraft,
-                )
-                .padding(.horizontal, AppLayout.sectionPadding)
-                .padding(.bottom, AppLayout.cardSpacing)
-
-                if items.isEmpty {
-                    emptyState
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(Array(items.enumerated()), id: \.element.id) { idx, todo in
-                            TaskRowView(todo: todo)
-                                .ledgerRowReveal(index: idx)
-                            if idx < items.count - 1 {
-                                Hairline(indent: 48)
-                            }
-                        }
-                    }
-                    .glassCard(padding: 0)
-                    .padding(.horizontal, AppLayout.sectionPadding)
-                }
+        List {
+            ScreenHeader(title: filter.title, eyebrow: "Tasks")
+                .listRowInsets(EdgeInsets()).listRowSeparator(.hidden)
+            InlineAddTaskBar(
+                defaultDueDate: defaultDueDate,
+                defaultFlagged: defaultFlagged,
+                isExpanded: $showingDraft
+            )
+            .listRowSeparator(.hidden)
+            if items.isEmpty { emptyState.listRowSeparator(.hidden) }
+            ForEach(items) { todo in
+                TaskRowView(todo: todo)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(theme.surface)
             }
-            .padding(.bottom, 100)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .background(theme.bg)
+        .modifier(LedgerListRefresh())
     }
 
     private var emptyState: some View {
@@ -363,5 +278,38 @@ struct TaskSmartListView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
         .padding(.horizontal, AppLayout.sectionPadding)
+    }
+}
+
+/// All list refresh gestures share one in-flight gate. The sync service retains
+/// its profile/authority guards; source reload follows only the same viewer.
+@MainActor
+private enum LedgerListRefreshGate {
+    static var isRefreshing = false
+}
+
+struct LedgerListRefresh: ViewModifier {
+    @Environment(\.modelContext) private var context
+    @Environment(CanonicalFinancialSourceStore.self) private var financials
+    @AppStorage("selected_family_member") private var memberRaw = FamilyMember.victor.rawValue
+
+    func body(content: Content) -> some View {
+        content.refreshable {
+            guard !LedgerListRefreshGate.isRefreshing else { return }
+            LedgerListRefreshGate.isRefreshing = true
+            defer { LedgerListRefreshGate.isRefreshing = false }
+            let viewer = memberRaw
+            await ConvexSyncService(context: context).syncAll()
+            guard !Task.isCancelled, memberRaw == viewer else { return }
+            financials.requestReload()
+        }
+    }
+}
+
+struct LedgerRefreshButton: View {
+    @Environment(\.refresh) private var refresh
+    var body: some View {
+        Button("Retry") { Task { await refresh?() } }
+            .disabled(refresh == nil)
     }
 }
