@@ -98,10 +98,9 @@ test -z "$(git status --porcelain)"
 
 npm ci
 
-# This is the only complete generated-type freshness check. It authenticates
-# locally, regenerates from convex/schema.ts, and fails on any committed drift.
-set -a; . "$HOME/.config/sats/secrets.env"; set +a
-scripts/verify-convex-generated-freshness.sh
+# Local checksum and API inventory check. No remote generation or deployment.
+# This does not prove full declaration freshness.
+npm run codegen
 
 npm run convex:test
 git diff --check
@@ -110,9 +109,11 @@ git diff --check
 Good:
 
 - `npm ci` exits 0 without changing tracked files.
-- `scripts/verify-convex-generated-freshness.sh` reports that the committed
-  declarations match authenticated codegen and leaves `convex/_generated`
-  unchanged.
+- `npm run codegen` passes the local checksum and API inventory checks and
+  leaves `convex/_generated` unchanged. Before deployment, complete the separate
+  approved remote freshness procedure in [Convex codegen safety](convex-codegen-safety.md).
+  It may persist schema/index preparation state and is not authorized by this
+  local verification block. Missing approved credential injection is a stop.
 - `npm run convex:test` reports every test passing.
 - `git diff --check` prints nothing and exits 0.
 - `git status --porcelain` remains empty.
