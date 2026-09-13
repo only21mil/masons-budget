@@ -942,7 +942,10 @@ private fun VaultLazyListScope.activity(
     val quote = state.operationalBitcoinQuote()
     item { ActivitySearchControls(search) }
     if (search.filter == ActivityTransactionFilter.INCOME) {
-        incomeRows(state, search.incomeEntries, "activity-income")
+        incomeRows(state, search.incomeEntries, "activity-income", onClearFilters = {
+            search.onQueryChange("")
+            search.onFilterChange(ActivityTransactionFilter.ALL)
+        })
         return
     }
     item { StaleNotice(state.data.transactions.status, state.data.transactions.updatedAt, state.now) }
@@ -1075,11 +1078,24 @@ private fun VaultLazyListScope.incomeRows(
     state: VaultUiState,
     rows: List<IncomeEntry>,
     sectionKey: String,
+    onClearFilters: (() -> Unit)? = null,
 ) {
     if (state.data.incomeFiguresUnavailable || rows.isEmpty()) {
         item {
             Panel("Income") {
-                StateBlock(if (state.data.incomeFiguresUnavailable) state.data.income.status else Freshness.EMPTY, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
+                if (!state.data.incomeFiguresUnavailable && onClearFilters != null) {
+                    StateBlock(
+                        Freshness.EMPTY,
+                        title = "No matching records",
+                        detail = "Try another search or filter.",
+                        action = { TextButton(onClick = onClearFilters) { Text("Clear filters") } },
+                    )
+                } else {
+                    StateBlock(
+                        if (state.data.incomeFiguresUnavailable) state.data.income.status else Freshness.EMPTY,
+                        action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() },
+                    )
+                }
             }
         }
         return
@@ -1535,7 +1551,14 @@ private fun VaultLazyListScope.bitcoin(
     } else if (projection.buys.isEmpty()) {
         item {
             Panel("Recent buys", state.data.btcBuys.source) {
-                StateBlock(Freshness.EMPTY, action = { TextButton(onClick = onAdd) { Text("Add") } })
+                StateBlock(Freshness.EMPTY, action = {
+                    if (state.activeProfile.isAdult) {
+                        TextButton(onClick = onAdd, enabled = canWriteBitcoin) { Text("Add") }
+                        capabilities.unavailableReason(state.activeProfile, DeviceCapability.BITCOIN)?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                })
             }
         }
     } else {
