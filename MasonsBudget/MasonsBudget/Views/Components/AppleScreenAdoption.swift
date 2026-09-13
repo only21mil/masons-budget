@@ -1,34 +1,16 @@
 import Foundation
 
 enum ApplePrimaryScreen: String, CaseIterable, Identifiable {
-    case bitcoin
-    case budget
-    case today
-    case retirement
-    case more
+    case home, activity, budget, tasks
 
     var id: String {
         rawValue
     }
 }
 
-enum AppleMoreScreen: String, CaseIterable, Identifiable {
-    case price
-    case activity
-    case bitcoinBuys
-    case billPay
-    case transfer
-    case netWorth
-    case tasks
-    case family
-    case awards
-    case settings
-    case sync
-    case export
-
-    var id: String {
-        rawValue
-    }
+enum AppleAccountScreen: String, CaseIterable, Identifiable {
+    case profile, settings, family, awards, sync, export
+    var id: String { rawValue }
 }
 
 enum PaymentRailPresentation: String, CaseIterable {
@@ -120,12 +102,5 @@ struct OnboardingStep: Equatable {
     static func progressLabel(for index: Int) -> String {
         let boundedIndex = min(max(index, 0), all.count - 1)
         return "Step \(boundedIndex + 1) of \(all.count)"
-    }
-}
-
-enum MoreCountFormatter {
-    static func badge(_ count: Int) -> String? {
-        guard count > 0 else { return nil }
-        return count > 999 ? "999+" : String(count)
     }
 }
