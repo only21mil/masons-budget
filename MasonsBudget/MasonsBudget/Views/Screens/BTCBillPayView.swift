@@ -280,24 +280,37 @@ struct BTCBillPayComposeView: View {
                         HStack {
                             Text("BUDGET").ledgerType(.kpiLabel).foregroundStyle(theme.textMuted)
                             Spacer()
-                            Picker("Budget effect", selection: $effect) {
-                                Text("Budget category").tag(BTCBillPayBudgetEffect.budgetCategory)
-                                Text("Credit card payment").tag(BTCBillPayBudgetEffect.creditCardPayment)
+                            Menu {
+                                Picker("Budget effect", selection: $effect) {
+                                    Text("Budget category").tag(BTCBillPayBudgetEffect.budgetCategory)
+                                    Text("Credit card payment").tag(BTCBillPayBudgetEffect.creditCardPayment)
+                                }
+                                .pickerStyle(.inline)
+                            } label: {
+                                pickerLabel(effect == .budgetCategory ? "Budget category" : "Credit card payment")
                             }
-                            .labelsHidden()
-                            .ledgerType(.button)
+                            .buttonStyle(.plain)
+                            .menuIndicator(.hidden)
                             .tint(theme.accent)
-                            .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                            .accessibilityLabel("Budget effect")
+                            .accessibilityValue(effect == .budgetCategory ? "Budget category" : "Credit card payment")
                         }.padding(14)
                         if effect == .budgetCategory {
                             Hairline()
-                            Picker("Category", selection: $category) {
-                                Text("Select category").tag("")
-                                ForEach(householdCategories, id: \.self) { Text($0).tag($0) }
+                            Menu {
+                                Picker("Category", selection: $category) {
+                                    Text("Select category").tag("")
+                                    ForEach(householdCategories, id: \.self) { Text($0).tag($0) }
+                                }
+                                .pickerStyle(.inline)
+                            } label: {
+                                pickerLabel(category.isEmpty ? "Select category" : category)
                             }
-                            .ledgerType(.button)
+                            .buttonStyle(.plain)
+                            .menuIndicator(.hidden)
                             .tint(theme.accent)
-                            .frame(minHeight: LedgerMetrics.minimumHitTarget)
+                            .accessibilityLabel("Category")
+                            .accessibilityValue(category.isEmpty ? "Select category" : category)
                             .padding(14)
                         }
                         Hairline()
@@ -344,7 +357,7 @@ struct BTCBillPayComposeView: View {
                         .ledgerType(.button)
                         .buttonStyle(.borderedProminent)
                         .tint(theme.accentFill)
-                        .foregroundStyle(theme.onAccent)
+                        .foregroundStyle(canSave ? theme.onAccent : theme.textFaint)
                         .frame(minHeight: LedgerMetrics.minimumHitTarget)
                         .disabled(!canSave)
                 }
@@ -355,6 +368,15 @@ struct BTCBillPayComposeView: View {
         // This sheet owns its header rather than inheriting the presenting tab's title.
         .environment(\.ledgerRootTitle, nil)
         .environment(\.ledgerRootAccessory, nil)
+    }
+
+    private func pickerLabel(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Text(title).ledgerType(.button)
+            Image(systemName: "chevron.up.chevron.down").font(AppFont.icon(size: 12))
+        }
+        .foregroundStyle(theme.accent)
+        .frame(minHeight: LedgerMetrics.minimumHitTarget)
     }
 
     private func save() {

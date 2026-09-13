@@ -468,7 +468,7 @@ struct BitcoinTransferView: View {
                     .ledgerType(.button)
                     .buttonStyle(.borderedProminent)
                     .tint(theme.accentFill)
-                    .foregroundStyle(theme.onAccent)
+                    .foregroundStyle(canSave ? theme.onAccent : theme.textFaint)
                     .frame(minHeight: LedgerMetrics.minimumHitTarget)
                     .disabled(!canSave)
             }
@@ -480,17 +480,30 @@ struct BitcoinTransferView: View {
     }
 
     private func accountPicker(_ label: String, selection: Binding<String>) -> some View {
-        HStack {
+        let selectedTitle = accounts.first(where: { $0.key == selection.wrappedValue })
+            .map { "\($0.label) · \($0.sats) sats" } ?? "Select account"
+        return HStack {
             Text(label).ledgerType(.kpiLabel).foregroundStyle(theme.textMuted)
             Spacer()
-            Picker(label, selection: selection) {
-                Text("Select account").tag("")
-                ForEach(accounts, id: \.key) { Text("\($0.label) · \($0.sats) sats").tag($0.key) }
+            Menu {
+                Picker(label, selection: selection) {
+                    Text("Select account").tag("")
+                    ForEach(accounts, id: \.key) { Text("\($0.label) · \($0.sats) sats").tag($0.key) }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                HStack(spacing: 6) {
+                    Text(selectedTitle).ledgerType(.button)
+                    Image(systemName: "chevron.up.chevron.down").font(AppFont.icon(size: 12))
+                }
+                .foregroundStyle(theme.accent)
+                .frame(minHeight: LedgerMetrics.minimumHitTarget)
             }
-            .labelsHidden()
-            .ledgerType(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
             .tint(theme.accent)
-            .frame(minHeight: LedgerMetrics.minimumHitTarget)
+            .accessibilityLabel(label)
+            .accessibilityValue(selectedTitle)
         }
         .padding(14)
     }
@@ -579,7 +592,7 @@ struct AddBitcoinAccountView: View {
                     }
                     .glassCard(padding: 14, radius: AppLayout.radiusMedium)
                     if let validationMessage { Text(validationMessage).foregroundStyle(theme.warn).ledgerType(.rowMeta) }
-                    if let message { Text(message).foregroundStyle(theme.warn) }
+                    if let message { Text(message).foregroundStyle(theme.warn).ledgerType(.rowMeta) }
                     if existing != nil {
                         Button("Delete account", role: .destructive) { showingDelete = true }
                             .ledgerType(.button)
@@ -606,7 +619,7 @@ struct AddBitcoinAccountView: View {
                         .ledgerType(.button)
                         .buttonStyle(.borderedProminent)
                         .tint(theme.accentFill)
-                        .foregroundStyle(theme.onAccent)
+                        .foregroundStyle(canSave ? theme.onAccent : theme.textFaint)
                         .frame(minHeight: LedgerMetrics.minimumHitTarget)
                         .disabled(!canSave)
                 }
