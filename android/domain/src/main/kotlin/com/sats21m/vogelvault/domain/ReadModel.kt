@@ -222,6 +222,7 @@ data class BtcTransfer(
     val sats: Long,
     val feeSats: Long,
     val note: String? = null,
+    val updatedAtMs: Long = 0L,
 ) : Owned {
     init {
         require(id.isNotBlank()) { "Bitcoin transfer id must not be empty" }
@@ -303,6 +304,7 @@ data class BtcBillPay(
     val note: String?,
     val reference: String? = null,
     override val owner: FamilyMember,
+    val updatedAtMs: Long = 0L,
 ) : Owned {
     init {
         require(feeUsdCents >= 0L) { "Bitcoin bill pay feeUsdCents must be nonnegative" }
