@@ -28,6 +28,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -404,6 +408,7 @@ internal fun btcBuyWriteRequest(
 @Composable
 internal fun EditableBudgetCategoryRow(
     category: CategorySpend,
+    selected: Boolean = false,
     transactionsContentDescription: String = "View ${category.name} transactions",
     onOpenTransactions: () -> Unit = {},
 ) {
@@ -435,7 +440,15 @@ internal fun EditableBudgetCategoryRow(
             )
             .semantics {
                 contentDescription = transactionsContentDescription
-            },
+                this.selected = selected
+            }
+            .drawBehind {
+                if (selected) {
+                    drawRect(colors.bitcoinSoft)
+                    drawRect(colors.bitcoin, Offset.Zero, Size(2.dp.toPx(), size.height))
+                }
+            }
+            .padding(start = VaultSpace.sm),
     ) {
         Column(
             Modifier
