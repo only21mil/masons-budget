@@ -10,6 +10,9 @@ struct BudgetView: View {
     @Query(sort: \BudgetCategory.sortOrder) private var categories: [BudgetCategory]
     @Query(sort: \Transaction.date, order: .reverse) private var allTransactions: [Transaction]
 
+    @Query private var snapshots: [MonthlyBudgetSnapshot]
+
+    @State private var showingIncome = false
     @State private var selectedMonthOffset: Int = 0
 
     private var unit: DisplayUnit {
@@ -70,8 +73,7 @@ struct BudgetView: View {
         df.calendar = Calendar(identifier: .gregorian)
         df.locale = Locale(identifier: "en_US_POSIX")
         df.dateFormat = "yyyy-MM"
-        guard let cents = income.cents(forMonth: df.string(from: date)) else { return nil }
-        return decimalMinorUnits(cents, scale: 2)
+        return income.amount(forMonth: df.string(from: date), emptyLedgerFallback: snapshot(for: date)?.mtdIncome)
     }
 
     private func savingsRateForOffset(_ offset: Int) -> Int? {
@@ -105,6 +107,10 @@ struct BudgetView: View {
                 .padding(.horizontal, AppLayout.sectionPadding)
                 .padding(.bottom, AppLayout.cardSpacing)
 
+                incomeSection
+                    .padding(.horizontal, AppLayout.sectionPadding)
+                    .padding(.bottom, AppLayout.cardSpacing)
+
                 spentCard
                     .padding(.horizontal, AppLayout.sectionPadding)
                     .padding(.bottom, AppLayout.cardSpacing)
@@ -117,6 +123,58 @@ struct BudgetView: View {
             .padding(.bottom, 100)
         }
         .background(theme.bg)
+        .sheet(isPresented: $showingIncome) { AddTransactionView(initialType: .income) }
+    }
+
+    private func snapshot(for date: Date) -> MonthlyBudgetSnapshot? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMMM yyyy"
+        let prefix = activeMember.isAdult ? "" : "\(activeMember.rawValue):"
+        return snapshots.first { $0.monthKey == prefix + formatter.string(from: date) }
+    }
+
+    private var incomeSection: some View {
+        let month = CategoryDetailView.monthKey(for: selectedMonth)
+        let summary = canonicalFinancials.income.value
+        let snapshot = snapshot(for: selectedMonth)
+        let year = Calendar.current.component(.year, from: selectedMonth)
+        let ytd = summary.map { $0.rows.isEmpty ? snapshot?.ytdIncome : Decimal($0.yearCents[year, default: 0]) / 100 } ?? nil
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("INCOME").ledgerType(.sectionLabel)
+                Spacer()
+                Button("+ Income") { showingIncome = true }
+            }
+            Text("MTD: \(incomeForOffset(selectedMonthOffset).map(AppFormatter.formatCurrency) ?? "Unavailable")")
+                .ledgerType(.rowPrimary)
+            Text("YTD: \(ytd.map(AppFormatter.formatCurrency) ?? "Unavailable")")
+                .ledgerType(.rowMeta)
+            if let snapshot {
+                Text("Weekly gross: \(AppFormatter.formatCurrency(snapshot.weeklyGross))")
+                    .ledgerType(.rowMeta)
+            }
+            if let summary {
+                let rows = summary.rows.filter { $0.month == month }
+                if rows.isEmpty {
+                    Text("No income entries this month").ledgerType(.rowMeta)
+                }
+                ForEach(rows, id: \.incomeId) { row in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(row.source).ledgerType(.rowPrimary)
+                            Text(row.date).ledgerType(.rowMeta)
+                        }
+                        Spacer()
+                        Text(AppFormatter.formatCurrency(Decimal(row.amountCents) / 100))
+                            .ledgerType(.rowFigure)
+                    }
+                }
+            }
+        }
+        .foregroundStyle(theme.text)
+        .glassCard(padding: AppLayout.paddingCompact, radius: AppLayout.radiusMedium)
     }
 
     // MARK: - Month Eyebrow
