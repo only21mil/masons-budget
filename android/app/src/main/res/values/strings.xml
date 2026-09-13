@@ -296,6 +296,8 @@
     <string name="btc_bill_pay_date_label">Date (yyyy-MM-dd)</string>
     <string name="btc_bill_pay_merchant_label">Merchant</string>
     <string name="btc_bill_pay_effect_label">Budget effect</string>
+    <string name="btc_bill_pay_effect_budget_category_short">Budget category</string>
+    <string name="btc_bill_pay_effect_credit_card_short">Credit card payment</string>
     <string name="btc_bill_pay_effect_budget_category">Count toward a budget category</string>
     <string name="btc_bill_pay_effect_credit_card">Credit card payment (excluded from budget)</string>
     <string name="btc_bill_pay_category_label">Budget category</string>

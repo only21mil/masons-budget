@@ -20,6 +20,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
+import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import com.sats21m.vogelvault.DraftIdWriteOutcome
@@ -276,14 +280,19 @@ internal fun BtcBillPayEntrySheet(
             }
         },
     ) {
-        LedgerDateField(date, { date = it }, stringResource(R.string.btc_bill_pay_date_label), enabled = !submitting)
+        LedgerDateField(
+            date, { date = it }, stringResource(R.string.btc_bill_pay_date_label), enabled = !submitting,
+            labelContent = { BillPayFieldLabel(stringResource(R.string.btc_bill_pay_date_label)) },
+        )
         BillPayEditorField(merchant, { merchant = it }, R.string.btc_bill_pay_merchant_label)
-        Text(stringResource(R.string.btc_bill_pay_effect_label))
+        BillPayFieldLabel(stringResource(R.string.btc_bill_pay_effect_label))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
             BillPayBudgetEffect.entries.forEach { choice ->
                 val choiceLabel = stringResource(if (choice == BillPayBudgetEffect.BUDGET_CATEGORY)
                     R.string.btc_bill_pay_effect_budget_category else R.string.btc_bill_pay_effect_credit_card)
-                SelectionChip(label = choiceLabel, semanticLabel = choiceLabel,
+                val displayLabel = stringResource(if (choice == BillPayBudgetEffect.BUDGET_CATEGORY)
+                    R.string.btc_bill_pay_effect_budget_category_short else R.string.btc_bill_pay_effect_credit_card_short)
+                SelectionChip(label = displayLabel, semanticLabel = choiceLabel,
                     actionLabel = "Select $choiceLabel", selected = effect == choice,
                     enabled = !submitting, modifier = Modifier.weight(1f),
                     onSelect = { effectWire = choice.wireValue })
@@ -347,6 +356,17 @@ internal fun BtcBillPayEntrySheet(
             message, retry = retrySave, enabled = !submitting, accepted = writeAccepted,
         )
     }
+}
+
+@Composable
+private fun BillPayFieldLabel(label: String) {
+    val tokens = LocalLedgerTheme.current
+    Text(
+        label.uppercase(),
+        style = tokens.type.kpiLabel,
+        color = tokens.colors.foregroundSecondary,
+        modifier = Modifier.clearAndSetSemantics { text = AnnotatedString(label) },
+    )
 }
 
 @Composable
