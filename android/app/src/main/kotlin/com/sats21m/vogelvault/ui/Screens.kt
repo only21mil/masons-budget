@@ -335,6 +335,17 @@ fun ScreenHost(
             )
         }
     }
+    // A missing/loading snapshot cannot prove removal. Keep the stable category
+    // selection until an available plan actually drops that category.
+    androidx.compose.runtime.LaunchedEffect(state.data.budget, budgetDrilldownCategory) {
+        val slice = state.data.budget
+        val category = budgetDrilldownCategory
+        if (category != null && slice.status == Freshness.LIVE &&
+            slice.value?.categories?.none { it.name == category } == true) {
+            budgetDrilldownMonth = null
+            budgetDrilldownCategory = null
+        }
+    }
     val bitcoinProjection = remember(
         collections.netWorthAccounts,
         collections.visibleBuys,
@@ -566,6 +577,7 @@ fun ScreenHost(
                                     months,
                                     budgetSpend,
                                     selectedMonth = budgetSelectedMonth,
+                                    selectedCategory = drilldownScope,
                                     onSelectMonth = { picked = it },
                                     onAddIncome = { addingIncome = true; addingTransaction = true },
                                     onOpenCategory = { scope ->
@@ -1134,6 +1146,7 @@ private fun VaultLazyListScope.budget(
     months: List<String>,
     spend: BudgetSpend?,
     selectedMonth: String?,
+    selectedCategory: BudgetCategoryDrilldownScope?,
     onSelectMonth: (String) -> Unit,
     onAddIncome: () -> Unit,
     onOpenCategory: (BudgetCategoryDrilldownScope) -> Unit,
@@ -1262,6 +1275,7 @@ private fun VaultLazyListScope.budget(
         ) { category ->
             EditableBudgetCategoryRow(
                 category = category,
+                selected = selectedCategory == BudgetCategoryDrilldownScope(derived.month, category.name),
                 transactionsContentDescription =
                     stringResource(
                         R.string.budget_category_transactions_accessibility,

@@ -35,6 +35,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -259,6 +263,7 @@ private fun ProfileTaskListsScreen(
             taskHeader()
             TaskHub(
                     model = model,
+                    selectedSmartList = selectedKind.takeIf { route == TaskListRoute.SMART },
                     viewer = state.activeProfile,
                     actions = actions,
                     onSmartList = {
@@ -356,6 +361,7 @@ private fun List<TodoItem>.replaceTodo(todo: TodoItem): List<TodoItem> =
 @Composable
 private fun TaskHub(
     model: TaskListModel,
+    selectedSmartList: String?,
     viewer: FamilyMember,
     actions: TaskRowActions,
     onSmartList: (TaskSmartList) -> Unit,
@@ -363,7 +369,7 @@ private fun TaskHub(
     onArea: (TaskGroup) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
-        SmartListGrid(model, onSmartList)
+        SmartListGrid(model, selectedSmartList, onSmartList)
         TaskSection(stringResource(R.string.tasks_today), model.today, viewer, actions)
         TaskSection(stringResource(R.string.tasks_this_week), model.thisWeek, viewer, actions)
         TaskSection(stringResource(R.string.tasks_long_term), model.longTerm, viewer, actions)
@@ -387,6 +393,7 @@ private fun TaskHub(
 @Composable
 private fun SmartListGrid(
     model: TaskListModel,
+    selectedSmartList: String?,
     onSelect: (TaskSmartList) -> Unit,
 ) {
     androidx.compose.foundation.layout.BoxWithConstraints {
@@ -404,6 +411,7 @@ private fun SmartListGrid(
                 row.forEach { kind ->
                     SmartListCard(
                         kind = kind,
+                        selected = kind.name == selectedSmartList,
                         count = model.tasksFor(kind).size,
                         onClick = { onSelect(kind) },
                         modifier = Modifier.weight(1f),
@@ -418,6 +426,7 @@ private fun SmartListGrid(
 @Composable
 private fun SmartListCard(
     kind: TaskSmartList,
+    selected: Boolean,
     count: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -426,7 +435,13 @@ private fun SmartListCard(
     Column(
         modifier
             .background(colors.panel, RoundedCornerShape(8.dp))
-            .clickable(role = Role.Button, onClick = onClick)
+            .selectable(selected = selected, role = Role.Button, onClick = onClick)
+            .drawBehind {
+                if (selected) {
+                    drawRect(colors.bitcoinSoft)
+                    drawRect(colors.bitcoin, Offset.Zero, Size(2.dp.toPx(), size.height))
+                }
+            }
             .padding(VaultSpace.md),
         verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
     ) {
