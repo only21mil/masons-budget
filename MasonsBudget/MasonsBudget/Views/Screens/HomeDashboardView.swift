@@ -3,6 +3,8 @@ import SwiftData
 import SwiftUI
 
 struct HomeDashboardView: View {
+    let hasReadToken: Bool
+
     @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @Environment(CanonicalFinancialSourceStore.self) private var financials
@@ -116,7 +118,10 @@ struct HomeDashboardView: View {
                         }
                     } else {
                         Text("Net worth unavailable").ledgerType(.kpiValue)
-                        Text("Refresh balances and prices to calculate your total.").ledgerType(.rowMeta)
+                        Text(HomeDashboardData.netWorthUnavailableHint(hasReadToken: hasReadToken))
+                            .ledgerType(.rowMeta)
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -322,6 +327,12 @@ struct IncomeActivityDetail: View {
 }
 
 enum HomeDashboardData {
+    static func netWorthUnavailableHint(hasReadToken: Bool) -> String {
+        hasReadToken
+            ? "Refresh balances and prices to calculate your total."
+            : "Unavailable until this device is connected."
+    }
+
     static func plannedExpenseTotal(_ categories: [ConvexBudgetDocumentRow.Category]) -> Decimal {
         categories.filter { $0.name.caseInsensitiveCompare("Income") != .orderedSame }
             .reduce(Decimal(0)) { $0 + Decimal($1.budgetCents) / 100 }
