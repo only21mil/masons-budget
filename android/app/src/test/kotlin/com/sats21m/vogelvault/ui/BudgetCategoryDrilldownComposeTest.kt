@@ -90,6 +90,35 @@ class BudgetCategoryDrilldownComposeTest {
     }
 
     @Test
+    fun `income month navigation survives unavailable budget actuals`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val income = listOf(
+            com.sats21m.vogelvault.domain.IncomeEntry("aug", "2026-08-31", "2026-08", 10000L, "August payroll", null, FamilyMember.VICTOR),
+            com.sats21m.vogelvault.domain.IncomeEntry("sep", "2026-09-13", "2026-09", 20000L, "September payroll", null, FamilyMember.VICTOR),
+            com.sats21m.vogelvault.domain.IncomeEntry("future", "2026-09-30", "2026-09", 40000L, "Future payroll", null, FamilyMember.VICTOR),
+        )
+        render(VaultUiState(activeProfile = FamilyMember.RACHEL, destination = Destination.BUDGET,
+            now = java.time.Instant.parse("2026-09-13T12:00:00Z").toEpochMilli(),
+            data = fixture.copy(
+                budget = fixture.budget.copy(value = fixture.budget.value!!.copy(month = "2026-09")),
+                income = fixture.income.copy(value = income),
+                btcBillPays = fixture.btcBillPays.copy(status = Freshness.ERROR),
+            )))
+        compose.onNodeWithContentDescription("Month to date, $200.00").fetchSemanticsNode()
+        compose.onNodeWithContentDescription("Year to date, $300.00").fetchSemanticsNode()
+        contentList().performScrollToKey("budget-income:row:victor:future")
+        compose.onNodeWithText("Future payroll", useUnmergedTree = true).fetchSemanticsNode()
+        contentList().performScrollToNode(hasContentDescription("Aug 2026 budget month"))
+        compose.onNodeWithContentDescription("Aug 2026 budget month").performClick()
+        settle()
+        compose.onNodeWithContentDescription("Aug 2026 budget month").assertIsSelected()
+        compose.onNodeWithContentDescription("Month to date, $100.00").fetchSemanticsNode()
+        compose.onNodeWithContentDescription("Year to date, $100.00").fetchSemanticsNode()
+        contentList().performScrollToNode(hasText(activityController.get().getString(R.string.convex_read_error_title)))
+        compose.onNodeWithText(activityController.get().getString(R.string.convex_read_error_title)).fetchSemanticsNode()
+    }
+
+    @Test
     fun `Bitcoin shows visible transfers and their network fee`() {
         val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
         val transfer = com.sats21m.vogelvault.domain.BtcTransfer(

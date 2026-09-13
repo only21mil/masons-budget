@@ -146,14 +146,19 @@ internal fun ReadModel.dashboardIncomeEntries(
 internal fun ReadModel.dashboardIncomeCents(
     viewer: FamilyMember,
     month: String?,
+    today: java.time.LocalDate,
 ): Long? {
-    val rows = dashboardIncomeEntries(viewer, month)
+    val rows = dashboardIncomeEntries(viewer, month).filter { it.date <= today.toString() }
     return if (incomeFiguresUnavailable || month == null) null else rows.sumLongOrNull { it.amountCents }
 }
 
-internal fun ReadModel.yearToDateIncomeCents(viewer: FamilyMember, month: String): Long? =
+internal fun ReadModel.yearToDateIncomeCents(
+    viewer: FamilyMember,
+    month: String,
+    today: java.time.LocalDate,
+): Long? =
     if (incomeFiguresUnavailable) null else income.value.netWorthScopeFor(viewer)
-        .filter { it.month.take(4) == month.take(4) && it.month <= month }
+        .filter { it.month.take(4) == month.take(4) && it.month <= month && it.date <= today.toString() }
         .sumLongOrNull { it.amountCents }
 
 internal fun ReadModel.netWorthBalanceForDisplay(): BtcBalance? =
@@ -273,7 +278,7 @@ fun ScreenHost(
     val dashboardIncomeEntries = remember(profile, dashboardMonth, incomeInput) {
         state.data.dashboardIncomeEntries(profile, dashboardMonth)
     }
-    val dashboardProjection = remember(dashboardMonth, collections, dashboardIncomeEntries, incomeFiguresUnavailable) {
+    val dashboardProjection = remember(state.now, dashboardMonth, collections, dashboardIncomeEntries, incomeFiguresUnavailable) {
         val budgetTransactions = collections.budgetTransactions.inMonth(dashboardMonth ?: "")
         val activity = collections.visibleTransactions.inMonth(dashboardMonth ?: "").take(6)
         DashboardProjection(
@@ -282,7 +287,7 @@ fun ScreenHost(
             balance = collections.netWorthBalance,
             incomeEntries = dashboardIncomeEntries,
             spendCents = budgetTransactions.sumLongOrNull { it.spendAmount },
-            incomeCents = state.data.dashboardIncomeCents(profile, dashboardMonth),
+            incomeCents = state.data.dashboardIncomeCents(profile, dashboardMonth, calendarDate(state.now)),
             openTodos = collections.visibleTodos.count { !it.done },
         )
     }
@@ -1011,9 +1016,11 @@ internal fun formatTransactionAmount(
     return formatFinancialAmount(FinancialAmount(usdCents = cents), displayUnit, quote)
 }
 
+internal fun calendarDate(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): java.time.LocalDate =
+    java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+
 internal fun calendarMonth(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String =
-    java.time.Instant.ofEpochMilli(now).atZone(zone)
-        .toLocalDate().toString().take(7)
+    calendarDate(now, zone).toString().take(7)
 
 private fun VaultLazyListScope.incomeSection(state: VaultUiState, month: String, onAddIncome: () -> Unit) {
     val rows = state.data.dashboardIncomeEntries(state.activeProfile, month)
@@ -1024,10 +1031,10 @@ private fun VaultLazyListScope.incomeSection(state: VaultUiState, month: String,
             VaultButton(label = "+ Income", onClick = onAddIncome, enabled = allowed)
             KpiStrip(listOf(
                 Kpi("Month to date", figure(state.data.incomeFiguresUnavailable) {
-                    rows.sumLongOrNull { it.amountCents }?.let(Money::formatUsd) ?: "Unavailable"
+                    state.data.dashboardIncomeCents(state.activeProfile, month, calendarDate(state.now))?.let(Money::formatUsd) ?: "Unavailable"
                 }),
                 Kpi("Year to date", figure(state.data.incomeFiguresUnavailable) {
-                    state.data.yearToDateIncomeCents(state.activeProfile, month)?.let(Money::formatUsd) ?: "Unavailable"
+                    state.data.yearToDateIncomeCents(state.activeProfile, month, calendarDate(state.now))?.let(Money::formatUsd) ?: "Unavailable"
                 }),
             ))
         }
@@ -1075,7 +1082,7 @@ private fun VaultLazyListScope.budget(
     onPlanCopied: (String) -> Unit = {},
 ) {
     val incomeMonth = selectedMonth ?: calendarMonth(state.now)
-    if (state.data.budget.value == null && months.size > 1) {
+    if (months.size > 1 && (!state.data.incomeFiguresUnavailable || !state.data.budgetActualsUnavailable)) {
         item { MonthPicker(months, incomeMonth, onSelectMonth) }
     }
     incomeSection(state, incomeMonth, onAddIncome)
@@ -1114,14 +1121,6 @@ private fun VaultLazyListScope.budget(
     val actualsUnavailable = state.data.budgetActualsUnavailable
     val actualsStatus = state.data.budgetActualsStatus
 
-    // Hidden when the read failed: the month list is derived from the same
-    // transactions the screen has just been told not to trust, so offering a
-    // choice between them would be a control over nothing. One month is not a
-    // choice either — a lone chip reads as a button that does nothing.
-    val pickable = months.size > 1 && !actualsUnavailable
-    if (pickable) {
-        item { MonthPicker(months, derived.month, onSelectMonth) }
-    }
     // A new month with no plan yet is the first thing to fix, so the offer sits
     // above the figures. Only a live read carries the revision the copy fences on;
     // the contract withholds the action otherwise.
