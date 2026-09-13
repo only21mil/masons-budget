@@ -3,6 +3,7 @@ package com.sats21m.vogelvault.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.background
@@ -355,7 +356,12 @@ private fun VaultScreenContent(
             it - (contentOriginY - panePlan.windowOriginY)
         } ?: maxHeight).coerceIn(0.dp, maxHeight)
         Box(Modifier.width(panePlan.listWidth.takeIf { it > 0.dp } ?: maxWidth)
-            .height(fabHeight).align(Alignment.TopStart)) {
+            .height(fabHeight).align(Alignment.TopStart)
+            // Folded content already ends above the inset-aware bottom bar.
+            // A tabletop list ending above the hinge also needs no system inset.
+            .then(if (panePlan.railWidth > 0.dp && fabHeight == maxHeight) {
+                Modifier.windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Bottom))
+            } else Modifier)) {
             androidx.compose.material3.FloatingActionButton(
                 onClick = { quickAddRequested = true },
                 containerColor = LocalLedgerTheme.current.colors.bitcoinFill,
