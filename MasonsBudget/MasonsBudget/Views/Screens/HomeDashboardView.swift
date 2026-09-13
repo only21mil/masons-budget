@@ -7,6 +7,7 @@ struct HomeDashboardView: View {
 
     @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(CanonicalFinancialSourceStore.self) private var financials
     @AppStorage("selected_family_member") private var memberRaw = FamilyMember.victor.rawValue
     @AppStorage("display_unit") private var unitRaw = DisplayUnit.btc.rawValue
@@ -96,10 +97,15 @@ struct HomeDashboardView: View {
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            if dynamicTypeSize.isAccessibilitySize {
                 Text("Net worth").ledgerType(.sectionLabel)
-                Spacer(minLength: 8)
-                UnitToggleView(unit: unitBinding, size: .sm)
+                UnitToggleView(unit: unitBinding, size: .sm, expandsToFillWidth: true)
+            } else {
+                HStack {
+                    Text("Net worth").ledgerType(.sectionLabel)
+                    Spacer(minLength: 8)
+                    UnitToggleView(unit: unitBinding, size: .sm)
+                }
             }
             NavigationLink {
                 LedgerDrilldown(title: "Net Worth") { NetWorthView() }
@@ -118,6 +124,8 @@ struct HomeDashboardView: View {
                         }
                     } else {
                         Text("Net worth unavailable").ledgerType(.kpiValue)
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
                         Text(HomeDashboardData.netWorthUnavailableHint(hasReadToken: hasReadToken))
                             .ledgerType(.rowMeta)
                             .lineLimit(nil)

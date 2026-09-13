@@ -353,6 +353,27 @@ final class LedgerFoundationTests: XCTestCase {
     }
 
     #if canImport(UIKit)
+        func testTabCaptionsPreserveStandardSizingAndStopGrowingAtAccessibilitySizes() {
+            var sizes: [CGFloat] = []
+            for category in [UIContentSizeCategory.large, .extraExtraExtraLarge, .accessibilityLarge, .accessibilityExtraExtraExtraLarge] {
+                UITraitCollection(preferredContentSizeCategory: category).performAsCurrent {
+                    let attributes = LedgerChrome.tabTitleAttributes(ink: \.accentForeground)
+                    guard let font = attributes[.font] as? UIFont else {
+                        XCTFail("Tab title must retain its font")
+                        return
+                    }
+                    XCTAssertEqual(font.fontName, LedgerChromeSpec.tabLabel.weight.postScriptName)
+                    sizes.append(font.pointSize)
+                }
+            }
+            XCTAssertEqual(sizes.count, 4)
+            guard sizes.count == 4 else { return }
+            XCTAssertEqual(sizes[0], LedgerChromeSpec.tabLabel.size, accuracy: 0.01)
+            XCTAssertGreaterThan(sizes[1], sizes[0])
+            XCTAssertEqual(sizes[2], sizes[1], accuracy: 0.01)
+            XCTAssertEqual(sizes[3], sizes[1], accuracy: 0.01)
+        }
+
         private func components(_ color: UIColor, style: UIUserInterfaceStyle) -> (UInt, UInt, UInt) {
             var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
             color.resolvedColor(with: UITraitCollection(userInterfaceStyle: style)).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
