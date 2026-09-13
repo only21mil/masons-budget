@@ -27,7 +27,7 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], application = FoldStateTestApplication::class)
 class TransactionDetailPaymentSourcePickerTest {
     @get:Rule
     val compose = createEmptyComposeRule()
@@ -210,6 +210,8 @@ class TransactionDetailPaymentSourcePickerTest {
                 }
             }
         }
+        compose.waitForIdle()
+        compose.onNode(hasText("Edit") and hasClickAction()).performClick()
         compose.waitForIdle()
     }
 

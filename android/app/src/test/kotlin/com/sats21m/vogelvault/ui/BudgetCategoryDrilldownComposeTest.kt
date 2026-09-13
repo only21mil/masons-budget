@@ -166,6 +166,8 @@ class BudgetCategoryDrilldownComposeTest {
             "Edit Neighborhood Market transaction from 2026-07-26, owned by Victor",
         ).performClick()
         settle()
+        compose.onNodeWithText("Edit").performClick()
+        settle()
         assertEquals(1, nodesWithText("Transaction detail"))
 
         compose.runOnUiThread { model.switchProfile(FamilyMember.MASON) }

@@ -129,10 +129,10 @@ class DestinationVisibilityTest {
     }
 
     @Test
-    fun `sidebar destinations are exactly Dashboard and Budget, unfolded only`() {
+    fun `detail destinations are Activity Budget and Tasks, unfolded only`() {
         Destination.entries.forEach { destination ->
             assertEquals(
-                destination == Destination.DASHBOARD || destination == Destination.BUDGET,
+                destination in setOf(Destination.ACTIVITY, Destination.BUDGET, Destination.TASKS),
                 showsLedgerSidebar(destination, unfolded = true),
             )
             assertFalse(showsLedgerSidebar(destination, unfolded = false))

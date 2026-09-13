@@ -141,8 +141,56 @@ internal class ConvexTransactionActions(
     }
 }
 
+/** Read-only content is identical in a compact route and the Fold detail pane. */
 @Composable
 fun TransactionDetailScreen(
+    transaction: Transaction,
+    actions: TransactionActions?,
+    onClose: () -> Unit,
+    onChanged: () -> Unit,
+    viewer: FamilyMember = transaction.owner,
+    embedded: Boolean = false,
+) {
+    var editing by rememberSaveable(transaction.owner.key, transaction.id) { mutableStateOf(false) }
+    val content: @Composable () -> Unit = {
+        TransactionReadOnlyContent(transaction, onClose, onEdit = actions?.let { { editing = true } })
+    }
+    if (embedded) content() else if (!editing) Dialog(onDismissRequest = onClose) { Surface { content() } }
+    if (editing && actions != null) {
+        TransactionEditorDialog(
+            transaction, actions,
+            onClose = { editing = false },
+            onChanged = { editing = false; onChanged(); onClose() },
+            viewer = viewer,
+        )
+    }
+}
+
+@Composable
+private fun TransactionReadOnlyContent(transaction: Transaction, onClose: () -> Unit, onEdit: (() -> Unit)?) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(VaultSpace.lg),
+        verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
+    ) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onClose) { Text("Back") }
+                TextButton(onClick = { onEdit?.invoke() }, enabled = onEdit != null) { Text("Edit") }
+            }
+        }
+        item { Text(transaction.merchant, style = MaterialTheme.typography.headlineMedium) }
+        item { Text(com.sats21m.vogelvault.domain.Money.formatUsd(transaction.amount)) }
+        item { Text(transaction.date) }
+        item { Text(transaction.category) }
+        transaction.card?.let { card -> item { Text(PaymentSource.fromWireOrNull(card)?.label ?: card) } }
+        transaction.note?.let { note -> item { Text(note) } }
+        item { Text(transaction.owner.displayName, style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+@Composable
+private fun TransactionEditorDialog(
     transaction: Transaction,
     actions: TransactionActions,
     onClose: () -> Unit,
@@ -202,6 +250,7 @@ fun TransactionDetailScreen(
                 usePlatformDefaultWidth = false,
             ),
     ) {
+        ConstrainLedgerDialogWindow()
         Surface(Modifier.fillMaxSize()) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -346,7 +395,10 @@ fun TransactionDetailScreen(
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text(stringResource(R.string.transaction_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.transaction_delete_confirm_detail)) },
+            text = {
+                ConstrainLedgerDialogWindow()
+                Text(stringResource(R.string.transaction_delete_confirm_detail))
+            },
             confirmButton = {
                 TextButton(
                     onClick = {

@@ -13,6 +13,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -68,6 +70,9 @@ internal fun LedgerDateField(
             dismissButton = {
                 TextButton(onClick = { showPicker = false }) { Text(stringResource(R.string.write_cancel)) }
             },
-        ) { DatePicker(state = state) }
+        ) {
+            ConstrainLedgerDialogWindow()
+            DatePicker(state = state, modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()))
+        }
     }
 }

@@ -293,19 +293,26 @@ private fun spokenFigure(value: String): String =
  */
 @Composable
 fun KpiStrip(items: List<Kpi>, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth()) {
-        LedgerRule()
-        items.chunked(2).forEach { row ->
-            // IntrinsicSize.Min makes both cells adopt the taller one's height,
-            // so a cell carrying a hint line cannot leave a short rule beside it.
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                VerticalHairline(Modifier.fillMaxHeight())
-                row.forEach { item ->
-                    KpiCell(item, Modifier.weight(1f).fillMaxHeight())
-                    VerticalHairline(Modifier.fillMaxHeight())
-                }
-            }
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth()) {
+        val columns = when {
+            maxWidth < 400.dp -> 1
+            maxWidth >= 680.dp -> 4
+            else -> 2
+        }
+        Column(Modifier.fillMaxWidth()) {
             LedgerRule()
+            items.chunked(columns).forEach { row ->
+                // IntrinsicSize.Min makes both cells adopt the taller one's height,
+                // so a cell carrying a hint line cannot leave a short rule beside it.
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                    VerticalHairline(Modifier.fillMaxHeight())
+                    row.forEach { item ->
+                        KpiCell(item, Modifier.weight(1f).fillMaxHeight())
+                        VerticalHairline(Modifier.fillMaxHeight())
+                    }
+                }
+                LedgerRule()
+            }
         }
     }
 }
