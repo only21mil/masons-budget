@@ -1,5 +1,10 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -127,12 +132,10 @@ const val UNFOLDED_MIN_WIDTH_DP = 600
  */
 const val UNFOLDED_CONTENT_MAX_WIDTH_DP = 560
 
-/** The handoff rail: 130dp, seven destinations, a 2dp edge marker on the active one. */
+/** A7 keeps the existing rail geometry; A8 applies the Fold glyph rail. */
 const val RAIL_WIDTH_DP = 130
-internal const val RAIL_ITEM_COUNT = 7
+internal const val RAIL_ITEM_COUNT = 5
 
-private const val FOLDED_MAX_ITEMS = 5
-private const val FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW = FOLDED_MAX_ITEMS - 1
 internal const val VAULT_RAIL_TEST_TAG = "vault-navigation-rail"
 internal const val VAULT_RAIL_MORE_TEST_TAG = "vault-navigation-rail-more"
 internal const val VAULT_SCREEN_CONTENT_TEST_TAG = "vault-screen-content"
@@ -143,38 +146,16 @@ private val RAIL_ITEM_HEIGHT = 48.dp
 private val RAIL_GLYPH_INSET = 14.dp
 private val RAIL_LABEL_GAP = 10.dp
 
-/**
- * The six destinations the rail shows directly, in handoff order. Everything
- * else lives under More, which is the seventh item.
- */
 internal val RAIL_PRIMARY_ORDER: List<Destination> = listOf(
-    Destination.DASHBOARD,
-    Destination.ACTIVITY,
-    Destination.BUDGET,
-    Destination.BITCOIN,
-    Destination.TODAY,
-    Destination.TASKS,
+    Destination.DASHBOARD, Destination.ACTIVITY, Destination.BUDGET,
+    Destination.BITCOIN, Destination.TODAY,
 )
-
 internal fun railPrimaryDestinations(destinations: List<Destination>): List<Destination> =
     RAIL_PRIMARY_ORDER.filter { it in destinations }
-
-internal fun railOverflowDestinations(destinations: List<Destination>): List<Destination> =
-    destinations.filterNot { it in RAIL_PRIMARY_ORDER }
-
+internal fun railOverflowDestinations(destinations: List<Destination>): List<Destination> = emptyList()
 internal fun foldedPrimaryDestinations(destinations: List<Destination>): List<Destination> =
-    if (destinations.size <= FOLDED_MAX_ITEMS) {
-        destinations
-    } else {
-        destinations.take(FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW)
-    }
-
-internal fun foldedOverflowDestinations(destinations: List<Destination>): List<Destination> =
-    if (destinations.size <= FOLDED_MAX_ITEMS) {
-        emptyList()
-    } else {
-        destinations.drop(FOLDED_PRIMARY_ITEMS_WITH_OVERFLOW)
-    }
+    railPrimaryDestinations(destinations)
+internal fun foldedOverflowDestinations(destinations: List<Destination>): List<Destination> = emptyList()
 
 internal fun moreNavigationLabel(count: Int): String = "More ($count)"
 
@@ -217,6 +198,26 @@ fun VaultApp(
         onRequestProfileSwitchAuthentication
             ?: { unwiredRefusal = ProfileSwitchRefusal.SHELL_NOT_CONNECTED }
     val refusal = unwiredRefusal ?: profileSwitchRefusal
+    var routeParents by rememberSaveable(state.activeProfile) { mutableStateOf(emptyList<String>()) }
+    var primaryReset by rememberSaveable(state.activeProfile) { mutableStateOf("") }
+    val navigateWithin: (Destination) -> Unit = { target ->
+        if (target != state.destination && target in destinationsFor(state.activeProfile)) {
+            routeParents = routeParents + state.destination.name
+            onNavigate(target)
+        }
+    }
+    val navigatePrimary: (Destination) -> Unit = { target ->
+        routeParents = emptyList()
+        primaryReset = target.name + ":" + (primaryReset.substringAfter(":", "0").toInt() + 1)
+        onNavigate(target)
+    }
+    val navigateBack: () -> Unit = {
+        routeParents.lastOrNull()?.let { previous ->
+            routeParents = routeParents.dropLast(1)
+            onNavigate(Destination.valueOf(previous))
+        }
+    }
+    BackHandler(routeParents.isNotEmpty(), onBack = navigateBack)
     val tokens = LocalLedgerTheme.current
     BoxWithConstraints(modifier.fillMaxSize().background(tokens.colors.background)) {
         val unfolded = maxWidth.value >= UNFOLDED_MIN_WIDTH_DP
@@ -224,13 +225,14 @@ fun VaultApp(
         CompositionLocalProvider(LocalIsUnfolded provides unfolded) {
             val destinations = destinationsFor(state.activeProfile)
             val current = state.destination.takeIf { it in destinations } ?: Destination.DASHBOARD
+            val selectedPrimary = routeParents.firstOrNull()?.let(Destination::valueOf) ?: current
 
             if (unfolded) {
                 Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                    VaultRail(destinations, current, onNavigate)
+                    VaultRail(destinations, selectedPrimary, navigatePrimary)
                     VerticalHairline(Modifier.fillMaxHeight())
                     Column(Modifier.weight(1f)) {
-                        VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile) {
+                        VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile, { navigateWithin(Destination.SETTINGS) }) {
                             onWriteSucceeded()
                         }
                         HorizontalHairline()
@@ -242,6 +244,9 @@ fun VaultApp(
                                     ProfileSwitcher(state.activeProfile, requestProfileSwitchAuthentication, onSwitchProfile)
                                 },
                                 current = current,
+                                onNavigate = navigateWithin,
+                                primaryReset = primaryReset,
+                                onBack = navigateBack.takeIf { routeParents.isNotEmpty() },
                                 onEnableRemoteRows = onEnableRemoteRows,
                                 onRemoteRowsConnected = onRemoteRowsConnected,
                                 onWriteSucceeded = onWriteSucceeded,
@@ -261,8 +266,8 @@ fun VaultApp(
                     }
                 }
             } else {
-                Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                    VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile) {
+                Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
+                    VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile, { navigateWithin(Destination.SETTINGS) }) {
                         onWriteSucceeded()
                     }
                     HorizontalHairline()
@@ -273,6 +278,9 @@ fun VaultApp(
                             ProfileSwitcher(state.activeProfile, requestProfileSwitchAuthentication, onSwitchProfile)
                         },
                         current = current,
+                                onNavigate = navigateWithin,
+                                primaryReset = primaryReset,
+                                onBack = navigateBack.takeIf { routeParents.isNotEmpty() },
                         onEnableRemoteRows = onEnableRemoteRows,
                         onRemoteRowsConnected = onRemoteRowsConnected,
                         onWriteSucceeded = onWriteSucceeded,
@@ -284,7 +292,7 @@ fun VaultApp(
                         modifier = Modifier.weight(1f),
                     )
                     HorizontalHairline()
-                    VaultBottomBar(destinations, current, onNavigate)
+                    VaultBottomBar(destinations, selectedPrimary, navigatePrimary)
                 }
             }
         }
@@ -302,6 +310,9 @@ private fun VaultScreenContent(
     refusal: ProfileSwitchRefusal?,
     profileSwitcher: @Composable () -> Unit,
     current: Destination,
+    onNavigate: (Destination) -> Unit,
+    onBack: (() -> Unit)?,
+    primaryReset: String,
     onEnableRemoteRows: (String) -> Unit,
     onRemoteRowsConnected: () -> Unit,
     onWriteSucceeded: () -> Unit,
@@ -327,6 +338,9 @@ private fun VaultScreenContent(
                     destination = current,
                     state = state,
                     profileSwitcher = profileSwitcher,
+                    onNavigate = onNavigate,
+                    onBack = onBack,
+                    primaryReset = primaryReset,
                     onEnableRemoteRows = onEnableRemoteRows,
                     onRemoteRowsConnected = onRemoteRowsConnected,
                     onWriteSucceeded = onWriteSucceeded,
@@ -420,10 +434,8 @@ private fun VaultRail(
 ) {
     val tokens = LocalLedgerTheme.current
     val primary = railPrimaryDestinations(destinations)
-    val overflow = railOverflowDestinations(destinations)
     val currentIndex = primary.indexOf(current).let { if (it >= 0) it else primary.size }
     val railState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex)
-    var overflowExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(currentIndex) {
         if (railState.layoutInfo.visibleItemsInfo.none { it.index == currentIndex }) {
@@ -465,47 +477,7 @@ private fun VaultRail(
                     onClick = { onNavigate(destination) },
                 )
             }
-            if (overflow.isNotEmpty()) {
-                item(key = "more") {
-                    Box {
-                        RailItem(
-                            icon = LedgerGlyphs.Dots,
-                            label = moreNavigationLabel(overflow.size),
-                            selected = current in overflow,
-                            onClick = { overflowExpanded = true },
-                            modifier = Modifier.testTag(VAULT_RAIL_MORE_TEST_TAG),
-                        )
-                        DropdownMenu(
-                            expanded = overflowExpanded,
-                            onDismissRequest = { overflowExpanded = false },
-                            containerColor = tokens.colors.panel,
-                        ) {
-                            overflow.forEach { destination ->
-                                val ink = if (destination == current) {
-                                    tokens.colors.bitcoin
-                                } else {
-                                    tokens.colors.foregroundSecondary
-                                }
-                                DropdownMenuItem(
-                                    text = { Text(destination.label, color = ink) },
-                                    onClick = {
-                                        overflowExpanded = false
-                                        onNavigate(destination)
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            destination.ledgerGlyph(),
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp),
-                                            tint = ink,
-                                        )
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+
         }
     }
 }
@@ -555,65 +527,19 @@ private fun VaultBottomBar(
     onNavigate: (Destination) -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
-    val unselectedTint = ledgerNavigationUnselectedTint(tokens.colors)
-    val primary = foldedPrimaryDestinations(destinations)
-    val overflow = foldedOverflowDestinations(destinations)
-    var overflowExpanded by remember { mutableStateOf(false) }
-
-    LedgerTabBar {
-        primary.forEach { destination ->
-            LedgerTabItem(
-                glyph = destination.ledgerGlyph(),
-                label = destination.tabLabel(),
-                semanticLabel = destination.label,
-                selected = destination == current,
-                onClick = { onNavigate(destination) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-        if (overflow.isNotEmpty()) {
-            Box(Modifier.weight(1f)) {
+    BoxWithConstraints {
+        val compactLabels = maxWidth < 360.dp
+        LedgerTabBar(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
+            foldedPrimaryDestinations(destinations).forEach { destination ->
                 LedgerTabItem(
-                    glyph = LedgerGlyphs.Dots,
-                    label = stringResource(R.string.navigation_more),
-                    semanticLabel = moreNavigationLabel(overflow.size),
-                    selected = current in overflow,
-                    onClick = { overflowExpanded = true },
-                    modifier = Modifier.fillMaxWidth(),
+                    glyph = destination.ledgerGlyph(),
+                    label = destination.tabLabel(),
+                    semanticLabel = destination.label,
+                    selected = destination == current,
+                    showLabel = !compactLabels || destination == current,
+                    onClick = { onNavigate(destination) },
+                    modifier = Modifier.weight(1f),
                 )
-                DropdownMenu(
-                    expanded = overflowExpanded,
-                    onDismissRequest = { overflowExpanded = false },
-                    containerColor = tokens.colors.panel,
-                ) {
-                    overflow.forEach { destination ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    destination.label,
-                                    style = tokens.type.rowPrimary,
-                                    color = if (destination == current) {
-                                        tokens.colors.foreground
-                                    } else {
-                                        unselectedTint
-                                    },
-                                )
-                            },
-                            onClick = {
-                                overflowExpanded = false
-                                onNavigate(destination)
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    destination.ledgerGlyph(),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                    tint = if (destination == current) tokens.colors.bitcoin else unselectedTint,
-                                )
-                            },
-                        )
-                    }
-                }
             }
         }
     }
@@ -624,6 +550,7 @@ private fun VaultTopBar(
     state: VaultUiState,
     onRequestProfileSwitchAuthentication: (ProfileSwitchRequest) -> Unit,
     onAuthorizedSwitch: (FamilyMember) -> Unit,
+    onSettings: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
@@ -638,6 +565,7 @@ private fun VaultTopBar(
             activeProfile = state.activeProfile,
             onAuthenticationRequired = onRequestProfileSwitchAuthentication,
             onAuthorizedSwitch = onAuthorizedSwitch,
+            onSettings = onSettings,
         )
         Spacer(Modifier.weight(1f))
         if (state.worstStatus == Freshness.LOADING) {
