@@ -473,6 +473,7 @@ private fun satsToCentsExact(
 internal fun AddTransactionSheet(
     state: VaultUiState,
     onDismiss: () -> Unit,
+    initialType: AddTransactionType = AddTransactionType.SPEND,
     allowIncomeBitcoinBuy: Boolean = false,
     onOpenIncomeBitcoinBuy: (IncomeEntry) -> Unit = {},
     onStartRiverBillPay: (BillPayPrefill) -> Unit = {},
@@ -486,6 +487,9 @@ internal fun AddTransactionSheet(
     val transactionDraftIds = application?.transactionDraftIds ?: fallbackTransactionDraftIds
     val btcBuyDraftIds = application?.btcBuyDraftIds
     val transactionGateway = remember(application) { application?.transactionDeviceMutationGateway }
+    val incomeGateway = remember(application) { application?.deviceMutationClient?.let(::IncomeMutationGateway) }
+    val incomeDraftScope = "income:${state.activeProfile.key}"
+    val incomeDraftId = remember(incomeDraftScope, transactionDraftIds) { transactionDraftIds.currentId(incomeDraftScope) }
     val saveScope = remember(application) { application?.applicationScope }
     val uiActive = remember { AtomicBoolean(true) }
     DisposableEffect(Unit) {
@@ -506,7 +510,7 @@ internal fun AddTransactionSheet(
     val draftTransactionId = remember(draftScope, transactionDraftIds) {
         transactionDraftIds.currentId(draftScope)
     }
-    var typeName by rememberSaveable { mutableStateOf(AddTransactionType.SPEND.name) }
+    var typeName by rememberSaveable { mutableStateOf(initialType.name) }
     var inputUnitName by rememberSaveable { mutableStateOf(DisplayUnit.USD.name) }
     var merchant by rememberSaveable { mutableStateOf("") }
     var category by rememberSaveable { mutableStateOf("") }
@@ -607,11 +611,17 @@ internal fun AddTransactionSheet(
                 label = AddTransactionType::label,
                 onSelect = {
                     typeName = it.name
+                    if (it == AddTransactionType.INCOME) {
+                        if (inputUnit != DisplayUnit.USD) amount = ""
+                        inputUnitName = DisplayUnit.USD.name
+                    }
                     category = ""
                     errorMessage = null
                 },
             )
 
+
+            if (type != AddTransactionType.INCOME) {
             DropdownField(
                 label = "Payment source",
                 selected = paymentSource.label,
@@ -645,6 +655,7 @@ internal fun AddTransactionSheet(
                 },
             )
             PaymentRail(paymentSource)
+            }
             if (writeUnavailableReason != null) {
                 Text(writeUnavailableReason)
                 TextButton(onClick = onDismiss) { Text("Close") }
@@ -657,7 +668,7 @@ internal fun AddTransactionSheet(
                     merchant = it
                     errorMessage = null
                 },
-                label = stringResource(R.string.add_transaction_merchant),
+                label = if (type == AddTransactionType.INCOME) "Income source" else stringResource(R.string.add_transaction_merchant),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -672,6 +683,7 @@ internal fun AddTransactionSheet(
                 },
             )
 
+            if (type != AddTransactionType.INCOME) {
             if (paymentSource.route == PaymentSourceRoute.BILL_PAY) {
                 Text(
                     "River bill pay opens a separate Bitcoin bill-pay form in USD",
@@ -695,6 +707,8 @@ internal fun AddTransactionSheet(
                 )
             }
 
+            }
+
             LedgerTextField(
                 value = amount,
                 onValueChange = {
@@ -709,7 +723,7 @@ internal fun AddTransactionSheet(
                 textStyle = LocalLedgerTheme.current.type.amountInput,
             )
 
-            if (paymentSource.isBitcoinTransaction) {
+            if (type != AddTransactionType.INCOME && paymentSource.isBitcoinTransaction) {
                 if (eligibleBitcoinAccounts.isEmpty()) {
                     Text(
                         "No Bitcoin accounts belong to ${state.activeProfile.ledgerOwner.displayName}",
@@ -764,13 +778,10 @@ internal fun AddTransactionSheet(
                             // Validate every user field before taking the
                             // process-owned Bitcoin-buy lease. The conversion
                             // does not inspect this temporary id.
-                            val seed =
-                                incomeEntryForBitcoinBuy(
-                                    draft = currentDraft(),
-                                    btcPriceCents = operationalBtcPriceCents,
-                                    id = "validation-only",
-                                    bitcoinAccounts = state.data.btcAccounts.value,
-                                )
+                            val seed = prepareIncome(currentDraft(), "validation-only").fold(
+                                onSuccess = { WriteDraftResult.Valid(it) },
+                                onFailure = { WriteDraftResult.Invalid(it.message ?: "Income is invalid") },
+                            )
                             when (seed) {
                                 is WriteDraftResult.Invalid -> errorMessage = seed.reason
                                 is WriteDraftResult.Valid -> {
@@ -829,6 +840,36 @@ internal fun AddTransactionSheet(
                             paymentSource = paymentSource,
                             bitcoinAccountKey = selectedBitcoinAccountKey,
                         )
+
+                        if (type == AddTransactionType.INCOME) {
+                            val income = prepareIncome(draft, incomeDraftId).getOrElse {
+                                refuse(it.message ?: "Income is invalid")
+                                return@VaultButton
+                            }
+                            val gateway = incomeGateway
+                            val scope = saveScope
+                            if (gateway == null || scope == null) {
+                                refuse("Connect this device to save income")
+                                return@VaultButton
+                            }
+                            saving = true
+                            scope.launch {
+                                val result = gateway.upsert(income)
+                                val reset = result !is ConvexResult.Ok ||
+                                    transactionDraftIds.rotateAfterAcceptance(incomeDraftScope, income.id)
+                                if (result is ConvexResult.Ok) application?.noteAcceptedWrite()
+                                if (uiActive.get()) {
+                                    saving = false
+                                    val failure = convexWriteFailureMessage("Income was not saved", result)
+                                    when {
+                                        failure != null -> refuse(failure)
+                                        !reset -> refuse("Income saved. Reopen the app before adding another entry.")
+                                        else -> { haptics.confirm(); onDismiss() }
+                                    }
+                                }
+                            }
+                            return@VaultButton
+                        }
 
                         if (paymentSource.route == PaymentSourceRoute.BILL_PAY) {
                             val handoff = prepareBillPayHandoff(draft).getOrElse {

@@ -16,6 +16,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -56,7 +58,7 @@ class BudgetCategoryDrilldownComposeTest {
     val compose = createEmptyComposeRule()
 
     private lateinit var activityController: ActivityController<ComponentActivity>
-    private val model = VaultViewModel()
+    private val model = VaultViewModel(clock = { Fixtures.NOW_MILLIS })
 
     @Before
     fun startHost() {
@@ -123,6 +125,7 @@ class BudgetCategoryDrilldownComposeTest {
 
     @Test
     fun `older Budget selection does not change Dashboard MTD`() {
+        contentList().performScrollToNode(hasContentDescription("Jun 2026 budget month"))
         compose.onNodeWithContentDescription("Jun 2026 budget month").performClick()
         settle()
         compose.onNodeWithContentDescription("Jun 2026 budget month").assertIsSelected()
@@ -130,6 +133,7 @@ class BudgetCategoryDrilldownComposeTest {
         compose.runOnUiThread { model.navigate(Destination.DASHBOARD) }
         settle()
 
+        contentList().performScrollToNode(hasContentDescription("Spend, \$611.17"))
         compose.onNodeWithContentDescription("Spend, \$611.17").fetchSemanticsNode()
         compose.onNodeWithContentDescription("Income, \$4,960.00").fetchSemanticsNode()
     }
@@ -138,7 +142,7 @@ class BudgetCategoryDrilldownComposeTest {
     fun `Budget income editor exposes the atomic Bitcoin buy action`() {
         compose.onNodeWithText("+ Add").performClick()
         settle()
-        compose.onNodeWithText("Income").performClick()
+        compose.onNodeWithText("Income", useUnmergedTree = true).performClick()
         settle()
 
         compose.onNodeWithText("Add as Bitcoin buy").fetchSemanticsNode()
@@ -316,4 +320,8 @@ class BudgetCategoryDrilldownComposeTest {
     }
 }
 
-class BudgetDrilldownTestApplication : VaultApplication()
+class BudgetDrilldownTestApplication : VaultApplication() {
+    override val deviceCapabilities = com.sats21m.vogelvault.data.DeviceCapabilities(
+        FamilyMember.VICTOR, com.sats21m.vogelvault.data.DeviceCapability.entries.map { it.wire }.toSet(),
+    )
+}

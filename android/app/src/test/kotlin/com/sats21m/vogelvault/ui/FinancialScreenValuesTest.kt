@@ -24,6 +24,12 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class FinancialScreenValuesTest {
+    @Test fun `dashboard month follows local calendar even when selected budget is older`() {
+        val instant = Instant.parse("2026-10-01T00:30:00Z").toEpochMilli()
+        assertEquals("2026-09", calendarMonth(instant, java.time.ZoneId.of("America/Chicago")))
+        assertEquals("2026-10", calendarMonth(instant, java.time.ZoneOffset.UTC))
+    }
+
     @Test
     fun `dashboard income follows the selected month at month boundaries`() {
         val model = Fixtures.envelope(FamilyMember.VICTOR).copy(
@@ -97,8 +103,10 @@ class FinancialScreenValuesTest {
 
         assertEquals(111_111L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-06"))
         assertEquals(555_555L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-07"))
+        assertEquals(666_666L, model.yearToDateIncomeCents(FamilyMember.RACHEL, "2026-07"))
+        assertEquals(0L, model.yearToDateIncomeCents(FamilyMember.MASON, "2026-07"))
         assertEquals(444_444L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-08"))
-        assertNull(model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-09"))
+        assertEquals(0L, model.dashboardIncomeCents(FamilyMember.RACHEL, "2026-09"))
         assertNull(model.dashboardIncomeCents(FamilyMember.RACHEL, null))
         assertEquals(541_782_856L, model.netWorthBalanceForDisplay()?.totalSats)
         assertEquals(
