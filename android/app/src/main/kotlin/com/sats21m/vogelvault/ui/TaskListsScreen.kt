@@ -1,5 +1,10 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -68,6 +73,7 @@ internal fun TaskListsScreen(
     onWriteSucceeded: () -> Unit,
     zoneId: ZoneId = ZoneId.systemDefault(),
     nowMillis: () -> Long = System::currentTimeMillis,
+    adaptive: Boolean = false,
 ) {
     // Disposing this subtree on a profile change cancels in-flight UI work and
     // removes drafts/snackbars before another family member's Tasks screen draws.
@@ -78,6 +84,7 @@ internal fun TaskListsScreen(
             onWriteSucceeded = onWriteSucceeded,
             zoneId = zoneId,
             nowMillis = nowMillis,
+            adaptive = adaptive,
         )
     }
 }
@@ -89,6 +96,7 @@ private fun ProfileTaskListsScreen(
     onWriteSucceeded: () -> Unit,
     zoneId: ZoneId,
     nowMillis: () -> Long,
+    adaptive: Boolean,
 ) {
     val colors = LocalLedgerTheme.current.colors
     // ScreenHost has already scoped this handoff to the active profile.
@@ -97,7 +105,7 @@ private fun ProfileTaskListsScreen(
     val slice = state.data.todos
     if (slice.suppressFigures) {
         TaskPanel(stringResource(R.string.tasks_title)) {
-            StateBlock(slice.status)
+            StateBlock(slice.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
         }
         return
     }
@@ -138,6 +146,7 @@ private fun ProfileTaskListsScreen(
     var routeName by rememberSaveable(state.activeProfile) {
         mutableStateOf(TaskListRoute.HUB.name)
     }
+    BackHandler(routeName != TaskListRoute.HUB.name) { routeName = TaskListRoute.HUB.name }
     var selectedKind by rememberSaveable(state.activeProfile) {
         mutableStateOf(TaskSmartList.TODAY.name)
     }
@@ -150,8 +159,12 @@ private fun ProfileTaskListsScreen(
         mutableStateOf<String?>(null)
     }
     var editing by remember { mutableStateOf<TodoItem?>(null) }
+    var selectedTaskKey by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
+    val selectedTask = localTodos.firstOrNull { "${it.owner.key}:${it.id}" == selectedTaskKey }
+    BackHandler(selectedTask != null) { selectedTaskKey = null }
     val route = TaskListRoute.entries.firstOrNull { it.name == routeName } ?: TaskListRoute.HUB
     val actions = TaskRowActions(
+        readOnlySelection = adaptive,
         enabled = { credentialStored && it.id !in writes.busyIds },
         deletePending = writes.deletePending,
         revealKey = slice.updatedAt,
@@ -166,7 +179,7 @@ private fun ProfileTaskListsScreen(
                 localTodos = localTodos.replaceTodo(changed)
             }
         },
-        onEdit = { editing = it },
+        onEdit = { if (adaptive) selectedTaskKey = "${it.owner.key}:${it.id}" else editing = it },
         onDelete = { todo ->
             writes.delete(
                 todo = todo,
@@ -227,7 +240,7 @@ private fun ProfileTaskListsScreen(
         }
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
+    val taskHeader: @Composable () -> Unit = {
         VaultButton(
             label = stringResource(R.string.tasks_add),
             onClick = { addingTask = true },
@@ -240,27 +253,49 @@ private fun ProfileTaskListsScreen(
             Text(it, style = MaterialTheme.typography.bodySmall, color = colors.bitcoin)
         }
 
-        when (route) {
-            TaskListRoute.HUB ->
-                TaskHub(
+    }
+    val hubContent: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
+            taskHeader()
+            TaskHub(
                     model = model,
                     viewer = state.activeProfile,
                     actions = actions,
                     onSmartList = {
+                        selectedTaskKey = null
                         selectedKind = it.name
                         routeName = TaskListRoute.SMART.name
                     },
                     onProject = {
+                        selectedTaskKey = null
                         selectedOwner = it.owner.key
                         selectedName = it.name
                         routeName = TaskListRoute.PROJECT.name
                     },
                     onArea = {
+                        selectedTaskKey = null
                         selectedOwner = it.owner.key
                         selectedName = it.name
                         routeName = TaskListRoute.AREA.name
                     },
                 )
+    }
+    }
+    val detailContent: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
+            if (!adaptive || !LocalLedgerPanePlan.current.split) taskHeader()
+        if (selectedTask != null) {
+            Column(Modifier.padding(VaultSpace.md), verticalArrangement = Arrangement.spacedBy(VaultSpace.md)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    TextButton(onClick = { selectedTaskKey = null }) { Text("Back") }
+                    TextButton(onClick = { editing = selectedTask }, enabled = credentialStored) { Text("Edit") }
+                }
+                Text(selectedTask.title, style = MaterialTheme.typography.headlineSmall)
+                selectedTask.due?.let { Text(it) }
+            }
+        } else {
+        when (route) {
+            TaskListRoute.HUB -> LedgerDetailPrompt(Destination.TASKS)
 
             TaskListRoute.SMART -> {
                 val kind =
@@ -288,10 +323,23 @@ private fun ProfileTaskListsScreen(
                 )
             }
         }
+        }
     }
+    }
+    if (adaptive) {
+        LedgerPanes(
+            plan = LocalLedgerPanePlan.current,
+            showCompactDetail = route != TaskListRoute.HUB || selectedTask != null,
+            modifier = Modifier.fillMaxSize(),
+            list = { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(VaultSpace.md)) { hubContent() } },
+            detail = { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { detailContent() } },
+        )
+    } else if (route == TaskListRoute.HUB) hubContent() else detailContent()
+
 }
 
 private data class TaskRowActions(
+    val readOnlySelection: Boolean = false,
     val enabled: (TodoItem) -> Boolean,
     val deletePending: Boolean,
     /** Slice revision the rows came from; rows reveal when it changes. */
@@ -341,8 +389,14 @@ private fun SmartListGrid(
     model: TaskListModel,
     onSelect: (TaskSmartList) -> Unit,
 ) {
+    androidx.compose.foundation.layout.BoxWithConstraints {
+        val columns = when {
+            maxWidth < 400.dp -> 1
+            maxWidth >= 680.dp -> 4
+            else -> 2
+        }
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
-        TaskSmartList.entries.chunked(2).forEach { row ->
+        TaskSmartList.entries.chunked(columns).forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm),
@@ -357,6 +411,7 @@ private fun SmartListGrid(
                 }
             }
         }
+    }
     }
 }
 
@@ -392,7 +447,7 @@ private fun TaskSection(
     TaskPanel(title) {
         tasks.forEachIndexed { index, task ->
             if (index > 0) HorizontalHairline()
-            Box(Modifier.ledgerRowReveal(index, actions.revealKey?.let { "tasks-$title:$it" })) {
+            Box(Modifier.ledgerRowReveal(index, actions.revealKey?.let { "tasks-$title" })) {
                 TaskEditableRow(task, viewer, actions)
             }
         }
@@ -490,7 +545,7 @@ private fun TaskDetailList(
         } else {
             tasks.forEachIndexed { index, task ->
                 if (index > 0) HorizontalHairline()
-                Box(Modifier.ledgerRowReveal(index, actions.revealKey?.let { "tasks-$title:$it" })) {
+                Box(Modifier.ledgerRowReveal(index, actions.revealKey?.let { "tasks-$title" })) {
                     TaskEditableRow(task, viewer, actions)
                 }
             }
@@ -517,6 +572,8 @@ private fun TaskEditableRow(
         onToggleDone = { actions.onToggleDone(task) },
         onToggleFlag = { actions.onToggleFlag(task) },
         onEdit = { actions.onEdit(task) },
+        openEnabled = actions.readOnlySelection || actions.enabled(task),
+        openDescription = if (actions.readOnlySelection) "Open ${task.title}" else null,
         onDelete = { actions.onDelete(task) },
     )
 }

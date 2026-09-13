@@ -25,11 +25,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
+import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.DeviceCapabilities
+import com.sats21m.vogelvault.data.DeviceCapability
+import com.sats21m.vogelvault.domain.FamilyMember
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.data.ConvexMutation
-import com.sats21m.vogelvault.data.ConvexMutationClient
+import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.TransactionInput
 import com.sats21m.vogelvault.data.TransactionKind
@@ -69,7 +74,7 @@ interface TransactionActions {
 }
 
 internal class ConvexTransactionActions(
-    private val client: ConvexMutationClient,
+    private val client: ConvexDeviceMutationClient,
 ) : TransactionActions {
     override suspend fun save(
         original: Transaction,
@@ -78,7 +83,7 @@ internal class ConvexTransactionActions(
         // The detail screen only receives rows from the server-backed ledger.
         // A missing revision here is stale local state, never a new create, so
         // refuse before the write can silently become unfenced.
-        val baseUpdatedAtMs = original.knownTransactionRevision(client)
+        val baseUpdatedAtMs = original.updatedAtMs.takeIf { it > 0L }
             ?: return TransactionActionResult.Error(TRANSACTION_REVISION_REQUIRED_MESSAGE)
         val amountCents =
             parseTransactionCents(draft.amount)
@@ -109,8 +114,9 @@ internal class ConvexTransactionActions(
             }
 
         return client
-            .upsertTransaction(
-                ConvexMutation.UpsertTransaction(
+            .mutate(
+                ConvexMutation.UpsertTransactionFromDevice(
+                    owner = original.owner,
                     transaction = transaction,
                     sourceFile = original.owner.ledgerOwner.transactionsDataFileName,
                     baseUpdatedAtMs = baseUpdatedAtMs,
@@ -121,12 +127,12 @@ internal class ConvexTransactionActions(
     override suspend fun delete(transaction: Transaction): TransactionActionResult {
         // Deletes are fenced by the same revision as edits; an absent fence is
         // especially dangerous because it can remove a newly changed sat row.
-        val baseUpdatedAtMs = transaction.knownTransactionRevision(client)
+        val baseUpdatedAtMs = transaction.updatedAtMs.takeIf { it > 0L }
             ?: return TransactionActionResult.Error(TRANSACTION_REVISION_REQUIRED_MESSAGE)
         return client
             .mutate(
-                ConvexMutation.DeleteTransaction(
-                    txId = transaction.id,
+                ConvexMutation.DeleteTransactionFromDevice(
+                    entityId = transaction.id,
                     owner = transaction.owner.ledgerOwner,
                     sourceFile = transaction.owner.ledgerOwner.transactionsDataFileName,
                     baseUpdatedAtMs = baseUpdatedAtMs,
@@ -135,13 +141,72 @@ internal class ConvexTransactionActions(
     }
 }
 
+/** Read-only content is identical in a compact route and the Fold detail pane. */
 @Composable
 fun TransactionDetailScreen(
+    transaction: Transaction,
+    actions: TransactionActions?,
+    onClose: () -> Unit,
+    onChanged: () -> Unit,
+    viewer: FamilyMember = transaction.owner,
+    embedded: Boolean = false,
+) {
+    var editing by rememberSaveable(transaction.owner.key, transaction.id) { mutableStateOf(false) }
+    val content: @Composable () -> Unit = {
+        TransactionReadOnlyContent(transaction, onClose, onEdit = actions?.let { { editing = true } })
+    }
+    if (embedded) content() else if (!editing) Dialog(onDismissRequest = onClose) { Surface { content() } }
+    if (editing && actions != null) {
+        TransactionEditorDialog(
+            transaction, actions,
+            onClose = { editing = false },
+            onChanged = { editing = false; onChanged(); onClose() },
+            viewer = viewer,
+        )
+    }
+}
+
+@Composable
+private fun TransactionReadOnlyContent(transaction: Transaction, onClose: () -> Unit, onEdit: (() -> Unit)?) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(VaultSpace.lg),
+        verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
+    ) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onClose) { Text("Back") }
+                TextButton(onClick = { onEdit?.invoke() }, enabled = onEdit != null) { Text("Edit") }
+            }
+        }
+        item { Text(transaction.merchant, style = MaterialTheme.typography.headlineMedium) }
+        item { Text(com.sats21m.vogelvault.domain.Money.formatUsd(transaction.amount)) }
+        item { Text(transaction.date) }
+        item { Text(transaction.category) }
+        transaction.card?.let { card -> item { Text(PaymentSource.fromWireOrNull(card)?.label ?: card) } }
+        transaction.note?.let { note -> item { Text(note) } }
+        item { Text(transaction.owner.displayName, style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+@Composable
+private fun TransactionEditorDialog(
     transaction: Transaction,
     actions: TransactionActions,
     onClose: () -> Unit,
     onChanged: () -> Unit,
+    viewer: FamilyMember = transaction.owner,
 ) {
+    val application = LocalContext.current.applicationContext as? VaultApplication
+    val access = application?.deviceCapabilities ?: DeviceCapabilities()
+    val writeReason = access.unavailableReason(viewer, DeviceCapability.TRANSACTIONS)
+        ?: if (transaction.amountSats != null || transaction.bitcoinAccountKey != null) {
+            access.unavailableReason(viewer, DeviceCapability.BITCOIN)
+        } else null
+    val unavailableReason = writeReason
+        ?: if (transaction.updatedAtMs <= 0L) "Refresh this transaction before editing it." else null
+        ?: if (viewer.ledgerOwner != transaction.owner.ledgerOwner) "Switch to this record's profile to make changes." else null
+    val canWrite = unavailableReason == null && viewer.ledgerOwner == transaction.owner.ledgerOwner
     val stateKeys = arrayOf(transaction.owner.key, transaction.id)
     var merchant by rememberSaveable(*stateKeys) { mutableStateOf(transaction.merchant) }
     var category by rememberSaveable(*stateKeys) { mutableStateOf(transaction.category) }
@@ -157,7 +222,7 @@ fun TransactionDetailScreen(
     val scope = rememberCoroutineScope()
 
     fun runAction(block: suspend () -> TransactionActionResult) {
-        if (working) return
+        if (working || !canWrite) return
         working = true
         error = null
         scope.launch {
@@ -185,6 +250,7 @@ fun TransactionDetailScreen(
                 usePlatformDefaultWidth = false,
             ),
     ) {
+        ConstrainLedgerDialogWindow()
         Surface(Modifier.fillMaxSize()) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -192,6 +258,7 @@ fun TransactionDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
             ) {
                 item {
+                    unavailableReason?.let { Text(it) }
                     Text(
                         stringResource(R.string.transaction_detail_title),
                         style = MaterialTheme.typography.headlineMedium,
@@ -212,7 +279,7 @@ fun TransactionDetailScreen(
                         value = merchant,
                         onValueChange = { merchant = it },
                         label = stringResource(R.string.transaction_merchant),
-                        enabled = !working,
+                        enabled = !working && canWrite,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -221,7 +288,7 @@ fun TransactionDetailScreen(
                         value = category,
                         onValueChange = { category = it },
                         label = stringResource(R.string.transaction_category),
-                        enabled = !working,
+                        enabled = !working && canWrite,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -231,7 +298,7 @@ fun TransactionDetailScreen(
                         onValueChange = { amount = it },
                         label = stringResource(R.string.transaction_amount),
                         supporting = stringResource(R.string.transaction_amount_sign_help),
-                        enabled = !working,
+                        enabled = !working && canWrite,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -243,16 +310,15 @@ fun TransactionDetailScreen(
                             it.isNotBlank() && PaymentSource.fromWireOrNull(it) == null
                         },
                         onSelect = { method = it },
-                        enabled = !working,
+                        enabled = !working && canWrite,
                     )
                 }
                 item {
-                    LedgerTextField(
+                    LedgerDateField(
                         value = date,
                         onValueChange = { date = it },
                         label = stringResource(R.string.transaction_date),
-                        supporting = stringResource(R.string.transaction_date_help),
-                        enabled = !working,
+                        enabled = !working && canWrite,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -261,7 +327,7 @@ fun TransactionDetailScreen(
                         value = note,
                         onValueChange = { note = it },
                         label = stringResource(R.string.transaction_note),
-                        enabled = !working,
+                        enabled = !working && canWrite,
                         singleLine = false,
                         minLines = 3,
                         modifier = Modifier.fillMaxWidth(),
@@ -304,7 +370,7 @@ fun TransactionDetailScreen(
                                     )
                                 runAction { actions.save(transaction, draft) }
                             },
-                            enabled = !working,
+                            enabled = !working && canWrite,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -312,7 +378,7 @@ fun TransactionDetailScreen(
                 item {
                     TextButton(
                         onClick = { confirmDelete = true },
-                        enabled = !working,
+                        enabled = !working && canWrite,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
@@ -329,7 +395,10 @@ fun TransactionDetailScreen(
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text(stringResource(R.string.transaction_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.transaction_delete_confirm_detail)) },
+            text = {
+                ConstrainLedgerDialogWindow()
+                Text(stringResource(R.string.transaction_delete_confirm_detail))
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -445,14 +514,6 @@ private fun originalKind(transaction: Transaction): TransactionKind =
         TransactionKind.SPEND
     }
 
-private fun Transaction.knownTransactionRevision(client: ConvexMutationClient): Long? {
-    if (updatedAtMs > 0L) return updatedAtMs
-    return client.acceptedTransactionRevision(
-        sourceFile = owner.ledgerOwner.transactionsDataFileName,
-        txId = id,
-    )
-}
-
 private fun isIsoDate(value: String): Boolean =
     try {
         LocalDate.parse(value.trim())
@@ -466,10 +527,10 @@ private fun ConvexResult<*>.toTransactionActionResult(): TransactionActionResult
         is ConvexResult.Ok -> TransactionActionResult.Success
         ConvexResult.Disabled -> TransactionActionResult.Error("Transaction writes are disabled.")
         ConvexResult.NotConfigured ->
-            TransactionActionResult.Error("The secure Convex write path is not configured.")
+            TransactionActionResult.Error("The secure household write connection is not configured.")
         ConvexResult.Unauthorized ->
-            TransactionActionResult.Error("The secure Convex write credential was not accepted.")
-        ConvexResult.Missing -> TransactionActionResult.Error("Convex returned no mutation result.")
+            TransactionActionResult.Error("The secure household write access was not accepted.")
+        ConvexResult.Missing -> TransactionActionResult.Error("Household sync returned no result.")
         is ConvexResult.Failed ->
-            TransactionActionResult.Error("Convex refused the change (${this.reason}).")
+            TransactionActionResult.Error("Household sync refused the change (${this.reason}).")
     }

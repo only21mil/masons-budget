@@ -1,5 +1,7 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -39,10 +42,14 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.DeviceCapability
+import com.sats21m.vogelvault.data.DeviceCapabilities
+import com.sats21m.vogelvault.data.BitcoinDeleteKind
 import com.sats21m.vogelvault.domain.BtcAccount
 import com.sats21m.vogelvault.domain.BtcBalance
 import com.sats21m.vogelvault.domain.BillPayBudgetEffect
 import com.sats21m.vogelvault.domain.BtcBillPay
+import com.sats21m.vogelvault.domain.BtcTransfer
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.BudgetSpend
 import com.sats21m.vogelvault.domain.DisplayUnit
@@ -142,10 +149,20 @@ internal fun ReadModel.dashboardIncomeEntries(
 internal fun ReadModel.dashboardIncomeCents(
     viewer: FamilyMember,
     month: String?,
+    today: java.time.LocalDate,
 ): Long? {
-    val rows = dashboardIncomeEntries(viewer, month)
-    return if (incomeFiguresUnavailable || rows.isEmpty()) null else rows.sumLongOrNull { it.amountCents }
+    val rows = dashboardIncomeEntries(viewer, month).filter { it.date <= today.toString() }
+    return if (incomeFiguresUnavailable || month == null) null else rows.sumLongOrNull { it.amountCents }
 }
+
+internal fun ReadModel.yearToDateIncomeCents(
+    viewer: FamilyMember,
+    month: String,
+    today: java.time.LocalDate,
+): Long? =
+    if (incomeFiguresUnavailable) null else income.value.netWorthScopeFor(viewer)
+        .filter { it.month.take(4) == month.take(4) && it.month <= month && it.date <= today.toString() }
+        .sumLongOrNull { it.amountCents }
 
 internal fun ReadModel.netWorthBalanceForDisplay(): BtcBalance? =
     btcBalance.value?.takeUnless { netWorthFiguresUnavailable }
@@ -153,10 +170,16 @@ internal fun ReadModel.netWorthBalanceForDisplay(): BtcBalance? =
 internal fun ReadModel.billPaysAvailableTo(viewer: FamilyMember): Boolean =
     !billPayLedgerUnavailable && btcBillPays.value.visibleTo(viewer).isNotEmpty()
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
+    onNavigate: (Destination) -> Unit = {},
+    onBack: (() -> Unit)? = null,
+    primaryReset: String = "",
+    quickAddRequested: Boolean = false,
+    onQuickAddConsumed: () -> Unit = {},
     onEnableRemoteRows: (String) -> Unit = {},
     onRemoteRowsConnected: () -> Unit = {},
     onWriteSucceeded: () -> Unit = {},
@@ -172,13 +195,22 @@ fun ScreenHost(
             state = taskState,
             todos = todos,
             onWriteSucceeded = onWriteSucceeded,
+            adaptive = true,
         )
     },
 ) {
     val ledgerTokens = LocalLedgerTheme.current
     var addingTransaction by rememberSaveable { mutableStateOf(false) }
+    var addingIncome by rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(quickAddRequested) {
+        if (quickAddRequested) {
+            addingIncome = false
+            addingTransaction = true
+            onQuickAddConsumed()
+        }
+    }
     var incomeBitcoinBuySeed by remember(state.activeProfile) { mutableStateOf<IncomeEntry?>(null) }
-    var selectedTransactionKey by rememberSaveable(state.activeProfile) {
+    var selectedTransactionKey by rememberSaveable(state.activeProfile, primaryReset) {
         mutableStateOf<String?>(null)
     }
     // The write surface owns its own client, per the house write pattern: nothing
@@ -187,6 +219,7 @@ fun ScreenHost(
     val remoteReadReady by
         vaultApplication?.effectiveReadReady?.collectAsStateWithLifecycle()
             ?: remember { mutableStateOf(false) }
+    val capabilities = vaultApplication?.deviceCapabilities ?: DeviceCapabilities()
     val transactionActions = remember(vaultApplication) { vaultApplication?.transactionActions }
     val budgetMonth = state.data.budget.value?.month
     val profile = state.activeProfile
@@ -203,16 +236,15 @@ fun ScreenHost(
     val netWorthBalance = state.data.netWorthBalanceForDisplay()
     val btcBuysTitle = stringResource(R.string.btc_buys_screen_title)
     val btcBillPaysTitle = stringResource(R.string.btc_bill_pays_screen_title)
-    val months = remember(profile, transactionsInput, billPaysInput, budgetMonth) {
-        transactionsInput.budgetMonthsFor(profile, budgetMonth, billPaysInput)
+    val months = remember(profile, transactionsInput, billPaysInput, incomeInput, budgetMonth) {
+        (transactionsInput.budgetMonthsFor(profile, budgetMonth, billPaysInput) +
+            incomeInput.netWorthScopeFor(profile).map { it.month }).distinct().sortedDescending()
     }
     val initialMonth = remember(state.selectedMonth, months, budgetMonth) {
         resolveBudgetMonth(state.selectedMonth, months, budgetMonth)
     }
-    // Dashboard MTD follows the canonical seeded/current month. Budget owns a
-    // separate live picker, matching iOS where BudgetView's month offset cannot
-    // silently change DashboardView's current-month figures.
-    val dashboardMonth = initialMonth
+    // Dashboard follows the device calendar independently of the Budget picker.
+    val dashboardMonth = calendarMonth(state.now)
     // The Budget screen's month scope. Held here rather than in the ViewModel
     // because it is view state, and because every row of the list has to agree on
     // it — the KPI strip, the banners and the categories all read the same month.
@@ -222,11 +254,17 @@ fun ScreenHost(
         mutableStateOf(initialMonth)
     }
     var budgetEditor by remember(state.activeProfile) { mutableStateOf<BudgetCategoryEditorSeed?>(null) }
-    var budgetDrilldownMonth by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
-    var budgetDrilldownCategory by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
+    var budgetDrilldownMonth by rememberSaveable(state.activeProfile, primaryReset) { mutableStateOf<String?>(null) }
+    var budgetDrilldownCategory by rememberSaveable(state.activeProfile, primaryReset) { mutableStateOf<String?>(null) }
+    BackHandler(destination == Destination.BUDGET && budgetDrilldownCategory != null) {
+        budgetDrilldownMonth = null
+        budgetDrilldownCategory = null
+    }
+    var showBitcoinAdd by rememberSaveable { mutableStateOf(false) }
     var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
     var showBtcBillPayEditor by rememberSaveable { mutableStateOf(false) }
     var showBtcTransferEditor by rememberSaveable { mutableStateOf(false) }
+    var showBtcAccountEditor by rememberSaveable { mutableStateOf(false) }
     var btcBillPayPrefill by remember(state.activeProfile) { mutableStateOf<BillPayPrefill?>(null) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
@@ -251,18 +289,15 @@ fun ScreenHost(
             visibleTodos = todosInput.todosFor(profile),
         )
     }
-    val activitySearch = if (destination == Destination.ACTIVITY) {
-        rememberActivitySearchProjection(
+    val activitySearch = rememberActivitySearchProjection(
             transactions = collections.visibleTransactions,
             profile = state.activeProfile,
+            incomeEntries = incomeInput.visibleTo(profile),
         )
-    } else {
-        null
-    }
     val dashboardIncomeEntries = remember(profile, dashboardMonth, incomeInput) {
         state.data.dashboardIncomeEntries(profile, dashboardMonth)
     }
-    val dashboardProjection = remember(dashboardMonth, collections, dashboardIncomeEntries, incomeFiguresUnavailable) {
+    val dashboardProjection = remember(state.now, dashboardMonth, collections, dashboardIncomeEntries, incomeFiguresUnavailable) {
         val budgetTransactions = collections.budgetTransactions.inMonth(dashboardMonth ?: "")
         val activity = collections.visibleTransactions.inMonth(dashboardMonth ?: "").take(6)
         DashboardProjection(
@@ -271,7 +306,7 @@ fun ScreenHost(
             balance = collections.netWorthBalance,
             incomeEntries = dashboardIncomeEntries,
             spendCents = budgetTransactions.sumLongOrNull { it.spendAmount },
-            incomeCents = state.data.dashboardIncomeCents(profile, dashboardMonth),
+            incomeCents = state.data.dashboardIncomeCents(profile, dashboardMonth, calendarDate(state.now)),
             openTodos = collections.visibleTodos.count { !it.done },
         )
     }
@@ -313,197 +348,8 @@ fun ScreenHost(
         )
     }
 
-    if (addingTransaction) {
-        AddTransactionSheet(
-            state = state,
-            onDismiss = { addingTransaction = false },
-            allowIncomeBitcoinBuy = destination == Destination.BUDGET,
-            onOpenIncomeBitcoinBuy = { income ->
-                addingTransaction = false
-                incomeBitcoinBuySeed = income
-            },
-            onStartRiverBillPay = { prefill ->
-                addingTransaction = false
-                btcBillPayPrefill = prefill
-                showBtcBillPayEditor = true
-                onStartRiverBillPay(prefill)
-            },
-        )
-    }
-    incomeBitcoinBuySeed?.let { income ->
-        BtcBuyFromIncomeEntrySheet(
-            viewer = state.activeProfile,
-            income = income,
-            onDismiss = { incomeBitcoinBuySeed = null },
-            onWriteSucceeded = onWriteSucceeded,
-        )
-    }
-
-    // Today is the one destination that edits rows rather than listing them, so it
-    // owns its own scaffold, snackbar and scrolling list, and renders instead of the
-    // shared ledger column rather than inside it. It reaches the write transport
-    // itself; nothing about writing passes through this shell.
-    if (destination == Destination.TODAY) {
-        key(state.activeProfile) {
-            TodoScreen(
-                state = state,
-                onWriteSucceeded = onWriteSucceeded,
-                modifier = modifier,
-            )
-        }
-        return
-    }
-
-    Column(modifier.fillMaxWidth()) {
-        ScreenActionBar(
-            destination = destination,
-            displayUnit = displayUnit,
-            onDisplayUnitChange = onDisplayUnitChange,
-            onAddTransaction = { addingTransaction = true },
-        )
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter),
-        ) {
-            vaultContent {
-            item {
-                ScreenHeader(destination, state, budgetSelectedMonth)
-            }
-            when (destination) {
-                Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit)
-                Destination.ACTIVITY -> {
-                    activity(state, checkNotNull(activitySearch), displayUnit) {
-                        selectedTransactionKey = it.selectionKey
-                    }
-                }
-                Destination.BUDGET -> {
-                    val drilldownScope =
-                        budgetDrilldownMonth?.let { selectedMonth ->
-                            budgetDrilldownCategory?.let { category ->
-                                BudgetCategoryDrilldownScope(selectedMonth, category)
-                            }
-                        }
-                    if (drilldownScope == null) {
-                        budget(
-                            state,
-                            months,
-                            budgetSpend,
-                            onSelectMonth = { picked = it },
-                            onOpenCategory = { scope ->
-                                budgetDrilldownMonth = scope.month
-                                budgetDrilldownCategory = scope.category
-                            },
-                            onPlanCopied = { month ->
-                                picked = month
-                                onWriteSucceeded()
-                            },
-                        )
-                    } else {
-                        // Editing lives on the drilldown. Only the current budget
-                        // document month is writable, and only from a live read.
-                        val editorSeed = state.data.budget.value?.let { budget ->
-                            budgetSpend
-                                ?.takeIf {
-                                    drilldownScope.month == budget.month &&
-                                        state.data.budget.status == Freshness.LIVE
-                                }
-                                ?.categories
-                                ?.firstOrNull { it.name == drilldownScope.category }
-                                ?.let { category ->
-                                    BudgetCategoryEditorSeed(
-                                        viewer = state.activeProfile,
-                                        displayedMonth = drilldownScope.month,
-                                        budgetDocumentMonth = budget.month,
-                                        category = category,
-                                        budget = budget,
-                                        sourceFile = budgetCategoryDeleteSourceFile(state.activeProfile),
-                                    )
-                                }
-                        }
-                        budgetCategoryDrilldown(
-                            state = state,
-                            scope = drilldownScope,
-                            onEdit = editorSeed?.let { seed -> { budgetEditor = seed } },
-                            transactions =
-                                transactionsInput.budgetCategoryTransactionsFor(
-                                    viewer = state.activeProfile,
-                                    month = drilldownScope.month,
-                                    category = drilldownScope.category,
-                                ),
-                            billPays =
-                                billPaysInput.budgetCategoryBillPaysFor(
-                                    viewer = state.activeProfile,
-                                    month = drilldownScope.month,
-                                    category = drilldownScope.category,
-                                ),
-                            onBack = {
-                                budgetDrilldownMonth = null
-                                budgetDrilldownCategory = null
-                            },
-                            onSelectTransaction = { selectedTransactionKey = it.selectionKey },
-                        )
-                    }
-                }
-                Destination.BITCOIN ->
-                    bitcoin(
-                        state,
-                        bitcoinProjection,
-                        displayUnit,
-                        onAddBuy = { showBtcBuyEditor = true },
-                        onAddBillPay = {
-                            btcBillPayPrefill = null
-                            showBtcBillPayEditor = true
-                        },
-                        onAddTransfer = { showBtcTransferEditor = true },
-                    )
-                Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle)
-                Destination.BTC_BILL_PAYS -> btcBillPaysScreen(
-                    state,
-                    displayUnit,
-                    btcBillPaysTitle,
-                    onAddBillPay = {
-                        btcBillPayPrefill = null
-                        showBtcBillPayEditor = true
-                    },
-                )
-                Destination.NET_WORTH -> netWorth(state, displayUnit)
-                Destination.RETIREMENT -> retirement(state, displayUnit)
-                Destination.EXPORT -> item { ExportScreen(state) }
-                // Rendered above, outside the shared ledger column.
-                Destination.TODAY -> Unit
-                Destination.TASKS -> item {
-                    // ScreenHost is the privacy boundary: a destination never
-                    // receives rows its active profile cannot see. The refresh
-                    // callback travels with the rows via taskListsContent's
-                    // default, so filtering and refreshing cannot diverge.
-                    taskListsContent(state, collections.visibleTodos)
-                }
-                Destination.FAMILY -> family(state, profileSwitcher)
-                Destination.SETTINGS -> settings(
-                    state,
-                    remoteReadReady,
-                    onRemoteRowsConnected,
-                    onEnableRemoteRows,
-                    ledgerSettings,
-                    onLedgerSettingsChange,
-                )
-            }
-            }
-        }
-    }
-    budgetEditor?.let { seed ->
-        BudgetCategoryEditorSheet(
-            seed = seed,
-            onDismiss = { budgetEditor = null },
-            onWriteSucceeded = onWriteSucceeded,
-        )
-    }
-    if (showBtcBuyEditor) {
-        BtcBuyEntrySheet(
-            owner = state.activeProfile,
-            onDismiss = { showBtcBuyEditor = false },
-            onWriteSucceeded = onWriteSucceeded,
-        )
+    if (showBtcAccountEditor) {
+        BtcAccountEntrySheet(state.activeProfile, state.data.btcBalance, state.data.btcBalanceReadOwner, { showBtcAccountEditor = false }, onWriteSucceeded)
     }
     if (showBtcBillPayEditor) {
         BtcBillPayEntrySheet(
@@ -517,6 +363,278 @@ fun ScreenHost(
             onWriteSucceeded = onWriteSucceeded,
         )
     }
+    if (showBtcBuyEditor) {
+        BtcBuyEntrySheet(
+            owner = state.activeProfile,
+            quoteCents = state.liveBitcoinQuote()?.priceCents ?: 0L,
+            onDismiss = { showBtcBuyEditor = false },
+            onWriteSucceeded = onWriteSucceeded,
+        )
+    }
+    if (addingTransaction) {
+        key(state.activeProfile) {
+            AddTransactionSheet(
+                state = state,
+                onDismiss = { addingTransaction = false },
+                onOpenBitcoinBuy = { addingTransaction = false; showBtcBuyEditor = true },
+                initialType = if (addingIncome) AddTransactionType.INCOME else AddTransactionType.SPEND,
+                allowIncomeBitcoinBuy = destination == Destination.BUDGET && capabilities.allows(profile, DeviceCapability.BITCOIN),
+                onOpenIncomeBitcoinBuy = { income ->
+                    addingTransaction = false
+                    incomeBitcoinBuySeed = income
+                },
+                onStartRiverBillPay = { prefill ->
+                    addingTransaction = false
+                    btcBillPayPrefill = prefill
+                    showBtcBillPayEditor = true
+                    onStartRiverBillPay(prefill)
+                },
+            )
+        }
+    }
+    incomeBitcoinBuySeed?.let { income ->
+        BtcBuyFromIncomeEntrySheet(
+            viewer = state.activeProfile,
+            quoteCents = state.liveBitcoinQuote()?.priceCents ?: 0L,
+            income = income,
+            onDismiss = { incomeBitcoinBuySeed = null },
+            onWriteSucceeded = onWriteSucceeded,
+        )
+    }
+
+    if (showBitcoinAdd) {
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { showBitcoinAdd = false }) {
+            LedgerMenuItem("Buy BTC", enabled = state.data.btcBuys.status == Freshness.LIVE,
+                onClick = { showBitcoinAdd = false; showBtcBuyEditor = true })
+            LedgerMenuItem("Bill Pay", enabled = !state.data.billPayLedgerUnavailable && canAddBtcBillPay(state.data.btcBillPays.status, profile),
+                onClick = { showBitcoinAdd = false; btcBillPayPrefill = null; showBtcBillPayEditor = true })
+            LedgerMenuItem("Transfer", enabled = state.data.btcAccounts.status == Freshness.LIVE && bitcoinProjection.transferAccounts.count { it.owner == profile.ledgerOwner } >= 2,
+                onClick = { showBitcoinAdd = false; showBtcTransferEditor = true })
+        }
+    }
+
+    // Every route retains its own offset for Back. A deliberate tab selection
+    // creates a fresh state only for its destination.
+    val listStates = Destination.entries.associateWith { route ->
+        key(route) {
+            val reset = primaryReset.takeIf { it.substringBefore(":") == route.name }
+            rememberSaveable(state.activeProfile, reset, saver = androidx.compose.foundation.lazy.LazyListState.Saver) {
+                androidx.compose.foundation.lazy.LazyListState()
+            }
+        }
+    }
+    val listState = listStates.getValue(destination)
+
+    // Today is the one destination that edits rows rather than listing them, so it
+    // owns its own scaffold, snackbar and scrolling list, and renders instead of the
+    // shared ledger column rather than inside it. It reaches the write transport
+    // itself; nothing about writing passes through this shell.
+    if (destination == Destination.TODAY) {
+        key(state.activeProfile) {
+            LedgerPanes(
+                plan = LocalLedgerPanePlan.current,
+                showCompactDetail = false,
+                modifier = modifier.fillMaxSize(),
+                detail = {},
+                list = {
+                    Column(Modifier.fillMaxSize()) {
+                        TextButton(onClick = { onNavigate(Destination.TASKS) }) { Text("Task lists") }
+                        TodoScreen(state = state, onWriteSucceeded = onWriteSucceeded, modifier = Modifier.weight(1f), listState = listState)
+                    }
+                },
+            )
+        }
+        return
+    }
+
+    if (destination == Destination.TASKS) {
+        Column(modifier.fillMaxSize()) {
+            onBack?.let { back -> TextButton(onClick = back) { Text("Back") } }
+            Box(Modifier.weight(1f).fillMaxWidth()) { taskListsContent(state, collections.visibleTodos) }
+        }
+        return
+    }
+
+    val panePlan = LocalLedgerPanePlan.current
+    val drilldownScope = budgetDrilldownMonth?.let { month ->
+        budgetDrilldownCategory?.let { BudgetCategoryDrilldownScope(month, it) }
+    }
+    val selectedTransaction = collections.visibleTransactions.firstOrNull { it.selectionKey == selectedTransactionKey }
+    val hasDetail = selectedTransaction != null || (destination == Destination.BUDGET && drilldownScope != null)
+    BackHandler(selectedTransaction != null) { selectedTransactionKey = null }
+    val detailContent: @Composable () -> Unit = {
+        if (selectedTransaction != null) {
+            key(selectedTransaction.selectionKey) {
+                TransactionDetailScreen(
+                    transaction = selectedTransaction,
+                    viewer = state.activeProfile,
+                    actions = transactionActions,
+                    onClose = { selectedTransactionKey = null },
+                    onChanged = onWriteSucceeded,
+                    embedded = true,
+                )
+            }
+        } else if (destination == Destination.BUDGET && drilldownScope != null) {
+            LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter)) {
+                vaultContent {
+                    // Editing lives on the drilldown. Only the current budget
+                    // document month is writable, and only from a live read.
+                    val editorSeed = state.data.budget.value?.let { budget ->
+                        budgetSpend
+                            ?.takeIf {
+                                drilldownScope.month == budget.month &&
+                                    state.data.budget.status == Freshness.LIVE
+                            }
+                            ?.categories
+                            ?.firstOrNull { it.name == drilldownScope.category }
+                            ?.let { category ->
+                                BudgetCategoryEditorSeed(
+                                    viewer = state.activeProfile,
+                                    displayedMonth = drilldownScope.month,
+                                    budgetDocumentMonth = budget.month,
+                                    category = category,
+                                    budget = budget,
+                                    sourceFile = budgetCategoryDeleteSourceFile(state.activeProfile),
+                                )
+                            }
+                    }
+                    budgetCategoryDrilldown(
+                        state = state,
+                        scope = drilldownScope,
+                        onEdit = editorSeed?.let { seed -> { budgetEditor = seed } },
+                        editUnavailableReason = capabilities.unavailableReason(profile, DeviceCapability.BUDGET),
+                        transactions =
+                            transactionsInput.budgetCategoryTransactionsFor(
+                                viewer = state.activeProfile,
+                                month = drilldownScope.month,
+                                category = drilldownScope.category,
+                            ),
+                        billPays =
+                            billPaysInput.budgetCategoryBillPaysFor(
+                                viewer = state.activeProfile,
+                                month = drilldownScope.month,
+                                category = drilldownScope.category,
+                            ),
+                        onBack = {
+                            budgetDrilldownMonth = null
+                            budgetDrilldownCategory = null
+                        },
+                        onSelectTransaction = { selectedTransactionKey = it.selectionKey },
+                    )
+                }
+            }
+        } else LedgerDetailPrompt(destination)
+    }
+    LedgerPanes(
+        plan = panePlan,
+        showCompactDetail = hasDetail,
+        modifier = modifier.fillMaxSize(),
+        detail = detailContent,
+        list = {
+            Column(Modifier.fillMaxSize()) {
+                onBack?.let { back -> TextButton(onClick = back) { Text("Back") } }
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter),
+                ) {
+                    vaultContent {
+                    item {
+                        ScreenHeader(destination, state, budgetSelectedMonth)
+                    }
+                    when (destination) {
+                        Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit, { target ->
+                            if (target == Destination.BUDGET) {
+                                picked = dashboardMonth
+                                budgetDrilldownMonth = null
+                                budgetDrilldownCategory = null
+                            }
+                            onNavigate(target)
+                        }) { selectedTransactionKey = it.selectionKey }
+                        Destination.ACTIVITY -> {
+                            activity(state, checkNotNull(activitySearch), displayUnit) {
+                                selectedTransactionKey = it.selectionKey
+                            }
+                        }
+                        Destination.BUDGET -> {
+                                budget(
+                                    state,
+                                    months,
+                                    budgetSpend,
+                                    selectedMonth = budgetSelectedMonth,
+                                    onSelectMonth = { picked = it },
+                                    onAddIncome = { addingIncome = true; addingTransaction = true },
+                                    onOpenCategory = { scope ->
+                                        selectedTransactionKey = null
+                                        budgetDrilldownMonth = scope.month
+                                        budgetDrilldownCategory = scope.category
+                                    },
+                                    onPlanCopied = { month ->
+                                        picked = month
+                                        onWriteSucceeded()
+                                    },
+                                )
+
+                        }
+                        Destination.BITCOIN ->
+                            bitcoin(
+                                state,
+                                bitcoinProjection,
+                                displayUnit,
+                                onAdd = { showBitcoinAdd = true },
+                                onNavigate = onNavigate,
+                                capabilities = capabilities,
+                                onAddAccount = { showBtcAccountEditor = true },
+                                onWriteSucceeded = onWriteSucceeded,
+                            )
+                        Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle, onWriteSucceeded = onWriteSucceeded)
+                        Destination.BTC_BILL_PAYS -> btcBillPaysScreen(
+                            state,
+                            displayUnit,
+                            btcBillPaysTitle,
+                            onWriteSucceeded = onWriteSucceeded,
+                            onAddBillPay = {
+                                btcBillPayPrefill = null
+                                showBtcBillPayEditor = true
+                            },
+                        )
+                        Destination.NET_WORTH -> netWorth(state, displayUnit)
+                        Destination.RETIREMENT -> retirement(state, displayUnit)
+                        Destination.EXPORT -> item { ExportScreen(state) }
+                        // Rendered above, outside the shared ledger column.
+                        Destination.TODAY -> Unit
+                        Destination.TASKS -> item {
+                            // ScreenHost is the privacy boundary: a destination never
+                            // receives rows its active profile cannot see. The refresh
+                            // callback travels with the rows via taskListsContent's
+                            // default, so filtering and refreshing cannot diverge.
+                            taskListsContent(state, collections.visibleTodos)
+                        }
+                        Destination.FAMILY -> family(state, profileSwitcher)
+                        Destination.SETTINGS -> settings(
+                            state,
+                            remoteReadReady,
+                            onRemoteRowsConnected,
+                            onEnableRemoteRows,
+                            ledgerSettings,
+                            onLedgerSettingsChange,
+                            onNavigate,
+                            displayUnit,
+                            onDisplayUnitChange,
+                        )
+                    }
+                    }
+                }
+            }
+        },
+    )
+    budgetEditor?.let { seed ->
+        BudgetCategoryEditorSheet(
+            seed = seed,
+            onDismiss = { budgetEditor = null },
+            onWriteSucceeded = onWriteSucceeded,
+        )
+    }
     if (showBtcTransferEditor) {
         BtcTransferEntrySheet(
             viewer = state.activeProfile,
@@ -526,65 +644,8 @@ fun ScreenHost(
         )
     }
 
-    val selectedTransaction =
-        collections.visibleTransactions.firstOrNull {
-            it.selectionKey == selectedTransactionKey
-        }
-    if (selectedTransaction != null && transactionActions != null) {
-        TransactionDetailScreen(
-            transaction = selectedTransaction,
-            actions = transactionActions,
-            onClose = { selectedTransactionKey = null },
-            onChanged = onWriteSucceeded,
-        )
-    }
-}
 
-/**
- * The action row under the top bar: unit chips and the one primary action,
- * once per screen. Screens with neither draw nothing here, so the first data
- * is never more than the title and one subtitle line away.
- */
-@Composable
-private fun ScreenActionBar(
-    destination: Destination,
-    displayUnit: DisplayUnit,
-    onDisplayUnitChange: (DisplayUnit) -> Unit,
-    onAddTransaction: () -> Unit,
-) {
-    val tokens = LocalLedgerTheme.current
-    val canAdd = destination in ADD_TRANSACTION_DESTINATIONS
-    val showsUnit = destination.supportsFinancialDisplayUnit
-    if (!canAdd && !showsUnit) return
-    Column {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(tokens.colors.panel)
-                .padding(horizontal = tokens.density.screenGutter, vertical = VaultSpace.sm),
-            horizontalArrangement = Arrangement.spacedBy(tokens.density.actionGap, Alignment.End),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (showsUnit) {
-                BitcoinUnitToggle(
-                    selected = displayUnit,
-                    onSelect = onDisplayUnitChange,
-                    modifier = Modifier.weight(1f, fill = false).widthIn(max = 200.dp),
-                )
-            }
-            if (canAdd) {
-                VaultButton(label = stringResource(R.string.add_transaction_action), onClick = onAddTransaction)
-            }
-        }
-        HorizontalHairline()
-    }
 }
-
-private val ADD_TRANSACTION_DESTINATIONS = setOf(
-    Destination.DASHBOARD,
-    Destination.ACTIVITY,
-    Destination.BUDGET,
-)
 
 /** Two lines: the screen title and one tracked subtitle. Nothing else sits above the first data. */
 @Composable
@@ -596,8 +657,8 @@ private fun ScreenHeader(
     val tokens = LocalLedgerTheme.current
     val subtitle = when (destination) {
         Destination.DASHBOARD ->
-            if (state.activeProfile.isAdult) "Household command center"
-            else "${state.activeProfile.displayName}'s money"
+            "${monthLabel(calendarMonth(state.now))} · " +
+                if (state.activeProfile.isAdult) "Household" else state.activeProfile.displayName
         Destination.ACTIVITY -> "Transactions visible to this profile"
         // The month in scope, not the budget file's month: the two differ while an
         // earlier month is picked, and the header must not contradict the picker.
@@ -608,16 +669,16 @@ private fun ScreenHeader(
         Destination.BTC_BILL_PAYS -> "Bitcoin spent on bills visible to this profile"
         Destination.NET_WORTH -> "Household for adults; self only for children"
         Destination.RETIREMENT -> "Retirement accounts and long-range scenario"
-        Destination.EXPORT -> "Owner-filtered files shared outside the app"
+        Destination.EXPORT -> "Share files for this profile"
         Destination.TODAY -> "Due today or overdue"
         Destination.TASKS -> "Projects, areas and smart lists"
         Destination.FAMILY -> "Who can see what"
-        Destination.SETTINGS -> "Runtime and boundaries"
+        Destination.SETTINGS -> "Appearance and connection"
     }
     Column(verticalArrangement = Arrangement.spacedBy(VaultSpace.xs)) {
         Text(destination.label, style = tokens.type.screenTitle, color = tokens.colors.foreground)
         Text(
-            subtitle.uppercase(),
+            subtitle,
             style = tokens.type.screenSubtitle,
             color = tokens.colors.foregroundSecondary,
             maxLines = 1,
@@ -667,23 +728,12 @@ internal fun BitcoinUnitToggle(
 @Composable
 internal fun BitcoinConversionNotice(state: VaultUiState) {
     val quote = state.operationalBitcoinQuote()
-    if (quote != null) {
-        StatusBanner(
-            text = if (quote.status == MarketQuoteStatus.STALE) "BTC conversion · stale quote" else "BTC conversion",
-            detail = quote.quoteHint(state.now),
-            tone = if (quote.status == MarketQuoteStatus.STALE) {
-                LocalLedgerTheme.current.colors.loss
-            } else {
-                LocalLedgerTheme.current.colors.foregroundSecondary
-            },
-        )
-    } else {
-        StatusBanner(
-            text = "BTC conversion unavailable",
-            detail = "No usable operational BTC market quote is available. Recorded buys are execution metadata only.",
-            tone = LocalLedgerTheme.current.colors.loss,
-        )
-    }
+    com.sats21m.vogelvault.ui.components.FreshnessTag(
+        status = if (quote == null) Freshness.ERROR else if (quote.status == MarketQuoteStatus.STALE) Freshness.STALE else Freshness.LIVE,
+        updatedAt = quote?.fetchedAt?.let { java.time.Instant.parse(it).toEpochMilli() },
+        now = state.now,
+        provenance = state.bitcoinConversionProvenance(),
+    )
 }
 
 internal fun VaultUiState.bitcoinConversionProvenance(): String =
@@ -696,6 +746,8 @@ private fun VaultLazyListScope.dashboard(
     state: VaultUiState,
     projection: DashboardProjection,
     displayUnit: DisplayUnit,
+    onNavigate: (Destination) -> Unit,
+    onSelectTransaction: (Transaction) -> Unit,
 ) {
     val incomeUnavailable = projection.incomeCents == null
     val balanceUnavailable = projection.balance == null
@@ -752,17 +804,26 @@ private fun VaultLazyListScope.dashboard(
             ),
         )
     }
-    item { StaleNotice(state.data.transactions.status) }
+    item {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = { onNavigate(Destination.NET_WORTH) }) { Text("Net Worth") }
+            TextButton(onClick = { onNavigate(Destination.BUDGET) }) { Text("Budget") }
+            TextButton(onClick = { onNavigate(Destination.TODAY) }) { Text("Today") }
+        }
+        TextButton(onClick = { onNavigate(Destination.RETIREMENT) }) { Text("Retirement") }
+        TextButton(onClick = { onNavigate(Destination.ACTIVITY) }) { Text("Recent activity · See all") }
+    }
+    item { StaleNotice(state.data.transactions.status, state.data.transactions.updatedAt, state.now) }
     if (state.data.transactions.suppressFigures) {
         item {
             Panel("Recent activity", state.data.transactions.source) {
-                StateBlock(state.data.transactions.status)
+                StateBlock(state.data.transactions.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else if (projection.activity.isEmpty()) {
         item {
             Panel("Recent activity", state.data.transactions.source) {
-                StateBlock(Freshness.EMPTY)
+                StateBlock(Freshness.EMPTY, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else {
@@ -773,13 +834,16 @@ private fun VaultLazyListScope.dashboard(
             rows = projection.activity,
             rowKey = Transaction::id,
             revealKey = state.data.transactions.updatedAt,
-            rowContent = { TransactionRow(it, displayUnit, quote) },
+            onHeaderClick = { onNavigate(Destination.ACTIVITY) },
+            rowContent = { transaction ->
+                Box(Modifier.clickable(role = Role.Button) { onSelectTransaction(transaction) }) { TransactionRow(transaction, displayUnit, quote) }
+            },
         )
     }
     if (incomeUnavailable) {
         item {
             Panel("Income", state.data.income.source) {
-                StateBlock(state.data.income.status)
+                StateBlock(state.data.income.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else {
@@ -788,7 +852,7 @@ private fun VaultLazyListScope.dashboard(
             title = "Income",
             source = state.data.income.source,
             rows = projection.incomeEntries.take(6),
-            rowKey = IncomeEntry::id,
+            rowKey = { "${it.owner.key}:${it.id}" },
         ) { entry ->
             LedgerRow(
                 primary = entry.sourceName,
@@ -876,16 +940,23 @@ private fun VaultLazyListScope.activity(
     onSelectTransaction: (Transaction) -> Unit,
 ) {
     val quote = state.operationalBitcoinQuote()
-    item { StaleNotice(state.data.transactions.status) }
+    item { ActivitySearchControls(search) }
+    if (search.filter == ActivityTransactionFilter.INCOME) {
+        incomeRows(state, search.incomeEntries, "activity-income", onClearFilters = {
+            search.onQueryChange("")
+            search.onFilterChange(ActivityTransactionFilter.ALL)
+        })
+        return
+    }
+    item { StaleNotice(state.data.transactions.status, state.data.transactions.updatedAt, state.now) }
     if (state.data.transactions.suppressFigures) {
-        item { Panel { StateBlock(state.data.transactions.status) } }
+        item { Panel { StateBlock(state.data.transactions.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() }) } }
         return
     }
     if (search.totalCount == 0) {
-        item { Panel { StateBlock(Freshness.EMPTY) } }
+        item { Panel { StateBlock(Freshness.EMPTY, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() }) } }
         return
     }
-    item { ActivitySearchControls(search) }
     val transactions = search.transactions
     if (transactions == null) {
         item {
@@ -902,14 +973,12 @@ private fun VaultLazyListScope.activity(
     if (transactions.isEmpty()) {
         item {
             Panel {
-                Column(Modifier.padding(vertical = VaultSpace.md)) {
-                    Text("No matching records", color = LocalLedgerTheme.current.colors.foreground)
-                    Text(
-                        "Try another search or filter.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = LocalLedgerTheme.current.colors.foregroundSecondary,
-                    )
-                }
+                StateBlock(Freshness.EMPTY, title = "No matching records", detail = "Try another search or filter.", action = {
+                    TextButton(onClick = {
+                        search.onQueryChange("")
+                        search.onFilterChange(ActivityTransactionFilter.ALL)
+                    }) { Text("Clear filters") }
+                })
             }
         }
         return
@@ -979,17 +1048,89 @@ internal fun formatTransactionAmount(
     return formatFinancialAmount(FinancialAmount(usdCents = cents), displayUnit, quote)
 }
 
+internal fun calendarDate(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): java.time.LocalDate =
+    java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+
+internal fun calendarMonth(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String =
+    calendarDate(now, zone).toString().take(7)
+
+private fun VaultLazyListScope.incomeSection(state: VaultUiState, month: String, onAddIncome: () -> Unit) {
+    val rows = state.data.dashboardIncomeEntries(state.activeProfile, month)
+    item {
+        Panel("Income · ${monthLabel(month)}") {
+            val app = LocalContext.current.applicationContext as? VaultApplication
+            val allowed = app?.deviceCapabilities?.allows(state.activeProfile, DeviceCapability.TRANSACTIONS) == true
+            VaultButton(label = "+ Income", onClick = onAddIncome, enabled = allowed)
+            KpiStrip(listOf(
+                Kpi("Month to date", figure(state.data.incomeFiguresUnavailable) {
+                    state.data.dashboardIncomeCents(state.activeProfile, month, calendarDate(state.now))?.let(Money::formatUsd) ?: "Unavailable"
+                }),
+                Kpi("Year to date", figure(state.data.incomeFiguresUnavailable) {
+                    state.data.yearToDateIncomeCents(state.activeProfile, month, calendarDate(state.now))?.let(Money::formatUsd) ?: "Unavailable"
+                }),
+            ))
+        }
+    }
+    incomeRows(state, rows, "budget-income")
+}
+
+private fun VaultLazyListScope.incomeRows(
+    state: VaultUiState,
+    rows: List<IncomeEntry>,
+    sectionKey: String,
+    onClearFilters: (() -> Unit)? = null,
+) {
+    if (state.data.incomeFiguresUnavailable || rows.isEmpty()) {
+        item {
+            Panel("Income") {
+                if (!state.data.incomeFiguresUnavailable && onClearFilters != null) {
+                    StateBlock(
+                        Freshness.EMPTY,
+                        title = "No matching records",
+                        detail = "Try another search or filter.",
+                        action = { TextButton(onClick = onClearFilters) { Text("Clear filters") } },
+                    )
+                } else {
+                    StateBlock(
+                        if (state.data.incomeFiguresUnavailable) state.data.income.status else Freshness.EMPTY,
+                        action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() },
+                    )
+                }
+            }
+        }
+        return
+    }
+    keyedPanel(
+        sectionKey = sectionKey,
+        title = "Income",
+        source = state.data.income.source,
+        rows = rows.sortedByDescending { it.date },
+        rowKey = { "${it.owner.key}:${it.id}" },
+        revealKey = state.data.income.updatedAt,
+    ) { entry ->
+        LedgerRow(primary = entry.sourceName, secondary = entry.date,
+            figure = Money.formatUsd(entry.amountCents), figureColor = LocalLedgerTheme.current.colors.gain)
+    }
+}
+
 // ── Budget ──────────────────────────────────────────────────────────────────
 
 private fun VaultLazyListScope.budget(
     state: VaultUiState,
     months: List<String>,
     spend: BudgetSpend?,
+    selectedMonth: String?,
     onSelectMonth: (String) -> Unit,
+    onAddIncome: () -> Unit,
     onOpenCategory: (BudgetCategoryDrilldownScope) -> Unit,
     /** The month the plan now names, after Convex accepted the copy. */
     onPlanCopied: (String) -> Unit = {},
 ) {
+    val incomeMonth = selectedMonth ?: calendarMonth(state.now)
+    if (months.size > 1 && (!state.data.incomeFiguresUnavailable || !state.data.budgetActualsUnavailable)) {
+        item { MonthPicker(months, incomeMonth, onSelectMonth) }
+    }
+    incomeSection(state, incomeMonth, onAddIncome)
     val slice = state.data.budget
     val budget = slice.value
     // Spend is DERIVED from the scoped month's transactions, never read from the
@@ -1001,20 +1142,19 @@ private fun VaultLazyListScope.budget(
     // its own actuals. The banner below says so rather than letting the planned
     // column imply Convex stored a June budget.
     if (budget == null) {
-        val readable = slice.status == Freshness.LIVE || slice.status == Freshness.DEMO
+        val readable = slice.status == Freshness.LIVE || slice.status == Freshness.DEMO || slice.status == Freshness.EMPTY
         item {
             Panel {
                 StateBlock(
                     if (readable) Freshness.EMPTY else slice.status,
                     title = if (readable) "No budget for this profile" else null,
-                    detail = if (slice.status == Freshness.DEMO) {
+                    detail = if (readable && state.activeProfile == FamilyMember.MADDOX) {
+                        "Victor or Rachel can create Maddox's budget."
+                    } else if (slice.status == Freshness.DEMO) {
                         "This demo profile has no sample budget."
-                    } else if (slice.status == Freshness.LIVE) {
-                        "This profile has no dedicated budget file in the remote data."
-                    } else {
-                        null
-                    },
-                )
+                    } else if (readable) {
+                        "Victor or Rachel can create a budget for this profile."
+                    } else null, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
@@ -1025,21 +1165,17 @@ private fun VaultLazyListScope.budget(
     val actualsUnavailable = state.data.budgetActualsUnavailable
     val actualsStatus = state.data.budgetActualsStatus
 
-    // Hidden when the read failed: the month list is derived from the same
-    // transactions the screen has just been told not to trust, so offering a
-    // choice between them would be a control over nothing. One month is not a
-    // choice either — a lone chip reads as a button that does nothing.
-    val pickable = months.size > 1 && !actualsUnavailable
-    if (pickable) {
-        item { MonthPicker(months, derived.month, onSelectMonth) }
-    }
     // A new month with no plan yet is the first thing to fix, so the offer sits
     // above the figures. Only a live read carries the revision the copy fences on;
     // the contract withholds the action otherwise.
     if (slice.status == Freshness.LIVE) {
         item {
+            val app = LocalContext.current.applicationContext as? VaultApplication
+            val reason = (app?.deviceCapabilities ?: DeviceCapabilities())
+                .unavailableReason(state.activeProfile, DeviceCapability.BUDGET)
             BudgetPlanCarryAction(
                 activeProfile = state.activeProfile,
+                unavailableReason = reason,
                 budget = budget,
                 selectedMonth = derived.month,
                 onCopied = onPlanCopied,
@@ -1070,7 +1206,7 @@ private fun VaultLazyListScope.budget(
             ),
         )
     }
-    item { StaleNotice(slice.status) }
+    item { StaleNotice(slice.status, slice.updatedAt, state.now) }
     if (derived.month != budget.month && !actualsUnavailable) {
         item {
             StatusBanner(
@@ -1098,7 +1234,7 @@ private fun VaultLazyListScope.budget(
     if (actualsUnavailable) {
         item {
             Panel("Categories", "${slice.source} · ${derived.month} transactions") {
-                StateBlock(actualsStatus)
+                StateBlock(actualsStatus, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else {
@@ -1140,8 +1276,10 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
     onSelectTransaction: (Transaction) -> Unit,
     /** Null when this month or read is not writable; the button is then absent, not disabled. */
     onEdit: (() -> Unit)? = null,
+    editUnavailableReason: String? = null,
 ) {
     item {
+        if (onEdit != null && editUnavailableReason != null) Text(editUnavailableReason, style = MaterialTheme.typography.bodySmall)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) {
                 Text(stringResource(R.string.budget_category_transactions_back))
@@ -1151,13 +1289,14 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
                 VaultButton(
                     label = stringResource(R.string.budget_category_edit_action),
                     onClick = onEdit,
+                    enabled = editUnavailableReason == null,
                     secondary = true,
                 )
             }
         }
     }
-    item { StaleNotice(state.data.transactions.status) }
-    item { StaleNotice(state.data.btcBillPays.status) }
+    item { StaleNotice(state.data.transactions.status, state.data.transactions.updatedAt, state.now) }
+    item { StaleNotice(state.data.btcBillPays.status, state.data.btcBillPays.updatedAt, state.now) }
 
     if (state.data.budgetActualsUnavailable) {
         item {
@@ -1165,10 +1304,24 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
                 title = stringResource(R.string.budget_category_transactions_title, scope.category),
                 source = "${state.data.budgetActualsStatus} · ${scope.month}",
             ) {
-                StateBlock(state.data.budgetActualsStatus)
+                StateBlock(state.data.budgetActualsStatus, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
+    }
+
+    val category = state.data.budget.value?.let { budget ->
+        deriveBudgetSpend(budget.copy(month = scope.month), transactions, billPays)
+            ?.categories?.firstOrNull { it.name == scope.category }
+    }
+    if (category != null) {
+        item {
+            KpiStrip(listOf(
+                Kpi("Remaining", Money.formatUsd(category.remainingCents),
+                    hint = "OF ${Money.formatUsd(category.budgetCents)} planned"),
+                Kpi("Spent", Money.formatUsd(category.spentCents)),
+            ))
+        }
     }
 
     if (transactions.isEmpty() && billPays.isEmpty()) {
@@ -1317,9 +1470,11 @@ private fun VaultLazyListScope.bitcoin(
     state: VaultUiState,
     projection: BitcoinProjection,
     displayUnit: DisplayUnit,
-    onAddBuy: () -> Unit,
-    onAddBillPay: () -> Unit,
-    onAddTransfer: () -> Unit,
+    onAdd: () -> Unit,
+    onNavigate: (Destination) -> Unit,
+    capabilities: DeviceCapabilities,
+    onAddAccount: () -> Unit,
+    onWriteSucceeded: () -> Unit,
 ) {
     val slice = state.data.btcBalance
     val unavailable = projection.balance == null
@@ -1362,7 +1517,15 @@ private fun VaultLazyListScope.bitcoin(
             ),
         )
     }
-    item { StaleNotice(slice.status) }
+    item { StaleNotice(slice.status, slice.updatedAt, state.now) }
+    val canWriteBitcoin = capabilities.allows(state.activeProfile, DeviceCapability.BITCOIN)
+    item {
+        val reason = capabilities.unavailableReason(state.activeProfile, DeviceCapability.BITCOIN)
+        if (state.activeProfile.isAdult) {
+            TextButton(onClick = onAddAccount, enabled = reason == null) { Text("Add account") }
+            if (reason != null) Text(reason, style = MaterialTheme.typography.bodySmall)
+        }
+    }
     accountList(
         sectionKey = "bitcoin-accounts",
         title = "Accounts in net worth",
@@ -1372,32 +1535,30 @@ private fun VaultLazyListScope.bitcoin(
         displayUnit = displayUnit,
         quote = quote,
     )
-    if (state.data.btcBuys.status == Freshness.LIVE) {
-        item { BtcBuyEntryAction(onAddBuy) }
-    }
-    if (canAddBtcBillPay(state.data.btcBillPays.status, state.activeProfile)) {
-        item { BtcBillPayEntryAction(onAddBillPay) }
-    }
-    val transferAccounts = projection.transferAccounts.filter {
-        it.owner == state.activeProfile.ledgerOwner
-    }
-    if (
-        state.activeProfile.isAdult &&
-        state.data.btcAccounts.status == Freshness.LIVE &&
-        transferAccounts.size >= 2
-    ) {
-        item { BtcTransferEntryAction(onAddTransfer) }
+    item {
+        if (state.activeProfile.isAdult) VaultButton("+ Add", onClick = onAdd, enabled = canWriteBitcoin)
+        TextButton(onClick = { onNavigate(Destination.BTC_BUYS) }) { Text("Buys · See all") }
+        TextButton(onClick = { onNavigate(Destination.BTC_BILL_PAYS) }) { Text("Bill Pays · See all") }
+        TextButton(onClick = { onNavigate(Destination.NET_WORTH) }) { Text("Net Worth") }
+        TextButton(onClick = { onNavigate(Destination.RETIREMENT) }) { Text("Retirement") }
     }
     if (state.data.btcBuys.suppressFigures) {
         item {
             Panel("Recent buys", state.data.btcBuys.source) {
-                StateBlock(state.data.btcBuys.status)
+                StateBlock(state.data.btcBuys.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else if (projection.buys.isEmpty()) {
         item {
             Panel("Recent buys", state.data.btcBuys.source) {
-                StateBlock(Freshness.EMPTY)
+                StateBlock(Freshness.EMPTY, action = {
+                    if (state.activeProfile.isAdult) {
+                        TextButton(onClick = onAdd, enabled = canWriteBitcoin) { Text("Add") }
+                        capabilities.unavailableReason(state.activeProfile, DeviceCapability.BITCOIN)?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                })
             }
         }
     } else {
@@ -1414,12 +1575,14 @@ private fun VaultLazyListScope.bitcoin(
                 figure = formatBtcBuyAmount(buy, displayUnit),
                 figureColor = LocalLedgerTheme.current.colors.foreground,
             )
+            if (state.data.btcBuys.status == Freshness.LIVE) BitcoinDeleteAction(
+                state.activeProfile, BitcoinDeleteKind.BUY, buy.id, buy.owner, buy.updatedAtMs, onWriteSucceeded)
         }
     }
     if (!state.data.billPaysAvailableTo(state.activeProfile)) {
         item {
             Panel("Bitcoin bill pays", state.data.btcBillPays.source) {
-                StateBlock(state.data.btcBillPays.status)
+                StateBlock(state.data.btcBillPays.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else {
@@ -1437,8 +1600,29 @@ private fun VaultLazyListScope.bitcoin(
                 figureColor = LocalLedgerTheme.current.colors.loss,
                 badge = payment.platform,
             )
+            if (state.data.btcBillPays.status == Freshness.LIVE) BitcoinDeleteAction(
+                state.activeProfile, BitcoinDeleteKind.BILL_PAY, payment.id, payment.owner, payment.updatedAtMs, onWriteSucceeded)
         }
     }
+    val transfers = state.data.btcTransfers
+    val visibleTransfers = transfers.value.visibleTo(state.activeProfile)
+    if (transfers.suppressFigures || visibleTransfers.isEmpty()) {
+        item { Panel("Transfers", transfers.source) {
+            StateBlock(if (transfers.suppressFigures) transfers.status else Freshness.EMPTY, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
+        } }
+    } else {
+        keyedPanel(sectionKey = "bitcoin-transfers", title = "Transfers", source = transfers.source,
+            rows = visibleTransfers, rowKey = { "${it.owner.key}:${it.id}" }, revealKey = transfers.updatedAt) { transfer ->
+            val accounts = state.data.btcAccounts.value.visibleTo(state.activeProfile)
+            fun accountLabel(key: String) = accounts.firstOrNull { it.owner == transfer.owner && it.key == key }?.label ?: key
+            LedgerRow(primary = "${accountLabel(transfer.fromAccountKey)} → ${accountLabel(transfer.toAccountKey)}",
+                secondary = "${transfer.date} · Fee ${Money.formatSats(transfer.feeSats)}",
+                figure = state.formatBitcoin(transfer.sats, displayUnit))
+            if (transfers.status == Freshness.LIVE) BitcoinDeleteAction(state.activeProfile,
+                BitcoinDeleteKind.TRANSFER, transfer.id, transfer.owner, transfer.updatedAtMs, onWriteSucceeded)
+        }
+    }
+
 }
 
 @Composable
@@ -1478,7 +1662,7 @@ internal fun BitcoinPriceHero(quote: MarketQuote?, nowMillis: Long? = null) {
                 }
             }
             Text(
-                operationalBitcoinPriceBasis(quote, nowMillis).uppercase(),
+                operationalBitcoinPriceBasis(quote, nowMillis),
                 style = tokens.type.rowMeta,
                 color = tokens.colors.foregroundTertiary,
             )
@@ -1509,7 +1693,7 @@ private fun VaultLazyListScope.accountList(
     if (status == Freshness.ERROR || status == Freshness.LOADING) {
         item {
             Panel(title, source) {
-                StateBlock(status)
+                StateBlock(status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
@@ -1520,8 +1704,7 @@ private fun VaultLazyListScope.accountList(
                 StateBlock(
                     Freshness.EMPTY,
                     title = "No accounts in scope",
-                    detail = "This profile has no Bitcoin accounts counting toward its net worth.",
-                )
+                    detail = "This profile has no Bitcoin accounts counting toward its net worth.", action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
@@ -1613,7 +1796,7 @@ internal fun operationalBitcoinPriceBasis(quote: MarketQuote?, nowMillis: Long? 
     quote ?: return "No operational quote"
     if (nowMillis != null) return quote.quoteHint(nowMillis)
     return buildString {
-        append(quote.source)
+        append("Market quote")
         if (quote.status == MarketQuoteStatus.STALE) append(" · stale")
         append(" · ${quote.fetchedAt}")
     }
@@ -1712,7 +1895,24 @@ private fun VaultLazyListScope.settings(
     onEnableRemoteRows: (String) -> Unit,
     ledgerSettings: LedgerUiSettings,
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit,
+    onNavigate: (Destination) -> Unit,
+    displayUnit: DisplayUnit,
+    onDisplayUnitChange: (DisplayUnit) -> Unit,
 ) {
+    item { Panel("Display unit") { BitcoinUnitToggle(displayUnit, onDisplayUnitChange) } }
+    item {
+        TextButton(onClick = { onNavigate(Destination.FAMILY) }) { Text("Family") }
+        TextButton(onClick = { onNavigate(Destination.EXPORT) }) { Text("Export") }
+    }
+    item { LedgerAppearanceSettings(ledgerSettings, onLedgerSettingsChange) }
+    item { BudgetNotificationSettings(state) }
+    item { com.sats21m.vogelvault.ui.components.SectionLabel("Diagnostics") }
+    item {
+        Panel("Services") {
+            Text("Household sync: Convex")
+            state.marketQuotes?.quotes?.map { it.source }?.distinct()?.forEach { Text("Market data: $it") }
+        }
+    }
     item {
         if (remoteReadReady) {
             StatusBanner(
@@ -1728,7 +1928,6 @@ private fun VaultLazyListScope.settings(
             )
         }
     }
-    item { LedgerAppearanceSettings(ledgerSettings, onLedgerSettingsChange) }
     state.remoteConfigurationError?.let { detail ->
         item {
             StatusBanner(
@@ -1737,9 +1936,6 @@ private fun VaultLazyListScope.settings(
                 tone = LocalLedgerTheme.current.colors.loss,
             )
         }
-    }
-    item {
-        BudgetNotificationSettings(state)
     }
     item {
         Panel(stringResource(R.string.read_bootstrap_title)) {
@@ -1758,11 +1954,17 @@ private fun VaultLazyListScope.settings(
         Panel("Slices") {
             Column {
                 listOf(
-                    "transactions" to state.data.transactions.status,
-                    "budget" to state.data.budget.status,
-                    "btc-balance-snapshot" to state.data.btcAccounts.status,
-                    "bitcoin-buys" to state.data.btcBuys.status,
-                    "todos" to state.data.todos.status,
+                    "Transactions" to state.data.transactions.status,
+                    "Budget" to state.data.budget.status,
+                    "Bitcoin accounts" to state.data.btcAccounts.status,
+                    "Bitcoin buys" to state.data.btcBuys.status,
+                    "Tasks" to state.data.todos.status,
+                    "Income" to state.data.income.status,
+                    "Bitcoin balance" to state.data.btcBalance.status,
+                    "Bitcoin bill pays" to state.data.btcBillPays.status,
+                    "Bitcoin transfers" to state.data.btcTransfers.status,
+                    "Finances" to state.financeStatus,
+                    "Market prices" to state.marketQuoteStatus,
                 ).forEachIndexed { index, (name, status) ->
                     if (index > 0) HorizontalHairline()
                     LedgerRow(
@@ -1887,11 +2089,7 @@ internal fun SyncTokenConfiguration() {
 // ── shared ──────────────────────────────────────────────────────────────────
 
 @Composable
-private fun StaleNotice(status: Freshness) {
+private fun StaleNotice(status: Freshness, updatedAt: Long?, now: Long) {
     if (status != Freshness.STALE) return
-    StatusBanner(
-        stringResource(R.string.convex_read_stale_title),
-        stringResource(R.string.convex_read_stale_detail),
-        tone = LocalLedgerTheme.current.colors.loss,
-    )
+    com.sats21m.vogelvault.ui.components.FreshnessTag(status, updatedAt, now, "Saved figures")
 }

@@ -12,6 +12,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.DeviceCapabilities
+import com.sats21m.vogelvault.data.DeviceCapability
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Transaction
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
@@ -27,7 +30,7 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], application = TransactionSourcePickerApplication::class)
 class TransactionDetailPaymentSourcePickerTest {
     @get:Rule
     val compose = createEmptyComposeRule()
@@ -211,6 +214,8 @@ class TransactionDetailPaymentSourcePickerTest {
             }
         }
         compose.waitForIdle()
+        compose.onNode(hasText("Edit") and hasClickAction()).performClick()
+        compose.waitForIdle()
     }
 
     private fun transaction(
@@ -257,4 +262,11 @@ class TransactionDetailPaymentSourcePickerTest {
         override suspend fun delete(transaction: Transaction): TransactionActionResult =
             TransactionActionResult.Success
     }
+}
+
+internal class TransactionSourcePickerApplication : VaultApplication() {
+    override val deviceCapabilities = DeviceCapabilities(
+        FamilyMember.RACHEL,
+        setOf(DeviceCapability.TRANSACTIONS.wire, DeviceCapability.BITCOIN.wire),
+    )
 }

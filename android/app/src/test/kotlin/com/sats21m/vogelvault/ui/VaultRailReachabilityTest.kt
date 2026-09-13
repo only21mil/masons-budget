@@ -4,9 +4,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -34,9 +39,8 @@ import kotlin.test.assertEquals
  *
  * The shell below keeps that real unfolded width and constrains the usable
  * height to 720dp, covering system UI, larger display/font settings, and
- * split-window use. Every one of the seven rail items must be reachable in that
- * viewport without scrolling, and every destination under More must open from
- * the rail; a destination the rail cannot reach cannot ship.
+ * split-window use. All five primary tabs must be visible without scrolling.
+ * Secondary destinations must remain reachable through their parent screens.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(
@@ -76,38 +80,56 @@ class VaultRailReachabilityTest {
     }
 
     @Test
-    fun `every overflow destination opens through More`() {
-        val overflow = railOverflowDestinations(Destination.entries.toList())
-        assertEquals(Destination.entries.size - RAIL_PRIMARY_ORDER.size, overflow.size)
-
-        overflow.forEach { destination ->
+    fun `every secondary destination opens through its parent screen`() {
+        val routes = listOf(
+            Triple(Destination.BITCOIN, "Buys · See all", Destination.BTC_BUYS),
+            Triple(Destination.BITCOIN, "Bill Pays · See all", Destination.BTC_BILL_PAYS),
+            Triple(Destination.BITCOIN, "Net Worth", Destination.NET_WORTH),
+            Triple(Destination.BITCOIN, "Retirement", Destination.RETIREMENT),
+            Triple(Destination.TODAY, "Task lists", Destination.TASKS),
+            Triple(Destination.SETTINGS, "Family", Destination.FAMILY),
+            Triple(Destination.SETTINGS, "Export", Destination.EXPORT),
+        )
+        assertEquals(
+            Destination.entries.toSet() - RAIL_PRIMARY_ORDER.toSet() - Destination.SETTINGS,
+            routes.map { it.third }.toSet(),
+        )
+        routes.forEach { (parent, label, destination) ->
             var navigatedTo: Destination? = null
-            render(Destination.DASHBOARD, onNavigate = { navigatedTo = it })
-
-            compose.onNodeWithTag(VAULT_RAIL_MORE_TEST_TAG).assertIsDisplayed().performClick()
-            compose.onNodeWithText(destination.label).assertIsDisplayed().performClick()
+            render(parent, onNavigate = { navigatedTo = it })
+            val link = hasText(label) and hasClickAction()
+            if (destination != Destination.TASKS) {
+                compose.onNode(hasScrollToIndexAction() and
+                    hasAnyAncestor(hasTestTag(VAULT_SCREEN_CONTENT_TEST_TAG))).performScrollToNode(link)
+            }
+            compose.onNode(link).assertIsDisplayed().performClick()
             assertEquals(destination, navigatedTo)
         }
     }
 
     @Test
-    fun `an initially selected overflow destination lights More`() {
-        render(Destination.SETTINGS)
-
-        compose.onNodeWithTag(VAULT_RAIL_MORE_TEST_TAG).assertIsDisplayed().assertIsSelected()
+    fun `Settings opens from the profile menu and keeps its originating tab selected`() {
+        var navigatedTo: Destination? = null
+        render(Destination.DASHBOARD, onNavigate = { navigatedTo = it })
+        compose.onNode(hasText("Victor") and hasClickAction()).performClick()
+        compose.onNodeWithText("Settings").assertIsDisplayed().performClick()
+        assertEquals(Destination.SETTINGS, navigatedTo)
+        railDestination(Destination.DASHBOARD).assertIsDisplayed().assertIsSelected()
+        compose.onNodeWithTag(VAULT_RAIL_MORE_TEST_TAG).assertDoesNotExist()
     }
 
     private fun render(
         destination: Destination,
         onNavigate: (Destination) -> Unit = {},
     ) {
+        val current = mutableStateOf(destination)
         compose.runOnUiThread {
             activityController.get().setContent {
                 VogelVaultTheme {
                     Box(Modifier.size(width = 852.dp, height = 720.dp)) {
                         VaultApp(
-                            state = VaultUiState.of(FamilyMember.VICTOR, destination),
-                            onNavigate = onNavigate,
+                            state = VaultUiState.of(FamilyMember.VICTOR, current.value),
+                            onNavigate = { current.value = it; onNavigate(it) },
                             onSwitchProfile = {},
                         )
                     }
@@ -119,7 +141,7 @@ class VaultRailReachabilityTest {
 
     private fun railDestination(destination: Destination) =
         compose.onNode(
-            hasText(destination.label, ignoreCase = true) and
+            hasContentDescription(destination.label, ignoreCase = true) and
                 hasAnyAncestor(hasTestTag(VAULT_RAIL_TEST_TAG)),
         )
 }

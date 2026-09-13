@@ -3,9 +3,6 @@ package com.sats21m.vogelvault.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -20,8 +17,8 @@ import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 internal const val PAYMENT_RAIL_TEST_TAG = "payment-rail"
 
 internal enum class PaymentRailKind(val label: String, val glyph: ImageVector) {
-    BOLT("Bolt", Icons.Filled.Bolt),
-    CHAIN("Chain", Icons.Filled.Link),
+    BOLT("Bolt", com.sats21m.vogelvault.ui.components.LedgerGlyphs.Bolt),
+    CHAIN("Chain", com.sats21m.vogelvault.ui.components.LedgerGlyphs.Chain),
 }
 
 /** A stored card wire decides the rail; display labels never do. */
@@ -55,7 +52,7 @@ internal fun PaymentRail(source: PaymentSource, modifier: Modifier = Modifier) {
             tint = tokens.colors.bitcoin,
         )
         Text(
-            "${kind.label.uppercase()} · ${source.label.uppercase()}",
+            "${kind.label} · ${source.label}",
             style = tokens.type.rowMeta,
             color = tokens.colors.foregroundSecondary,
         )

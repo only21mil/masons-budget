@@ -48,7 +48,7 @@ class LedgerAdoptionLogicTest {
 
         assertEquals("\$94,250.12", formatOperationalBitcoinPrice(quote))
         assertEquals(
-            "Vogel price service · 2026-08-26T12:00:00Z",
+            "Market quote · 2026-08-26T12:00:00Z",
             operationalBitcoinPriceBasis(quote),
         )
         assertEquals(Money.PRICE_UNAVAILABLE, formatOperationalBitcoinPrice(null))
@@ -209,12 +209,12 @@ class LedgerAdoptionLogicTest {
     }
 
     @Test
-    fun `onboarding and More expose their exact counts`() {
+    fun `onboarding and shared navigation expose their exact counts`() {
         assertEquals(3, OnboardingStep.entries.size)
         assertEquals("Step 1 of 3", onboardingProgressLabel(0))
         assertEquals("Step 3 of 3", onboardingProgressLabel(2))
         val overflow = foldedOverflowDestinations(Destination.entries.toList())
-        assertEquals(9, overflow.size)
-        assertEquals("More (9)", moreNavigationLabel(overflow.size))
+        assertEquals(0, overflow.size)
+        assertEquals(5, foldedPrimaryDestinations(Destination.entries.toList()).size)
     }
 }

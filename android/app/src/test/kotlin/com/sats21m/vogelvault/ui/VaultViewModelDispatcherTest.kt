@@ -3,6 +3,9 @@ package com.sats21m.vogelvault.ui
 import android.app.Application
 import android.os.Looper
 import androidx.room.Room
+import com.sats21m.vogelvault.data.RowSnapshot
+import com.sats21m.vogelvault.domain.Fixtures
+import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.RowQueryRepository
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
@@ -135,6 +138,53 @@ class VaultViewModelDispatcherTest {
             assertEquals(Destination.BUDGET, model.state.value.destination)
             assertEquals("2026-06", model.state.value.selectedMonth)
         } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun `Room emission during a blocked refresh preserves the live rows and freshness`() {
+        val refreshStarted = CountDownLatch(1)
+        val finishRefresh = CountDownLatch(1)
+        val calls = java.util.concurrent.atomic.AtomicInteger()
+        val transactions = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE).transactions.value
+        val remote = proxy<RowQueryRepository> { name ->
+            if (name == "listTransactions") {
+                if (calls.incrementAndGet() > 1) {
+                    refreshStarted.countDown()
+                    assertTrue(finishRefresh.await(5, TimeUnit.SECONDS))
+                }
+                ConvexResult.Ok(RowSnapshot(transactions, true))
+            } else ConvexResult.Failed("other slices unavailable")
+        }
+        val context: Application = RuntimeEnvironment.getApplication()
+        val database = Room.inMemoryDatabaseBuilder(context, VaultDatabase::class.java)
+            .allowMainThreadQueries().build()
+        try {
+            val model = VaultViewModel(rowSource = CachedRowDataSource(remote, database.cacheDao()))
+            val deadline = System.nanoTime() + 5_000_000_000L
+            while (model.state.value.data.transactions.status != Freshness.LIVE) {
+                assertTrue(System.nanoTime() < deadline, "initial live load did not settle")
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(10)
+            }
+            val before = model.state.value.data
+            val cachedField = VaultViewModel::class.java.getDeclaredField("cachedModel").apply { isAccessible = true }
+            val cachedBefore = cachedField.get(model)
+            model.refreshActiveProfile()
+            assertTrue(refreshStarted.await(5, TimeUnit.SECONDS))
+            // Wait for the new Room collector, not just synchronous refresh setup.
+            val emissionDeadline = System.nanoTime() + 5_000_000_000L
+            while (cachedField.get(model) === cachedBefore) {
+                assertTrue(System.nanoTime() < emissionDeadline, "Room did not emit after refresh")
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(10)
+            }
+            assertEquals(before, model.state.value.data)
+            assertEquals(Freshness.LIVE, model.state.value.data.transactions.status)
+        } finally {
+            finishRefresh.countDown()
+            shadowOf(Looper.getMainLooper()).idle()
             database.close()
         }
     }

@@ -209,7 +209,10 @@ class LandingAPI:
     def archive(self, job):
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as bundle:
-            bundle.writestr("protected-ci-reuse.json", json.dumps(self.sources[job]))
+            # The mock lists the digest and serves the archive in separate calls.
+            # Fix ZIP metadata so crossing a clock boundary cannot change bytes.
+            entry = zipfile.ZipInfo("protected-ci-reuse.json", date_time=(2026, 1, 1, 0, 0, 0))
+            bundle.writestr(entry, json.dumps(self.sources[job]))
         return buffer.getvalue()
 
     def raw(self, endpoint):
@@ -300,6 +303,14 @@ class LandingTests(unittest.TestCase):
                         self.api.pr.update(merged=False, merged_at=None, merge_commit_sha=None)
                     with self.assertRaisesRegex(reuse.Refusal, "source workflow (is pending|did not succeed)"):
                         self.verify(candidate_only=candidate_only)
+
+    def test_fixture_archive_bytes_are_stable_across_zip_timestamp_boundary(self):
+        job = next(iter(self.api.sources))
+        times = [(2026, 9, 13, 16, 0, 0, 6, 256, -1), (2026, 9, 13, 16, 0, 2, 6, 256, -1)]
+        with patch("zipfile.time.localtime", side_effect=times):
+            listed_bytes = self.api.archive(job)
+            downloaded_bytes = self.api.archive(job)
+        self.assertEqual(listed_bytes, downloaded_bytes)
 
     def test_successful_older_run_rerun_supersedes_later_created_failure(self):
         self.api.add_run(10)["conclusion"] = "failure"

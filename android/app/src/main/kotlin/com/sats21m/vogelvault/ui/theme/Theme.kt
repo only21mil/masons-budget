@@ -119,14 +119,6 @@ object VaultSpace {
     val xxl = 32.dp
 }
 
-/**
- * Whether the device is unfolded (or otherwise wide enough for two panes).
- *
- * Provided rather than measured ad hoc so screens and screenshot tests agree on
- * one definition of "unfolded".
- */
-val LocalIsUnfolded = staticCompositionLocalOf { false }
-
 /** The active app root. A fresh app is deterministically Terminal Ledger. */
 @Composable
 fun LedgerTheme(

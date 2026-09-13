@@ -271,3 +271,12 @@ The manifest pins the accepted templates, proposed templates, authoritative
 icon source, five font files, and the font license. A status change for a
 proposed glyph must update this document, the source, its SVG, and the checksum
 manifest in one commit.
+
+
+## Android folded verification widths
+
+The cover-display target is 345dp by 870dp. The standard phone target is 411dp by 891dp; the unfolded inner display is 841dp by 945dp. In the inner display, the 72dp rail leaves a 345dp list before the hinge gap. Also exercise compact multi-window widths below 360dp, with labels only on the selected bottom item and full spoken names on every item.
+
+Folded list primary text is 14sp. Every button, input, notification row, custody choice and fee field has a 48dp minimum target. Android starts with phosphor glow off; a saved explicit preference remains in effect. Row reveals run on first arrival per profile, not on each refresh. The system animator-duration scale of zero disables motion as well as the app preference.
+
+A10/A11 native DesignPacket re-recording is pending on the authorized capture route. The focused JVM checks do not replace those captures.

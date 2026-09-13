@@ -195,8 +195,7 @@ internal fun VaultLazyListScope.netWorthRetirementAccounts(
                 StateBlock(
                     Freshness.ERROR,
                     "Retirement values unavailable",
-                    "The retirement snapshot could not be valued.",
-                )
+                    "The retirement snapshot could not be valued.", action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         accounts.isEmpty() -> item {
@@ -204,8 +203,7 @@ internal fun VaultLazyListScope.netWorthRetirementAccounts(
                 StateBlock(
                     Freshness.EMPTY,
                     "No retirement accounts in scope",
-                    state.netWorthPresentationLabels().emptyRetirementDetail,
-                )
+                    state.netWorthPresentationLabels().emptyRetirementDetail, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         else -> keyedPanel(
@@ -248,7 +246,7 @@ private fun VaultLazyListScope.retirementAccountAndHoldingContent(
     when (state.financeStatus) {
         Freshness.LOADING, Freshness.ERROR -> item {
             Panel("Retirement holdings", "Convex finance document") {
-                StateBlock(state.financeStatus)
+                StateBlock(state.financeStatus, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         Freshness.EMPTY -> item {
@@ -256,8 +254,7 @@ private fun VaultLazyListScope.retirementAccountAndHoldingContent(
                 StateBlock(
                     Freshness.EMPTY,
                     title = "Retirement holdings unavailable",
-                    detail = "No complete finance document was returned for this profile.",
-                )
+                    detail = "No complete finance document was returned for this profile.", action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         else -> {
@@ -268,8 +265,7 @@ private fun VaultLazyListScope.retirementAccountAndHoldingContent(
                         StateBlock(
                             Freshness.ERROR,
                             title = "Retirement values unavailable",
-                            detail = "The synchronized values exceed Android's supported numeric range.",
-                        )
+                            detail = "The synchronized values exceed Android's supported numeric range.", action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
                     }
                 }
                 return
@@ -281,8 +277,7 @@ private fun VaultLazyListScope.retirementAccountAndHoldingContent(
                         StateBlock(
                             Freshness.EMPTY,
                             title = "No retirement accounts in scope",
-                            detail = state.netWorthPresentationLabels().emptyRetirementDetail,
-                        )
+                            detail = state.netWorthPresentationLabels().emptyRetirementDetail, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
                     }
                 }
                 return
@@ -309,7 +304,7 @@ private fun VaultLazyListScope.retirementAccountAndHoldingContent(
                     },
                     figure = state.formatFinanceCentsOrNull(account.valueCents, displayUnit)
                         ?: Money.PRICE_UNAVAILABLE,
-                    badge = account.account.weeklyContributionDay?.uppercase() ?: "NOT SCHEDULED",
+                    badge = account.account.weeklyContributionDay ?: "Not scheduled",
                 )
             }
             val rows = accounts.flatMap { account ->
@@ -321,8 +316,7 @@ private fun VaultLazyListScope.retirementAccountAndHoldingContent(
                         StateBlock(
                             Freshness.EMPTY,
                             title = "No holding detail in scope",
-                            detail = "The synchronized account totals and weekly schedules remain visible above.",
-                        )
+                            detail = "The synchronized account totals and weekly schedules remain visible above.", action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
                     }
                 }
             } else {
@@ -415,8 +409,7 @@ private fun QuotePanel(state: VaultUiState) {
             StateBlock(
                 state.marketQuoteStatus,
                 title = "Market prices unavailable",
-                detail = "No complete quote snapshot was returned. Stored holding values are labelled when used.",
-            )
+                detail = "No complete quote snapshot was returned. Stored holding values are labelled when used.", action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
         }
         return
     }
@@ -450,7 +443,7 @@ internal fun MarketQuote.quoteHint(nowMillis: Long): String {
     val failure = errorCode?.name?.lowercase()?.replace('_', ' ')
     // Short enough for a row's meta line and the 296dp sidebar: "Kraken · 2 min ago".
     return buildString {
-        append(source)
+        append("Market quote")
         when (status) {
             MarketQuoteStatus.LIVE -> append(" · ${age ?: "now"}")
             MarketQuoteStatus.STALE -> append(" · cached · ${age ?: "age unknown"}")

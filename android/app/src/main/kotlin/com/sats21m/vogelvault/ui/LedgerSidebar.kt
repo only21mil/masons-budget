@@ -53,7 +53,8 @@ internal const val SIDEBAR_RECENT_ACTIVITY_LIMIT = 7
 internal const val SIDEBAR_TASK_TAG_TODAY = "TODAY"
 internal const val SIDEBAR_TASK_TAG_OVERDUE = "OVERDUE"
 
-internal val SIDEBAR_DESTINATIONS: Set<Destination> = setOf(Destination.DASHBOARD, Destination.BUDGET)
+internal val DETAIL_DESTINATIONS: Set<Destination> = setOf(Destination.ACTIVITY, Destination.BUDGET, Destination.TASKS)
+internal val SIDEBAR_DESTINATIONS: Set<Destination> = DETAIL_DESTINATIONS
 
 /** Only the two ledger screens split; every other destination keeps its width. */
 internal fun showsLedgerSidebar(destination: Destination, unfolded: Boolean): Boolean =
@@ -81,133 +82,13 @@ internal fun sidebarLocalDay(epochMillis: Long, zoneId: ZoneId = ZoneId.systemDe
     Instant.ofEpochMilli(epochMillis).atZone(zoneId).toLocalDate().toString()
 
 @Composable
-internal fun LedgerSidebar(
-    state: VaultUiState,
-    displayUnit: DisplayUnit,
-    modifier: Modifier = Modifier,
-) {
-    val tokens = LocalLedgerTheme.current
-    val quote = state.operationalBitcoinQuote()
-    val profile = state.activeProfile
-    val transactionsInput = state.data.transactions.value
-    val todosInput = state.data.todos.value
-    val activity = remember(profile, transactionsInput) { sidebarRecentActivity(state) }
-    val tasks = remember(profile, todosInput, state.now) { sidebarTodaysTasks(state) }
-    val today = remember(state.now) { sidebarLocalDay(state.now) }
-
-    Column(
-        modifier
-            .fillMaxHeight()
-            .width(LEDGER_SIDEBAR_WIDTH_DP.dp)
-            .verticalScroll(rememberScrollState())
-            .testTag(LEDGER_SIDEBAR_TEST_TAG),
-    ) {
-        SidebarSection("Recent activity") {
-            when {
-                state.data.transactions.suppressFigures -> StateBlock(state.data.transactions.status)
-                activity.isEmpty() -> SidebarEmptyLine("nothing here. clear.")
-                else -> activity.forEachIndexed { index, transaction ->
-                    if (index > 0) HorizontalHairline()
-                    SidebarRow(
-                        primary = transaction.merchant,
-                        secondary = "${transaction.date} · ${transaction.category}",
-                        figure = formatTransactionAmount(transaction, displayUnit, quote),
-                        figureColor = if (transaction.isSpend && !transaction.hasOppositeSpendSign) {
-                            tokens.colors.loss
-                        } else {
-                            tokens.colors.gain
-                        },
-                    )
-                }
-            }
-        }
-        SidebarSection("Today") {
-            when {
-                state.data.todos.suppressFigures -> StateBlock(state.data.todos.status)
-                tasks.isEmpty() -> SidebarEmptyLine("Nothing is due today.")
-                else -> tasks.forEachIndexed { index, task ->
-                    if (index > 0) HorizontalHairline()
-                    val tag = sidebarTaskTag(task, today)
-                    SidebarRow(
-                        primary = task.title,
-                        secondary = task.area ?: task.project,
-                        figure = tag,
-                        figureColor = if (tag == SIDEBAR_TASK_TAG_OVERDUE) tokens.colors.loss else tokens.colors.bitcoin,
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(tokens.density.screenGutter))
+internal fun LedgerDetailPrompt(destination: Destination) {
+    val noun = when (destination) {
+        Destination.ACTIVITY -> "transaction"
+        Destination.BUDGET -> "category"
+        Destination.TASKS -> "task list"
+        else -> "item"
     }
-}
-
-/** Section label block: 22dp above, 9dp below, then a rule. The label carries 9dp itself. */
-@Composable
-private fun SidebarSection(label: String, content: @Composable ColumnScope.() -> Unit) {
-    val tokens = LocalLedgerTheme.current
-    Spacer(Modifier.height(tokens.density.sectionTopSpace - LedgerSpacing.medium))
-    SectionLabel(label)
-    HorizontalHairline()
-    Column(content = content)
-}
-
-@Composable
-private fun SidebarEmptyLine(text: String) {
-    val tokens = LocalLedgerTheme.current
-    Text(
-        text,
-        style = tokens.type.rowMeta,
-        color = tokens.colors.foregroundTertiary,
-        modifier = Modifier.padding(
-            horizontal = tokens.density.cardPadding,
-            vertical = tokens.density.denseRowVerticalPadding,
-        ),
-    )
-}
-
-/** A ledger row at the dense sidebar padding; one spoken stop per row like [com.sats21m.vogelvault.ui.components.LedgerRow]. */
-@Composable
-private fun SidebarRow(
-    primary: String,
-    secondary: String?,
-    figure: String,
-    figureColor: Color,
-) {
-    val tokens = LocalLedgerTheme.current
-    val spoken = ledgerRowContentDescription(primary, secondary, figure, badge = null)
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clearAndSetSemantics { contentDescription = spoken }
-            .padding(
-                horizontal = tokens.density.cardPadding,
-                vertical = tokens.density.denseRowVerticalPadding,
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                primary,
-                style = tokens.type.rowPrimary,
-                color = tokens.colors.foreground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (secondary != null) {
-                Text(
-                    secondary.uppercase(),
-                    style = tokens.type.rowMeta,
-                    color = tokens.colors.foregroundTertiary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        Spacer(Modifier.width(VaultSpace.sm))
-        Text(
-            figure,
-            style = tokens.type.rowFigure,
-            color = if (figure.isUnavailableFigure()) tokens.colors.foregroundTertiary else ledgerColor(figureColor),
-        )
-    }
+    Text("Select a $noun to see its details.", color = LocalLedgerTheme.current.colors.foregroundSecondary,
+        modifier = Modifier.padding(VaultSpace.md).testTag(LEDGER_SIDEBAR_TEST_TAG))
 }

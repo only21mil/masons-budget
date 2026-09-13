@@ -180,9 +180,9 @@ internal fun todoWriteFailureMessage(
 ): String? = when (result) {
     is ConvexResult.Ok -> null
     ConvexResult.Disabled -> "${action.summary}: live sync is switched off"
-    ConvexResult.NotConfigured -> "${action.summary}: no Convex deployment is configured"
+    ConvexResult.NotConfigured -> "${action.summary}: this phone is not connected"
     ConvexResult.Unauthorized -> "${action.summary}: the paired-device credential is missing or was rejected"
-    ConvexResult.Missing -> "${action.summary}: Convex returned no write result"
+    ConvexResult.Missing -> "${action.summary}: household sync returned no write result"
     is ConvexResult.Failed -> "${action.summary} (${result.reason})"
 }
 

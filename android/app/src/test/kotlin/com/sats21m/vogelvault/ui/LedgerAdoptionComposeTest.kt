@@ -17,6 +17,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
+import com.sats21m.vogelvault.VaultApplication
+import com.sats21m.vogelvault.data.DeviceCapabilities
+import com.sats21m.vogelvault.data.DeviceCapability
 import com.sats21m.vogelvault.domain.Budget
 import com.sats21m.vogelvault.domain.CategorySpend
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -40,7 +43,7 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], application = LedgerAdoptionApplication::class)
 class LedgerAdoptionComposeTest {
     @get:Rule
     val compose = createEmptyComposeRule()
@@ -116,7 +119,7 @@ class LedgerAdoptionComposeTest {
     }
 
     @Test
-    fun `price family payment rails and folded More count render from adopted UI`() {
+    fun `price family payment rails and five folded tabs render from adopted UI`() {
         val quote = MarketQuote(
             symbol = MarketSymbol.BTC,
             priceCents = 9_425_012L,
@@ -130,7 +133,7 @@ class LedgerAdoptionComposeTest {
         compose.onNodeWithText("$94,250").fetchSemanticsNode()
         compose.onNodeWithText(".12").fetchSemanticsNode()
         compose.onNodeWithText(
-            "VOGEL PRICE SERVICE · 2026-08-26T12:00:00Z",
+            "Market quote · 2026-08-26T12:00:00Z",
         ).fetchSemanticsNode()
 
         render {
@@ -139,9 +142,9 @@ class LedgerAdoptionComposeTest {
                 PaymentRail(PaymentSource.ZEUS_ON_CHAIN)
             }
         }
-        compose.onNodeWithText("BOLT · ZEUS LIGHTNING").fetchSemanticsNode()
+        compose.onNodeWithText("Bolt · Zeus Lightning").fetchSemanticsNode()
         compose.onNodeWithContentDescription("Bolt payment rail").fetchSemanticsNode()
-        compose.onNodeWithText("CHAIN · ZEUS ON-CHAIN").fetchSemanticsNode()
+        compose.onNodeWithText("Chain · Zeus On-chain").fetchSemanticsNode()
         compose.onNodeWithContentDescription("Chain payment rail").fetchSemanticsNode()
 
         render {
@@ -168,7 +171,10 @@ class LedgerAdoptionComposeTest {
                 onSwitchProfile = {},
             )
         }
-        compose.onNodeWithText("More (9)").fetchSemanticsNode()
+        RAIL_PRIMARY_ORDER.forEach { destination ->
+            compose.onNodeWithContentDescription(destination.label).fetchSemanticsNode()
+        }
+        compose.onNodeWithText("More (9)").assertDoesNotExist()
     }
 
     @Test
@@ -202,4 +208,10 @@ class LedgerAdoptionComposeTest {
         shadowOf(Looper.getMainLooper()).idle()
         compose.waitForIdle()
     }
+}
+
+internal class LedgerAdoptionApplication : VaultApplication() {
+    override val deviceCapabilities = DeviceCapabilities(
+        FamilyMember.VICTOR, setOf(DeviceCapability.BUDGET.wire),
+    )
 }

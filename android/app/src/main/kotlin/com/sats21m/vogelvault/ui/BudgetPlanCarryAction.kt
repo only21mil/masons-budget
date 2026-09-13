@@ -45,6 +45,7 @@ internal fun BudgetPlanCarryAction(
     budget: Budget,
     selectedMonth: String?,
     onCopied: (String) -> Unit,
+    unavailableReason: String? = null,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication ?: return
     val gateway = remember(application) { application.budgetPlanCarryGateway }
@@ -93,6 +94,7 @@ internal fun BudgetPlanCarryAction(
             style = tokens.type.body,
             color = tokens.colors.foregroundSecondary,
         )
+        unavailableReason?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         Row(horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
             VaultButton(
                 label = if (confirming) {
@@ -100,7 +102,7 @@ internal fun BudgetPlanCarryAction(
                 } else {
                     stringResource(R.string.budget_plan_copy_action, fromName, toName)
                 },
-                enabled = !submitting,
+                enabled = !submitting && unavailableReason == null,
                 onClick = {
                     if (!confirming) {
                         confirming = true

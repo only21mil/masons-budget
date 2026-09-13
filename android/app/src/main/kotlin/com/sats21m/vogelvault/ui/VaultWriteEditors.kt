@@ -22,11 +22,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,13 +43,11 @@ import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.VaultApplication
-import com.sats21m.vogelvault.explicitBtcBuyOwner
 import com.sats21m.vogelvault.data.BtcBuyInput
 import com.sats21m.vogelvault.data.BudgetCategoryInput
 import com.sats21m.vogelvault.data.BudgetCategoryDeleteResult
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutation
-import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.data.ConvexValue
@@ -356,6 +354,7 @@ internal fun budgetProgressAccessibilityLabel(
 ): String =
     "${category.name}, ${Money.formatUsd(category.spentCents)} spent of " +
         "${Money.formatUsd(category.budgetCents)} planned, " +
+        "${Money.formatUsd(category.remainingCents)} remaining, " +
         "${progress.statusLabel}, ${progress.percentageLabel}"
 
 internal fun btcBuyWriteRequest(
@@ -395,7 +394,7 @@ internal fun btcBuyWriteRequest(
 }
 
 /**
- * The handoff category row: name and spent figure, a 3dp bar, then `OF <planned>`.
+ * Category remaining amount and planned limit, followed by the spend progress bar.
  *
  * The whole row opens the drilldown, where editing lives, so there is no badge,
  * no percent text, and no edit link. The bar fills over 300ms when the fraction
@@ -456,11 +455,15 @@ internal fun EditableBudgetCategoryRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Text(
-                    Money.formatUsd(category.spentCents),
-                    style = tokens.type.rowFigure,
-                    color = if (over) colors.loss else colors.foreground,
-                )
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "${Money.formatUsd(category.remainingCents)} left",
+                        style = tokens.type.rowFigure,
+                        color = if (over) colors.loss else colors.foreground,
+                    )
+                    Text("OF ${Money.formatUsd(category.budgetCents)} planned",
+                        style = tokens.type.rowMeta, color = colors.foregroundTertiary)
+                }
             }
             Box(
                 Modifier
@@ -475,18 +478,13 @@ internal fun EditableBudgetCategoryRow(
                         .background(barColor),
                 )
             }
-            Text(
-                "OF ${Money.formatUsd(category.budgetCents)}",
-                style = tokens.type.rowMeta,
-                color = colors.foregroundTertiary,
-            )
         }
     }
 }
 
 @Composable
-internal fun BtcBuyEntryAction(onClick: () -> Unit) {
-    VaultButton(label = stringResource(R.string.btc_buy_add_action), onClick = onClick, modifier = Modifier.fillMaxWidth())
+internal fun BtcBuyEntryAction(onClick: () -> Unit, enabled: Boolean = true) {
+    VaultButton(label = stringResource(R.string.btc_buy_add_action), onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth())
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -498,7 +496,17 @@ internal fun BudgetCategoryEditorSheet(
 ) {
     val colors = LocalLedgerTheme.current.colors
     val application = LocalContext.current.applicationContext as? VaultApplication
-    val mutationClient = remember(application) { application?.convexMutationClient }
+    val mutationClient = remember(application) { application?.deviceMutationClient }
+    if (WriteAccessBlockedSheet(seed.viewer, com.sats21m.vogelvault.data.DeviceCapability.BUDGET, onDismiss)) return
+    if (seed.budget == null || seed.sourceFile == null || seed.budget.updatedAtMs <= 0L) {
+        ModalBottomSheet(onDismissRequest = onDismiss) {
+            Column(Modifier.padding(VaultSpace.md)) {
+                Text("Refresh the budget before editing this category.")
+                TextButton(onClick = onDismiss) { Text("Close") }
+            }
+        }
+        return
+    }
     var dollars by remember(seed) {
         mutableStateOf(Money.formatMinorUnits(seed.category.budgetCents, 2))
     }
@@ -508,27 +516,12 @@ internal fun BudgetCategoryEditorSheet(
     val scope = rememberCoroutineScope()
     val haptics = rememberLedgerHaptics()
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().padding(VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
-        ) {
-            Text(stringResource(R.string.budget_category_editor_title, seed.category.name))
-            Text(stringResource(R.string.budget_category_editor_month, seed.budgetDocumentMonth))
-            LedgerTextField(
-                value = dollars,
-                onValueChange = { dollars = it },
-                label = stringResource(R.string.budget_category_amount_label),
-                prefix = "$",
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            message?.let { Text(it) }
+    LedgerSheet(
+        title = stringResource(R.string.budget_category_editor_title, seed.category.name),
+        onDismissRequest = { if (!submitting) onDismiss() },
+        actions = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 if (
-                    seed.budget != null &&
-                    seed.sourceFile != null &&
                     seed.displayedMonth == seed.budgetDocumentMonth &&
                     seed.budget.updatedAtMs > 0L
                 ) {
@@ -563,9 +556,9 @@ internal fun BudgetCategoryEditorSheet(
                                     is BudgetCategoryDeleteResult.Submitted -> when (val submitted = result.result) {
                                         is ConvexResult.Ok -> null
                                         ConvexResult.Unauthorized -> "Category not deleted: this device is not authorized."
-                                        ConvexResult.NotConfigured -> "Category not deleted: Convex is not configured."
+                                        ConvexResult.NotConfigured -> "Category not deleted: household sync is not connected."
                                         ConvexResult.Disabled -> "Category not deleted: authenticated writes are disabled."
-                                        ConvexResult.Missing -> "Category not deleted: Convex returned no result."
+                                        ConvexResult.Missing -> "Category not deleted: household sync returned no result."
                                         is ConvexResult.Failed -> "Category not deleted: ${submitted.reason}."
                                     }
                                 }
@@ -607,7 +600,9 @@ internal fun BudgetCategoryEditorSheet(
                                     val request = draft.request
                                     val result =
                                         client.mutate(
-                                            ConvexMutation.UpsertBudgetCategory(
+                                            ConvexMutation.UpsertBudgetCategoryFromDevice(
+                                                baseUpdatedAtMs = requireNotNull(seed.budget).updatedAtMs,
+                                                sourceFile = requireNotNull(seed.sourceFile),
                                                 viewer = request.viewer,
                                                 month = request.month,
                                                 category =
@@ -634,7 +629,19 @@ internal fun BudgetCategoryEditorSheet(
                     },
                 )
             }
-        }
+        },
+    ) {
+        Text(stringResource(R.string.budget_category_editor_month, seed.budgetDocumentMonth))
+        LedgerTextField(
+            value = dollars,
+            onValueChange = { dollars = it },
+            label = stringResource(R.string.budget_category_amount_label),
+            prefix = "$",
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        message?.let { Text(it) }
     }
 }
 
@@ -654,7 +661,7 @@ internal fun BudgetCategoryEditorSheet(
 internal fun launchBtcBuySave(
     scope: CoroutineScope,
     request: BtcBuyWriteRequest,
-    client: ConvexMutationClient,
+    client: ConvexDeviceMutationClient,
     buyDraftIds: TransactionDraftIdStore,
     onResult: (BtcBuySaveOutcome) -> Unit,
 ): Job = scope.launch {
@@ -663,7 +670,8 @@ internal fun launchBtcBuySave(
     val sourceFile = request.owner.btcBuysDataFileName
     val leaseScope = btcBuyDraftIdScope(BtcBuyWriteSurface.STANDALONE, request.owner)
     val result = client.mutate(
-        ConvexMutation.UpsertBtcBuy(
+        ConvexMutation.UpsertBtcBuyFromDevice(
+            owner = request.owner.ledgerOwner,
             buy = BtcBuyInput(
                 id = request.id,
                 date = request.date,
@@ -672,7 +680,7 @@ internal fun launchBtcBuySave(
                 priceUsdCents = request.priceUsdCents,
                 usdCents = request.usdCents,
                 feeUsdCents = request.feeUsdCents,
-                owner = explicitBtcBuyOwner(request.owner),
+                owner = request.owner.ledgerOwner,
             ),
             sourceFile = sourceFile,
         ),
@@ -688,9 +696,11 @@ internal fun BtcBuyEntrySheet(
     owner: FamilyMember,
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
+    quoteCents: Long = 0,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
-    val mutationClient = remember(application) { application?.convexMutationClient }
+    val mutationClient = remember(application) { application?.deviceMutationClient }
+    if (WriteAccessBlockedSheet(owner, com.sats21m.vogelvault.data.DeviceCapability.BITCOIN, onDismiss)) return
     val buyDraftIds = application?.btcBuyDraftIds
     // Process-owned, exactly like the transaction sheet: dismissing this sheet
     // mid-write and reopening must resubmit the SAME id, or a committed buy
@@ -702,7 +712,7 @@ internal fun BtcBuyEntrySheet(
         buyDraftIds?.currentId(buyScope) ?: "android-${UUID.randomUUID()}"
     }
     val saveScope = remember(application) { application?.applicationScope }
-    var date by remember { mutableStateOf(LocalDate.now().toString()) }
+    var date by remember { mutableStateOf(ledgerToday().toString()) }
     var source by remember { mutableStateOf("") }
     var sats by remember { mutableStateOf("") }
     var priceUsd by remember { mutableStateOf("") }
@@ -712,24 +722,78 @@ internal fun BtcBuyEntrySheet(
     val scope = rememberCoroutineScope()
     val haptics = rememberLedgerHaptics()
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().padding(VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
+    var writeAccepted by remember { mutableStateOf(false) }
+    val retrySave: () -> Unit = retrySave@ {
+        if (submitting) return@retrySave
+        val derived = deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrElse {
+            message = it.message ?: "Check the buy amounts"
+            return@retrySave
+        }
+        when (
+            val draft =
+                btcBuyWriteRequest(
+                    owner,
+                    buyId,
+                    date,
+                    source,
+                    derived.sats,
+                    derived.priceUsd,
+                    derived.purchaseUsd,
+                )
         ) {
-            Text(stringResource(R.string.btc_buy_editor_title))
-            EditorField(date, { date = it }, R.string.btc_buy_date_label)
-            EditorField(source, { source = it }, R.string.btc_buy_source_label)
-            EditorField(sats, { sats = it }, R.string.btc_buy_sats_label, KeyboardType.Number)
-            EditorField(priceUsd, { priceUsd = it }, R.string.btc_buy_price_label, KeyboardType.Decimal)
-            EditorField(
-                purchaseUsd,
-                { purchaseUsd = it },
-                R.string.btc_buy_purchase_amount_label,
-                KeyboardType.Decimal,
-            )
-            Text(stringResource(R.string.btc_buy_independent_amounts_detail))
-            message?.let { Text(it) }
+            is WriteDraftResult.Invalid -> message = draft.reason
+            is WriteDraftResult.Valid -> {
+                val client = mutationClient
+                if (client == null) {
+                    message = "Bitcoin buy not saved: the app write client is unavailable."
+                    return@retrySave
+                }
+                val writeScope = saveScope
+                val draftIds = buyDraftIds
+                if (writeScope == null || draftIds == null) {
+                    message = "Bitcoin buy not saved: the app write client is unavailable."
+                    return@retrySave
+                }
+                submitting = true
+                // The application scope owns the request so a
+                // dismissal cannot cancel a write the server
+                // may already have committed.
+                launchBtcBuySave(
+                    scope = writeScope,
+                    request = draft.request,
+                    client = client,
+                    buyDraftIds = draftIds,
+                ) { outcome ->
+                    submitting = false
+                    writeAccepted = outcome !is BtcBuySaveOutcome.Rejected
+                    when (outcome) {
+                        BtcBuySaveOutcome.Accepted -> {
+                            haptics.confirm()
+                            onWriteSucceeded()
+                            onDismiss()
+                        }
+                        BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
+                            message = acceptedBtcBuyLeaseResetFailure
+                        is BtcBuySaveOutcome.Rejected -> {
+                            check(outcome.result !is ConvexResult.Ok) {
+                                "Accepted result cannot be rejected"
+                            }
+                            haptics.reject()
+                            message = convexWriteFailureMessage(
+                                "Bitcoin buy not saved",
+                                outcome.result,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    LedgerSheet(
+        title = stringResource(R.string.btc_buy_editor_title),
+        onDismissRequest = { if (!submitting) onDismiss() },
+        actions = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))
@@ -737,69 +801,29 @@ internal fun BtcBuyEntrySheet(
                 VaultButton(
                     label = stringResource(R.string.write_save),
                     enabled = !submitting,
-                    onClick = {
-                        when (
-                            val draft =
-                                btcBuyWriteRequest(
-                                    owner,
-                                    buyId,
-                                    date,
-                                    source,
-                                    sats,
-                                    priceUsd,
-                                    purchaseUsd,
-                                )
-                        ) {
-                            is WriteDraftResult.Invalid -> message = draft.reason
-                            is WriteDraftResult.Valid -> {
-                                val client = mutationClient
-                                if (client == null) {
-                                    message = "Bitcoin buy not saved: the app write client is unavailable."
-                                    return@VaultButton
-                                }
-                                val writeScope = saveScope
-                                val draftIds = buyDraftIds
-                                if (writeScope == null || draftIds == null) {
-                                    message = "Bitcoin buy not saved: the app write client is unavailable."
-                                    return@VaultButton
-                                }
-                                submitting = true
-                                // The application scope owns the request so a
-                                // dismissal cannot cancel a write the server
-                                // may already have committed.
-                                launchBtcBuySave(
-                                    scope = writeScope,
-                                    request = draft.request,
-                                    client = client,
-                                    buyDraftIds = draftIds,
-                                ) { outcome ->
-                                    submitting = false
-                                    when (outcome) {
-                                        BtcBuySaveOutcome.Accepted -> {
-                                            haptics.confirm()
-                                            onWriteSucceeded()
-                                            onDismiss()
-                                        }
-                                        BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
-                                            message = acceptedBtcBuyLeaseResetFailure
-                                        is BtcBuySaveOutcome.Rejected -> {
-                                            check(outcome.result !is ConvexResult.Ok) {
-                                                "Accepted result cannot be rejected"
-                                            }
-                                            haptics.reject()
-                                            message = convexWriteFailureMessage(
-                                                "Bitcoin buy not saved",
-                                                outcome.result,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
+                    onClick = retrySave,
                 )
             }
+        },
+    ) {
+        LedgerDateField(date, { date = it }, stringResource(R.string.btc_buy_date_label), enabled = !submitting)
+        EditorField(source, { source = it }, R.string.btc_buy_source_label)
+        EditorField(sats, { sats = it }, R.string.btc_buy_sats_label, KeyboardType.Number)
+        EditorField(priceUsd, { priceUsd = it }, R.string.btc_buy_price_label, KeyboardType.Decimal)
+        EditorField(
+            purchaseUsd,
+            { purchaseUsd = it },
+            R.string.btc_buy_purchase_amount_label,
+            KeyboardType.Decimal,
+        )
+        Text("Enter any two of sats, price and dollars. Leave the third blank to calculate it.")
+        if (quoteCents > 0) Text("Live price: ${Money.formatUsd(quoteCents)}. Enter a price to override it.")
+        deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrNull()?.let { result ->
+            Text("${result.sats} sats · $${result.priceUsd} per BTC · $${result.purchaseUsd}")
         }
+        com.sats21m.vogelvault.ui.components.WriteRefusalLine(
+            message, retry = retrySave, enabled = !submitting, accepted = writeAccepted,
+        )
     }
 }
 
@@ -810,9 +834,12 @@ internal fun BtcBuyFromIncomeEntrySheet(
     income: IncomeEntry,
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
+    quoteCents: Long = 0,
 ) {
     val colors = LocalLedgerTheme.current.colors
     val application = LocalContext.current.applicationContext as? VaultApplication
+    if (WriteAccessBlockedSheet(viewer, com.sats21m.vogelvault.data.DeviceCapability.BITCOIN, onDismiss)) return
+    if (WriteAccessBlockedSheet(viewer, com.sats21m.vogelvault.data.DeviceCapability.TRANSACTIONS, onDismiss)) return
     val gateway = remember(application) { application?.btcBuyIncomeMutationGateway }
     val draftIds = application?.btcBuyDraftIds
     val writeScope = application?.applicationScope
@@ -823,23 +850,72 @@ internal fun BtcBuyFromIncomeEntrySheet(
     var message by rememberSaveable(income.id) { mutableStateOf<String?>(null) }
     var submitting by remember(income.id) { mutableStateOf(false) }
     val haptics = rememberLedgerHaptics()
+    val purchaseUsd = java.math.BigDecimal(income.amountCents).movePointLeft(2).toPlainString()
 
-    ModalBottomSheet(onDismissRequest = { if (!submitting) onDismiss() }) {
-        Column(
-            Modifier.fillMaxWidth().padding(VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
-        ) {
-            Text(stringResource(R.string.budget_income_add_as_bitcoin_buy))
-            Text(
-                "${income.sourceName} income: ${Money.formatUsd(income.amountCents)}",
-                color = colors.foregroundSecondary,
+    var writeAccepted by remember { mutableStateOf(false) }
+    val retrySave: () -> Unit = retrySave@ {
+        if (submitting) return@retrySave
+        val derived = deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrElse {
+            message = it.message ?: "Check the buy amounts"
+            return@retrySave
+        }
+        when (
+            val draft = btcBuyFromIncomeWriteRequest(
+                viewer = viewer,
+                id = income.id,
+                income = income,
+                source = source,
+                sats = derived.sats,
+                priceUsd = derived.priceUsd,
+                buyNote = buyNote,
             )
-            Text(stringResource(R.string.budget_income_add_as_bitcoin_buy_detail))
-            EditorField(source, { source = it }, R.string.btc_buy_source_label)
-            EditorField(sats, { sats = it }, R.string.btc_buy_sats_label, KeyboardType.Number)
-            EditorField(priceUsd, { priceUsd = it }, R.string.btc_buy_price_label, KeyboardType.Decimal)
-            EditorField(buyNote, { buyNote = it }, R.string.transaction_note)
-            message?.let { Text(it, color = colors.loss) }
+        ) {
+            is WriteDraftResult.Invalid -> message = draft.reason
+            is WriteDraftResult.Valid -> {
+                val writeGateway = gateway
+                val processDraftIds = draftIds
+                val processScope = writeScope
+                if (writeGateway == null || processDraftIds == null || processScope == null) {
+                    message = "Income and Bitcoin buy not saved: the app write client is unavailable."
+                    return@retrySave
+                }
+                submitting = true
+                launchBtcBuyFromIncomeSave(
+                    scope = processScope,
+                    request = draft.request,
+                    gateway = writeGateway,
+                    buyDraftIds = processDraftIds,
+                ) { outcome ->
+                    submitting = false
+                    writeAccepted = outcome !is BtcBuySaveOutcome.Rejected
+                    when (outcome) {
+                        BtcBuySaveOutcome.Accepted -> {
+                            haptics.confirm()
+                            onWriteSucceeded()
+                            onDismiss()
+                        }
+                        BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
+                            message = acceptedBtcBuyLeaseResetFailure
+                        is BtcBuySaveOutcome.Rejected -> {
+                            check(outcome.result !is ConvexResult.Ok) {
+                                "Accepted result cannot be rejected"
+                            }
+                            haptics.reject()
+                            message = convexWriteFailureMessage(
+                                "Income and Bitcoin buy not saved",
+                                outcome.result,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    LedgerSheet(
+        title = stringResource(R.string.budget_income_add_as_bitcoin_buy),
+        onDismissRequest = { if (!submitting) onDismiss() },
+        actions = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))
@@ -847,66 +923,31 @@ internal fun BtcBuyFromIncomeEntrySheet(
                 VaultButton(
                     label = stringResource(R.string.write_save),
                     enabled = !submitting,
-                    onClick = {
-                        when (
-                            val draft = btcBuyFromIncomeWriteRequest(
-                                viewer = viewer,
-                                id = income.id,
-                                income = income,
-                                source = source,
-                                sats = sats,
-                                priceUsd = priceUsd,
-                                buyNote = buyNote,
-                            )
-                        ) {
-                            is WriteDraftResult.Invalid -> message = draft.reason
-                            is WriteDraftResult.Valid -> {
-                                val writeGateway = gateway
-                                val processDraftIds = draftIds
-                                val processScope = writeScope
-                                if (writeGateway == null || processDraftIds == null || processScope == null) {
-                                    message = "Income and Bitcoin buy not saved: the app write client is unavailable."
-                                    return@VaultButton
-                                }
-                                submitting = true
-                                launchBtcBuyFromIncomeSave(
-                                    scope = processScope,
-                                    request = draft.request,
-                                    gateway = writeGateway,
-                                    buyDraftIds = processDraftIds,
-                                ) { outcome ->
-                                    submitting = false
-                                    when (outcome) {
-                                        BtcBuySaveOutcome.Accepted -> {
-                                            haptics.confirm()
-                                            onWriteSucceeded()
-                                            onDismiss()
-                                        }
-                                        BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
-                                            message = acceptedBtcBuyLeaseResetFailure
-                                        is BtcBuySaveOutcome.Rejected -> {
-                                            check(outcome.result !is ConvexResult.Ok) {
-                                                "Accepted result cannot be rejected"
-                                            }
-                                            haptics.reject()
-                                            message = convexWriteFailureMessage(
-                                                "Income and Bitcoin buy not saved",
-                                                outcome.result,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
+                    onClick = retrySave,
                 )
             }
+        },
+    ) {
+        Text(
+            "${income.sourceName} income: ${Money.formatUsd(income.amountCents)}",
+            color = colors.foregroundSecondary,
+        )
+        Text(stringResource(R.string.budget_income_add_as_bitcoin_buy_detail))
+        EditorField(source, { source = it }, R.string.btc_buy_source_label)
+        EditorField(sats, { sats = it }, R.string.btc_buy_sats_label, KeyboardType.Number)
+        EditorField(priceUsd, { priceUsd = it }, R.string.btc_buy_price_label, KeyboardType.Decimal)
+        Text("Income supplies the dollars. Enter sats or price to calculate the other.")
+        if (quoteCents > 0) Text("Live price: ${Money.formatUsd(quoteCents)}. Enter a price to override it.")
+        deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrNull()?.let { result ->
+            Text("${result.sats} sats · $${result.priceUsd} per BTC · $${result.purchaseUsd}")
         }
+        EditorField(buyNote, { buyNote = it }, R.string.transaction_note)
+        com.sats21m.vogelvault.ui.components.WriteRefusalLine(message, retrySave, !submitting, writeAccepted)
     }
 }
 
 private const val acceptedBtcBuyLeaseResetFailure =
-    "Convex accepted this Bitcoin buy, but this device could not retire its draft id. " +
+    "Household sync accepted this Bitcoin buy, but this device could not retire its draft id. " +
         "Do not submit another buy until local storage is repaired."
 
 @Composable

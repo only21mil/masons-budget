@@ -76,7 +76,7 @@ class FinancePresentationTest {
         assertEquals(10_000_000L, selection.bitcoinValueCents)
         assertEquals(10_024_000L, selection.totalValueCents)
         assertEquals(
-            "market service · 1 min ago",
+            "Market quote · 1 min ago",
             selection.valuationQualityHint(state.now),
         )
     }
@@ -143,7 +143,7 @@ class FinancePresentationTest {
         val selection = requireNotNull(state.netWorthSelection())
 
         assertEquals(
-            "market service · 1 min ago · Retirement: 1 stale quote · 1 stored value",
+            "Market quote · 1 min ago · Retirement: 1 stale quote · 1 stored value",
             selection.valuationQualityHint(state.now),
         )
         assertEquals(

@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Icon
@@ -60,6 +62,9 @@ import java.time.ZoneId
  */
 private const val UNFILED_TODO_PROJECT = "Inbox"
 
+/** A refreshed revision keeps the same arrival; a missing revision disables it. */
+internal fun todayRowRevealKey(updatedAt: Long?): String? = updatedAt?.let { "today" }
+
 /** Where a todo is filed: its project, else its area, else nowhere. */
 internal fun filing(todo: TodoItem): String? =
     todo.project
@@ -87,6 +92,7 @@ internal fun TodoScreen(
      * by sleeping for six real seconds.
      */
     nowMillis: () -> Long = System::currentTimeMillis,
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val ledgerTokens = LocalLedgerTheme.current
     val application = LocalContext.current.applicationContext as? VaultApplication
@@ -149,6 +155,7 @@ internal fun TodoScreen(
     ) { padding ->
         LazyColumn(
             Modifier.padding(padding).fillMaxSize(),
+            state = listState,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(ledgerTokens.density.screenGutter),
             verticalArrangement = Arrangement.spacedBy(ledgerTokens.density.sectionTopSpace),
         ) {
@@ -156,7 +163,7 @@ internal fun TodoScreen(
                 Column {
                     Text("Today", style = ledgerTokens.type.screenTitle, color = ledgerTokens.colors.foreground)
                     Text(
-                        stringResource(R.string.todo_today_subtitle).uppercase(),
+                        stringResource(R.string.todo_today_subtitle),
                         style = ledgerTokens.type.screenSubtitle,
                         color = ledgerTokens.colors.foregroundSecondary,
                     )
@@ -236,14 +243,14 @@ internal fun TodoScreen(
                 slice.status != Freshness.EMPTY &&
                 slice.status != Freshness.LOADING
             ) {
-                item { StateBlock(slice.status) }
+                item { StateBlock(slice.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() }) }
             }
 
             // Suppressed figures mean the read itself is not trustworthy. Editing
             // rows derived from it would write a guess back to the household, so the
             // state is named instead of the list being drawn.
             if (slice.suppressFigures) {
-                item { StateBlock(slice.status) }
+                item { StateBlock(slice.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() }) }
             } else if (localTodos.isEmpty()) {
                 item {
                     Text(
@@ -254,7 +261,7 @@ internal fun TodoScreen(
                 }
             } else {
                 itemsIndexed(localTodos, key = { _, todo -> todo.id }) { index, todo ->
-                    Box(Modifier.ledgerRowReveal(index, slice.updatedAt?.let { "today:$it" })) {
+                    Box(Modifier.ledgerRowReveal(index, todayRowRevealKey(slice.updatedAt))) {
                         TodoRow(
                             todo = todo,
                             viewer = viewer,

@@ -10,6 +10,10 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.sats21m.vogelvault.R
@@ -224,12 +228,11 @@ class TodoDeleteFeedbackScreenTest {
     }
 
     private fun deleteTheTodo() {
-        compose
-            .onNodeWithContentDescription(
-                application.getString(R.string.todo_delete_named, todo.title),
-            )
-            .performScrollTo()
-            .performClick()
+        val actions = compose.onNodeWithContentDescription(application.getString(R.string.todo_edit_named, todo.title)).performScrollTo()
+            .fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.CustomActions]
+        compose.runOnIdle {
+            actions.single { it.label == application.getString(R.string.todo_delete_named, todo.title) }.action()
+        }
         settle()
     }
 
@@ -267,6 +270,8 @@ class TodoDeleteFeedbackScreenTest {
             }
         }
         settle()
+        compose.onNode(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsActions.ScrollToIndex))
+            .performScrollToNode(hasText(todo.title))
         assertEquals(1, nodesWithText(todo.title), "the todo under test never rendered")
     }
 

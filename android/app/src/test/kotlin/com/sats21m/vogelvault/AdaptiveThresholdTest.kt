@@ -61,118 +61,26 @@ class AdaptiveThresholdTest {
 class DestinationVisibilityTest {
 
     @Test
-    fun `all thirteen destinations use only approved resting navigation colors`() {
-        val expectedResting = mapOf(
-            Destination.DASHBOARD to VaultNavSlate,
-            Destination.ACTIVITY to VaultNavSlate,
-            Destination.BUDGET to VaultNavSlate,
-            Destination.BITCOIN to VaultBitcoin,
-            Destination.BTC_BUYS to VaultBitcoin,
-            Destination.BTC_BILL_PAYS to VaultBitcoin,
-            Destination.NET_WORTH to VaultNavSlate,
-            Destination.RETIREMENT to VaultNavSlate,
-            Destination.EXPORT to VaultNavSlate,
-            Destination.TODAY to VaultNavSlate,
-            Destination.TASKS to VaultNavSlate,
-            Destination.FAMILY to VaultNavSlate,
-            Destination.SETTINGS to VaultNavSlate,
-        )
-        val expectedSelected = Destination.entries.associateWith { destination ->
-            if (destination in setOf(
-                    Destination.BITCOIN,
-                    Destination.BTC_BUYS,
-                    Destination.BTC_BILL_PAYS,
-                )
-            ) {
-                VaultBitcoin
-            } else {
-                VaultCream
-            }
-        }
-
-        assertEquals(13, Destination.entries.size)
-        assertEquals(expectedResting, Destination.entries.associateWith { it.navigationRestingTint })
-        assertEquals(expectedSelected, Destination.entries.associateWith { it.navigationSelectedTint })
-        assertEquals(Color(0xFFF7931A), VaultBitcoin)
-        assertEquals(Color(0xFF7A86C0), VaultNavSlate)
-    }
-
-    @Test
-    fun `resting navigation colors do not consume selection or status colors`() {
-        Destination.entries.forEach { destination ->
-            assertNotEquals(VaultCream, destination.navigationRestingTint)
-            assertFalse(
-                destination.navigationRestingTint in setOf(
-                    VaultPositive,
-                    VaultNegative,
-                    VaultWarning,
-                    VaultInfo,
-                ),
-            )
-        }
-    }
-
-    @Test
     fun `retirement and net worth remain separate navigation destinations`() {
         assertTrue(Destination.RETIREMENT in Destination.entries)
         assertTrue(Destination.NET_WORTH in Destination.entries)
     }
 
     @Test
-    fun `folded navigation partitions every destination into primary or More`() {
+    fun `both postures use the same five primary destinations without More`() {
         val destinations = Destination.entries.toList()
-        val primary = foldedPrimaryDestinations(destinations)
-        val overflow = foldedOverflowDestinations(destinations)
-
-        assertEquals(4, primary.size)
-        assertEquals(
-            listOf(
-                Destination.BTC_BUYS,
-                Destination.BTC_BILL_PAYS,
-                Destination.NET_WORTH,
-                Destination.RETIREMENT,
-                Destination.EXPORT,
-                Destination.TODAY,
-                Destination.TASKS,
-                Destination.FAMILY,
-                Destination.SETTINGS,
-            ),
-            overflow,
-        )
-        assertEquals(destinations, primary + overflow)
-        assertEquals(destinations.size, (primary + overflow).distinct().size)
-        assertTrue(Destination.SETTINGS in overflow)
+        val expected = listOf(Destination.DASHBOARD, Destination.ACTIVITY, Destination.BUDGET, Destination.BITCOIN, Destination.TODAY)
+        assertEquals(expected, foldedPrimaryDestinations(destinations))
+        assertEquals(expected, railPrimaryDestinations(destinations))
+        assertTrue(foldedOverflowDestinations(destinations).isEmpty())
+        assertTrue(railOverflowDestinations(destinations).isEmpty())
     }
 
     @Test
-    fun `unfolded rail shows six primary destinations and sends the rest under More`() {
-        val destinations = Destination.entries.toList()
-        val primary = railPrimaryDestinations(destinations)
-        val overflow = railOverflowDestinations(destinations)
-
-        assertEquals(RAIL_PRIMARY_ORDER, primary)
-        assertEquals(RAIL_ITEM_COUNT, primary.size + 1)
-        assertEquals(
-            listOf(
-                Destination.BTC_BUYS,
-                Destination.BTC_BILL_PAYS,
-                Destination.NET_WORTH,
-                Destination.RETIREMENT,
-                Destination.EXPORT,
-                Destination.FAMILY,
-                Destination.SETTINGS,
-            ),
-            overflow,
-        )
-        assertEquals(destinations.toSet(), (primary + overflow).toSet())
-        assertEquals(destinations.size, (primary + overflow).distinct().size)
-    }
-
-    @Test
-    fun `sidebar destinations are exactly Dashboard and Budget, unfolded only`() {
+    fun `detail destinations are Activity Budget and Tasks, unfolded only`() {
         Destination.entries.forEach { destination ->
             assertEquals(
-                destination == Destination.DASHBOARD || destination == Destination.BUDGET,
+                destination in setOf(Destination.ACTIVITY, Destination.BUDGET, Destination.TASKS),
                 showsLedgerSidebar(destination, unfolded = true),
             )
             assertFalse(showsLedgerSidebar(destination, unfolded = false))
@@ -183,7 +91,7 @@ class DestinationVisibilityTest {
     fun `folded navigation does not add More when all destinations fit`() {
         val destinations = Destination.entries.take(5)
 
-        assertEquals(destinations, foldedPrimaryDestinations(destinations))
+        assertEquals(destinations.filter { it in RAIL_PRIMARY_ORDER }, foldedPrimaryDestinations(destinations))
         assertTrue(foldedOverflowDestinations(destinations).isEmpty())
     }
 

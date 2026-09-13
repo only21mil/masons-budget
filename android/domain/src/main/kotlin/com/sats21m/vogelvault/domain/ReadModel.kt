@@ -222,6 +222,7 @@ data class BtcTransfer(
     val sats: Long,
     val feeSats: Long,
     val note: String? = null,
+    val updatedAtMs: Long = 0L,
 ) : Owned {
     init {
         require(id.isNotBlank()) { "Bitcoin transfer id must not be empty" }
@@ -259,6 +260,8 @@ data class BtcBalance(
     val fiatValuation: FiatValuation? = legacyFiatValuation(totalSats, fiatCents),
     /** Confidence in the sats balance only. */
     val balanceConfidence: String? = null,
+    /** Revision of this exact scoped document, paired with [asOf]. */
+    val updatedAtMs: Long? = null,
 ) : Owned {
     val fiatFiguresUnavailable: Boolean get() = fiatValuation == null
 }
@@ -303,6 +306,7 @@ data class BtcBillPay(
     val note: String?,
     val reference: String? = null,
     override val owner: FamilyMember,
+    val updatedAtMs: Long = 0L,
 ) : Owned {
     init {
         require(feeUsdCents >= 0L) { "Bitcoin bill pay feeUsdCents must be nonnegative" }
@@ -367,9 +371,13 @@ data class ReadModel(
         Slice(Freshness.EMPTY, null, null, "Convex rows · bitcoin balance"),
     val btcBillPays: Slice<List<BtcBillPay>> =
         Slice(Freshness.EMPTY, emptyList(), null, "Convex rows · bitcoin bill pays"),
+    val btcTransfers: Slice<List<BtcTransfer>> =
+        Slice(Freshness.EMPTY, emptyList(), null, "Convex rows · bitcoin transfers"),
+    /** Owner queried for a successful balance read, including an empty document result. */
+    val btcBalanceReadOwner: FamilyMember? = null,
 ) {
     val incomeFiguresUnavailable: Boolean
-        get() = income.requiredProjectionUnavailable || income.value.isEmpty()
+        get() = income.requiredProjectionUnavailable
 
     val netWorthFiguresUnavailable: Boolean
         get() = btcBalance.requiredProjectionUnavailable || btcBalance.value == null
@@ -378,7 +386,7 @@ data class ReadModel(
         get() = netWorthFiguresUnavailable || btcBalance.value?.fiatFiguresUnavailable != false
 
     val billPayLedgerUnavailable: Boolean
-        get() = btcBillPays.requiredProjectionUnavailable || btcBillPays.value.isEmpty()
+        get() = btcBillPays.requiredProjectionUnavailable
 
     /**
      * Budget actuals require every ledger that can contribute to monthly spend.

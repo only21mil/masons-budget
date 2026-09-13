@@ -42,9 +42,9 @@ internal fun Destination.ledgerGlyph(): ImageVector = when (this) {
     Destination.ACTIVITY -> LedgerGlyphs.Stack
     Destination.BUDGET -> LedgerGlyphs.Wallet
     Destination.BITCOIN -> LedgerGlyphs.Btc
-    Destination.BTC_BUYS -> LedgerGlyphs.Btc
+    Destination.BTC_BUYS -> LedgerGlyphs.ArrowDown
     Destination.BTC_BILL_PAYS -> LedgerGlyphs.Chain
-    Destination.NET_WORTH -> LedgerGlyphs.Bars
+    Destination.NET_WORTH -> LedgerGlyphs.Vault
     Destination.RETIREMENT -> LedgerGlyphs.Target
     Destination.EXPORT -> LedgerGlyphs.Doc
     Destination.TODAY -> LedgerGlyphs.Calendar
@@ -54,11 +54,7 @@ internal fun Destination.ledgerGlyph(): ImageVector = when (this) {
 }
 
 /** Short tab label. The full destination name stays in the semantics. */
-internal fun Destination.tabLabel(): String = when (this) {
-    Destination.DASHBOARD -> "Dash"
-    Destination.BITCOIN -> "BTC"
-    else -> label
-}
+internal fun Destination.tabLabel(): String = label
 
 private val TAB_GLYPH_SIZE = 20.dp
 
@@ -78,6 +74,7 @@ internal fun LedgerTabItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     semanticLabel: String = label,
+    showLabel: Boolean = true,
 ) {
     val tokens = LocalLedgerTheme.current
     val animate = LocalLedgerEffects.current.animate
@@ -111,7 +108,7 @@ internal fun LedgerTabItem(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Icon(glyph, contentDescription = null, tint = tint, modifier = Modifier.size(TAB_GLYPH_SIZE))
-        Text(label.uppercase(), style = tokens.type.tabLabel, color = tint, maxLines = 1)
+        if (showLabel) Text(label.uppercase(), style = tokens.type.tabLabel, color = tint, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 
@@ -123,11 +120,21 @@ internal fun LedgerTabBar(
 ) {
     val tokens = LocalLedgerTheme.current
     Row(
-        modifier
-            .fillMaxWidth()
+        Modifier
             .background(tokens.colors.panel)
+            .then(modifier)
+            .fillMaxWidth()
             .selectableGroup(),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
+    )
+}
+
+@Composable
+internal fun LedgerMenuItem(label: String, onClick: () -> Unit, enabled: Boolean = true) {
+    androidx.compose.material3.DropdownMenuItem(
+        text = { Text(label, color = LocalLedgerTheme.current.colors.foreground) },
+        enabled = enabled,
+        onClick = onClick,
     )
 }

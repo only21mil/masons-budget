@@ -3,6 +3,8 @@ package com.sats21m.vogelvault.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -33,6 +35,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.stateDescription
@@ -358,7 +362,7 @@ internal fun TodoEditDialog(
  * An editable todo row with four distinct TalkBack actions.
  *
  * The row itself edits, while completion remains a separate leading control.
- * Flag and delete remain explicit trailing actions; the row's edit description
+ * Flag and delete use swipes and accessibility actions; the row's edit description
  * makes the full-width edit target discoverable to TalkBack and switch access.
  */
 @Composable
@@ -372,9 +376,11 @@ internal fun TodoRow(
     onToggleFlag: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    openEnabled: Boolean = enabled,
+    openDescription: String? = null,
 ) {
     val colors = LocalLedgerTheme.current.colors
-    val editDescription = stringResource(R.string.todo_edit_named, todo.title)
+    val editDescription = openDescription ?: stringResource(R.string.todo_edit_named, todo.title)
     val todoStateDescription = stringResource(
         when {
             todo.done && todo.flagged -> R.string.todo_state_completed_flagged
@@ -383,68 +389,96 @@ internal fun TodoRow(
             else -> R.string.todo_state_open
         },
     )
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(colors.panel)
-            .semantics {
-                contentDescription = editDescription
-                stateDescription = todoStateDescription
+    val flagDescription = stringResource(
+        if (todo.flagged) R.string.todo_remove_flag_named else R.string.todo_add_flag_named, todo.title,
+    )
+    val deleteDescription = deleteDisabledReason ?: stringResource(R.string.todo_delete_named, todo.title)
+    val currentToggleFlag by rememberUpdatedState(onToggleFlag)
+    val currentDelete by rememberUpdatedState(onDelete)
+    val canFlag by rememberUpdatedState(enabled)
+    val canDelete by rememberUpdatedState(deleteEnabled)
+    val swipe = androidx.compose.material3.rememberSwipeToDismissBoxState(confirmValueChange = { direction ->
+        when (direction) {
+            androidx.compose.material3.SwipeToDismissBoxValue.StartToEnd -> if (canFlag) currentToggleFlag()
+            androidx.compose.material3.SwipeToDismissBoxValue.EndToStart -> if (canDelete) currentDelete()
+            else -> Unit
+        }
+        false
+    })
+    androidx.compose.material3.SwipeToDismissBox(
+        state = swipe,
+        enableDismissFromStartToEnd = enabled,
+        enableDismissFromEndToStart = deleteEnabled,
+        backgroundContent = {
+            Row(
+                Modifier.fillMaxSize().clearAndSetSemantics { }.padding(horizontal = VaultSpace.md),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(flagDescription, color = colors.bitcoin)
+                Text(deleteDescription, color = colors.loss)
             }
-            .clickable(enabled = enabled, role = Role.Button, onClick = onEdit)
-            .padding(horizontal = VaultSpace.sm, vertical = VaultSpace.xs),
-        verticalAlignment = Alignment.CenterVertically,
+        },
     ) {
-        IconButton(enabled = enabled, onClick = onToggleDone) {
-            Icon(
-                if (todo.done) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
-                contentDescription = stringResource(
-                    if (todo.done) {
-                        R.string.todo_mark_open_named
-                    } else {
-                        R.string.todo_mark_complete_named
-                    },
-                    todo.title,
-                ),
-                tint = if (todo.done) colors.bitcoin else colors.foregroundSecondary,
-            )
-        }
-        Column(Modifier.weight(1f)) {
-            Text(
-                todo.title,
-                color = colors.foreground,
-                textDecoration = if (todo.done) TextDecoration.LineThrough else null,
-            )
-            listOfNotNull(
-                filing(todo),
-                todo.due,
-                todo.owner.displayName.takeIf { todo.owner != viewer },
-            )
-                .takeIf { it.isNotEmpty() }
-                ?.let {
-                    Text(
-                        it.joinToString(" · "),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.foregroundTertiary,
-                    )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(colors.panel)
+                .semantics {
+                    contentDescription = editDescription
+                    stateDescription = todoStateDescription
+                    customActions = buildList {
+                        if (enabled) add(androidx.compose.ui.semantics.CustomAccessibilityAction(flagDescription) { onToggleFlag(); true })
+                        if (deleteEnabled) add(androidx.compose.ui.semantics.CustomAccessibilityAction(deleteDescription) { onDelete(); true })
+                    }
                 }
-        }
-        IconButton(enabled = enabled, onClick = onToggleFlag) {
-            Icon(
-                Icons.Filled.Flag,
-                contentDescription = stringResource(
-                    if (todo.flagged) R.string.todo_remove_flag_named else R.string.todo_add_flag_named,
+                .clickable(enabled = openEnabled, role = Role.Button, onClick = onEdit)
+                .padding(horizontal = VaultSpace.sm, vertical = VaultSpace.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(enabled = enabled, onClick = onToggleDone) {
+                Icon(
+                    if (todo.done) com.sats21m.vogelvault.ui.components.LedgerGlyphs.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                    contentDescription = stringResource(
+                        if (todo.done) {
+                            R.string.todo_mark_open_named
+                        } else {
+                            R.string.todo_mark_complete_named
+                        },
+                        todo.title,
+                    ),
+                    tint = if (todo.done) colors.bitcoin else colors.foregroundSecondary,
+                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
                     todo.title,
-                ),
-                tint = if (todo.flagged) colors.bitcoin else colors.foregroundSecondary,
-            )
-        }
-        IconButton(enabled = deleteEnabled, onClick = onDelete) {
-            Icon(
-                Icons.Filled.Delete,
-                contentDescription = deleteDisabledReason
-                    ?: stringResource(R.string.todo_delete_named, todo.title),
-            )
+                    style = LocalLedgerTheme.current.type.rowPrimary,
+                    color = colors.foreground,
+                    textDecoration = if (todo.done) TextDecoration.LineThrough else null,
+                )
+                listOfNotNull(
+                    filing(todo),
+                    todo.due,
+                    todo.owner.displayName.takeIf { todo.owner != viewer },
+                )
+                    .takeIf { it.isNotEmpty() }
+                    ?.let {
+                        Text(
+                            it.joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colors.foregroundTertiary,
+                        )
+                    }
+            }
+            if (todo.flagged) {
+                Icon(
+                    com.sats21m.vogelvault.ui.components.LedgerGlyphs.Flag,
+                    contentDescription = null, // The row's stateDescription already announces the flag.
+                    tint = colors.bitcoin,
+                    modifier = Modifier.testTag("todo-flag-${todo.id}"),
+                )
+            }
         }
     }
 }

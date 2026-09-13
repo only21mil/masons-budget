@@ -123,7 +123,7 @@ internal fun VaultButton(
             }
             .background(container, shape)
             .border(1.dp, resting.borderColor, shape)
-            .defaultMinSize(minHeight = 34.dp)
+            .defaultMinSize(minHeight = 48.dp)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {

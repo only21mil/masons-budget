@@ -1,8 +1,9 @@
 package com.sats21m.vogelvault.ui
 
 import com.sats21m.vogelvault.data.ConvexConfig
-import com.sats21m.vogelvault.data.ConvexMutationClient
-import com.sats21m.vogelvault.data.ConvexSyncTokenSource
+import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
+import com.sats21m.vogelvault.data.ConvexDeviceCredential
+import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
 import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
 import com.sats21m.vogelvault.data.RecordingPoster
@@ -42,7 +43,7 @@ class TransactionDetailScreenTest {
 
         assertEquals(TransactionActionResult.Success, result)
         val body = Json.parseToJsonElement(poster.bodies.single()).jsonObject
-        assertEquals("tables:upsertTransaction", body["path"]?.jsonPrimitive?.content)
+        assertEquals("tables:upsertTransactionFromDevice", body["path"]?.jsonPrimitive?.content)
         assertEquals(
             "convex_encoded_json",
             body["format"]?.jsonPrimitive?.content,
@@ -153,9 +154,9 @@ class TransactionDetailScreenTest {
 
         assertEquals(TransactionActionResult.Success, result)
         val body = Json.parseToJsonElement(poster.bodies.single()).jsonObject
-        assertEquals("tables:deleteTransaction", body["path"]?.jsonPrimitive?.content)
+        assertEquals("tables:deleteTransactionFromDevice", body["path"]?.jsonPrimitive?.content)
         val args = body["args"]!!.jsonObject
-        assertEquals("activity-row", args["txId"]?.jsonPrimitive?.content)
+        assertEquals("activity-row", args["entityId"]?.jsonPrimitive?.content)
         assertEquals("mason", args["owner"]?.jsonPrimitive?.content)
         assertEquals("mason-transactions", args["sourceFile"]?.jsonPrimitive?.content)
         assertEquals(REVISION.toString(), args["baseUpdatedAtMs"]?.jsonPrimitive?.content)
@@ -174,7 +175,7 @@ class TransactionDetailScreenTest {
         val result = runBlocking { actions(poster).save(transaction(), draft()) }
 
         val error = assertIs<TransactionActionResult.Error>(result)
-        assertTrue(error.message.contains("Convex refused the change"))
+        assertTrue(error.message.contains("Household sync refused the change"))
     }
 
     @Test
@@ -189,12 +190,12 @@ class TransactionDetailScreenTest {
 
     private fun actions(poster: RecordingPoster) =
         ConvexTransactionActions(
-            ConvexMutationClient(
+            ConvexDeviceMutationClient(
                 configSource =
                     MutableConvexConfigSource(
                         ConvexConfig(deploymentUrl = DEPLOYMENT),
                     ),
-                syncTokenSource = ConvexSyncTokenSource { testToken() },
+                credentialSource = ConvexDeviceCredentialSource { ConvexDeviceCredential("test-device", "t".repeat(43)) },
                 http = poster,
             ),
         )

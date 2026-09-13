@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.data
 
 import com.sats21m.vogelvault.domain.BtcAccount
+import com.sats21m.vogelvault.domain.BtcTransfer
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.BillPayBudgetEffect
 import com.sats21m.vogelvault.domain.Custody
@@ -778,4 +779,24 @@ private fun <T> JsonObject.decodeObjectArray(
         decoded += decode(item) ?: return null
     }
     return decoded
+}
+
+internal object PublicBtcTransferDto {
+    fun decode(element: JsonElement): BtcTransfer? {
+        val row = element as? JsonObject ?: return null
+        val id = row.rowString("transferId") ?: return null
+        val owner = row.rowOwner() ?: return null
+        val date = row.rowString("date") ?: return null
+        val from = row.rowString("fromAccountKey") ?: return null
+        val to = row.rowString("toAccountKey") ?: return null
+        val sats = row.rowInt64("sats") ?: return null
+        val fee = row.rowInt64("feeSats") ?: return null
+        val note = row.decodedOptionalString("note") ?: return null
+        val revision = row.requiredLong("updatedAtMs") ?: return null
+        if (runCatching { java.time.LocalDate.parse(date) }.isFailure) return null
+        if (row.rowString("month") != date.take(7) || revision <= 0L) return null
+        return runCatching {
+            BtcTransfer(id, owner, date, from, to, sats, fee, note.value, revision)
+        }.getOrNull()
+    }
 }

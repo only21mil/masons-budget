@@ -96,11 +96,13 @@ internal class SecureConvexConfigSource internal constructor(
                 putOrRemove(editor, KEY_DEVICE_ID, deviceCredential.deviceId)
                 putOrRemove(editor, KEY_DEVICE_TOKEN, deviceCredential.deviceToken)
                 putOrRemove(editor, KEY_DEVICE_PROFILE, profile.key)
+                putOrRemove(editor, KEY_DEVICE_CAPABILITIES, deviceCredential.capabilities.sorted().joinToString(","))
             } else if (preservedDeviceCredential == null) {
                 // Do not carry a partial or unauthenticated old pair into a new enrollment.
                 editor.remove(KEY_DEVICE_ID)
                 editor.remove(KEY_DEVICE_TOKEN)
                 editor.remove(KEY_DEVICE_PROFILE)
+                editor.remove(KEY_DEVICE_CAPABILITIES)
             }
             if (!editor.commit()) throw IOException("encrypted Convex bootstrap was not persisted")
 
@@ -163,6 +165,7 @@ internal class SecureConvexConfigSource internal constructor(
             putOrRemove(editor, KEY_DEVICE_ID, credential.deviceId)
             putOrRemove(editor, KEY_DEVICE_TOKEN, credential.deviceToken)
             putOrRemove(editor, KEY_DEVICE_PROFILE, profile.key)
+            putOrRemove(editor, KEY_DEVICE_CAPABILITIES, credential.capabilities.sorted().joinToString(","))
             if (!editor.commit()) throw IOException("encrypted Convex device credential was not persisted")
         }
 
@@ -172,6 +175,7 @@ internal class SecureConvexConfigSource internal constructor(
             editor.remove(KEY_DEVICE_ID)
             editor.remove(KEY_DEVICE_TOKEN)
             editor.remove(KEY_DEVICE_PROFILE)
+            editor.remove(KEY_DEVICE_CAPABILITIES)
             if (!editor.commit()) throw IOException("encrypted Convex device credential was not cleared")
         }
 
@@ -242,7 +246,10 @@ internal class SecureConvexConfigSource internal constructor(
             val deviceId = read(KEY_DEVICE_ID)?.trim()?.takeIf { it.isNotEmpty() } ?: return@runCatching null
             val deviceToken = read(KEY_DEVICE_TOKEN)?.trim()?.takeIf { it.isNotEmpty() } ?: return@runCatching null
             val profile = FamilyMember.fromKeyOrNull(read(KEY_DEVICE_PROFILE)) ?: return@runCatching null
-            ConvexDeviceCredential(deviceId, deviceToken, profile)
+            val capabilities = read(KEY_DEVICE_CAPABILITIES)?.let { value ->
+                if (value.isEmpty()) emptySet() else value.split(",").toSet()
+            } ?: DeviceCapabilities.legacy
+            ConvexDeviceCredential(deviceId, deviceToken, profile, capabilities)
         }.getOrNull()
 
     private fun clearReadConfigurationLocked() {
@@ -282,6 +289,7 @@ internal class SecureConvexConfigSource internal constructor(
         const val KEY_DEVICE_ID = "device_id"
         const val KEY_DEVICE_TOKEN = "device_token"
         const val KEY_DEVICE_PROFILE = "device_profile"
+        const val KEY_DEVICE_CAPABILITIES = "device_capabilities"
     }
 }
 

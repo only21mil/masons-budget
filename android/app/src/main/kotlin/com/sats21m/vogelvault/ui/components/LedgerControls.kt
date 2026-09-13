@@ -207,7 +207,7 @@ fun LedgerTextField(
                         .fillMaxWidth()
                         .background(colors.panel, shape)
                         .border(1.dp, border, shape)
-                        .heightIn(min = 40.dp)
+                        .heightIn(min = 48.dp)
                         .padding(horizontal = LedgerSpacing.large, vertical = LedgerSpacing.medium),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

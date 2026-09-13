@@ -136,6 +136,7 @@ data class VaultUiState(
             data.income.status to data.income.updatedAt,
             data.btcBalance.status to data.btcBalance.updatedAt,
             data.btcBillPays.status to data.btcBillPays.updatedAt,
+            data.btcTransfers.status to data.btcTransfers.updatedAt,
             financeStatus to financeDocument?.updatedAtMs,
             marketQuoteStatus to null,
         )
@@ -150,6 +151,7 @@ data class VaultUiState(
                 data.income.value.isNotEmpty() ||
                 data.btcBalance.value != null ||
                 data.btcBillPays.value.isNotEmpty() ||
+                data.btcTransfers.value.isNotEmpty() ||
                 financeDocument != null ||
                 marketQuotes != null
 
@@ -228,6 +230,7 @@ class VaultViewModel(
     private var appliedReadReady = readReady.value
     private var cachedModel: CachedReadModel? = null
     private var liveModel: ReadModel? = null
+    private var loadedProfile: FamilyMember? = null
     private var liveUnauthorized = false
     private var loadGeneration = 0L
 
@@ -353,6 +356,7 @@ class VaultViewModel(
     }
 
     private fun activateRemoteRows() {
+        loadedProfile = null
         val profile = _state.value.activeProfile
         _state.update {
             it.copy(
@@ -400,9 +404,12 @@ class VaultViewModel(
         if (!readReady.value) return
         val generation = ++loadGeneration
         rowJob?.cancel()
-        cachedModel = null
-        liveModel = null
-        liveUnauthorized = false
+        if (loadedProfile != profile) {
+            cachedModel = null
+            liveModel = null
+            liveUnauthorized = false
+        }
+        loadedProfile = profile
         rowJob =
             viewModelScope.launch load@{
                 launch { loadFinance(profile, generation) }
@@ -420,6 +427,7 @@ class VaultViewModel(
                                 current.copy(
                                     data =
                                         when {
+                                            unauthorized && !liveUnauthorized -> loadingModel(profile)
                                             live == null -> cached.data
                                             unauthorized -> live
                                             else -> live.withCacheFallback(cached.data)
@@ -462,12 +470,8 @@ class VaultViewModel(
         generation: Long,
     ) {
         val source = financeSource ?: return
-        _state.update { current ->
-            if (!isCurrentLoad(current, profile, generation)) current else current.copy(
-                financeStatus = Freshness.LOADING,
-                marketQuoteStatus = Freshness.LOADING,
-            )
-        }
+        // Initial connection and profile changes set LOADING before reaching here.
+        // Background refresh keeps the last finance and quote values visible.
         val loaded = source.load(profile)
         if (!isCurrentLoad(profile, generation)) return
         val next = financeSurfaceState(loaded)
@@ -621,6 +625,7 @@ private val RowReadProjection.labelRes: Int
         RowReadProjection.INCOME -> R.string.convex_projection_income
         RowReadProjection.BITCOIN_BALANCE -> R.string.convex_projection_bitcoin_balance
         RowReadProjection.BITCOIN_BILL_PAYS -> R.string.convex_projection_bitcoin_bill_pays
+        RowReadProjection.BITCOIN_TRANSFERS -> R.string.convex_projection_bitcoin_transfers
         RowReadProjection.FINANCE -> R.string.convex_projection_finance
         RowReadProjection.MARKET_QUOTES -> R.string.convex_projection_market_quotes
     }
@@ -635,6 +640,10 @@ private fun loadingModel(profile: FamilyMember): ReadModel {
         btcAccounts = loading(empty.btcAccounts),
         btcBuys = loading(empty.btcBuys),
         todos = loading(empty.todos),
+        btcTransfers = loading(empty.btcTransfers),
+        income = loading(empty.income),
+        btcBalance = loading(empty.btcBalance),
+        btcBillPays = loading(empty.btcBillPays),
         btcPriceCents = 0L,
     )
 }
@@ -652,5 +661,9 @@ private fun ReadModel.withCacheFallback(cached: ReadModel?): ReadModel {
         btcAccounts = btcAccounts.fallbackTo(cached.btcAccounts),
         btcBuys = btcBuys.fallbackTo(cached.btcBuys),
         todos = todos.fallbackTo(cached.todos),
+        btcTransfers = btcTransfers.fallbackTo(cached.btcTransfers),
+        income = income.fallbackTo(cached.income),
+        btcBalance = btcBalance.fallbackTo(cached.btcBalance),
+        btcBillPays = btcBillPays.fallbackTo(cached.btcBillPays),
     )
 }

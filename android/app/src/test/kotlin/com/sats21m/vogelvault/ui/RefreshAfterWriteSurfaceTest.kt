@@ -5,6 +5,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -87,9 +91,11 @@ class RefreshAfterWriteSurfaceTest {
             )
         }
         val interact = {
-            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
             compose.onNodeWithText("Amount").performTextInput("14.18")
-            compose.onNode(hasText("Save") and hasClickAction()).performScrollTo()
+            compose.onNodeWithText("Next").assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
+            compose.onNode(hasText("Save") and hasClickAction()).assertIsDisplayed()
                 .performSemanticsAction(SemanticsActions.OnClick)
             Unit
         }
@@ -113,6 +119,8 @@ class RefreshAfterWriteSurfaceTest {
             displayedMonth = "2026-07",
             budgetDocumentMonth = "2026-07",
             category = CategorySpend("Groceries", 90_000L, 50_000L, icon = "cart"),
+            budget = Budget(month = "2026-07", categories = emptyList(), owner = FamilyMember.VICTOR, updatedAtMs = 123L),
+            sourceFile = "budget",
         )
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
             BudgetCategoryEditorSheet(
@@ -186,6 +194,7 @@ class RefreshAfterWriteSurfaceTest {
 
     @Test
     fun `bitcoin buy refreshes after success and not after rejection`() {
+        application.moneyCredentialProfile = FamilyMember.MASON
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
             BtcBuyEntrySheet(
                 owner = FamilyMember.MASON,
@@ -229,7 +238,7 @@ class RefreshAfterWriteSurfaceTest {
         }
         val interact = {
             compose.onNodeWithText("Task title").performTextInput("Finish homework")
-            compose.onNode(hasText("Save task") and hasClickAction()).performScrollTo()
+            compose.onNode(hasText("Save task") and hasClickAction()).assertIsDisplayed()
                 .performSemanticsAction(SemanticsActions.OnClick)
             Unit
         }
@@ -304,11 +313,9 @@ class RefreshAfterWriteSurfaceTest {
             )
         }
         val interact = {
-            compose.onNodeWithContentDescription(
-                application.getString(R.string.todo_edit_named, todo.title),
-            )
-                .performScrollTo()
-                .performClick()
+            val editDescription = application.getString(R.string.todo_edit_named, todo.title)
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription(editDescription))
+            compose.onNodeWithContentDescription(editDescription).performClick()
             compose.onNodeWithText(application.getString(R.string.todo_title))
                 .performTextReplacement("Reconcile all receipts")
             compose.onNode(hasText(application.getString(R.string.todo_save)) and hasClickAction())
@@ -339,15 +346,16 @@ class RefreshAfterWriteSurfaceTest {
             ScreenHost(
                 destination = Destination.ACTIVITY,
                 state = state,
+                quickAddRequested = true,
                 onWriteSucceeded = onWriteSucceeded,
             )
         }
         val interact = {
-            compose.onNodeWithText("+ Add").performClick()
-            settle()
-            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
             compose.onNodeWithText("Amount").performTextInput("14.18")
-            compose.onNode(hasText("Save") and hasClickAction()).performScrollTo()
+            compose.onNodeWithText("Next").assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.OnClick)
+            compose.onNodeWithText("Merchant or destination").performTextInput("Neighborhood Market")
+            compose.onNode(hasText("Save") and hasClickAction()).assertIsDisplayed()
                 .performSemanticsAction(SemanticsActions.OnClick)
             Unit
         }
@@ -383,7 +391,7 @@ class RefreshAfterWriteSurfaceTest {
             compose.onNodeWithText("Add task").performScrollTo().performClick()
             settle()
             compose.onNodeWithText("Task title").performTextInput("Finish homework")
-            compose.onNode(hasText("Save task") and hasClickAction()).performScrollTo()
+            compose.onNode(hasText("Save task") and hasClickAction()).assertIsDisplayed()
                 .performSemanticsAction(SemanticsActions.OnClick)
             Unit
         }
@@ -732,6 +740,21 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
                 http = poster,
             ),
             trustedCurrentMonth = { "2026-08" },
+        )
+    }
+
+    var moneyCredentialProfile = FamilyMember.RACHEL
+
+    override val deviceCapabilities: com.sats21m.vogelvault.data.DeviceCapabilities
+        get() = com.sats21m.vogelvault.data.DeviceCapabilities(
+            moneyCredentialProfile, com.sats21m.vogelvault.data.DeviceCapabilities.supported,
+        )
+
+    override val deviceMutationClient: ConvexDeviceMutationClient by lazy {
+        ConvexDeviceMutationClient(
+            configSource = MutableConvexConfigSource(ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud")),
+            credentialSource = ConvexDeviceCredentialSource { ConvexDeviceCredential("test-device", "t".repeat(43)) },
+            http = poster,
         )
     }
 

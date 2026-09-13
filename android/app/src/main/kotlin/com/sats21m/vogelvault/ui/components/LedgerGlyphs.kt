@@ -89,7 +89,34 @@ object LedgerGlyphs {
         )
     }
 
-    val CheckCircle: ImageVector by lazy { ledgerGlyph("LedgerCheckCircle", strokes = listOf(circle(12f, 12f, 10f))) }
+    val CheckCircle: ImageVector by lazy { ledgerGlyph("LedgerCheckCircle", strokes = listOf(circle(12f, 12f, 10f), "M7.5 12.4l3 3 6-6.8")) }
+
+    val ArrowDown: ImageVector by lazy { ledgerGlyph("LedgerArrowDown", strokes = listOf("M12 5v14M5 12l7 7 7-7"), strokeWidth = 2f) }
+
+    val Vault: ImageVector by lazy { ledgerGlyph("LedgerVault", strokes = listOf(
+        roundedRect(3f, 4f, 18f, 16f, 2f), circle(12f, 12f, 3.5f),
+        "M12 12v-1.5M12 12l1 1", "M3 8h2M19 8h2M3 16h2M19 16h2",
+    )) }
+
+    /** Exact Horizon mark transform and rule opacity from Design/icons.jsx. */
+    val Horizon: ImageVector by lazy {
+        ImageVector.Builder("LedgerHorizon", 24.dp, 24.dp, 24f, 24f).apply {
+            addGroup(name = "bitcoin", scaleX = 0.435f, scaleY = 0.435f,
+                translationX = 6.345f, translationY = 3.8755f)
+            listOf(
+                "M9.4 6h4.2c1.7 0 3 1.1 3 2.7 0 1.4-1 2.4-2.4 2.7 1.7.2 2.9 1.3 2.9 2.9 0 1.7-1.4 2.9-3.3 2.9H9.4V6z",
+                "M9.4 11.4h4.6", "M11 3.2v2.8M11 19.4v2.8M13.6 3.2v2.8M13.6 19.4v2.8",
+            ).forEach { data -> addPath(PathParser().parsePathString(data).toNodes(),
+                stroke = SolidColor(Color.Black), strokeLineWidth = 2.5f,
+                strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) }
+            clearGroup()
+            listOf(Triple(15.1f, 1.6f, 0.5f), Triple(17.6f, 1.25f, 0.3f), Triple(19.75f, 0.95f, 0.17f))
+                .forEach { (y, height, opacity) ->
+                    addPath(PathParser().parsePathString("M0 $y h24 v$height h-24 z").toNodes(),
+                        fill = SolidColor(Color.Black), fillAlpha = opacity)
+                }
+        }.build()
+    }
 
     val People: ImageVector by lazy {
         ledgerGlyph(

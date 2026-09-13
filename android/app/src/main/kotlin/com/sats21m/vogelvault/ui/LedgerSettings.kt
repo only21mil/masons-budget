@@ -135,7 +135,7 @@ private fun LedgerSettingToggle(
     ) {
         Column(Modifier.weight(1f)) {
             Text(label, style = tokens.type.rowPrimary, color = tokens.colors.foreground)
-            Text(detail.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
+            Text(detail, style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
         }
         // The row owns the switch semantics; the control itself adds no node.
         LedgerToggle(checked = checked, onCheckedChange = null, enabled = enabled)

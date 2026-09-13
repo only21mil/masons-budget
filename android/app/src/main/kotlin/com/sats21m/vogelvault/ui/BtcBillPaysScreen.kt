@@ -76,15 +76,19 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
     displayUnit: DisplayUnit,
     title: String,
     onAddBillPay: () -> Unit,
+    onWriteSucceeded: () -> Unit = {},
 ) {
     val slice = state.data.btcBillPays
-    if (canAddBtcBillPay(slice.status, state.activeProfile)) {
-        item { BtcBillPayEntryAction(onAddBillPay) }
+    if (canAddBtcBillPay(slice.status, state.activeProfile) && !state.data.billPayLedgerUnavailable) {
+        item {
+            val blocked = WriteAccessNotice(state.activeProfile, com.sats21m.vogelvault.data.DeviceCapability.BITCOIN)
+            BtcBillPayEntryAction(onAddBillPay, enabled = !blocked)
+        }
     }
     if (slice.suppressFigures) {
         item {
             Panel(title, slice.source) {
-                StateBlock(slice.status)
+                StateBlock(slice.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
@@ -94,7 +98,7 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
     if (summary.rows.isEmpty()) {
         item {
             Panel(title, slice.source) {
-                StateBlock(Freshness.EMPTY)
+                StateBlock(Freshness.EMPTY, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
@@ -140,10 +144,18 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
             figureColor = VaultNegative,
             badge = payment.platform,
         )
+        BitcoinDeleteAction(
+            viewer = state.activeProfile,
+            kind = com.sats21m.vogelvault.data.BitcoinDeleteKind.BILL_PAY,
+            entityId = payment.id,
+            owner = payment.owner,
+            updatedAtMs = payment.updatedAtMs,
+            onWriteSucceeded = onWriteSucceeded,
+        )
     }
 }
 
 @Composable
-internal fun BtcBillPayEntryAction(onClick: () -> Unit) {
-    VaultButton(label = stringResource(R.string.btc_bill_pay_add_action), onClick = onClick, modifier = Modifier.fillMaxWidth())
+internal fun BtcBillPayEntryAction(onClick: () -> Unit, enabled: Boolean = true) {
+    VaultButton(label = stringResource(R.string.btc_bill_pay_add_action), onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth())
 }

@@ -83,6 +83,93 @@ internal sealed class ConvexMutation(val path: String) {
         }.let(::JsonObject)
     }
 
+    data class DeleteTransactionFromDevice(
+        val entityId: String,
+        val owner: FamilyMember,
+        val baseUpdatedAtMs: Long,
+        val sourceFile: String = owner.ledgerOwner.transactionsDataFileName,
+    ) : ConvexMutation("tables:deleteTransactionFromDevice") {
+        init {
+            require(entityId.isNotBlank() && baseUpdatedAtMs > 0L)
+            require(sourceFile == owner.ledgerOwner.transactionsDataFileName)
+        }
+        override fun arguments(): JsonObject = jsonObject(
+            "entityId" to JsonPrimitive(entityId),
+            "owner" to JsonPrimitive(owner.ledgerOwner.key),
+            "sourceFile" to JsonPrimitive(sourceFile),
+            "baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs),
+        )
+    }
+
+    data class UpsertIncomeFromDevice(
+        val owner: FamilyMember,
+        val income: LinkedIncomeInput,
+        val baseUpdatedAtMs: Long? = null,
+    ) : ConvexMutation("tables:upsertIncomeFromDevice") {
+        init { require(income.owner == owner.ledgerOwner) }
+        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
+            put("owner", JsonPrimitive(owner.ledgerOwner.key))
+            put("sourceFile", JsonPrimitive("income"))
+            put("income", JsonObject(income.toJson().filterKeys { it != "sourceFile" && it != "loggedBy" }))
+            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
+        }.let(::JsonObject)
+    }
+
+    data class UpsertBudgetCategoryFromDevice(
+        val viewer: FamilyMember,
+        val month: String,
+        val category: BudgetCategoryInput,
+        val baseUpdatedAtMs: Long,
+        val sourceFile: String,
+    ) : ConvexMutation("tables:upsertBudgetCategoryFromDevice") {
+        init {
+            require(baseUpdatedAtMs > 0L)
+            require(month.matches(BUDGET_MONTH_PATTERN))
+            require(sourceFile == if (viewer.isAdult) "budget" else "${viewer.key}-budget")
+        }
+        override fun arguments(): JsonObject = jsonObject(
+            "owner" to JsonPrimitive(viewer.ledgerOwner.key),
+            "sourceFile" to JsonPrimitive(sourceFile),
+            "month" to JsonPrimitive(month),
+            "category" to category.toJson(),
+            "baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs),
+        )
+    }
+
+    data class UpsertBtcAccountFromDevice(val account: BtcAccountInput, val baseUpdatedAtMs: Long? = null) :
+        ConvexMutation("tables:upsertBtcAccountFromDevice") {
+        init {
+            require(account.owner.isAdult && account.sats >= 0L)
+            require(baseUpdatedAtMs == null || baseUpdatedAtMs > 0L)
+        }
+        override fun arguments(): JsonObject = jsonObject(
+            "owner" to JsonPrimitive(account.owner.ledgerOwner.key),
+            "sourceFile" to JsonPrimitive("btc-balance-snapshot"),
+            "account" to JsonObject(account.toJson().filterKeys { it != "fiatCents" }),
+        ).let { args ->
+            if (baseUpdatedAtMs == null) args
+            else JsonObject(args + ("baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs)))
+        }
+    }
+
+    data class DeleteBitcoinFromDevice(
+        val kind: BitcoinDeleteKind,
+        val entityId: String,
+        val owner: FamilyMember,
+        val baseUpdatedAtMs: Long,
+    ) : ConvexMutation(kind.path) {
+        init {
+            require(entityId.isNotBlank() && baseUpdatedAtMs > 0L)
+            require(kind != BitcoinDeleteKind.BILL_PAY || owner.isAdult)
+        }
+        override fun arguments(): JsonObject = jsonObject(
+            "owner" to JsonPrimitive(owner.ledgerOwner.key),
+            "sourceFile" to JsonPrimitive(if (kind == BitcoinDeleteKind.BUY) owner.btcBuysDataFileName else kind.sourceFile),
+            "entityId" to JsonPrimitive(entityId),
+            "baseUpdatedAtMs" to JsonPrimitive(baseUpdatedAtMs),
+        )
+    }
+
     data class UpsertTodoFromDevice(
         val activeProfile: FamilyMember,
         val owner: FamilyMember,
@@ -205,7 +292,7 @@ internal sealed class ConvexMutation(val path: String) {
         val baseUpdatedAtMs: Long? = null,
     ) : ConvexMutation("tables:upsertBtcBuyFromDevice") {
         init {
-            require(owner.isAdult) { "device Bitcoin-buy writes are adult-household only" }
+            require(linkedIncome == null || owner.isAdult) { "linked income is adult-household only" }
             require(sourceFile == owner.btcBuysDataFileName) {
                 "source file must match the Bitcoin-buy owner"
             }
@@ -647,3 +734,9 @@ private fun jsonObject(vararg entries: Pair<String, JsonElement>): JsonObject =
 
 private val BUDGET_MONTH_PATTERN = Regex("""\d{4}-(0[1-9]|1[0-2])""")
 private const val MAX_SAFE_JSON_INTEGER = 9_007_199_254_740_991L
+
+internal enum class BitcoinDeleteKind(val path: String, val sourceFile: String) {
+    BUY("tables:deleteBtcBuyFromDevice", "bitcoin-buys"),
+    BILL_PAY("tables:deleteBtcBillPayFromDevice", "bitcoin-bill-pays"),
+    TRANSFER("tables:deleteBtcTransferFromDevice", "btc-transfers"),
+}

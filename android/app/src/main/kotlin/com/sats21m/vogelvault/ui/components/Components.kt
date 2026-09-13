@@ -153,8 +153,9 @@ class VaultLazyListScope internal constructor(
         source: String? = null,
         rows: List<T>,
         rowKey: (T) -> String,
-        /** The slice revision the rows came from; a change reveals them. Null prints cold. */
+        /** The slice revision the rows came from; its first arrival reveals it. Null prints cold. */
         revealKey: Any? = null,
+        onHeaderClick: (() -> Unit)? = null,
         rowContent: @Composable (T) -> Unit,
     ) {
         separateFromPreviousSection()
@@ -162,7 +163,9 @@ class VaultLazyListScope internal constructor(
             key = "$sectionKey:header",
             contentType = "vault-panel-header",
         ) {
-            LazyPanelHeader(title, source)
+            Box(Modifier.then(if (onHeaderClick != null) Modifier.clickable(role = Role.Button, onClick = onHeaderClick) else Modifier)) {
+                LazyPanelHeader(title, source)
+            }
         }
         delegate.itemsIndexed(
             items = rows,
@@ -171,7 +174,7 @@ class VaultLazyListScope internal constructor(
         ) { index, row ->
             LazyPanelRow(
                 isLast = index == rows.lastIndex,
-                modifier = Modifier.ledgerRowReveal(index, revealKey?.let { "$sectionKey:$it" }),
+                modifier = Modifier.ledgerRowReveal(index, revealKey?.let { sectionKey }),
             ) {
                 rowContent(row)
             }
@@ -249,7 +252,7 @@ private fun SectionHeading(
                 },
             )
             userFacingSource(source)?.let {
-                Text(it.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
+                Text(it, style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
             }
         }
         trailing?.invoke()
@@ -290,19 +293,26 @@ private fun spokenFigure(value: String): String =
  */
 @Composable
 fun KpiStrip(items: List<Kpi>, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth()) {
-        LedgerRule()
-        items.chunked(2).forEach { row ->
-            // IntrinsicSize.Min makes both cells adopt the taller one's height,
-            // so a cell carrying a hint line cannot leave a short rule beside it.
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                VerticalHairline(Modifier.fillMaxHeight())
-                row.forEach { item ->
-                    KpiCell(item, Modifier.weight(1f).fillMaxHeight())
-                    VerticalHairline(Modifier.fillMaxHeight())
-                }
-            }
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth()) {
+        val columns = when {
+            maxWidth < 400.dp -> 1
+            maxWidth >= 680.dp -> 4
+            else -> 2
+        }
+        Column(Modifier.fillMaxWidth()) {
             LedgerRule()
+            items.chunked(columns).forEach { row ->
+                // IntrinsicSize.Min makes both cells adopt the taller one's height,
+                // so a cell carrying a hint line cannot leave a short rule beside it.
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                    VerticalHairline(Modifier.fillMaxHeight())
+                    row.forEach { item ->
+                        KpiCell(item, Modifier.weight(1f).fillMaxHeight())
+                        VerticalHairline(Modifier.fillMaxHeight())
+                    }
+                }
+                LedgerRule()
+            }
         }
     }
 }
@@ -346,7 +356,8 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
     }
     Column(
         modifier = modifier
-            .clearAndSetSemantics { contentDescription = spoken }
+            .then(LocalFigureUnitCycle.current?.let { Modifier.clickable(role = Role.Button, onClick = it) } ?: Modifier)
+            .semantics(mergeDescendants = true) { contentDescription = spoken }
             .padding(LedgerSpacing.large),
     ) {
         Text(
@@ -355,18 +366,15 @@ private fun KpiCell(item: Kpi, modifier: Modifier = Modifier) {
             color = tokens.colors.foregroundTertiary,
         )
         Spacer(Modifier.height(2.dp))
-        Text(
+        FittingFigure(
             item.value,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             style = tokens.type.kpiValue.withLedgerPhosphorGlow(
                 enabled = effects.showPhosphorGlow && figureColor == tokens.colors.bitcoin,
             ),
             color = figureColor,
-            textAlign = TextAlign.Start,
         )
         if (!unavailable && item.hint != null) {
-            Text(item.hint.uppercase(), style = tokens.type.kpiSub, color = tokens.colors.foregroundTertiary)
+            Text(item.hint, style = tokens.type.kpiSub, color = tokens.colors.foregroundTertiary)
         }
     }
 }
@@ -440,7 +448,7 @@ fun LedgerRow(
         Column(Modifier.weight(1f)) {
             Text(primary, style = tokens.type.rowPrimary, color = tokens.colors.foreground)
             if (secondary != null) {
-                Text(secondary.uppercase(), style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
+                Text(secondary, style = tokens.type.rowMeta, color = tokens.colors.foregroundTertiary)
             }
         }
         if (badge != null) {
@@ -512,7 +520,7 @@ fun Badge(
 
 /** Freshness marker. A figure is never shown without saying how much to trust it. */
 @Composable
-fun FreshnessTag(status: Freshness, updatedAt: Long?, now: Long) {
+fun FreshnessTag(status: Freshness, updatedAt: Long?, now: Long, provenance: String? = null) {
     val age = relativeTime(updatedAt, now)
     val (label, tone) = when (status) {
         Freshness.DEMO -> "DEMO DATA" to VaultInfo
@@ -532,12 +540,12 @@ fun FreshnessTag(status: Freshness, updatedAt: Long?, now: Long) {
     }
     val tokens = LocalLedgerTheme.current
     Row(
-        Modifier.semantics(mergeDescendants = true) { contentDescription = spoken },
+        Modifier.semantics(mergeDescendants = true) { contentDescription = listOfNotNull(spoken, provenance).joinToString(", ") },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LedgerStatusDot(ledgerColor(tone))
         Spacer(Modifier.width(LedgerSpacing.small))
-        Text(label.uppercase(), style = tokens.type.chip, color = tokens.colors.foregroundSecondary, maxLines = 1)
+        Text(listOfNotNull(label, provenance).joinToString(" · "), style = tokens.type.chip, color = tokens.colors.foregroundSecondary)
     }
 }
 
@@ -576,6 +584,7 @@ fun StateBlock(
     status: Freshness,
     title: String? = null,
     detail: String? = null,
+    action: (@Composable () -> Unit)? = null,
 ) {
     if (status == Freshness.LOADING) {
         // Ghost rows breathe in the section's own geometry; a static hourglass
@@ -634,6 +643,7 @@ fun StateBlock(
             color = tokens.colors.foregroundSecondary,
             textAlign = TextAlign.Center,
         )
+        action?.invoke()
     }
 }
 

@@ -15,6 +15,20 @@ import kotlin.test.assertTrue
  */
 class ReadModelTest {
     @Test
+    fun `transfer read slice preserves household oversight without becoming income or spend`() {
+        val adult = BtcTransfer("move", FamilyMember.VICTOR, "2026-09-13", "river", "cold", 1000L, 5L)
+        val child = BtcTransfer("move", FamilyMember.MASON, "2026-09-13", "exchange", "wallet", 200L, 1L)
+        val original = Fixtures.envelope(FamilyMember.VICTOR)
+        val model = original.copy(btcTransfers = Slice(Freshness.LIVE, listOf(adult, child), 1L, "test"))
+        assertEquals(listOf(adult, child), model.btcTransfers.value.visibleTo(FamilyMember.RACHEL))
+        assertEquals(listOf(child), model.btcTransfers.value.visibleTo(FamilyMember.MASON))
+        assertEquals(emptyList(), model.btcTransfers.value.visibleTo(FamilyMember.MADDOX))
+        assertEquals(original.income, model.income)
+        assertEquals(original.transactions, model.transactions)
+        assertEquals(original.btcBalance, model.btcBalance)
+    }
+
+    @Test
     fun `production signs keep purchases positive and refunds negative in budget actuals`() {
         fun row(id: String, owner: FamilyMember, amount: Long) = Transaction(
             id = id,
@@ -201,8 +215,15 @@ class ReadModelTest {
             btcBillPays = base.btcBillPays.copy(value = emptyList()),
         )
 
-        assertTrue(model.billPayLedgerUnavailable)
+        assertFalse(model.billPayLedgerUnavailable)
         assertFalse(model.budgetActualsUnavailable)
+    }
+
+    @Test
+    fun `complete empty income is an authoritative zero`() {
+        val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        assertFalse(base.copy(income = base.income.copy(value = emptyList())).incomeFiguresUnavailable)
+        assertTrue(base.copy(income = base.income.copy(status = Freshness.ERROR)).incomeFiguresUnavailable)
     }
 
     @Test

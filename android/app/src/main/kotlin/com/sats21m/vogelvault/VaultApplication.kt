@@ -7,6 +7,7 @@ import androidx.annotation.CheckResult
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.sats21m.vogelvault.data.DeviceCapabilities
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutationClient
@@ -76,9 +77,9 @@ internal class TransactionDraftIdStore(
             ?.toMutableMap()
             ?: mutableMapOf()
 
-    fun currentId(scope: String): String = synchronized(lock) {
+    fun currentId(scope: String, newId: () -> String = { "android-${UUID.randomUUID()}" }): String = synchronized(lock) {
         pendingIdsByScope[scope]
-            ?: "android-${UUID.randomUUID()}".also { pendingId ->
+            ?: newId().also { pendingId ->
                 if (preferences != null) {
                     check(preferences.edit().putString(scope, pendingId).commit()) {
                         "pending draft id could not be persisted"
@@ -160,6 +161,18 @@ open class VaultApplication : Application() {
         PaymentSourceStore(this)
     }
 
+    internal open val deviceCapabilities: DeviceCapabilities
+        get() = storedConvexConfigSource.currentDeviceCredential()?.let {
+            DeviceCapabilities(it.profile, it.capabilities)
+        } ?: DeviceCapabilities()
+
+    internal open val deviceMutationClient: ConvexDeviceMutationClient by lazy {
+        ConvexDeviceMutationClient(
+            configSource = MutableConvexConfigSource(writeConvexConfig()),
+            credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
+        )
+    }
+
     /** Capability-scoped transaction writes for the Android add surface. */
     internal open val transactionDeviceMutationGateway: TransactionDeviceMutationGateway by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
@@ -169,6 +182,12 @@ open class VaultApplication : Application() {
                 configSource = MutableConvexConfigSource(writeConvexConfig()),
                 credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
             ),
+        )
+    }
+
+    internal val btcAccountDrafts by lazy {
+        com.sats21m.vogelvault.data.BtcAccountDraftStore(
+            getSharedPreferences("btc-account-drafts", Context.MODE_PRIVATE),
         )
     }
 
@@ -376,7 +395,7 @@ open class VaultApplication : Application() {
      * here would have no sync-token source and would stay fail-closed forever.
      */
     internal val transactionActions by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        ConvexTransactionActions(convexMutationClient)
+        ConvexTransactionActions(deviceMutationClient)
     }
 
     /** Capability-scoped todo writes, isolated from the legacy sync-token transport. */
@@ -471,7 +490,7 @@ open class VaultApplication : Application() {
     /** Whether the selected profile matches the persisted backend binding. */
     internal open fun hasTodoWriteCredential(profile: FamilyMember): Boolean =
         synchronized(convexConfigLock) {
-            storedConvexConfigSource.currentDeviceCredential()?.profile == profile
+            deviceCapabilities.allows(profile, com.sats21m.vogelvault.data.DeviceCapability.TODOS)
         }
 
     internal open fun removeTodoWriteCredential(): Result<Unit> =

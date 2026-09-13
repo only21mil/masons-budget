@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
@@ -127,6 +129,7 @@ class RowReadFailureNoticeTest {
                     .fetchSemanticsNodes().isNotEmpty(),
                 "The ${failure.name} title was not rendered.",
             )
+            compose.onNodeWithText(context.getString(resources.first)).performClick()
             assertTrue(
                 compose.onAllNodesWithText(
                     context.getString(
