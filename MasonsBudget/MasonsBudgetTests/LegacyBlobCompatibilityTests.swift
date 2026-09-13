@@ -866,6 +866,16 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         XCTAssertFalse(models[0].isIncome)
     }
 
+    func testIncomeCategoryRemainsLegacyAndDoesNotBecomeAnIncomeRow() throws {
+        let dto = try JSONDecoder().decode(
+            [LegacyBudgetCategoryDTO].self,
+            from: Data(#"[{"name":"Income","budget":100}]"#.utf8),
+        )
+        let category = try XCTUnwrap(LedgerMapper.mapBudgetCategories(dto).first)
+        XCTAssertTrue(category.isIncome)
+        XCTAssertEqual(category.name, "Income")
+    }
+
     // MARK: - btc-balance-snapshot.json
 
     func testDecodeBTCSnapshot() throws {
