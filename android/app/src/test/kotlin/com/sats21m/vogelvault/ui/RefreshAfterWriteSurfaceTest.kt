@@ -113,6 +113,8 @@ class RefreshAfterWriteSurfaceTest {
             displayedMonth = "2026-07",
             budgetDocumentMonth = "2026-07",
             category = CategorySpend("Groceries", 90_000L, 50_000L, icon = "cart"),
+            budget = Budget(month = "2026-07", categories = emptyList(), owner = FamilyMember.VICTOR, updatedAtMs = 123L),
+            sourceFile = "budget",
         )
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
             BudgetCategoryEditorSheet(
@@ -732,6 +734,19 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
                 http = poster,
             ),
             trustedCurrentMonth = { "2026-08" },
+        )
+    }
+
+    override val deviceCapabilities: com.sats21m.vogelvault.data.DeviceCapabilities
+        get() = com.sats21m.vogelvault.data.DeviceCapabilities(
+            FamilyMember.RACHEL, com.sats21m.vogelvault.data.DeviceCapabilities.supported,
+        )
+
+    override val deviceMutationClient: ConvexDeviceMutationClient by lazy {
+        ConvexDeviceMutationClient(
+            configSource = MutableConvexConfigSource(ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud")),
+            credentialSource = ConvexDeviceCredentialSource { ConvexDeviceCredential("test-device", "t".repeat(43)) },
+            http = poster,
         )
     }
 

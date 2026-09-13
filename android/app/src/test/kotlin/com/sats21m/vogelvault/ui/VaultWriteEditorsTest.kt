@@ -5,9 +5,7 @@ import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexDeviceCredential
 import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
-import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
-import com.sats21m.vogelvault.data.ConvexSyncTokenSource
 import com.sats21m.vogelvault.data.HttpPoster
 import com.sats21m.vogelvault.data.HttpTextResponse
 import com.sats21m.vogelvault.data.MutableConvexConfigSource
@@ -486,7 +484,7 @@ class VaultWriteEditorsTest {
     private fun saveBuy(
         scope: CoroutineScope,
         store: TransactionDraftIdStore,
-        client: ConvexMutationClient,
+        client: ConvexDeviceMutationClient,
         id: String,
         owner: FamilyMember = FamilyMember.VICTOR,
         feeUsdCents: Long = 0L,
@@ -513,11 +511,11 @@ class VaultWriteEditorsTest {
         feeUsdCents = feeUsdCents,
     )
 
-    private fun buyClient(poster: HttpPoster) = ConvexMutationClient(
+    private fun buyClient(poster: HttpPoster) = ConvexDeviceMutationClient(
         configSource = MutableConvexConfigSource(
             ConvexConfig(deploymentUrl = "https://buy-rotation-test.convex.cloud"),
         ),
-        syncTokenSource = ConvexSyncTokenSource { testToken() },
+        credentialSource = ConvexDeviceCredentialSource { ConvexDeviceCredential("test-device", "t".repeat(43)) },
         http = poster,
     )
 

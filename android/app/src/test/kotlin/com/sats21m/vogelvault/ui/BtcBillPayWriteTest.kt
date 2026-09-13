@@ -109,7 +109,7 @@ class BtcBillPayWriteTest {
         assertEquals(true, canAddBtcBillPay(Freshness.LIVE, FamilyMember.VICTOR))
         assertEquals(true, canAddBtcBillPay(Freshness.LIVE, FamilyMember.RACHEL))
         assertEquals(false, canAddBtcBillPay(Freshness.LIVE, FamilyMember.MASON))
-        assertEquals(true, canAddBtcBillPay(Freshness.EMPTY, FamilyMember.VICTOR))
+        assertEquals(false, canAddBtcBillPay(Freshness.EMPTY, FamilyMember.VICTOR))
         assertEquals(false, canAddBtcBillPay(Freshness.ERROR, FamilyMember.VICTOR))
     }
 }

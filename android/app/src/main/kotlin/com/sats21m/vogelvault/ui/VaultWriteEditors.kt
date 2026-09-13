@@ -498,7 +498,12 @@ internal fun BudgetCategoryEditorSheet(
 ) {
     val colors = LocalLedgerTheme.current.colors
     val application = LocalContext.current.applicationContext as? VaultApplication
-    val mutationClient = remember(application) { application?.convexMutationClient }
+    val mutationClient = remember(application) { application?.deviceMutationClient }
+    if (WriteAccessBlockedSheet(seed.viewer, com.sats21m.vogelvault.data.DeviceCapability.BUDGET, onDismiss)) return
+    if (seed.budget == null || seed.sourceFile == null || seed.budget.updatedAtMs <= 0L) {
+        Text("Refresh the budget before editing this category.")
+        return
+    }
     var dollars by remember(seed) {
         mutableStateOf(Money.formatMinorUnits(seed.category.budgetCents, 2))
     }
@@ -607,7 +612,9 @@ internal fun BudgetCategoryEditorSheet(
                                     val request = draft.request
                                     val result =
                                         client.mutate(
-                                            ConvexMutation.UpsertBudgetCategory(
+                                            ConvexMutation.UpsertBudgetCategoryFromDevice(
+                                                baseUpdatedAtMs = requireNotNull(seed.budget).updatedAtMs,
+                                                sourceFile = requireNotNull(seed.sourceFile),
                                                 viewer = request.viewer,
                                                 month = request.month,
                                                 category =
@@ -654,7 +661,7 @@ internal fun BudgetCategoryEditorSheet(
 internal fun launchBtcBuySave(
     scope: CoroutineScope,
     request: BtcBuyWriteRequest,
-    client: ConvexMutationClient,
+    client: ConvexDeviceMutationClient,
     buyDraftIds: TransactionDraftIdStore,
     onResult: (BtcBuySaveOutcome) -> Unit,
 ): Job = scope.launch {
@@ -663,7 +670,8 @@ internal fun launchBtcBuySave(
     val sourceFile = request.owner.btcBuysDataFileName
     val leaseScope = btcBuyDraftIdScope(BtcBuyWriteSurface.STANDALONE, request.owner)
     val result = client.mutate(
-        ConvexMutation.UpsertBtcBuy(
+        ConvexMutation.UpsertBtcBuyFromDevice(
+            owner = request.owner.ledgerOwner,
             buy = BtcBuyInput(
                 id = request.id,
                 date = request.date,
@@ -672,7 +680,7 @@ internal fun launchBtcBuySave(
                 priceUsdCents = request.priceUsdCents,
                 usdCents = request.usdCents,
                 feeUsdCents = request.feeUsdCents,
-                owner = explicitBtcBuyOwner(request.owner),
+                owner = request.owner.ledgerOwner,
             ),
             sourceFile = sourceFile,
         ),
@@ -690,7 +698,8 @@ internal fun BtcBuyEntrySheet(
     onWriteSucceeded: () -> Unit,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
-    val mutationClient = remember(application) { application?.convexMutationClient }
+    val mutationClient = remember(application) { application?.deviceMutationClient }
+    if (WriteAccessBlockedSheet(owner, com.sats21m.vogelvault.data.DeviceCapability.BITCOIN, onDismiss)) return
     val buyDraftIds = application?.btcBuyDraftIds
     // Process-owned, exactly like the transaction sheet: dismissing this sheet
     // mid-write and reopening must resubmit the SAME id, or a committed buy
@@ -813,6 +822,8 @@ internal fun BtcBuyFromIncomeEntrySheet(
 ) {
     val colors = LocalLedgerTheme.current.colors
     val application = LocalContext.current.applicationContext as? VaultApplication
+    if (WriteAccessBlockedSheet(viewer, com.sats21m.vogelvault.data.DeviceCapability.BITCOIN, onDismiss)) return
+    if (WriteAccessBlockedSheet(viewer, com.sats21m.vogelvault.data.DeviceCapability.TRANSACTIONS, onDismiss)) return
     val gateway = remember(application) { application?.btcBuyIncomeMutationGateway }
     val draftIds = application?.btcBuyDraftIds
     val writeScope = application?.applicationScope

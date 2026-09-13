@@ -166,9 +166,8 @@ class ConvexReadBootstrapClientTest {
         val invalidValues = listOf(
             """{"ok":true,"readToken":"$readToken","pairedAt":1,"capabilities":["todos:write"]}""",
             validValue.replace(requested.deviceId, "different-device"),
-            validValue.replace("[\"todos:write\"]", "[]"),
             validValue.replace("[\"todos:write\"]", "[\"todos:write\",\"todos:write\"]"),
-            validValue.replace("todos:write", "budget:write"),
+            validValue.replace("todos:write", "admin:write"),
             validValue.replace("\"mason\"", "\"unknown\""),
             validValue.replace("[\"todos:write\"]", "\"todos:write\""),
             validValue.dropLast(1) + ",\"extra\":true}",
@@ -186,6 +185,22 @@ class ConvexReadBootstrapClientTest {
                 ReadBootstrapStatus.INVALID_RESPONSE,
                 assertIs<BootstrapClientResult.Failure>(result).status,
             )
+        }
+    }
+
+    @Test
+    fun `device pairing accepts every supported subset and preserves exact grants`() = runBlocking {
+        val requested = ConvexDeviceCredential(deviceId, deviceToken)
+        val all = DeviceCapabilities.supported.toList()
+        for (mask in 0 until (1 shl all.size)) {
+            val grants = all.filterIndexed { index, _ -> mask and (1 shl index) != 0 }
+            val encoded = grants.joinToString(",") { "\"$it\"" }
+            val value = """{"ok":true,"readToken":"$readToken","pairedAt":1,"deviceId":"$deviceId","capabilities":[$encoded],"profile":"mason"}"""
+            val result = ConvexReadBootstrapClient(
+                RecordingBootstrapPoster("""{"status":"success","value":$value}"""),
+                ReadBootstrapDeviceCredentialGenerator { requested },
+            ).claim(requireNotNull(ReadBootstrapClaim.parse(bundle)), requestTodoWrite = true)
+            assertEquals(grants.toSet(), assertIs<BootstrapClientResult.Success>(result).credential.deviceCredential?.capabilities)
         }
     }
 
