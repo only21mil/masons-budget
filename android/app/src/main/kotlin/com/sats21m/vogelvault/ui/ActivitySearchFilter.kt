@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Transaction
+import com.sats21m.vogelvault.domain.IncomeEntry
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -30,6 +31,7 @@ import java.util.Locale
 internal enum class ActivityTransactionFilter(val label: String) {
     ALL("All"),
     INCOME("Income"),
+    LEGACY_INCOME("Legacy income"),
     SPENDS("Spends"),
     LIGHTNING("Lightning"),
     ON_CHAIN("On-chain"),
@@ -64,7 +66,8 @@ internal class ActivitySearchIndex private constructor(
             val isIncome = transaction.category.equals("Income", ignoreCase = true)
             return when (filter) {
                 ActivityTransactionFilter.ALL -> true
-                ActivityTransactionFilter.INCOME -> isIncome
+                ActivityTransactionFilter.INCOME -> false
+                ActivityTransactionFilter.LEGACY_INCOME -> isIncome
                 ActivityTransactionFilter.SPENDS -> !isIncome && transaction.amount != 0L
                 ActivityTransactionFilter.LIGHTNING ->
                     transaction.card == "lightning" || transaction.card == PaymentSource.ZEUS_LIGHTNING.wire
@@ -102,6 +105,7 @@ internal data class ActivitySearchProjection(
     val totalCount: Int,
     val onQueryChange: (String) -> Unit,
     val onFilterChange: (ActivityTransactionFilter) -> Unit,
+    val incomeEntries: List<IncomeEntry> = emptyList(),
 )
 
 private data class SearchResult(
@@ -121,6 +125,7 @@ private data class SearchResult(
 internal fun rememberActivitySearchProjection(
     transactions: List<Transaction>,
     profile: FamilyMember,
+    incomeEntries: List<IncomeEntry> = emptyList(),
 ): ActivitySearchProjection {
     var query by rememberSaveable(profile) { mutableStateOf("") }
     var filterName by rememberSaveable(profile) {
@@ -170,6 +175,7 @@ internal fun rememberActivitySearchProjection(
         totalCount = transactions.size,
         onQueryChange = { query = it },
         onFilterChange = { filterName = it.name },
+        incomeEntries = filterIncomeEntries(incomeEntries, query),
     )
 }
 
@@ -226,3 +232,11 @@ internal fun normalizeSearchValue(value: String): String =
         .trim()
 
 private val COMBINING_MARKS = Regex("\\p{M}+")
+
+internal fun filterIncomeEntries(entries: List<IncomeEntry>, query: String): List<IncomeEntry> {
+    val needle = normalizeSearchValue(query)
+    return entries.filter { entry ->
+        needle.isEmpty() || listOfNotNull(entry.sourceName, entry.note, canonicalDecimalAmount(entry.amountCents))
+            .any { needle in normalizeSearchValue(it) }
+    }
+}

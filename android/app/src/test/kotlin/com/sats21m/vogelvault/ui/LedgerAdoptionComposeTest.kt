@@ -119,7 +119,7 @@ class LedgerAdoptionComposeTest {
     }
 
     @Test
-    fun `price family payment rails and folded More count render from adopted UI`() {
+    fun `price family payment rails and five folded tabs render from adopted UI`() {
         val quote = MarketQuote(
             symbol = MarketSymbol.BTC,
             priceCents = 9_425_012L,
@@ -171,7 +171,10 @@ class LedgerAdoptionComposeTest {
                 onSwitchProfile = {},
             )
         }
-        compose.onNodeWithText("More (9)").fetchSemanticsNode()
+        RAIL_PRIMARY_ORDER.forEach { destination ->
+            compose.onNodeWithContentDescription(destination.label).fetchSemanticsNode()
+        }
+        compose.onNodeWithText("More (9)").assertDoesNotExist()
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -11,10 +12,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.sats21m.vogelvault.VaultApplication
@@ -131,30 +132,13 @@ internal fun BtcAccountEntrySheet(
         ?: if (conflictedSnapshot != null && snapshot.getOrNull()?.identity == conflictedSnapshot) {
             "The balance changed. Close and refresh Bitcoin before trying again."
         } else null
-    ModalBottomSheet(onDismissRequest = { if (!working) onDismiss() }) {
-        Column(Modifier.fillMaxWidth().padding(VaultSpace.md), verticalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
-            Text("Add Bitcoin account")
-            if (!viewer.isAdult) {
-                Text("Only the household profiles can add Bitcoin accounts.")
-                return@Column
-            }
-            if (WriteAccessNotice(viewer, DeviceCapability.BITCOIN)) return@Column
-            if (restored.isFailure || readFailure != null) {
-                Text(readFailure ?: "The pending account request could not be read on this phone.")
-                TextButton(onClick = onDismiss) { Text("Close") }
-                return@Column
-            }
-            LedgerTextField(value = pending?.label ?: label, onValueChange = { label = it }, label = "Account name", placeholder = "Coldcard, River, Phoenix", enabled = !working && pending == null)
-            Custody.entries.forEach { custody ->
-                TextButton(onClick = { custodyWire = custody.key }, enabled = !working && pending == null) {
-                    Text(if ((pending?.custodyKey ?: custodyWire) == custody.key) "✓ ${custody.label}" else custody.label)
-                }
-            }
-            Text("Starts at 0 sats. Buys, bill pays, and transfers change the balance.")
-            validation?.let { Text(it) }
-            failure?.let { Text(it) }
-            if (pending != null) Text("Retry sends the saved account request with its original balance revision.")
-            VaultButton(label = if (working) "Saving…" else "Save", enabled = !working && validation == null, onClick = {
+    LedgerSheet(
+        title = "Add Bitcoin account",
+        onDismissRequest = { if (!working) onDismiss() },
+        actions = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
+                TextButton(onClick = onDismiss, enabled = !working) { Text("Cancel") }
+                VaultButton(label = if (working) "Saving…" else "Save", enabled = !working && validation == null && viewer.isAdult && restored.isSuccess && readFailure == null && application?.deviceCapabilities?.unavailableReason(viewer, DeviceCapability.BITCOIN) == null, onClick = {
                 val app = application ?: return@VaultButton
                 val denial = app.deviceCapabilities.unavailableReason(viewer, DeviceCapability.BITCOIN)
                 if (denial != null) { failure = denial; return@VaultButton }
@@ -195,7 +179,33 @@ internal fun BtcAccountEntrySheet(
                     }
                 }
             })
+            }
+        },
+    ) {
+        if (!viewer.isAdult) {
+            Text("Only the household profiles can add Bitcoin accounts.")
+            return@LedgerSheet
         }
+        if (WriteAccessNotice(viewer, DeviceCapability.BITCOIN)) return@LedgerSheet
+        if (restored.isFailure || readFailure != null) {
+            Text(readFailure ?: "The pending account request could not be read on this phone.")
+            TextButton(onClick = onDismiss) { Text("Close") }
+            return@LedgerSheet
+        }
+        LedgerTextField(value = pending?.label ?: label, onValueChange = { label = it }, label = "Account name", placeholder = "Coldcard, River, Phoenix", enabled = !working && pending == null)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
+            Custody.entries.forEach { custody ->
+                SelectionChip(label = custody.label, semanticLabel = custody.label,
+                    actionLabel = "Select ${custody.label}",
+                    selected = (pending?.custodyKey ?: custodyWire) == custody.key,
+                    enabled = !working && pending == null,
+                    modifier = Modifier.weight(1f), onSelect = { custodyWire = custody.key })
+            }
+        }
+        Text("Starts at 0 sats. Buys, bill pays, and transfers change the balance.")
+        validation?.let { Text(it) }
+        failure?.let { Text(it) }
+        if (pending != null) Text("Retry sends the saved account request with its original balance revision.")
     }
 }
 

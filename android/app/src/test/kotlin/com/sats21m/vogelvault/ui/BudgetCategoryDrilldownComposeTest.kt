@@ -16,19 +16,23 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
-import com.sats21m.vogelvault.data.DeviceCapabilities
-import com.sats21m.vogelvault.data.DeviceCapability
 import com.sats21m.vogelvault.domain.BillPayBudgetEffect
 import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.DisplayUnit
@@ -58,7 +62,7 @@ class BudgetCategoryDrilldownComposeTest {
     val compose = createEmptyComposeRule()
 
     private lateinit var activityController: ActivityController<ComponentActivity>
-    private val model = VaultViewModel()
+    private val model = VaultViewModel(clock = { Fixtures.NOW_MILLIS })
 
     @Before
     fun startHost() {
@@ -86,6 +90,57 @@ class BudgetCategoryDrilldownComposeTest {
     @After
     fun stopHost() {
         activityController.pause().stop().destroy()
+    }
+
+    @Test
+    fun `income month navigation survives unavailable budget actuals`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val income = listOf(
+            com.sats21m.vogelvault.domain.IncomeEntry("aug", "2026-08-31", "2026-08", 10000L, "August payroll", null, FamilyMember.VICTOR),
+            com.sats21m.vogelvault.domain.IncomeEntry("sep", "2026-09-13", "2026-09", 20000L, "September payroll", null, FamilyMember.VICTOR),
+            com.sats21m.vogelvault.domain.IncomeEntry("future", "2026-09-30", "2026-09", 40000L, "Future payroll", null, FamilyMember.VICTOR),
+        )
+        render(VaultUiState(activeProfile = FamilyMember.RACHEL, destination = Destination.BUDGET,
+            now = java.time.Instant.parse("2026-09-13T12:00:00Z").toEpochMilli(),
+            data = fixture.copy(
+                budget = fixture.budget.copy(value = fixture.budget.value!!.copy(month = "2026-09")),
+                income = fixture.income.copy(value = income),
+                btcBillPays = fixture.btcBillPays.copy(status = Freshness.ERROR),
+            )))
+        compose.onNodeWithContentDescription("Month to date, $200.00").fetchSemanticsNode()
+        compose.onNodeWithContentDescription("Year to date, $300.00").fetchSemanticsNode()
+        contentList().performScrollToKey("budget-income:row:victor:future")
+        compose.onNodeWithText("Future payroll", useUnmergedTree = true).fetchSemanticsNode()
+        contentList().performScrollToNode(hasContentDescription("Aug 2026 budget month"))
+        compose.onNodeWithContentDescription("Aug 2026 budget month").performClick()
+        settle()
+        compose.onNodeWithContentDescription("Aug 2026 budget month").assertIsSelected()
+        compose.onNodeWithContentDescription("Month to date, $100.00").fetchSemanticsNode()
+        compose.onNodeWithContentDescription("Year to date, $100.00").fetchSemanticsNode()
+        contentList().performScrollToNode(hasText(activityController.get().getString(R.string.convex_read_error_title)))
+        compose.onNodeWithText(activityController.get().getString(R.string.convex_read_error_title)).fetchSemanticsNode()
+    }
+
+    @Test
+    fun `Bitcoin shows visible transfers and their network fee`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val transfer = com.sats21m.vogelvault.domain.BtcTransfer(
+            "move-1", FamilyMember.VICTOR, "2026-07-26", "source-account", "destination-account", 1000L, 5L,
+        )
+        render(VaultUiState(activeProfile = FamilyMember.VICTOR, destination = Destination.BITCOIN,
+            data = fixture.copy(btcTransfers = com.sats21m.vogelvault.domain.Slice(Freshness.LIVE,
+                listOf(transfer), 1L, "test transfers"))))
+        contentList().performScrollToKey("bitcoin-transfers:row:victor:move-1")
+        compose.onNodeWithText("source-account → destination-account", useUnmergedTree = true).fetchSemanticsNode()
+        compose.onNodeWithText("2026-07-26 · FEE 5 SATS", useUnmergedTree = true).fetchSemanticsNode()
+    }
+
+    @Test
+    fun `Maddox no budget state identifies the adults who can create it`() {
+        render(VaultUiState(activeProfile = FamilyMember.MADDOX, destination = Destination.BUDGET,
+            data = Fixtures.envelope(FamilyMember.MADDOX, Freshness.LIVE)))
+        contentList().performScrollToNode(hasText("Victor or Rachel can create Maddox's budget."))
+        compose.onNodeWithText("Victor or Rachel can create Maddox's budget.").fetchSemanticsNode()
     }
 
     @Test
@@ -125,6 +180,7 @@ class BudgetCategoryDrilldownComposeTest {
 
     @Test
     fun `older Budget selection does not change Dashboard MTD`() {
+        contentList().performScrollToNode(hasContentDescription("Jun 2026 budget month"))
         compose.onNodeWithContentDescription("Jun 2026 budget month").performClick()
         settle()
         compose.onNodeWithContentDescription("Jun 2026 budget month").assertIsSelected()
@@ -132,17 +188,22 @@ class BudgetCategoryDrilldownComposeTest {
         compose.runOnUiThread { model.navigate(Destination.DASHBOARD) }
         settle()
 
+        contentList().performScrollToNode(hasContentDescription("Spend, \$611.17"))
         compose.onNodeWithContentDescription("Spend, \$611.17").fetchSemanticsNode()
         compose.onNodeWithContentDescription("Income, \$4,960.00").fetchSemanticsNode()
     }
 
     @Test
     fun `Budget income editor exposes the atomic Bitcoin buy action`() {
-        compose.onNodeWithText("+ Add").performClick()
+        render(model.state.value, quickAddRequested = true)
         settle()
-        compose.onNodeWithText("Income").performClick()
+        compose.onNodeWithText("Income", useUnmergedTree = true).performClick()
         settle()
 
+        compose.onNodeWithText("Amount").performTextInput("100.00")
+        compose.onNodeWithText("Next").performSemanticsAction(SemanticsActions.OnClick)
+        compose.onNodeWithText("Payment, date, note and Bitcoin").performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("Add as Bitcoin buy").fetchSemanticsNode()
     }
 
@@ -189,7 +250,10 @@ class BudgetCategoryDrilldownComposeTest {
         compose.onNodeWithContentDescription("View Groceries transactions for 2026-07").performClick()
         settle()
 
+        contentList().performScrollToNode(hasText(edit))
         compose.onNodeWithText(edit).assertHasClickAction()
+        contentList().performScrollToNode(hasContentDescription("Remaining,", substring = true))
+        compose.onNodeWithContentDescription("Remaining, \$705.82, OF \$900.00 planned").fetchSemanticsNode()
     }
 
     @Test
@@ -257,13 +321,14 @@ class BudgetCategoryDrilldownComposeTest {
         assertEquals(0, nodesWithText("Neighborhood Market"))
     }
 
-    private fun render(state: VaultUiState) {
+    private fun render(state: VaultUiState, quickAddRequested: Boolean = false) {
         compose.runOnUiThread {
             activityController.get().setContent {
                 VogelVaultTheme {
                     Box(Modifier.size(width = 411.dp, height = 900.dp)) {
                         ScreenHost(
-                            destination = Destination.BUDGET,
+                            destination = state.destination,
+                            quickAddRequested = quickAddRequested,
                             state = state,
                             displayUnit = DisplayUnit.USD,
                         )
@@ -319,8 +384,7 @@ class BudgetCategoryDrilldownComposeTest {
 }
 
 class BudgetDrilldownTestApplication : VaultApplication() {
-    override val deviceCapabilities = DeviceCapabilities(
-        FamilyMember.VICTOR,
-        setOf(DeviceCapability.TRANSACTIONS.wire, DeviceCapability.BITCOIN.wire, DeviceCapability.BUDGET.wire),
+    override val deviceCapabilities = com.sats21m.vogelvault.data.DeviceCapabilities(
+        FamilyMember.VICTOR, com.sats21m.vogelvault.data.DeviceCapability.entries.map { it.wire }.toSet(),
     )
 }

@@ -12,6 +12,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.unit.dp
@@ -136,6 +139,8 @@ class LazyLedgerCompositionTest {
         }
         compose.waitForIdle()
 
+        compose.onNode(hasScrollToIndexAction())
+            .performScrollToNode(hasContentDescription("Actual, $0.00"))
         assertTrue(
             compose.onAllNodesWithContentDescription("Actual, $0.00", substring = false)
                 .fetchSemanticsNodes()
@@ -172,6 +177,8 @@ class LazyLedgerCompositionTest {
         }
         compose.waitForIdle()
 
+        compose.onNode(hasScrollToIndexAction())
+            .performScrollToNode(hasContentDescription("Actual, unavailable"))
         assertTrue(
             compose.onAllNodesWithContentDescription("Actual, unavailable", substring = false)
                 .fetchSemanticsNodes()

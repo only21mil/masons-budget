@@ -22,11 +22,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,13 +43,11 @@ import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.TransactionDraftIdStore
 import com.sats21m.vogelvault.VaultApplication
-import com.sats21m.vogelvault.explicitBtcBuyOwner
 import com.sats21m.vogelvault.data.BtcBuyInput
 import com.sats21m.vogelvault.data.BudgetCategoryInput
 import com.sats21m.vogelvault.data.BudgetCategoryDeleteResult
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexMutation
-import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.convexWriteFailureMessage
 import com.sats21m.vogelvault.data.ConvexValue
@@ -356,6 +354,7 @@ internal fun budgetProgressAccessibilityLabel(
 ): String =
     "${category.name}, ${Money.formatUsd(category.spentCents)} spent of " +
         "${Money.formatUsd(category.budgetCents)} planned, " +
+        "${Money.formatUsd(category.remainingCents)} remaining, " +
         "${progress.statusLabel}, ${progress.percentageLabel}"
 
 internal fun btcBuyWriteRequest(
@@ -395,7 +394,7 @@ internal fun btcBuyWriteRequest(
 }
 
 /**
- * The handoff category row: name and spent figure, a 3dp bar, then `OF <planned>`.
+ * Category remaining amount and planned limit, followed by the spend progress bar.
  *
  * The whole row opens the drilldown, where editing lives, so there is no badge,
  * no percent text, and no edit link. The bar fills over 300ms when the fraction
@@ -456,11 +455,15 @@ internal fun EditableBudgetCategoryRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Text(
-                    Money.formatUsd(category.spentCents),
-                    style = tokens.type.rowFigure,
-                    color = if (over) colors.loss else colors.foreground,
-                )
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "${Money.formatUsd(category.remainingCents)} left",
+                        style = tokens.type.rowFigure,
+                        color = if (over) colors.loss else colors.foreground,
+                    )
+                    Text("OF ${Money.formatUsd(category.budgetCents)} planned",
+                        style = tokens.type.rowMeta, color = colors.foregroundTertiary)
+                }
             }
             Box(
                 Modifier
@@ -475,11 +478,6 @@ internal fun EditableBudgetCategoryRow(
                         .background(barColor),
                 )
             }
-            Text(
-                "OF ${Money.formatUsd(category.budgetCents)}",
-                style = tokens.type.rowMeta,
-                color = colors.foregroundTertiary,
-            )
         }
     }
 }
@@ -518,23 +516,10 @@ internal fun BudgetCategoryEditorSheet(
     val scope = rememberCoroutineScope()
     val haptics = rememberLedgerHaptics()
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().padding(VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.md),
-        ) {
-            Text(stringResource(R.string.budget_category_editor_title, seed.category.name))
-            Text(stringResource(R.string.budget_category_editor_month, seed.budgetDocumentMonth))
-            LedgerTextField(
-                value = dollars,
-                onValueChange = { dollars = it },
-                label = stringResource(R.string.budget_category_amount_label),
-                prefix = "$",
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            message?.let { Text(it) }
+    LedgerSheet(
+        title = stringResource(R.string.budget_category_editor_title, seed.category.name),
+        onDismissRequest = { if (!submitting) onDismiss() },
+        actions = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 if (
                     seed.displayedMonth == seed.budgetDocumentMonth &&
@@ -644,7 +629,19 @@ internal fun BudgetCategoryEditorSheet(
                     },
                 )
             }
-        }
+        },
+    ) {
+        Text(stringResource(R.string.budget_category_editor_month, seed.budgetDocumentMonth))
+        LedgerTextField(
+            value = dollars,
+            onValueChange = { dollars = it },
+            label = stringResource(R.string.budget_category_amount_label),
+            prefix = "$",
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        message?.let { Text(it) }
     }
 }
 
@@ -699,6 +696,7 @@ internal fun BtcBuyEntrySheet(
     owner: FamilyMember,
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
+    quoteCents: Long = 0,
 ) {
     val application = LocalContext.current.applicationContext as? VaultApplication
     val mutationClient = remember(application) { application?.deviceMutationClient }
@@ -714,7 +712,7 @@ internal fun BtcBuyEntrySheet(
         buyDraftIds?.currentId(buyScope) ?: "android-${UUID.randomUUID()}"
     }
     val saveScope = remember(application) { application?.applicationScope }
-    var date by remember { mutableStateOf(LocalDate.now().toString()) }
+    var date by remember { mutableStateOf(ledgerToday().toString()) }
     var source by remember { mutableStateOf("") }
     var sats by remember { mutableStateOf("") }
     var priceUsd by remember { mutableStateOf("") }
@@ -724,24 +722,10 @@ internal fun BtcBuyEntrySheet(
     val scope = rememberCoroutineScope()
     val haptics = rememberLedgerHaptics()
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().padding(VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
-        ) {
-            Text(stringResource(R.string.btc_buy_editor_title))
-            EditorField(date, { date = it }, R.string.btc_buy_date_label)
-            EditorField(source, { source = it }, R.string.btc_buy_source_label)
-            EditorField(sats, { sats = it }, R.string.btc_buy_sats_label, KeyboardType.Number)
-            EditorField(priceUsd, { priceUsd = it }, R.string.btc_buy_price_label, KeyboardType.Decimal)
-            EditorField(
-                purchaseUsd,
-                { purchaseUsd = it },
-                R.string.btc_buy_purchase_amount_label,
-                KeyboardType.Decimal,
-            )
-            Text(stringResource(R.string.btc_buy_independent_amounts_detail))
-            message?.let { Text(it) }
+    LedgerSheet(
+        title = stringResource(R.string.btc_buy_editor_title),
+        onDismissRequest = { if (!submitting) onDismiss() },
+        actions = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))
@@ -750,6 +734,10 @@ internal fun BtcBuyEntrySheet(
                     label = stringResource(R.string.write_save),
                     enabled = !submitting,
                     onClick = {
+                        val derived = deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrElse {
+                            message = it.message ?: "Check the buy amounts"
+                            return@VaultButton
+                        }
                         when (
                             val draft =
                                 btcBuyWriteRequest(
@@ -757,9 +745,9 @@ internal fun BtcBuyEntrySheet(
                                     buyId,
                                     date,
                                     source,
-                                    sats,
-                                    priceUsd,
-                                    purchaseUsd,
+                                    derived.sats,
+                                    derived.priceUsd,
+                                    derived.purchaseUsd,
                                 )
                         ) {
                             is WriteDraftResult.Invalid -> message = draft.reason
@@ -811,7 +799,24 @@ internal fun BtcBuyEntrySheet(
                     },
                 )
             }
+        },
+    ) {
+        LedgerDateField(date, { date = it }, stringResource(R.string.btc_buy_date_label), enabled = !submitting)
+        EditorField(source, { source = it }, R.string.btc_buy_source_label)
+        EditorField(sats, { sats = it }, R.string.btc_buy_sats_label, KeyboardType.Number)
+        EditorField(priceUsd, { priceUsd = it }, R.string.btc_buy_price_label, KeyboardType.Decimal)
+        EditorField(
+            purchaseUsd,
+            { purchaseUsd = it },
+            R.string.btc_buy_purchase_amount_label,
+            KeyboardType.Decimal,
+        )
+        Text("Enter any two of sats, price and dollars. Leave the third blank to calculate it.")
+        if (quoteCents > 0) Text("Live price: ${Money.formatUsd(quoteCents)}. Enter a price to override it.")
+        deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrNull()?.let { result ->
+            Text("${result.sats} sats · $${result.priceUsd} per BTC · $${result.purchaseUsd}")
         }
+        message?.let { Text(it) }
     }
 }
 
@@ -822,6 +827,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
     income: IncomeEntry,
     onDismiss: () -> Unit,
     onWriteSucceeded: () -> Unit,
+    quoteCents: Long = 0,
 ) {
     val colors = LocalLedgerTheme.current.colors
     val application = LocalContext.current.applicationContext as? VaultApplication
@@ -837,23 +843,12 @@ internal fun BtcBuyFromIncomeEntrySheet(
     var message by rememberSaveable(income.id) { mutableStateOf<String?>(null) }
     var submitting by remember(income.id) { mutableStateOf(false) }
     val haptics = rememberLedgerHaptics()
+    val purchaseUsd = java.math.BigDecimal(income.amountCents).movePointLeft(2).toPlainString()
 
-    ModalBottomSheet(onDismissRequest = { if (!submitting) onDismiss() }) {
-        Column(
-            Modifier.fillMaxWidth().padding(VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
-        ) {
-            Text(stringResource(R.string.budget_income_add_as_bitcoin_buy))
-            Text(
-                "${income.sourceName} income: ${Money.formatUsd(income.amountCents)}",
-                color = colors.foregroundSecondary,
-            )
-            Text(stringResource(R.string.budget_income_add_as_bitcoin_buy_detail))
-            EditorField(source, { source = it }, R.string.btc_buy_source_label)
-            EditorField(sats, { sats = it }, R.string.btc_buy_sats_label, KeyboardType.Number)
-            EditorField(priceUsd, { priceUsd = it }, R.string.btc_buy_price_label, KeyboardType.Decimal)
-            EditorField(buyNote, { buyNote = it }, R.string.transaction_note)
-            message?.let { Text(it, color = colors.loss) }
+    LedgerSheet(
+        title = stringResource(R.string.budget_income_add_as_bitcoin_buy),
+        onDismissRequest = { if (!submitting) onDismiss() },
+        actions = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss, enabled = !submitting) {
                     Text(stringResource(R.string.write_cancel))
@@ -862,14 +857,18 @@ internal fun BtcBuyFromIncomeEntrySheet(
                     label = stringResource(R.string.write_save),
                     enabled = !submitting,
                     onClick = {
+                        val derived = deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrElse {
+                            message = it.message ?: "Check the buy amounts"
+                            return@VaultButton
+                        }
                         when (
                             val draft = btcBuyFromIncomeWriteRequest(
                                 viewer = viewer,
                                 id = income.id,
                                 income = income,
                                 source = source,
-                                sats = sats,
-                                priceUsd = priceUsd,
+                                sats = derived.sats,
+                                priceUsd = derived.priceUsd,
                                 buyNote = buyNote,
                             )
                         ) {
@@ -915,7 +914,23 @@ internal fun BtcBuyFromIncomeEntrySheet(
                     },
                 )
             }
+        },
+    ) {
+        Text(
+            "${income.sourceName} income: ${Money.formatUsd(income.amountCents)}",
+            color = colors.foregroundSecondary,
+        )
+        Text(stringResource(R.string.budget_income_add_as_bitcoin_buy_detail))
+        EditorField(source, { source = it }, R.string.btc_buy_source_label)
+        EditorField(sats, { sats = it }, R.string.btc_buy_sats_label, KeyboardType.Number)
+        EditorField(priceUsd, { priceUsd = it }, R.string.btc_buy_price_label, KeyboardType.Decimal)
+        Text("Income supplies the dollars. Enter sats or price to calculate the other.")
+        if (quoteCents > 0) Text("Live price: ${Money.formatUsd(quoteCents)}. Enter a price to override it.")
+        deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrNull()?.let { result ->
+            Text("${result.sats} sats · $${result.priceUsd} per BTC · $${result.purchaseUsd}")
         }
+        EditorField(buyNote, { buyNote = it }, R.string.transaction_note)
+        message?.let { Text(it, color = colors.loss) }
     }
 }
 
