@@ -114,6 +114,8 @@ internal fun TodoScreen(
         mutableStateOf(application?.hasTodoWriteCredential(viewer) == true)
     }
     var draft by remember { mutableStateOf("") }
+    var draftRevision by remember { mutableStateOf(0L) }
+    var pendingAddId by remember(viewer) { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<TodoItem?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -130,6 +132,8 @@ internal fun TodoScreen(
         },
         nowMillis = nowMillis,
     )
+
+    val canAdd = credentialStored && draft.isNotBlank() && pendingAddId !in writes.busyIds
 
     LaunchedEffect(todos, viewer, today) {
         localTodos = todosForToday(writes.filterIncoming(todos), viewer, today)
@@ -201,7 +205,10 @@ internal fun TodoScreen(
                 ) {
                     LedgerTextField(
                         value = draft,
-                        onValueChange = { draft = it },
+                        onValueChange = {
+                            draft = it
+                            draftRevision++
+                        },
                         modifier = Modifier.weight(1f),
                         placeholder = stringResource(R.string.todo_new_task),
                         prefixGlyph = LedgerGlyphs.Calendar,
@@ -210,22 +217,29 @@ internal fun TodoScreen(
                     )
                     Spacer(Modifier.width(VaultSpace.sm))
                     IconButton(
-                        enabled = credentialStored && draft.isNotBlank(),
+                        enabled = canAdd,
                         onClick = {
+                            if (pendingAddId in writes.busyIds) return@IconButton
+                            val submittedRevision = draftRevision
                             val todo = newTodo(
                                 title = draft,
                                 owner = viewer,
                                 today = today,
                                 now = Instant.now(),
                             )
-                            draft = ""
-                            mutate(todo, TodoWriteAction.ADD, null) { haptics.confirm() }
+                            pendingAddId = todo.id
+                            mutate(todo, TodoWriteAction.ADD, null) {
+                                // An accepted save must not erase typing made while it was pending.
+                                if (draftRevision == submittedRevision) draft = ""
+                                pendingAddId = null
+                                haptics.confirm()
+                            }
                         },
                     ) {
                         Icon(
                             LedgerGlyphs.Plus,
                             contentDescription = stringResource(R.string.todo_add),
-                            tint = if (credentialStored && draft.isNotBlank()) {
+                            tint = if (canAdd) {
                                 ledgerTokens.colors.bitcoin
                             } else {
                                 ledgerTokens.colors.foregroundTertiary
