@@ -1,11 +1,41 @@
 import SwiftUI
 
+private struct LedgerRootTitleKey: EnvironmentKey { static let defaultValue: String? = nil }
+private struct LedgerRootAccessoryKey: EnvironmentKey { static let defaultValue: AnyView? = nil }
+extension EnvironmentValues {
+    var ledgerRootTitle: String? {
+        get { self[LedgerRootTitleKey.self] }
+        set { self[LedgerRootTitleKey.self] = newValue }
+    }
+    var ledgerRootAccessory: AnyView? {
+        get { self[LedgerRootAccessoryKey.self] }
+        set { self[LedgerRootAccessoryKey.self] = newValue }
+    }
+}
+
+/// A destination owns the native title, while its existing ScreenHeader is suppressed.
+struct LedgerDrilldown<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        content()
+            .environment(\.ledgerRootTitle, "")
+            .navigationTitle(title)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.visible, for: .navigationBar)
+            #endif
+    }
+}
+
 struct ScreenHeader<Accessory: View>: View {
     let title: String
     var eyebrow: String?
     @ViewBuilder var accessory: () -> Accessory
 
     @Environment(\.theme) var theme
+    @Environment(\.ledgerRootTitle) private var rootTitle
+    @Environment(\.ledgerRootAccessory) private var rootAccessory
 
     init(title: String, eyebrow: String? = nil, @ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() }) {
         self.title = title
@@ -14,6 +44,21 @@ struct ScreenHeader<Accessory: View>: View {
     }
 
     var body: some View {
+        #if os(iOS)
+        if let rootTitle, rootTitle != title {
+            Color.clear.frame(height: 0)
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar(.visible, for: .navigationBar)
+        } else {
+            header
+        }
+        #else
+        header
+        #endif
+    }
+
+    private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let eyebrow {
                 Text(eyebrow)
@@ -27,7 +72,11 @@ struct ScreenHeader<Accessory: View>: View {
                     .foregroundStyle(theme.text)
 
                 Spacer()
-                accessory()
+                if rootTitle == title, let rootAccessory {
+                    rootAccessory
+                } else {
+                    accessory()
+                }
             }
         }
         .padding(.horizontal, AppLayout.sectionPadding)

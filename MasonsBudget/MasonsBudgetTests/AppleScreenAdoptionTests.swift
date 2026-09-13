@@ -4,25 +4,35 @@ final class AppleScreenAdoptionTests: XCTestCase {
     func testPrimaryScreenCatalogMatchesAppleNavigation() {
         XCTAssertEqual(
             ApplePrimaryScreen.allCases,
-            [.bitcoin, .budget, .today, .retirement, .more],
+            [.home, .activity, .budget, .tasks],
         )
-        XCTAssertEqual(AppTab.allCases, [.home, .budget, .today, .vault, .more])
+        XCTAssertEqual(AppTab.allCases, [.home, .activity, .budget, .tasks])
     }
 
     func testTabTitlesAreUppercaseLedgerLabels() {
-        XCTAssertEqual(AppTab.allCases.map(\.tabTitle), ["BITCOIN", "BUDGET", "TODAY", "VAULT", "MORE"])
+        XCTAssertEqual(AppTab.allCases.map(\.tabTitle), ["HOME", "ACTIVITY", "BUDGET", "TASKS"])
     }
 
-    func testMoreCatalogIncludesFullAdoptionRoutes() {
-        XCTAssertEqual(Set(AppleMoreScreen.allCases.map(\.rawValue)).count, AppleMoreScreen.allCases.count)
-        XCTAssertEqual(AppleMoreScreen.allCases.count, 12)
-        XCTAssertTrue(AppleMoreScreen.allCases.contains(.price))
-        XCTAssertTrue(AppleMoreScreen.allCases.contains(.transfer))
-        XCTAssertTrue(AppleMoreScreen.allCases.contains(.billPay))
-        XCTAssertTrue(AppleMoreScreen.allCases.contains(.family))
-        XCTAssertTrue(AppleMoreScreen.allCases.contains(.settings))
-        XCTAssertTrue(AppleMoreScreen.allCases.contains(.awards))
-        XCTAssertTrue(AppleMoreScreen.allCases.contains(.export))
+    func testAvatarCatalogKeepsAccountDestinationsAccessible() {
+        XCTAssertEqual(AppleAccountScreen.allCases, [.profile, .settings, .family, .awards, .sync, .export])
+        XCTAssertTrue(MacNav.taskItems.contains(.tasks))
+    }
+
+    func testHomeTodayMatchesActivityVisibilityAndLocalDay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: -6 * 3600))
+        let today = Date(timeIntervalSince1970: 1_800_000_000)
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: today))
+        let rows = [
+            Transaction(id: "adult", date: today, merchant: "Grocer", amount: 20, category: "Food", owner: .victor, createdBy: "victor"),
+            Transaction(id: "refund", date: today, merchant: "Return", amount: -5, category: "Food", owner: .victor, createdBy: "victor"),
+            Transaction(id: "child", date: today, merchant: "Lunch", amount: 3, category: "Food", owner: .mason, createdBy: "mason"),
+            Transaction(id: "old", date: yesterday, merchant: "Old", amount: 99, category: "Food", owner: .victor, createdBy: "victor"),
+            Transaction(id: "income", date: today, merchant: "Legacy pay", amount: 100, category: "Income", owner: .victor, createdBy: "victor"),
+        ]
+        XCTAssertEqual(HomeDashboardData.spentToday(rows, viewer: .rachel, now: today, calendar: calendar), 18)
+        XCTAssertEqual(HomeDashboardData.spentToday(rows, viewer: .mason, now: today, calendar: calendar), 3)
+        XCTAssertEqual(HomeDashboardData.spentToday(rows, viewer: .maddox, now: today, calendar: calendar), 0)
     }
 
     func testPaymentRailsUseBoltAndChainPresentation() {
@@ -72,13 +82,6 @@ final class AppleScreenAdoptionTests: XCTestCase {
         XCTAssertEqual(OnboardingStep.progressLabel(for: 0), "Step 1 of 4")
         XCTAssertEqual(OnboardingStep.progressLabel(for: 2), "Step 3 of 4")
         XCTAssertEqual(OnboardingStep.all.last?.title, "Connect your household")
-    }
-
-    func testMoreCountBadgesHideZeroAndCapLargeCounts() {
-        XCTAssertNil(MoreCountFormatter.badge(0))
-        XCTAssertEqual(MoreCountFormatter.badge(8), "8")
-        XCTAssertEqual(MoreCountFormatter.badge(AppleMoreScreen.allCases.count), "12")
-        XCTAssertEqual(MoreCountFormatter.badge(1000), "999+")
     }
 
     func testCompletedTodayIncludesSecureTaskRowsWithoutChangingOwnership() throws {

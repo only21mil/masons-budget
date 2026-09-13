@@ -9,6 +9,8 @@ struct ActivityView: View {
 
     @Query(sort: \Transaction.date, order: .reverse) private var allTransactions: [Transaction]
 
+    var todayOnly = false
+
     @State private var showingAdd = false
     @State private var filter: TxFilter = .all
     @State private var searchText = ""
@@ -62,7 +64,7 @@ struct ActivityView: View {
         case .onChain: visible.filter { TransactionSourceCatalog.activityRail(forCard: $0.card) == .onChain }
         }
 
-        return scoped.filter { SearchMatcher.matches(transaction: $0, query: searchText) }
+        return scoped.filter { (!todayOnly || Calendar.current.isDateInToday($0.date)) && SearchMatcher.matches(transaction: $0, query: searchText) }
     }
 
     private static let shortDateFormatter: DateFormatter = {
