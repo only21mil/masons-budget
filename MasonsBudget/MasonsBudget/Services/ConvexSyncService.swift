@@ -275,10 +275,8 @@ final class ConvexSyncService {
 
     private func syncBTCAccounts(_ errors: inout [String]) async -> Int {
         do {
-            let dto = try await reader.readBTCSnapshot()
-            // Only reached from the adult branch of syncAll(); adult rows are
-            // always mapped onto the canonical household owner.
-            let accounts = LedgerMapper.mapBTCAccounts(dto, owner: .victor)
+            let rows = try await reader.readBalanceAccounts(viewer: currentMember)
+            let accounts = rows.map { $0.model() }
             try replaceBTCAccounts(ownedBy: [.victor, .rachel], with: accounts)
             return accounts.count
         } catch {
@@ -337,7 +335,7 @@ final class ConvexSyncService {
 
     private func syncFinances(_ errors: inout [String]) async -> Int {
         do {
-            let dto = try await reader.readFinances()
+            let dto = try await reader.readFinances(viewer: currentMember)
             let accounts = LedgerMapper.mapFinances(dto, owner: currentMember)
             try replaceHoldingAccounts(visibleTo: currentMember, with: accounts)
             return accounts.count
@@ -350,8 +348,8 @@ final class ConvexSyncService {
 
     private func syncSonBalances(_ errors: inout [String]) async -> Int {
         do {
-            let dto = try await reader.readSonBalances()
-            let accounts = LedgerMapper.mapSonBalances(dto)
+            let rows = try await reader.readBalanceAccounts(viewer: currentMember)
+            let accounts = rows.map { $0.model() }
             try replaceBTCAccounts(ownedBy: [.mason], with: accounts)
             return accounts.count
         } catch {
