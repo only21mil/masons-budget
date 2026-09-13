@@ -107,6 +107,7 @@ struct ContentView: View {
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("appearance_mode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @Environment(\.theme) var theme
+    @Environment(\.modelContext) private var modelContext
 
     @Query private var holdingAccounts: [HoldingAccount]
 
@@ -114,6 +115,10 @@ struct ContentView: View {
     @State private var canonicalFinancials = CanonicalFinancialSourceStore()
     @StateObject private var syncStatus = SyncStatusStore.shared
     @StateObject private var taskUndoStore = TaskUndoStore.shared
+    @AppStorage(ConvexSyncService.lastSyncErrorKey) private var lastReadError = ""
+    @AppStorage(ConvexSyncService.lastSyncKey) private var lastReadSuccess: Double = 0
+    @State private var showSyncSetup = false
+    @State private var retryingRead = false
     @State private var showAddTransaction = false
     @State private var showProfileSwitcher = false
 
@@ -155,7 +160,7 @@ struct ContentView: View {
         .task(id: activeMember) {
             await canonicalFinancials.load(viewer: activeMember)
         }
-        .overlay(alignment: .top) {
+        .safeAreaInset(edge: .top, spacing: 0) {
             syncFailureBanner
                 .padding(.horizontal, AppLayout.sectionPadding)
                 .padding(.top, 10)
@@ -167,6 +172,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showAddTransaction) {
             addTransactionSheet
+        }
+        .sheet(isPresented: $showSyncSetup) {
+            NavigationStack { SyncSetupView() }
         }
         .sheet(isPresented: $showProfileSwitcher) {
             ProfileSwitcherView()
@@ -554,7 +562,38 @@ struct ContentView: View {
 
     @ViewBuilder
     private var syncFailureBanner: some View {
-        if syncStatus.phase == .failed, let message = syncStatus.lastError {
+        if let message = Self.readSyncMessage(hasReadToken: ConvexConfig.hasReadToken, lastError: lastReadError) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message)
+                    .ledgerType(.rowPrimary)
+                if lastReadSuccess > 0 {
+                    Text("Last synced \(Date(timeIntervalSince1970: lastReadSuccess).formatted(date: .abbreviated, time: .shortened))")
+                        .ledgerType(.rowMeta)
+                        .foregroundStyle(theme.textMuted)
+                }
+                HStack {
+                    Button("Open Sync Setup") { showSyncSetup = true }
+                        .frame(minHeight: 44)
+                    if ConvexConfig.hasReadToken {
+                        Button(retryingRead ? "Refreshing…" : "Retry") {
+                            retryingRead = true
+                            Task {
+                                await ConvexSyncService(context: modelContext).syncAll()
+                                await canonicalFinancials.load(viewer: activeMember)
+                                retryingRead = false
+                            }
+                        }
+                        .frame(minHeight: 44)
+                        .disabled(retryingRead)
+                    }
+                }
+                .ledgerType(.button)
+                .foregroundStyle(theme.accent)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(theme.surface)
+        } else if syncStatus.phase == .failed, let message = syncStatus.lastError {
             HStack(spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(AppFont.icon(size: 14, weight: .bold))
@@ -604,6 +643,12 @@ struct ContentView: View {
             )
             .shadow(color: Color.black.opacity(0.12), radius: 8, y: 4)
         }
+    }
+
+    static func readSyncMessage(hasReadToken: Bool, lastError: String) -> String? {
+        if !hasReadToken { return "Connect this device to load your household data." }
+        if !lastError.isEmpty { return "Some household data could not refresh. Your last downloaded data is still available." }
+        return nil
     }
 
     // MARK: - Screen Routing

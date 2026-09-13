@@ -25,7 +25,17 @@ final class ConvexSyncService {
     static let selectedMemberKey = "selected_family_member"
     static let dataVersionsKey = "mc2_data_versions"
 
-    private var currentMember: FamilyMember {
+    static let failureCountKey = "mc2_sync_failure_count"
+    static let nextRetryKey = "mc2_sync_next_retry"
+    static let versionsMemberKey = "mc2_versions_member"
+    static let failedFilesKey = "mc2_sync_failed_files"
+    private var polledVersions: [String: Double]?
+
+    private var syncingMember: FamilyMember?
+
+    private var currentMember: FamilyMember { syncingMember ?? selectedMember }
+
+    private var selectedMember: FamilyMember {
         let raw = metadataStore.string(forKey: Self.selectedMemberKey) ?? "victor"
         return FamilyMember(rawValue: raw) ?? .victor
     }
@@ -52,84 +62,163 @@ final class ConvexSyncService {
 
     func syncAll() async {
         log.info("Starting Convex sync")
+        guard syncingMember == nil else { return }
+        let member = selectedMember
+        syncingMember = member
+        defer { syncingMember = nil }
+        let incremental = polledVersions != nil
+        // Capture before reading files. A version fetched after a read could
+        // acknowledge a newer payload that this device has never received.
+        let versions: [String: Double]?
+        if let polledVersions {
+            versions = polledVersions
+        } else {
+            versions = try? await reader.checkVersions()
+        }
+        polledVersions = nil
+        let saved = metadataStore.dictionary(forKey: Self.dataVersionsKey) as? [String: Double] ?? [:]
+        let sameMember = metadataStore.string(forKey: Self.versionsMemberKey) == member.rawValue
+        let previouslyFailed = Set(metadataStore.object(forKey: Self.failedFilesKey) as? [String] ?? [])
         var errors: [String] = []
+        var attempted: Set<String> = []
+        var completed: Set<String> = []
         var totalEntities = 0
 
-        totalEntities += await syncTodos(&errors)
+        func syncFile(_ name: String, operation: (inout [String]) async -> Int) async {
+            if incremental, sameMember, !previouslyFailed.contains(name),
+               let version = versions?[name], saved[name] == version { return }
+            attempted.insert(name)
+            let failuresBefore = errors.count
+            totalEntities += await operation(&errors)
+            if failuresBefore == errors.count { completed.insert(name) }
+        }
 
-        if currentMember.isAdult {
-            // Adults: full household sync
-            totalEntities += await syncTransactions(&errors)
-            totalEntities += await syncBudget(&errors)
-            totalEntities += await syncBTCAccounts(&errors)
-            totalEntities += await syncSonBalances(&errors)
-            totalEntities += await syncBTCBuys(&errors)
-            totalEntities += await syncBTCBillPays(&errors)
-            totalEntities += await syncFinances(&errors)
-        } else if currentMember.hasDedicatedChildFinanceFiles {
-            // Mason: sync his own budget, transactions, BTC buys, and finances.
-            totalEntities += await syncSonBalances(&errors)
-            totalEntities += await syncMasonBudget(&errors)
-            totalEntities += await syncMasonTransactions(&errors)
-            totalEntities += await syncMasonBTCBuys(&errors)
-            totalEntities += await syncFinances(&errors)
-        } else {
-            // Maddox does not have dedicated finance data yet. Keep his sync
-            // limited to shared todos until a dedicated row scope exists.
-            let member = currentMember
-            log.info("No dedicated finance sync path for \(member.rawValue, privacy: .public)")
+        await syncFile("todos", operation: syncTodos)
+        if member.isAdult {
+            await syncFile("transactions", operation: syncTransactions)
+            await syncFile("budget", operation: syncBudget)
+            await syncFile("btc-balance-snapshot", operation: syncBTCAccounts)
+            await syncFile("son-balances", operation: syncSonBalances)
+            await syncFile("bitcoin-buys", operation: syncBTCBuys)
+            await syncFile("bitcoin-bill-pays", operation: syncBTCBillPays)
+            await syncFile("finances", operation: syncFinances)
+        } else if member.hasDedicatedChildFinanceFiles {
+            await syncFile("son-balances", operation: syncSonBalances)
+            await syncFile("mason-budget", operation: syncMasonBudget)
+            await syncFile("mason-transactions", operation: syncMasonTransactions)
+            await syncFile("mason-bitcoin-buys", operation: syncMasonBTCBuys)
+            await syncFile("finances", operation: syncFinances)
         }
 
         do {
             try recordNetWorthSnapshot()
         } catch {
             errors.append("Net worth snapshot")
-            log.error("Failed to record net worth snapshot")
         }
-
         do {
             try context.save()
-            log.info("Convex sync complete: \(totalEntities) entities")
         } catch {
-            log.error("Failed to save context: \(error.localizedDescription)")
-            errors.append("Save failed: \(error.localizedDescription)")
+            // No file may be acknowledged when its local save failed.
+            completed.removeAll()
+            errors.append("Could not save downloaded data")
         }
+        if versions == nil { errors.append("Could not check for updates") }
+        guard selectedMember == member else { return }
+        publishSyncResult(
+            member: member,
+            previous: sameMember ? saved : [:],
+            remote: versions ?? [:],
+            completed: completed,
+            failed: attempted.subtracting(completed),
+            errors: errors,
+            totalEntities: totalEntities,
+        )
+    }
 
+    private func publishSyncResult(
+        member: FamilyMember,
+        previous: [String: Double],
+        remote: [String: Double],
+        completed: Set<String>,
+        failed: Set<String>,
+        errors: [String],
+        totalEntities: Int,
+    ) {
+        let published = Self.completedVersions(
+            previous: previous,
+            remote: remote,
+            completed: completed,
+        )
+        metadataStore.set(member.rawValue, forKey: Self.versionsMemberKey)
+        metadataStore.set(Array(failed), forKey: Self.failedFilesKey)
         if errors.isEmpty {
-            do {
-                // Fetch first, then publish the versions LAST. The version map is
-                // the completion marker: if the process stops during metadata
-                // publication, the old versions remain and polling retries.
-                let versions = try await reader.checkVersions()
-                Self.publishSuccessfulSync(
-                    versions: versions,
-                    totalEntities: totalEntities,
-                    timestamp: Date().timeIntervalSince1970,
-                    to: metadataStore,
-                )
-            } catch {
-                errors.append("Versions")
-                metadataStore.set("Versions", forKey: Self.lastSyncErrorKey)
-                log.error("Failed to save sync versions")
-            }
+            metadataStore.removeObject(forKey: Self.failureCountKey)
+            metadataStore.removeObject(forKey: Self.nextRetryKey)
+            Self.publishSuccessfulSync(
+                versions: published,
+                totalEntities: totalEntities,
+                timestamp: Date().timeIntervalSince1970,
+                to: metadataStore,
+            )
         } else {
-            metadataStore.set(errors.joined(separator: "; "), forKey: Self.lastSyncErrorKey)
-            log.warning("Sync completed with errors: \(errors.joined(separator: "; "))")
+            Self.recordFailure(errors.joined(separator: "; "), at: Date().timeIntervalSince1970, to: metadataStore)
+            // Successful files survive a sibling failure. Publish only after save.
+            metadataStore.set(published, forKey: Self.dataVersionsKey)
         }
     }
 
-    /// Lightweight version check — returns true if any data has changed since last sync.
-    /// Note: versions are stored AFTER syncAll() completes (in syncAll), not here,
-    /// so a failed sync will retry on the next poll.
+    /// Polling respects persisted backoff because the app creates a new service
+    /// each tick. Explicit syncAll calls still run immediately for setup/retry.
     func hasUpdates() async -> Bool {
+        let now = Date().timeIntervalSince1970
+        let sameMember = metadataStore.string(forKey: Self.versionsMemberKey) == currentMember.rawValue
+        let nextRetry = metadataStore.object(forKey: Self.nextRetryKey) as? Double ?? 0
+        guard !sameMember || now >= nextRetry else { return false }
         do {
-            let remoteVersions = try await reader.checkVersions()
-            let savedData = metadataStore.dictionary(forKey: Self.dataVersionsKey) as? [String: Double] ?? [:]
-            return remoteVersions != savedData
+            let remote = try await reader.checkVersions()
+            polledVersions = remote
+            let saved = metadataStore.dictionary(forKey: Self.dataVersionsKey) as? [String: Double] ?? [:]
+            let files = Self.files(for: currentMember)
+            return !sameMember || metadataStore.string(forKey: Self.lastSyncErrorKey) != nil
+                || files.contains { remote[$0] != saved[$0] }
         } catch {
-            log.error("Version check failed: \(error.localizedDescription)")
-            return true // Assume updates if check fails
+            if !sameMember { metadataStore.removeObject(forKey: Self.dataVersionsKey) }
+            metadataStore.set(currentMember.rawValue, forKey: Self.versionsMemberKey)
+            Self.recordFailure("Could not check for updates", at: now, to: metadataStore)
+            return false
         }
+    }
+
+    static func files(for member: FamilyMember) -> Set<String> {
+        if member.isAdult {
+            return ["todos", "transactions", "budget", "btc-balance-snapshot", "son-balances",
+                    "bitcoin-buys", "bitcoin-bill-pays", "finances"]
+        }
+        if member.hasDedicatedChildFinanceFiles {
+            return ["todos", "son-balances", "mason-budget", "mason-transactions", "mason-bitcoin-buys", "finances"]
+        }
+        return ["todos"]
+    }
+
+    static func completedVersions(
+        previous: [String: Double],
+        remote: [String: Double],
+        completed: Set<String],
+    ) -> [String: Double] {
+        var result = previous
+        for file in completed { result[file] = remote[file] }
+        return result
+    }
+
+    static func retryDelay(failureCount: Int) -> TimeInterval {
+        min(300, 15 * pow(2, Double(min(max(failureCount - 1, 0), 5))))
+    }
+
+    static func recordFailure(_ message: String, at now: TimeInterval, to store: any SyncMetadataStoring) {
+        let count = min((store.object(forKey: failureCountKey) as? Int ?? 0) + 1, 6)
+        store.set(count, forKey: failureCountKey)
+        store.set(now + retryDelay(failureCount: count), forKey: nextRetryKey)
+        store.set(message, forKey: lastSyncErrorKey)
     }
 
     static func publishSuccessfulSync(
@@ -501,6 +590,9 @@ final class ConvexSyncService {
         }
 
         for transaction in existing where owners.contains(transaction.ownerMember) && transaction.createdBy == "mc2" {
+            // Budget paychecks have their own file/version and replacement pass.
+            // A transactions-only refresh must not remove unchanged income.
+            guard transaction.sourceFile != "budget.json" else { continue }
             guard !remoteIds.contains(transaction.id) else { continue }
             context.delete(transaction)
         }
