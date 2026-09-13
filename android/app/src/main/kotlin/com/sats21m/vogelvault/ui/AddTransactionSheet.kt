@@ -666,7 +666,7 @@ internal fun AddTransactionSheet(
                             }
                         }
                     },
-                    enabled = !saving,
+                    enabled = !saving && writeUnavailableReason == null,
                     modifier = Modifier.weight(1f),
                 )
             }

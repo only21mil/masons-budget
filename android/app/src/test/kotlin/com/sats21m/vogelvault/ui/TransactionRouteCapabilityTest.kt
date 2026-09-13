@@ -3,6 +3,9 @@ package com.sats21m.vogelvault.ui
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -46,15 +49,16 @@ class TransactionRouteCapabilityTest {
             for (bitcoin in PaymentSource.entries.filter { it.isBitcoinTransaction }) {
                 compose.onNode(hasText(PaymentSource.DEFAULT.label) and hasClickAction()).performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
                 compose.onNodeWithText(bitcoin.label).performClick()
-                compose.onNodeWithText("This phone has read-only access to Bitcoin records.").assertExists()
+                compose.onNodeWithText("This phone has read-only access to Bitcoin records.").assertIsDisplayed()
+                compose.onNodeWithText("Close").assertIsDisplayed()
                 compose.onNodeWithTag(BITCOIN_ACCOUNT_SELECTOR_TEST_TAG).assertDoesNotExist()
                 compose.onNodeWithText(controller.get().getString(R.string.add_transaction_merchant)).assertDoesNotExist()
-                compose.onNodeWithText(controller.get().getString(R.string.add_transaction_save)).assertDoesNotExist()
+                compose.onNodeWithText(controller.get().getString(R.string.add_transaction_save)).assertIsNotEnabled()
                 compose.onNode(hasText(bitcoin.label) and hasClickAction()).performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
                 compose.onNodeWithText(PaymentSource.DEFAULT.label).performClick()
                 compose.onNodeWithText("This phone has read-only access to Bitcoin records.").assertDoesNotExist()
                 compose.onNodeWithText(controller.get().getString(R.string.add_transaction_merchant)).assertExists()
-                compose.onNodeWithText(controller.get().getString(R.string.add_transaction_save)).assertExists()
+                compose.onNodeWithText(controller.get().getString(R.string.add_transaction_save)).assertIsEnabled()
             }
         } finally {
             controller.pause().stop().destroy()
