@@ -9,6 +9,22 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class QuickAddTest {
+    @Test fun `quick add amount validity respects each unit precision and range`() {
+        for (unit in DisplayUnit.entries) {
+            for (invalid in listOf("", "0", "-1", "nope", "1.2.3", "9223372036854775808")) {
+                assertNotNull(quickAddAmountError(invalid, unit), "$unit must reject $invalid")
+            }
+        }
+        for ((unit, valid, invalid) in listOf(
+            Triple(DisplayUnit.USD, "0.01", "0.001"),
+            Triple(DisplayUnit.BTC, "0.00000001", "0.000000001"),
+            Triple(DisplayUnit.SATS, "1", "1.1"),
+        )) {
+            assertEquals(null, quickAddAmountError(valid, unit))
+            assertNotNull(quickAddAmountError(invalid, unit))
+        }
+    }
+
     @Test fun `any pair derives missing quantity price or cents`() {
         val expected = DerivedBitcoinBuy("100000", "100000.00", "100.00")
         assertEquals(expected, deriveBitcoinBuy("100000", "100000", "").getOrThrow())

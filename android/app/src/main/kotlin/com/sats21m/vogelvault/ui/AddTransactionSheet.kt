@@ -730,7 +730,11 @@ internal fun AddTransactionSheet(
                         }
                     }
                 },
-                enabled = !saving && (!detailsStep || writeUnavailableReason == null),
+                enabled = !saving && if (detailsStep) {
+                    writeUnavailableReason == null
+                } else {
+                    quickAddAmountError(amount, inputUnit) == null
+                },
                 modifier = Modifier.weight(1f),
             )
         }

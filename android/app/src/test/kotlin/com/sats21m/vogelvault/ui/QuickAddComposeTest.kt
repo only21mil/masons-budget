@@ -6,11 +6,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
@@ -26,6 +28,42 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], qualifiers = "w411dp-h891dp", application = QuickAddApplication::class)
 class QuickAddComposeTest {
     @get:Rule val compose = createEmptyComposeRule()
+
+    @Test fun `Next follows amount validity and revalidates on click`() {
+        val controller = Robolectric.buildActivity(ComponentActivity::class.java)
+        controller.get().setTheme(R.style.Theme_VogelVault)
+        controller.setup()
+        try {
+            controller.get().setContent {
+                VogelVaultTheme { AddTransactionSheet(VaultUiState(), {}) }
+            }
+            val next = compose.onNodeWithText("Next")
+            val amount = compose.onNodeWithTag("quick-add-amount")
+            next.assertIsNotEnabled()
+            // Invoke the handler directly to check its independent validation guard.
+            next.performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNodeWithText("Enter an amount").assertExists()
+            amount.assertExists()
+            for (invalid in listOf("0", "-1", "nope", "1.2.3", "0.001", "92233720368547758.08")) {
+                amount.performTextReplacement(invalid)
+                next.assertIsNotEnabled()
+            }
+            for (valid in listOf("0.01", "12.34")) {
+                amount.performTextReplacement(valid)
+                next.assertIsEnabled()
+                amount.performTextReplacement("")
+                next.assertIsNotEnabled()
+            }
+            amount.performTextReplacement("12.34")
+            next.assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick) { it() }
+            compose.onNodeWithText(controller.get().getString(R.string.add_transaction_merchant)).assertExists()
+            compose.onNodeWithText("Back").performSemanticsAction(SemanticsActions.OnClick) { it() }
+            next.assertIsEnabled()
+            amount.performTextReplacement("")
+            next.assertIsNotEnabled()
+            assertEquals(0, (controller.get().application as QuickAddApplication).requests.get())
+        } finally { controller.pause().stop().destroy() }
+    }
 
     @Test fun `three actions open advance and save with typing and no disclosure required`() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java)
