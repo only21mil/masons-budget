@@ -58,7 +58,8 @@ class ActivitySearchFilterTest {
             listOf(income, spend, lightning, onChain, legacyOnChain, zero),
         )
 
-        assertEquals(listOf(income), index.search("", ActivityTransactionFilter.INCOME))
+        assertTrue(index.search("", ActivityTransactionFilter.INCOME).isEmpty())
+        assertEquals(listOf(income), index.search("", ActivityTransactionFilter.LEGACY_INCOME))
         assertEquals(
             listOf(spend, lightning, onChain, legacyOnChain),
             index.search("", ActivityTransactionFilter.SPENDS),
