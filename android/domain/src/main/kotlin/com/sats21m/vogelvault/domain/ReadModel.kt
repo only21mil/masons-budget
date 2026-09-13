@@ -373,7 +373,7 @@ data class ReadModel(
         Slice(Freshness.EMPTY, emptyList(), null, "Convex rows · bitcoin transfers"),
 ) {
     val incomeFiguresUnavailable: Boolean
-        get() = income.requiredProjectionUnavailable || income.value.isEmpty()
+        get() = income.requiredProjectionUnavailable
 
     val netWorthFiguresUnavailable: Boolean
         get() = btcBalance.requiredProjectionUnavailable || btcBalance.value == null

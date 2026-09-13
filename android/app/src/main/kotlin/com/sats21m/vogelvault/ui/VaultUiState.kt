@@ -230,6 +230,7 @@ class VaultViewModel(
     private var appliedReadReady = readReady.value
     private var cachedModel: CachedReadModel? = null
     private var liveModel: ReadModel? = null
+    private var loadedProfile: FamilyMember? = null
     private var liveUnauthorized = false
     private var loadGeneration = 0L
 
@@ -347,6 +348,7 @@ class VaultViewModel(
     }
 
     private fun activateRemoteRows() {
+        loadedProfile = null
         val profile = _state.value.activeProfile
         _state.update {
             it.copy(
@@ -394,9 +396,12 @@ class VaultViewModel(
         if (!readReady.value) return
         val generation = ++loadGeneration
         rowJob?.cancel()
-        cachedModel = null
-        liveModel = null
-        liveUnauthorized = false
+        if (loadedProfile != profile) {
+            cachedModel = null
+            liveModel = null
+            liveUnauthorized = false
+        }
+        loadedProfile = profile
         rowJob =
             viewModelScope.launch load@{
                 launch { loadFinance(profile, generation) }
@@ -414,6 +419,7 @@ class VaultViewModel(
                                 current.copy(
                                     data =
                                         when {
+                                            unauthorized && !liveUnauthorized -> loadingModel(profile)
                                             live == null -> cached.data
                                             unauthorized -> live
                                             else -> live.withCacheFallback(cached.data)
@@ -456,12 +462,8 @@ class VaultViewModel(
         generation: Long,
     ) {
         val source = financeSource ?: return
-        _state.update { current ->
-            if (!isCurrentLoad(current, profile, generation)) current else current.copy(
-                financeStatus = Freshness.LOADING,
-                marketQuoteStatus = Freshness.LOADING,
-            )
-        }
+        // Initial connection and profile changes set LOADING before reaching here.
+        // Background refresh keeps the last finance and quote values visible.
         val loaded = source.load(profile)
         if (!isCurrentLoad(profile, generation)) return
         val next = financeSurfaceState(loaded)
@@ -631,6 +633,9 @@ private fun loadingModel(profile: FamilyMember): ReadModel {
         btcBuys = loading(empty.btcBuys),
         todos = loading(empty.todos),
         btcTransfers = loading(empty.btcTransfers),
+        income = loading(empty.income),
+        btcBalance = loading(empty.btcBalance),
+        btcBillPays = loading(empty.btcBillPays),
         btcPriceCents = 0L,
     )
 }
@@ -649,5 +654,8 @@ private fun ReadModel.withCacheFallback(cached: ReadModel?): ReadModel {
         btcBuys = btcBuys.fallbackTo(cached.btcBuys),
         todos = todos.fallbackTo(cached.todos),
         btcTransfers = btcTransfers.fallbackTo(cached.btcTransfers),
+        income = income.fallbackTo(cached.income),
+        btcBalance = btcBalance.fallbackTo(cached.btcBalance),
+        btcBillPays = btcBillPays.fallbackTo(cached.btcBillPays),
     )
 }
