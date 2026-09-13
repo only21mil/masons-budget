@@ -67,7 +67,7 @@ internal fun BitcoinDeleteAction(
     val application = LocalContext.current.applicationContext as? VaultApplication
     val reason = (application?.deviceCapabilities ?: DeviceCapabilities())
         .unavailableReason(viewer, DeviceCapability.BITCOIN)
-        ?: if (!viewer.isAdult || !owner.isAdult) "This Bitcoin record cannot be changed from this profile." else null
+        ?: if (viewer.ledgerOwner != owner.ledgerOwner || (kind == BitcoinDeleteKind.BILL_PAY && !owner.isAdult)) "This Bitcoin record cannot be changed from this profile." else null
         ?: if (updatedAtMs <= 0L) "Refresh this record before deleting it." else null
     var confirming by rememberSaveable(entityId) { mutableStateOf(false) }
     var working by remember(entityId) { mutableStateOf(false) }
