@@ -482,6 +482,7 @@ fun ScreenHost(
                     state,
                     remoteReadReady,
                     onRemoteRowsConnected,
+                    onEnableRemoteRows,
                     ledgerSettings,
                     onLedgerSettingsChange,
                 )
@@ -1715,6 +1716,7 @@ private fun VaultLazyListScope.settings(
     state: VaultUiState,
     remoteReadReady: Boolean,
     onRemoteRowsConnected: () -> Unit,
+    onEnableRemoteRows: (String) -> Unit,
     ledgerSettings: LedgerUiSettings,
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit,
 ) {
