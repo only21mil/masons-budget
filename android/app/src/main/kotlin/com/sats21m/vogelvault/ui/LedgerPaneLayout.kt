@@ -109,7 +109,8 @@ internal fun LedgerPanes(
                 .testTag("vault-list-pane").padding(bottom = listBottomClearance)) { list() }
             Box(Modifier.fillMaxSize()
                 .then(if (!plan.split && !showCompactDetail) Modifier.clearAndSetSemantics { } else Modifier)
-                .testTag("vault-detail-pane")) { detail() }
+                .testTag("vault-detail-pane")
+                .padding(bottom = if (!plan.split && showCompactDetail) listBottomClearance else 0.dp)) { detail() }
         },
     ) { children, constraints ->
         val width = constraints.maxWidth

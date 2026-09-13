@@ -66,7 +66,7 @@ class UnfoldedLayoutTest {
         controller.setup()
     }
     @After fun stop() { controller.pause().stop().destroy() }
-    private fun render(destination: Destination) {
+    private fun render(destination: Destination, longDetail: Boolean = false) {
         controller.get().setContent {
             LedgerTheme {
                 Box(Modifier.padding(start = hostOffset).size(width, 945.dp)) {
@@ -74,6 +74,9 @@ class UnfoldedLayoutTest {
                         state = VaultUiState(activeProfile = FamilyMember.VICTOR, destination = destination,
                             data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE).let { fixture ->
                                 fixture.copy(btcBalanceReadOwner = FamilyMember.VICTOR,
+                                    transactions = fixture.transactions.copy(value = fixture.transactions.value.mapIndexed { index, transaction ->
+                                        if (longDetail && index == 0) transaction.copy(note = (1..80).joinToString("\n") { "Detail line $it" }) else transaction
+                                    }),
                                     btcBalance = fixture.btcBalance.copy(value = fixture.btcBalance.value?.copy(updatedAtMs = 1L)))
                             }),
                         onNavigate = {}, onSwitchProfile = {}, hingeOverride = hinge, safeDrawingInsets = safeInsets,
@@ -145,6 +148,22 @@ class UnfoldedLayoutTest {
         val fab = compose.onNodeWithTag("quick-add-fab").fetchSemanticsNode().boundsInRoot
         assertTrue(list.fetchSemanticsNode().boundsInRoot.bottom <= fab.top, "list viewport must clear FAB: $fab")
         assertTrue(tail.fetchSemanticsNode().boundsInRoot.bottom <= fab.top, "tail row must remain unobscured: $fab")
+    }
+
+    @Test fun `compact transaction detail tail stays above the quick add button`() {
+        width = 345.dp
+        render(Destination.ACTIVITY, longDetail = true)
+        val merchant = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE).transactions.value.first().merchant
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription(merchant, substring = true))
+        compose.onNode(hasContentDescription(merchant, substring = true) and hasClickAction()).performClick()
+        val inDetail = hasAnyAncestor(hasTestTag("vault-detail-pane"))
+        val detail = compose.onNode(hasScrollToIndexAction() and inDetail)
+        detail.performScrollToNode(hasText("Victor"))
+        val tail = compose.onNode(hasText("Victor") and inDetail)
+        tail.assertIsDisplayed()
+        val fab = compose.onNodeWithTag("quick-add-fab").fetchSemanticsNode().boundsInRoot
+        assertTrue(detail.fetchSemanticsNode().boundsInRoot.bottom <= fab.top, "compact detail viewport must clear FAB: $fab")
+        assertTrue(tail.fetchSemanticsNode().boundsInRoot.bottom <= fab.top, "compact detail tail must remain unobscured: $fab")
     }
 
     @Test fun `selecting a smart list replaces the previous task detail`() = taskParentReplacesDetail("Inbox")
