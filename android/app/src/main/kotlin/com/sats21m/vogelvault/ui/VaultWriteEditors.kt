@@ -722,6 +722,74 @@ internal fun BtcBuyEntrySheet(
     val scope = rememberCoroutineScope()
     val haptics = rememberLedgerHaptics()
 
+    var writeAccepted by remember { mutableStateOf(false) }
+    val retrySave: () -> Unit = retrySave@ {
+        if (submitting) return@retrySave
+        val derived = deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrElse {
+            message = it.message ?: "Check the buy amounts"
+            return@retrySave
+        }
+        when (
+            val draft =
+                btcBuyWriteRequest(
+                    owner,
+                    buyId,
+                    date,
+                    source,
+                    derived.sats,
+                    derived.priceUsd,
+                    derived.purchaseUsd,
+                )
+        ) {
+            is WriteDraftResult.Invalid -> message = draft.reason
+            is WriteDraftResult.Valid -> {
+                val client = mutationClient
+                if (client == null) {
+                    message = "Bitcoin buy not saved: the app write client is unavailable."
+                    return@retrySave
+                }
+                val writeScope = saveScope
+                val draftIds = buyDraftIds
+                if (writeScope == null || draftIds == null) {
+                    message = "Bitcoin buy not saved: the app write client is unavailable."
+                    return@retrySave
+                }
+                submitting = true
+                // The application scope owns the request so a
+                // dismissal cannot cancel a write the server
+                // may already have committed.
+                launchBtcBuySave(
+                    scope = writeScope,
+                    request = draft.request,
+                    client = client,
+                    buyDraftIds = draftIds,
+                ) { outcome ->
+                    submitting = false
+                    writeAccepted = outcome !is BtcBuySaveOutcome.Rejected
+                    when (outcome) {
+                        BtcBuySaveOutcome.Accepted -> {
+                            haptics.confirm()
+                            onWriteSucceeded()
+                            onDismiss()
+                        }
+                        BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
+                            message = acceptedBtcBuyLeaseResetFailure
+                        is BtcBuySaveOutcome.Rejected -> {
+                            check(outcome.result !is ConvexResult.Ok) {
+                                "Accepted result cannot be rejected"
+                            }
+                            haptics.reject()
+                            message = convexWriteFailureMessage(
+                                "Bitcoin buy not saved",
+                                outcome.result,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     LedgerSheet(
         title = stringResource(R.string.btc_buy_editor_title),
         onDismissRequest = { if (!submitting) onDismiss() },
@@ -733,70 +801,7 @@ internal fun BtcBuyEntrySheet(
                 VaultButton(
                     label = stringResource(R.string.write_save),
                     enabled = !submitting,
-                    onClick = {
-                        val derived = deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrElse {
-                            message = it.message ?: "Check the buy amounts"
-                            return@VaultButton
-                        }
-                        when (
-                            val draft =
-                                btcBuyWriteRequest(
-                                    owner,
-                                    buyId,
-                                    date,
-                                    source,
-                                    derived.sats,
-                                    derived.priceUsd,
-                                    derived.purchaseUsd,
-                                )
-                        ) {
-                            is WriteDraftResult.Invalid -> message = draft.reason
-                            is WriteDraftResult.Valid -> {
-                                val client = mutationClient
-                                if (client == null) {
-                                    message = "Bitcoin buy not saved: the app write client is unavailable."
-                                    return@VaultButton
-                                }
-                                val writeScope = saveScope
-                                val draftIds = buyDraftIds
-                                if (writeScope == null || draftIds == null) {
-                                    message = "Bitcoin buy not saved: the app write client is unavailable."
-                                    return@VaultButton
-                                }
-                                submitting = true
-                                // The application scope owns the request so a
-                                // dismissal cannot cancel a write the server
-                                // may already have committed.
-                                launchBtcBuySave(
-                                    scope = writeScope,
-                                    request = draft.request,
-                                    client = client,
-                                    buyDraftIds = draftIds,
-                                ) { outcome ->
-                                    submitting = false
-                                    when (outcome) {
-                                        BtcBuySaveOutcome.Accepted -> {
-                                            haptics.confirm()
-                                            onWriteSucceeded()
-                                            onDismiss()
-                                        }
-                                        BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
-                                            message = acceptedBtcBuyLeaseResetFailure
-                                        is BtcBuySaveOutcome.Rejected -> {
-                                            check(outcome.result !is ConvexResult.Ok) {
-                                                "Accepted result cannot be rejected"
-                                            }
-                                            haptics.reject()
-                                            message = convexWriteFailureMessage(
-                                                "Bitcoin buy not saved",
-                                                outcome.result,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
+                    onClick = retrySave,
                 )
             }
         },
@@ -816,7 +821,9 @@ internal fun BtcBuyEntrySheet(
         deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrNull()?.let { result ->
             Text("${result.sats} sats · $${result.priceUsd} per BTC · $${result.purchaseUsd}")
         }
-        message?.let { Text(it) }
+        com.sats21m.vogelvault.ui.components.WriteRefusalLine(
+            message, retry = retrySave, enabled = !submitting, accepted = writeAccepted,
+        )
     }
 }
 
@@ -845,6 +852,66 @@ internal fun BtcBuyFromIncomeEntrySheet(
     val haptics = rememberLedgerHaptics()
     val purchaseUsd = java.math.BigDecimal(income.amountCents).movePointLeft(2).toPlainString()
 
+    var writeAccepted by remember { mutableStateOf(false) }
+    val retrySave: () -> Unit = retrySave@ {
+        if (submitting) return@retrySave
+        val derived = deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrElse {
+            message = it.message ?: "Check the buy amounts"
+            return@retrySave
+        }
+        when (
+            val draft = btcBuyFromIncomeWriteRequest(
+                viewer = viewer,
+                id = income.id,
+                income = income,
+                source = source,
+                sats = derived.sats,
+                priceUsd = derived.priceUsd,
+                buyNote = buyNote,
+            )
+        ) {
+            is WriteDraftResult.Invalid -> message = draft.reason
+            is WriteDraftResult.Valid -> {
+                val writeGateway = gateway
+                val processDraftIds = draftIds
+                val processScope = writeScope
+                if (writeGateway == null || processDraftIds == null || processScope == null) {
+                    message = "Income and Bitcoin buy not saved: the app write client is unavailable."
+                    return@retrySave
+                }
+                submitting = true
+                launchBtcBuyFromIncomeSave(
+                    scope = processScope,
+                    request = draft.request,
+                    gateway = writeGateway,
+                    buyDraftIds = processDraftIds,
+                ) { outcome ->
+                    submitting = false
+                    writeAccepted = outcome !is BtcBuySaveOutcome.Rejected
+                    when (outcome) {
+                        BtcBuySaveOutcome.Accepted -> {
+                            haptics.confirm()
+                            onWriteSucceeded()
+                            onDismiss()
+                        }
+                        BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
+                            message = acceptedBtcBuyLeaseResetFailure
+                        is BtcBuySaveOutcome.Rejected -> {
+                            check(outcome.result !is ConvexResult.Ok) {
+                                "Accepted result cannot be rejected"
+                            }
+                            haptics.reject()
+                            message = convexWriteFailureMessage(
+                                "Income and Bitcoin buy not saved",
+                                outcome.result,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     LedgerSheet(
         title = stringResource(R.string.budget_income_add_as_bitcoin_buy),
         onDismissRequest = { if (!submitting) onDismiss() },
@@ -856,62 +923,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
                 VaultButton(
                     label = stringResource(R.string.write_save),
                     enabled = !submitting,
-                    onClick = {
-                        val derived = deriveBitcoinBuy(sats, priceUsd, purchaseUsd, quoteCents).getOrElse {
-                            message = it.message ?: "Check the buy amounts"
-                            return@VaultButton
-                        }
-                        when (
-                            val draft = btcBuyFromIncomeWriteRequest(
-                                viewer = viewer,
-                                id = income.id,
-                                income = income,
-                                source = source,
-                                sats = derived.sats,
-                                priceUsd = derived.priceUsd,
-                                buyNote = buyNote,
-                            )
-                        ) {
-                            is WriteDraftResult.Invalid -> message = draft.reason
-                            is WriteDraftResult.Valid -> {
-                                val writeGateway = gateway
-                                val processDraftIds = draftIds
-                                val processScope = writeScope
-                                if (writeGateway == null || processDraftIds == null || processScope == null) {
-                                    message = "Income and Bitcoin buy not saved: the app write client is unavailable."
-                                    return@VaultButton
-                                }
-                                submitting = true
-                                launchBtcBuyFromIncomeSave(
-                                    scope = processScope,
-                                    request = draft.request,
-                                    gateway = writeGateway,
-                                    buyDraftIds = processDraftIds,
-                                ) { outcome ->
-                                    submitting = false
-                                    when (outcome) {
-                                        BtcBuySaveOutcome.Accepted -> {
-                                            haptics.confirm()
-                                            onWriteSucceeded()
-                                            onDismiss()
-                                        }
-                                        BtcBuySaveOutcome.AcceptedLeaseResetFailed ->
-                                            message = acceptedBtcBuyLeaseResetFailure
-                                        is BtcBuySaveOutcome.Rejected -> {
-                                            check(outcome.result !is ConvexResult.Ok) {
-                                                "Accepted result cannot be rejected"
-                                            }
-                                            haptics.reject()
-                                            message = convexWriteFailureMessage(
-                                                "Income and Bitcoin buy not saved",
-                                                outcome.result,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
+                    onClick = retrySave,
                 )
             }
         },
@@ -930,7 +942,7 @@ internal fun BtcBuyFromIncomeEntrySheet(
             Text("${result.sats} sats · $${result.priceUsd} per BTC · $${result.purchaseUsd}")
         }
         EditorField(buyNote, { buyNote = it }, R.string.transaction_note)
-        message?.let { Text(it, color = colors.loss) }
+        com.sats21m.vogelvault.ui.components.WriteRefusalLine(message, retrySave, !submitting, writeAccepted)
     }
 }
 

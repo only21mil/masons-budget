@@ -86,6 +86,50 @@ internal fun BtcTransferEntrySheet(
     var message by remember { mutableStateOf<String?>(null) }
     var submitting by remember { mutableStateOf(false) }
 
+    var writeAccepted by remember { mutableStateOf(false) }
+    val retrySave: () -> Unit = retrySave@ {
+        if (submitting) return@retrySave
+        val draft = btcTransferWriteRequest(
+            viewer = viewer,
+            stableTransferId = transferId,
+            date = date,
+            fromAccountKey = fromAccountKey,
+            toAccountKey = toAccountKey,
+            satsText = sats,
+            feeSatsText = feeSats,
+            note = note,
+            accounts = eligibleAccounts,
+        )
+        draft.fold(
+            onSuccess = { transfer ->
+                if (gateway == null || writeScope == null || transferDraftIds == null) {
+                    message = "Bitcoin transfer not saved: the app write client is unavailable."
+                } else {
+                    submitting = true
+                    launchBtcTransferSave(
+                        scope = writeScope,
+                        transfer = transfer,
+                        gateway = gateway,
+                        transferDraftIds = transferDraftIds,
+                    ) { result ->
+                        submitting = false
+                        writeAccepted = result !is com.sats21m.vogelvault.DraftIdWriteOutcome.Rejected
+                        val failure = btcTransferWriteFailureMessage(result)
+                        result.onServerAccepted(onWriteSucceeded)
+                        if (failure == null) {
+                            onDismiss()
+                        } else {
+                            message = failure
+                        }
+                    }
+                }
+            },
+            onFailure = { error ->
+                message = error.message ?: "Bitcoin transfer not saved: invalid input."
+            },
+        )
+    }
+
     LedgerSheet(
         title = stringResource(R.string.btc_transfer_editor_title),
         onDismissRequest = { if (!submitting) onDismiss() },
@@ -101,46 +145,7 @@ internal fun BtcTransferEntrySheet(
                     label = stringResource(R.string.write_save),
                     modifier = Modifier.testTag(BTC_TRANSFER_SAVE_TEST_TAG),
                     enabled = !submitting && eligibleAccounts.size >= 2,
-                    onClick = {
-                        val draft = btcTransferWriteRequest(
-                            viewer = viewer,
-                            stableTransferId = transferId,
-                            date = date,
-                            fromAccountKey = fromAccountKey,
-                            toAccountKey = toAccountKey,
-                            satsText = sats,
-                            feeSatsText = feeSats,
-                            note = note,
-                            accounts = eligibleAccounts,
-                        )
-                        draft.fold(
-                            onSuccess = { transfer ->
-                                if (gateway == null || writeScope == null || transferDraftIds == null) {
-                                    message = "Bitcoin transfer not saved: the app write client is unavailable."
-                                } else {
-                                    submitting = true
-                                    launchBtcTransferSave(
-                                        scope = writeScope,
-                                        transfer = transfer,
-                                        gateway = gateway,
-                                        transferDraftIds = transferDraftIds,
-                                    ) { result ->
-                                        submitting = false
-                                        val failure = btcTransferWriteFailureMessage(result)
-                                        result.onServerAccepted(onWriteSucceeded)
-                                        if (failure == null) {
-                                            onDismiss()
-                                        } else {
-                                            message = failure
-                                        }
-                                    }
-                                }
-                            },
-                            onFailure = { error ->
-                                message = error.message ?: "Bitcoin transfer not saved: invalid input."
-                            },
-                        )
-                    },
+                    onClick = retrySave,
                 )
             }
         },
@@ -188,7 +193,9 @@ internal fun BtcTransferEntrySheet(
                 label = stringResource(R.string.btc_transfer_note_label),
             )
         }
-        message?.let { Text(it, color = LocalLedgerTheme.current.colors.loss) }
+        com.sats21m.vogelvault.ui.components.WriteRefusalLine(
+            message, retry = retrySave, enabled = !submitting, accepted = writeAccepted,
+        )
     }
 }
 

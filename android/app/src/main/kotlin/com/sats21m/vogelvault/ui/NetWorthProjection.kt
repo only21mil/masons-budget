@@ -162,8 +162,7 @@ internal fun NetWorthProjectionPanel(state: VaultUiState, displayUnit: DisplayUn
                 StateBlock(
                     Freshness.EMPTY,
                     "Projection unavailable",
-                    "A complete Bitcoin value, retirement snapshot, and market quote are required.",
-                )
+                    "A complete Bitcoin value, retirement snapshot, and market quote are required.", action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             } else {
                 KpiStrip(
                     listOf(

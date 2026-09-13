@@ -533,11 +533,6 @@ fun ScreenHost(
         list = {
             Column(Modifier.fillMaxSize()) {
                 onBack?.let { back -> TextButton(onClick = back) { Text("Back") } }
-                ScreenActionBar(
-                    destination = destination,
-                    displayUnit = displayUnit,
-                    onDisplayUnitChange = onDisplayUnitChange,
-                )
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxWidth().weight(1f),
@@ -624,6 +619,8 @@ fun ScreenHost(
                             ledgerSettings,
                             onLedgerSettingsChange,
                             onNavigate,
+                            displayUnit,
+                            onDisplayUnitChange,
                         )
                     }
                     }
@@ -648,39 +645,6 @@ fun ScreenHost(
     }
 
 
-}
-
-/**
- * Financial display units. The shell owns the fixed quick-add action.
- */
-@Composable
-private fun ScreenActionBar(
-    destination: Destination,
-    displayUnit: DisplayUnit,
-    onDisplayUnitChange: (DisplayUnit) -> Unit,
-) {
-    val tokens = LocalLedgerTheme.current
-    val showsUnit = destination.supportsFinancialDisplayUnit
-    if (!showsUnit) return
-    Column {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(tokens.colors.panel)
-                .padding(horizontal = tokens.density.screenGutter, vertical = VaultSpace.sm),
-            horizontalArrangement = Arrangement.spacedBy(tokens.density.actionGap, Alignment.End),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (showsUnit) {
-                BitcoinUnitToggle(
-                    selected = displayUnit,
-                    onSelect = onDisplayUnitChange,
-                    modifier = Modifier.weight(1f, fill = false).widthIn(max = 200.dp),
-                )
-            }
-        }
-        HorizontalHairline()
-    }
 }
 
 /** Two lines: the screen title and one tracked subtitle. Nothing else sits above the first data. */
@@ -764,23 +728,12 @@ internal fun BitcoinUnitToggle(
 @Composable
 internal fun BitcoinConversionNotice(state: VaultUiState) {
     val quote = state.operationalBitcoinQuote()
-    if (quote != null) {
-        StatusBanner(
-            text = if (quote.status == MarketQuoteStatus.STALE) "BTC conversion · stale quote" else "BTC conversion",
-            detail = quote.quoteHint(state.now),
-            tone = if (quote.status == MarketQuoteStatus.STALE) {
-                LocalLedgerTheme.current.colors.loss
-            } else {
-                LocalLedgerTheme.current.colors.foregroundSecondary
-            },
-        )
-    } else {
-        StatusBanner(
-            text = "BTC conversion unavailable",
-            detail = "No usable operational BTC market quote is available. Recorded buys are execution metadata only.",
-            tone = LocalLedgerTheme.current.colors.loss,
-        )
-    }
+    com.sats21m.vogelvault.ui.components.FreshnessTag(
+        status = if (quote == null) Freshness.ERROR else if (quote.status == MarketQuoteStatus.STALE) Freshness.STALE else Freshness.LIVE,
+        updatedAt = quote?.fetchedAt?.let { java.time.Instant.parse(it).toEpochMilli() },
+        now = state.now,
+        provenance = state.bitcoinConversionProvenance(),
+    )
 }
 
 internal fun VaultUiState.bitcoinConversionProvenance(): String =
@@ -860,17 +813,17 @@ private fun VaultLazyListScope.dashboard(
         TextButton(onClick = { onNavigate(Destination.RETIREMENT) }) { Text("Retirement") }
         TextButton(onClick = { onNavigate(Destination.ACTIVITY) }) { Text("Recent activity · See all") }
     }
-    item { StaleNotice(state.data.transactions.status) }
+    item { StaleNotice(state.data.transactions.status, state.data.transactions.updatedAt, state.now) }
     if (state.data.transactions.suppressFigures) {
         item {
             Panel("Recent activity", state.data.transactions.source) {
-                StateBlock(state.data.transactions.status)
+                StateBlock(state.data.transactions.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else if (projection.activity.isEmpty()) {
         item {
             Panel("Recent activity", state.data.transactions.source) {
-                StateBlock(Freshness.EMPTY)
+                StateBlock(Freshness.EMPTY, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else {
@@ -890,7 +843,7 @@ private fun VaultLazyListScope.dashboard(
     if (incomeUnavailable) {
         item {
             Panel("Income", state.data.income.source) {
-                StateBlock(state.data.income.status)
+                StateBlock(state.data.income.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else {
@@ -992,13 +945,13 @@ private fun VaultLazyListScope.activity(
         incomeRows(state, search.incomeEntries, "activity-income")
         return
     }
-    item { StaleNotice(state.data.transactions.status) }
+    item { StaleNotice(state.data.transactions.status, state.data.transactions.updatedAt, state.now) }
     if (state.data.transactions.suppressFigures) {
-        item { Panel { StateBlock(state.data.transactions.status) } }
+        item { Panel { StateBlock(state.data.transactions.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() }) } }
         return
     }
     if (search.totalCount == 0) {
-        item { Panel { StateBlock(Freshness.EMPTY) } }
+        item { Panel { StateBlock(Freshness.EMPTY, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() }) } }
         return
     }
     val transactions = search.transactions
@@ -1017,14 +970,12 @@ private fun VaultLazyListScope.activity(
     if (transactions.isEmpty()) {
         item {
             Panel {
-                Column(Modifier.padding(vertical = VaultSpace.md)) {
-                    Text("No matching records", color = LocalLedgerTheme.current.colors.foreground)
-                    Text(
-                        "Try another search or filter.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = LocalLedgerTheme.current.colors.foregroundSecondary,
-                    )
-                }
+                StateBlock(Freshness.EMPTY, title = "No matching records", detail = "Try another search or filter.", action = {
+                    TextButton(onClick = {
+                        search.onQueryChange("")
+                        search.onFilterChange(ActivityTransactionFilter.ALL)
+                    }) { Text("Clear filters") }
+                })
             }
         }
         return
@@ -1128,7 +1079,7 @@ private fun VaultLazyListScope.incomeRows(
     if (state.data.incomeFiguresUnavailable || rows.isEmpty()) {
         item {
             Panel("Income") {
-                StateBlock(if (state.data.incomeFiguresUnavailable) state.data.income.status else Freshness.EMPTY)
+                StateBlock(if (state.data.incomeFiguresUnavailable) state.data.income.status else Freshness.EMPTY, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
@@ -1187,8 +1138,7 @@ private fun VaultLazyListScope.budget(
                         "This demo profile has no sample budget."
                     } else if (readable) {
                         "Victor or Rachel can create a budget for this profile."
-                    } else null,
-                )
+                    } else null, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
@@ -1240,7 +1190,7 @@ private fun VaultLazyListScope.budget(
             ),
         )
     }
-    item { StaleNotice(slice.status) }
+    item { StaleNotice(slice.status, slice.updatedAt, state.now) }
     if (derived.month != budget.month && !actualsUnavailable) {
         item {
             StatusBanner(
@@ -1268,7 +1218,7 @@ private fun VaultLazyListScope.budget(
     if (actualsUnavailable) {
         item {
             Panel("Categories", "${slice.source} · ${derived.month} transactions") {
-                StateBlock(actualsStatus)
+                StateBlock(actualsStatus, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else {
@@ -1329,8 +1279,8 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
             }
         }
     }
-    item { StaleNotice(state.data.transactions.status) }
-    item { StaleNotice(state.data.btcBillPays.status) }
+    item { StaleNotice(state.data.transactions.status, state.data.transactions.updatedAt, state.now) }
+    item { StaleNotice(state.data.btcBillPays.status, state.data.btcBillPays.updatedAt, state.now) }
 
     if (state.data.budgetActualsUnavailable) {
         item {
@@ -1338,7 +1288,7 @@ private fun VaultLazyListScope.budgetCategoryDrilldown(
                 title = stringResource(R.string.budget_category_transactions_title, scope.category),
                 source = "${state.data.budgetActualsStatus} · ${scope.month}",
             ) {
-                StateBlock(state.data.budgetActualsStatus)
+                StateBlock(state.data.budgetActualsStatus, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
@@ -1551,7 +1501,7 @@ private fun VaultLazyListScope.bitcoin(
             ),
         )
     }
-    item { StaleNotice(slice.status) }
+    item { StaleNotice(slice.status, slice.updatedAt, state.now) }
     val canWriteBitcoin = capabilities.allows(state.activeProfile, DeviceCapability.BITCOIN)
     item {
         val reason = capabilities.unavailableReason(state.activeProfile, DeviceCapability.BITCOIN)
@@ -1579,13 +1529,13 @@ private fun VaultLazyListScope.bitcoin(
     if (state.data.btcBuys.suppressFigures) {
         item {
             Panel("Recent buys", state.data.btcBuys.source) {
-                StateBlock(state.data.btcBuys.status)
+                StateBlock(state.data.btcBuys.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else if (projection.buys.isEmpty()) {
         item {
             Panel("Recent buys", state.data.btcBuys.source) {
-                StateBlock(Freshness.EMPTY)
+                StateBlock(Freshness.EMPTY, action = { TextButton(onClick = onAdd) { Text("Add") } })
             }
         }
     } else {
@@ -1609,7 +1559,7 @@ private fun VaultLazyListScope.bitcoin(
     if (!state.data.billPaysAvailableTo(state.activeProfile)) {
         item {
             Panel("Bitcoin bill pays", state.data.btcBillPays.source) {
-                StateBlock(state.data.btcBillPays.status)
+                StateBlock(state.data.btcBillPays.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
     } else {
@@ -1635,7 +1585,7 @@ private fun VaultLazyListScope.bitcoin(
     val visibleTransfers = transfers.value.visibleTo(state.activeProfile)
     if (transfers.suppressFigures || visibleTransfers.isEmpty()) {
         item { Panel("Transfers", transfers.source) {
-            StateBlock(if (transfers.suppressFigures) transfers.status else Freshness.EMPTY)
+            StateBlock(if (transfers.suppressFigures) transfers.status else Freshness.EMPTY, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
         } }
     } else {
         keyedPanel(sectionKey = "bitcoin-transfers", title = "Transfers", source = transfers.source,
@@ -1720,7 +1670,7 @@ private fun VaultLazyListScope.accountList(
     if (status == Freshness.ERROR || status == Freshness.LOADING) {
         item {
             Panel(title, source) {
-                StateBlock(status)
+                StateBlock(status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
@@ -1731,8 +1681,7 @@ private fun VaultLazyListScope.accountList(
                 StateBlock(
                     Freshness.EMPTY,
                     title = "No accounts in scope",
-                    detail = "This profile has no Bitcoin accounts counting toward its net worth.",
-                )
+                    detail = "This profile has no Bitcoin accounts counting toward its net worth.", action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
@@ -1924,7 +1873,10 @@ private fun VaultLazyListScope.settings(
     ledgerSettings: LedgerUiSettings,
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit,
     onNavigate: (Destination) -> Unit,
+    displayUnit: DisplayUnit,
+    onDisplayUnitChange: (DisplayUnit) -> Unit,
 ) {
+    item { Panel("Display unit") { BitcoinUnitToggle(displayUnit, onDisplayUnitChange) } }
     item {
         TextButton(onClick = { onNavigate(Destination.FAMILY) }) { Text("Family") }
         TextButton(onClick = { onNavigate(Destination.EXPORT) }) { Text("Export") }
@@ -2109,11 +2061,7 @@ internal fun SyncTokenConfiguration() {
 // ── shared ──────────────────────────────────────────────────────────────────
 
 @Composable
-private fun StaleNotice(status: Freshness) {
+private fun StaleNotice(status: Freshness, updatedAt: Long?, now: Long) {
     if (status != Freshness.STALE) return
-    StatusBanner(
-        stringResource(R.string.convex_read_stale_title),
-        stringResource(R.string.convex_read_stale_detail),
-        tone = LocalLedgerTheme.current.colors.loss,
-    )
+    com.sats21m.vogelvault.ui.components.FreshnessTag(status, updatedAt, now, "Saved figures")
 }

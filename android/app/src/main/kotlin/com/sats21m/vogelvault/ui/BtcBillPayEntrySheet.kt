@@ -210,6 +210,55 @@ internal fun BtcBillPayEntrySheet(
     val scope = rememberCoroutineScope()
     val effect = BillPayBudgetEffect.fromWireOrDefault(effectWire)
 
+    var writeAccepted by remember { mutableStateOf(false) }
+    val retrySave: () -> Unit = retrySave@ {
+        if (submitting) return@retrySave
+        when (
+            val draft = btcBillPayWriteRequest(
+                owner = owner,
+                id = draftId,
+                date = date,
+                merchant = merchant,
+                category = category,
+                budgetEffect = effect,
+                amountUsd = amountUsd,
+                sats = sats,
+                priceUsd = priceUsd,
+                feeUsd = feeUsd,
+                availableCategories = budgetCategories,
+                note = note,
+                reference = reference,
+            )
+        ) {
+            is WriteDraftResult.Invalid -> message = draft.reason
+            is WriteDraftResult.Valid -> {
+                val writeGateway = gateway
+                val processScope = writeScope
+                val processDraftIds = draftIds
+                if (writeGateway == null || processScope == null || processDraftIds == null) {
+                    message = "Bitcoin bill pay not saved: the app write client is unavailable."
+                    return@retrySave
+                }
+                submitting = true
+                launchBtcBillPaySave(
+                    scope = processScope,
+                    request = draft.request,
+                    gateway = writeGateway,
+                    draftIds = processDraftIds,
+                    onAccepted = onWriteSucceeded,
+                ) { outcome ->
+                    submitting = false
+                    if (outcome is DraftIdWriteOutcome.Accepted) {
+                        onDismiss()
+                    } else {
+                        writeAccepted = outcome !is DraftIdWriteOutcome.Rejected
+                        message = btcBillPayWriteFailureMessage(outcome)
+                    }
+                }
+            }
+        }
+    }
+
     LedgerSheet(
         title = stringResource(R.string.btc_bill_pay_editor_title),
         onDismissRequest = { if (!submitting) onDismiss() },
@@ -221,51 +270,7 @@ internal fun BtcBillPayEntrySheet(
                 VaultButton(
                     label = if (submitting) stringResource(R.string.add_transaction_saving) else stringResource(R.string.write_save),
                     enabled = !submitting,
-                    onClick = {
-                        when (
-                            val draft = btcBillPayWriteRequest(
-                                owner = owner,
-                                id = draftId,
-                                date = date,
-                                merchant = merchant,
-                                category = category,
-                                budgetEffect = effect,
-                                amountUsd = amountUsd,
-                                sats = sats,
-                                priceUsd = priceUsd,
-                                feeUsd = feeUsd,
-                                availableCategories = budgetCategories,
-                                note = note,
-                                reference = reference,
-                            )
-                        ) {
-                            is WriteDraftResult.Invalid -> message = draft.reason
-                            is WriteDraftResult.Valid -> {
-                                val writeGateway = gateway
-                                val processScope = writeScope
-                                val processDraftIds = draftIds
-                                if (writeGateway == null || processScope == null || processDraftIds == null) {
-                                    message = "Bitcoin bill pay not saved: the app write client is unavailable."
-                                    return@VaultButton
-                                }
-                                submitting = true
-                                launchBtcBillPaySave(
-                                    scope = processScope,
-                                    request = draft.request,
-                                    gateway = writeGateway,
-                                    draftIds = processDraftIds,
-                                    onAccepted = onWriteSucceeded,
-                                ) { outcome ->
-                                    submitting = false
-                                    if (outcome is DraftIdWriteOutcome.Accepted) {
-                                        onDismiss()
-                                    } else {
-                                        message = btcBillPayWriteFailureMessage(outcome)
-                                    }
-                                }
-                            }
-                        }
-                    },
+                    onClick = retrySave,
                 )
             }
         },
@@ -336,7 +341,9 @@ internal fun BtcBillPayEntrySheet(
         )
         BillPayEditorField(note, { note = it }, R.string.btc_bill_pay_note_label)
         BillPayEditorField(reference, { reference = it }, R.string.btc_bill_pay_reference_label)
-        message?.let { Text(it) }
+        com.sats21m.vogelvault.ui.components.WriteRefusalLine(
+            message, retry = retrySave, enabled = !submitting, accepted = writeAccepted,
+        )
     }
 }
 

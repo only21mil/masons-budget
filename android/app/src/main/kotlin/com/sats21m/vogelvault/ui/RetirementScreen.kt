@@ -240,8 +240,7 @@ private fun RetirementScreen(
                         StateBlock(
                             com.sats21m.vogelvault.domain.Freshness.ERROR,
                             stringResource(R.string.retirement_math_unavailable_title),
-                            stringResource(R.string.retirement_math_unavailable_detail),
-                        )
+                            stringResource(R.string.retirement_math_unavailable_detail), action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
                     }
                 } else {
                     HorizonSelector(RETIREMENT_HORIZONS, horizon) { horizon = it }
@@ -301,7 +300,7 @@ private fun RetirementUnavailable(reason: RetirementUnavailableReason) {
         }
     }
     Panel(stringResource(R.string.retirement_projection_title)) {
-        StateBlock(com.sats21m.vogelvault.domain.Freshness.EMPTY, title, detail)
+        StateBlock(com.sats21m.vogelvault.domain.Freshness.EMPTY, title, detail, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
     }
 }
 

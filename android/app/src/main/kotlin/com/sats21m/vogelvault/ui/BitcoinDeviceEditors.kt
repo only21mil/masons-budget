@@ -132,53 +132,58 @@ internal fun BtcAccountEntrySheet(
         ?: if (conflictedSnapshot != null && snapshot.getOrNull()?.identity == conflictedSnapshot) {
             "The balance changed. Close and refresh Bitcoin before trying again."
         } else null
+    var writeAccepted by remember { mutableStateOf(false) }
+    val retrySave: () -> Unit = retrySave@ {
+        if (working || validation != null || !viewer.isAdult || restored.isFailure || readFailure != null) return@retrySave
+        val app = application ?: return@retrySave
+        val denial = app.deviceCapabilities.unavailableReason(viewer, DeviceCapability.BITCOIN)
+        if (denial != null) { failure = denial; return@retrySave }
+        val request = runCatching {
+            pending ?: snapshot.getOrThrow().let { loaded ->
+                app.btcAccountDrafts.stage(viewer, PendingBtcAccount(
+                    newAccountKey(label, viewer), viewer.ledgerOwner.key, label.trim(),
+                    custodyWire, loaded.asOf, loaded.baseUpdatedAtMs,
+                ))
+            }
+        }.getOrElse {
+            failure = "Account request could not be prepared. Close and refresh before trying again."
+            return@retrySave
+        }
+        pending = request
+        working = true
+        app.applicationScope.launch {
+            val result = app.deviceMutationClient.mutate(request.mutation())
+            working = false
+            writeAccepted = result is ConvexResult.Ok
+            failure = convexWriteFailureMessage("Account not saved", result)
+            if ((accountRevisionRejected(result) || accountValidationRejected(result)) &&
+                app.btcAccountDrafts.release(viewer, request)) {
+                label = request.label
+                custodyWire = request.custodyKey
+                if (accountRevisionRejected(result)) {
+                    conflictedSnapshot = "${request.baseUpdatedAtMs}:${request.asOf}"
+                }
+                pending = null
+            }
+            if (result is ConvexResult.Ok) {
+                if (app.btcAccountDrafts.release(viewer, request)) {
+                    onWriteSucceeded()
+                    onDismiss()
+                } else {
+                    failure = "Account saved. Restart the app before adding another account."
+                    onWriteSucceeded()
+                }
+            }
+        }
+    }
+
     LedgerSheet(
         title = "Add Bitcoin account",
         onDismissRequest = { if (!working) onDismiss() },
         actions = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(VaultSpace.sm)) {
                 TextButton(onClick = onDismiss, enabled = !working) { Text("Cancel") }
-                VaultButton(label = if (working) "Saving…" else "Save", enabled = !working && validation == null && viewer.isAdult && restored.isSuccess && readFailure == null && application?.deviceCapabilities?.unavailableReason(viewer, DeviceCapability.BITCOIN) == null, onClick = {
-                val app = application ?: return@VaultButton
-                val denial = app.deviceCapabilities.unavailableReason(viewer, DeviceCapability.BITCOIN)
-                if (denial != null) { failure = denial; return@VaultButton }
-                val request = runCatching {
-                    pending ?: snapshot.getOrThrow().let { loaded ->
-                        app.btcAccountDrafts.stage(viewer, PendingBtcAccount(
-                            newAccountKey(label, viewer), viewer.ledgerOwner.key, label.trim(),
-                            custodyWire, loaded.asOf, loaded.baseUpdatedAtMs,
-                        ))
-                    }
-                }.getOrElse {
-                    failure = "Account request could not be prepared. Close and refresh before trying again."
-                    return@VaultButton
-                }
-                pending = request
-                working = true
-                app.applicationScope.launch {
-                    val result = app.deviceMutationClient.mutate(request.mutation())
-                    working = false
-                    failure = convexWriteFailureMessage("Account not saved", result)
-                    if ((accountRevisionRejected(result) || accountValidationRejected(result)) &&
-                        app.btcAccountDrafts.release(viewer, request)) {
-                        label = request.label
-                        custodyWire = request.custodyKey
-                        if (accountRevisionRejected(result)) {
-                            conflictedSnapshot = "${request.baseUpdatedAtMs}:${request.asOf}"
-                        }
-                        pending = null
-                    }
-                    if (result is ConvexResult.Ok) {
-                        if (app.btcAccountDrafts.release(viewer, request)) {
-                            onWriteSucceeded()
-                            onDismiss()
-                        } else {
-                            failure = "Account saved. Restart the app before adding another account."
-                            onWriteSucceeded()
-                        }
-                    }
-                }
-            })
+                VaultButton(label = if (working) "Saving…" else "Save", enabled = !working && validation == null && viewer.isAdult && restored.isSuccess && readFailure == null && application?.deviceCapabilities?.unavailableReason(viewer, DeviceCapability.BITCOIN) == null, onClick = retrySave)
             }
         },
     ) {
@@ -204,7 +209,9 @@ internal fun BtcAccountEntrySheet(
         }
         Text("Starts at 0 sats. Buys, bill pays, and transfers change the balance.")
         validation?.let { Text(it) }
-        failure?.let { Text(it) }
+        com.sats21m.vogelvault.ui.components.WriteRefusalLine(
+            failure, retry = retrySave, enabled = !working, accepted = writeAccepted,
+        )
         if (pending != null) Text("Retry sends the saved account request with its original balance revision.")
     }
 }

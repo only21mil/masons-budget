@@ -255,7 +255,14 @@ fun VaultApp(
             }
             val plan = ledgerPanePlan(maxWidth, maxHeight, expanded, current in DETAIL_DESTINATIONS, localHinge)
                 .copy(windowOriginY = originY)
-            CompositionLocalProvider(LocalLedgerPanePlan provides plan, LocalLedgerSheetRegion provides sheetRegion) {
+            CompositionLocalProvider(
+                LocalLedgerPanePlan provides plan,
+                LocalLedgerSheetRegion provides sheetRegion,
+                com.sats21m.vogelvault.ui.components.LocalStateBlockRetry provides onWriteSucceeded,
+                com.sats21m.vogelvault.ui.components.LocalFigureUnitCycle provides if (current.supportsFinancialDisplayUnit) ({
+                    onDisplayUnitChange(DisplayUnit.entries[(displayUnit.ordinal + 1) % DisplayUnit.entries.size])
+                }) else null,
+            ) {
                 // One call site owns ScreenHost in every posture. Resizing changes
                 // constraints and chrome, never the composition that owns editors.
                 Column(Modifier.fillMaxSize().padding(start = plan.leadingInset, top = plan.topInset)) {
@@ -339,10 +346,9 @@ private fun VaultScreenContent(
     }) {
         Column(Modifier.fillMaxSize()) {
             Column(Modifier.width(LocalLedgerPanePlan.current.listWidth)) {
-                ProfileSwitchRefusalNotice(refusal)
-                AuthorizationNotice(state)
-                RowReadFailureNotice(state, onWriteSucceeded)
-                RefreshFailureNotice(state, onWriteSucceeded)
+                com.sats21m.vogelvault.ui.components.LedgerStatusLine(
+                    shellConditions(state, refusal, onWriteSucceeded),
+                )
             }
             // The cap goes on the screen, not the notices: a warning banner spans
             // the column, the ledger column does not.
@@ -390,61 +396,40 @@ private fun VaultScreenContent(
     }
 }
 
-/**
- * Why the profile did not change.
- *
- * Rendered above every other notice and never suppressed by one: the user just
- * asked for this, and a refusal they cannot see is the silent failure the house
- * rules forbid.
- */
+/** Refusals outrank read failures. Less urgent conditions remain available on expansion. */
 @Composable
-private fun ProfileSwitchRefusalNotice(refusal: ProfileSwitchRefusal?) {
-    if (refusal == null) return
-    StatusBanner(
-        text = stringResource(refusal.titleRes),
-        detail = stringResource(refusal.detailRes),
-        tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
-    )
-}
-
-@Composable
-private fun AuthorizationNotice(state: VaultUiState) {
-    if (!state.staleAuthorization || state.primaryRowReadFailure != null) return
-    StatusBanner(
-        text = stringResource(R.string.convex_auth_error_title),
-        detail = stringResource(R.string.convex_auth_error_detail),
-        tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
-    )
-}
-
-@Composable
-private fun RowReadFailureNotice(state: VaultUiState, onRetry: () -> Unit) {
-    val titleRes = state.rowReadFailureTitleRes ?: return
-    val detailRes = state.rowReadFailureDetailRes ?: return
-    val projectionRes = state.rowReadFailureProjectionRes ?: return
-    StatusBanner(
-        text = stringResource(titleRes),
-        detail = stringResource(detailRes, stringResource(projectionRes)),
-        tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
-    )
-    TextButton(onClick = onRetry) { Text("Retry") }
-}
-
-@Composable
-private fun RefreshFailureNotice(state: VaultUiState, onRetry: () -> Unit) {
-    if (
-        state.staleAuthorization ||
-        state.primaryRowReadFailure != null ||
-        state.worstStatus != Freshness.ERROR
-    ) {
-        return
+internal fun shellConditions(
+    state: VaultUiState,
+    refusal: ProfileSwitchRefusal?,
+    onRetry: () -> Unit,
+): List<com.sats21m.vogelvault.ui.components.LedgerCondition> {
+    val conditions = mutableListOf<com.sats21m.vogelvault.ui.components.LedgerCondition>()
+    refusal?.let {
+        conditions += com.sats21m.vogelvault.ui.components.LedgerCondition(
+            "profile-refusal", stringResource(it.titleRes), stringResource(it.detailRes), 100,
+        )
     }
-    StatusBanner(
-        text = stringResource(R.string.refresh_failed_title),
-        detail = stringResource(R.string.refresh_failed_detail),
-        tone = com.sats21m.vogelvault.ui.theme.VaultWarning,
-    )
-    TextButton(onClick = onRetry) { Text("Retry") }
+    if (state.staleAuthorization && state.primaryRowReadFailure == null) {
+        conditions += com.sats21m.vogelvault.ui.components.LedgerCondition(
+            "authorization", stringResource(R.string.convex_auth_error_title),
+            stringResource(R.string.convex_auth_error_detail), 90, onRetry,
+        )
+    }
+    val title = state.rowReadFailureTitleRes
+    val detail = state.rowReadFailureDetailRes
+    val projection = state.rowReadFailureProjectionRes
+    if (title != null && detail != null && projection != null) {
+        conditions += com.sats21m.vogelvault.ui.components.LedgerCondition(
+            "row-read", stringResource(title), stringResource(detail, stringResource(projection)), 80, onRetry,
+        )
+    }
+    if (!state.staleAuthorization && state.primaryRowReadFailure == null && state.worstStatus == Freshness.ERROR) {
+        conditions += com.sats21m.vogelvault.ui.components.LedgerCondition(
+            "refresh", stringResource(R.string.refresh_failed_title),
+            stringResource(R.string.refresh_failed_detail), 70, onRetry,
+        )
+    }
+    return conditions
 }
 
 /**

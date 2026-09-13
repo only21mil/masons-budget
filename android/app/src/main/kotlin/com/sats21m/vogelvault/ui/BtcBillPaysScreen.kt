@@ -88,7 +88,7 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
     if (slice.suppressFigures) {
         item {
             Panel(title, slice.source) {
-                StateBlock(slice.status)
+                StateBlock(slice.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return
@@ -98,7 +98,7 @@ internal fun VaultLazyListScope.btcBillPaysScreen(
     if (summary.rows.isEmpty()) {
         item {
             Panel(title, slice.source) {
-                StateBlock(Freshness.EMPTY)
+                StateBlock(Freshness.EMPTY, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
             }
         }
         return

@@ -240,14 +240,14 @@ internal fun TodoScreen(
                 slice.status != Freshness.EMPTY &&
                 slice.status != Freshness.LOADING
             ) {
-                item { StateBlock(slice.status) }
+                item { StateBlock(slice.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() }) }
             }
 
             // Suppressed figures mean the read itself is not trustworthy. Editing
             // rows derived from it would write a guess back to the household, so the
             // state is named instead of the list being drawn.
             if (slice.suppressFigures) {
-                item { StateBlock(slice.status) }
+                item { StateBlock(slice.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() }) }
             } else if (localTodos.isEmpty()) {
                 item {
                     Text(

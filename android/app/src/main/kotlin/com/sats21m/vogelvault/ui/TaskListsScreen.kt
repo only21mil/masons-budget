@@ -105,7 +105,7 @@ private fun ProfileTaskListsScreen(
     val slice = state.data.todos
     if (slice.suppressFigures) {
         TaskPanel(stringResource(R.string.tasks_title)) {
-            StateBlock(slice.status)
+            StateBlock(slice.status, action = { com.sats21m.vogelvault.ui.components.StateBlockRetry() })
         }
         return
     }
