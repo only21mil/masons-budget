@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasScrollAction
@@ -86,6 +87,28 @@ class BudgetCategoryDrilldownComposeTest {
     @After
     fun stopHost() {
         activityController.pause().stop().destroy()
+    }
+
+    @Test
+    fun `Bitcoin shows visible transfers and their network fee`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val transfer = com.sats21m.vogelvault.domain.BtcTransfer(
+            "move-1", FamilyMember.VICTOR, "2026-07-26", "source-account", "destination-account", 1000L, 5L,
+        )
+        render(VaultUiState(activeProfile = FamilyMember.VICTOR, destination = Destination.BITCOIN,
+            data = fixture.copy(btcTransfers = com.sats21m.vogelvault.domain.Slice(Freshness.LIVE,
+                listOf(transfer), 1L, "test transfers"))))
+        contentList().performScrollToKey("bitcoin-transfers:row:victor:move-1")
+        compose.onNodeWithText("source-account → destination-account", useUnmergedTree = true).fetchSemanticsNode()
+        compose.onNodeWithText("2026-07-26 · FEE 5 SATS", useUnmergedTree = true).fetchSemanticsNode()
+    }
+
+    @Test
+    fun `Maddox no budget state identifies the adults who can create it`() {
+        render(VaultUiState(activeProfile = FamilyMember.MADDOX, destination = Destination.BUDGET,
+            data = Fixtures.envelope(FamilyMember.MADDOX, Freshness.LIVE)))
+        contentList().performScrollToNode(hasText("Victor or Rachel can create Maddox's budget."))
+        compose.onNodeWithText("Victor or Rachel can create Maddox's budget.").fetchSemanticsNode()
     }
 
     @Test
@@ -191,7 +214,10 @@ class BudgetCategoryDrilldownComposeTest {
         compose.onNodeWithContentDescription("View Groceries transactions for 2026-07").performClick()
         settle()
 
+        contentList().performScrollToNode(hasText(edit))
         compose.onNodeWithText(edit).assertHasClickAction()
+        contentList().performScrollToNode(hasContentDescription("Remaining,", substring = true))
+        compose.onNodeWithContentDescription("Remaining, \$705.82, OF \$900.00 planned").fetchSemanticsNode()
     }
 
     @Test
@@ -265,7 +291,7 @@ class BudgetCategoryDrilldownComposeTest {
                 VogelVaultTheme {
                     Box(Modifier.size(width = 411.dp, height = 900.dp)) {
                         ScreenHost(
-                            destination = Destination.BUDGET,
+                            destination = state.destination,
                             state = state,
                             displayUnit = DisplayUnit.USD,
                         )

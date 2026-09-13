@@ -1,6 +1,7 @@
 package com.sats21m.vogelvault.data
 
 import com.sats21m.vogelvault.domain.BtcAccount
+import com.sats21m.vogelvault.domain.BtcTransfer
 import com.sats21m.vogelvault.domain.BtcBuy
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
@@ -41,6 +42,13 @@ interface RowQueryRepository {
         month: String? = null,
         limit: Int? = null,
     ): ConvexResult<RowSnapshot<IncomeRow>>
+
+    suspend fun listBtcTransfers(
+        viewer: FamilyMember,
+        scope: RowVisibilityScope,
+        month: String? = null,
+        limit: Int? = null,
+    ): ConvexResult<RowSnapshot<BtcTransfer>>
 
     suspend fun listBtcBuys(
         viewer: FamilyMember,
@@ -98,6 +106,10 @@ object DisabledRowQueryRepository : RowQueryRepository {
         month: String?,
         limit: Int?,
     ): ConvexResult<RowSnapshot<IncomeRow>> = ConvexResult.Disabled
+
+    override suspend fun listBtcTransfers(
+        viewer: FamilyMember, scope: RowVisibilityScope, month: String?, limit: Int?,
+    ): ConvexResult<RowSnapshot<BtcTransfer>> = ConvexResult.Disabled
 
     override suspend fun listBtcBuys(
         viewer: FamilyMember,
@@ -168,6 +180,14 @@ internal class ConvexRowQueryRepository(
         client.query(ConvexQuery.ListIncome(viewer, month, limit)).decodeRows(
             decode = PublicIncomeDto::decode,
             map = PublicIncomeDto::toRow,
+        )
+
+    override suspend fun listBtcTransfers(
+        viewer: FamilyMember, scope: RowVisibilityScope, month: String?, limit: Int?,
+    ): ConvexResult<RowSnapshot<BtcTransfer>> =
+        client.query(ConvexQuery.ListBtcTransfers(viewer, scope, month, limit)).decodeRows(
+            decode = PublicBtcTransferDto::decode,
+            map = { it },
         )
 
     override suspend fun listBtcBuys(
