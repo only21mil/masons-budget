@@ -866,6 +866,25 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         XCTAssertFalse(models[0].isIncome)
     }
 
+    func testChildCategoryDisplayAndSpendMatchingPreserveCanonicalOwnership() throws {
+        let dtos = try JSONDecoder().decode(
+            [LegacyBudgetCategoryDTO].self,
+            from: Data(#"[{"name":"Groceries","budget":100}]"#.utf8),
+        )
+        let category = try XCTUnwrap(LedgerMapper.mapBudgetCategories(dtos, owner: .mason).first)
+        XCTAssertEqual(category.name, "mason:Groceries")
+        XCTAssertEqual(category.displayName, "Groceries")
+        XCTAssertEqual(category.ownerMember, .mason)
+        let childSpend = Transaction(id: "child", date: .now, merchant: "Shop", amount: 25, category: "Groceries", owner: .mason)
+        let prefixedSpend = Transaction(id: "prefixed", date: .now, merchant: "Shop", amount: 10, category: "mason:Groceries", owner: .mason)
+        let adultSpend = Transaction(id: "adult", date: .now, merchant: "Shop", amount: 80, category: "Groceries", owner: .victor)
+        XCTAssertTrue(category.matches(childSpend))
+        XCTAssertTrue(category.matches(prefixedSpend))
+        XCTAssertFalse(category.matches(adultSpend))
+        XCTAssertEqual([childSpend, prefixedSpend, adultSpend].filter { category.matches($0) }.reduce(Decimal(0)) { $0 + $1.spendAmount }, 35)
+        XCTAssertEqual(CategoryDetailView.transactions([childSpend, prefixedSpend, adultSpend], visibleTo: .mason, category: category.displayName, selectedMonth: .now).count, 2)
+    }
+
     func testIncomeCategoryRemainsLegacyAndDoesNotBecomeAnIncomeRow() throws {
         let dto = try JSONDecoder().decode(
             [LegacyBudgetCategoryDTO].self,
