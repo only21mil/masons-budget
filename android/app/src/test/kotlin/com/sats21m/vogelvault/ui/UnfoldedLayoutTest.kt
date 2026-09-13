@@ -14,6 +14,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsEqualTo
@@ -179,6 +180,12 @@ class UnfoldedLayoutTest {
         compose.onNode(hasText("Review insurance renewal") and inDetail).assertIsDisplayed()
         val parentRow = if (parent == "Inbox") hasText(parent) else hasContentDescription("Open $parent")
         compose.onNode(parentRow and hasClickAction() and inList).performScrollTo().performClick()
+        if (parent == "Inbox") {
+            compose.onNode(parentRow and hasClickAction() and inList).assertIsSelected()
+            compose.runOnIdle { width = 345.dp }
+            compose.runOnIdle { width = 841.dp }
+            compose.onNode(parentRow and hasClickAction() and inList).assertIsSelected()
+        }
         compose.onNode(hasText("Review insurance renewal") and inDetail).assertDoesNotExist()
         compose.onNode(hasText(parent) and inDetail and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)).assertIsDisplayed()
     }
@@ -189,14 +196,17 @@ class UnfoldedLayoutTest {
         val inDetail = hasAnyAncestor(hasTestTag("vault-detail-pane"))
         val category = hasContentDescription("View Groceries transactions for 2026-07")
         compose.onNode(hasScrollToIndexAction() and inList).performScrollToNode(category)
-        compose.onNode(category and inList).performClick()
+        compose.onNode(category and inList).assertIsNotSelected().performClick().assertIsSelected()
+        compose.runOnIdle { width = 345.dp }
+        compose.runOnIdle { width = 841.dp }
+        compose.onNode(category and inList).assertIsSelected()
         val transaction = hasContentDescription("Neighborhood Market", substring = true) and hasClickAction()
         compose.onNode(hasScrollToIndexAction() and inDetail).performScrollToNode(transaction)
         compose.onNode(transaction and inDetail).performClick()
         compose.onNode(hasText("Edit") and inDetail).assertIsDisplayed()
         val next = hasContentDescription("View Dining transactions for 2026-07")
         compose.onNode(hasScrollToIndexAction() and inList).performScrollToNode(next)
-        compose.onNode(next and inList).performClick()
+        compose.onNode(next and inList).assertIsNotSelected().performClick().assertIsSelected()
         compose.onNode(hasText("Edit") and inDetail).assertDoesNotExist()
         val diningTransaction = hasContentDescription("Coffee Bar", substring = true) and hasClickAction()
         compose.onNode(hasScrollToIndexAction() and inDetail).performScrollToNode(diningTransaction)
