@@ -186,6 +186,7 @@ enum LedgerMapper {
                 icon: dto.icon ?? "questionmark.circle",
                 monthlyBudget: dto.budget,
                 sortOrder: index,
+                isIncome: dto.name.caseInsensitiveCompare("Income") == .orderedSame,
                 owner: owner,
             )
         }

@@ -85,6 +85,9 @@ struct AddTransactionView: View {
     @State private var commitHaptic = LedgerHapticTrigger()
     /// Holds the in-flight write and its cause-specific rejection message. The
     /// sheet stays open until the write is accepted.
+    @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
+    @State private var incomeID = UUID().uuidString
+    @State private var incomeDate = Date()
     @StateObject private var writeFeedback = WriteFeedbackStore()
     /// One create id per logical entry for this sheet session. If the server
     /// commits but its response is lost, Save retries the same id instead of
@@ -380,6 +383,12 @@ struct AddTransactionView: View {
                         .ledgerType(.rowPrimary)
                         .foregroundStyle(theme.text)
                 }
+            } else if txType == .income {
+                fieldRow(label: "Source") {
+                    TextField("Employer or source", text: $merchant)
+                        .ledgerType(.rowPrimary)
+                        .foregroundStyle(theme.text)
+                }
             } else {
                 fieldRow(label: "Category") {
                     Menu {
@@ -638,6 +647,11 @@ struct AddTransactionView: View {
         }
         let ledgerOwner = activeMember.ledgerOwner
 
+        if txType == .income {
+            saveIncome(member: activeMember)
+            return
+        }
+
         if txType == .btcBuy {
             saveBTCBuy(owner: activeMember)
             return
@@ -728,6 +742,33 @@ struct AddTransactionView: View {
                 if createIDs.recordServerResult(result, for: .transaction) { dismiss() }
             },
         )
+    }
+
+    private func saveIncome(member: FamilyMember) {
+        let amountUSD = inputUnit == .usd ? numericAmount : computedSats / 100_000_000 * conversionBTCPrice
+        guard amountUSD > 0 else {
+            rejectSave("Enter an amount")
+            return
+        }
+        let source = merchant.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty else {
+            rejectSave("Enter the income source")
+            return
+        }
+        writeFeedback.begin()
+        AppWriteSyncService.pushIncome(
+            id: incomeID, date: incomeDate, amount: amountUSD, source: source, note: nil, member: member,
+        ) { [writeFeedback, canonicalFinancials, dismiss] result in
+            if result.isOk {
+                _ = writeFeedback.finish(result, operation: "Income")
+                canonicalFinancials.requestReload()
+                dismiss()
+            } else {
+                // Income has no optimistic transaction or background retry owner.
+                // Keep this draft and its ID so the user can safely retry.
+                writeFeedback.reject(result.userMessage(operation: "Income") ?? "Income could not be saved.")
+            }
+        }
     }
 
     private func saveBTCBuy(owner activeMember: FamilyMember) {
