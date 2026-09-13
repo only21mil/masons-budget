@@ -119,6 +119,7 @@ struct ContentView: View {
     @AppStorage(ConvexSyncService.lastSyncKey) private var lastReadSuccess: Double = 0
     @State private var showSyncSetup = false
     @State private var retryingRead = false
+    @State private var readRetryTask: Task<Void, Never>?
     @State private var showAddTransaction = false
     @State private var showProfileSwitcher = false
 
@@ -146,6 +147,7 @@ struct ContentView: View {
     }
 
     var body: some View {
+        let financialLoadID = canonicalFinancials.loadID(viewer: activeMember, lastReadSuccess: lastReadSuccess)
         Group {
             #if os(iOS)
                 iOSBody
@@ -157,9 +159,11 @@ struct ContentView: View {
         .environmentObject(syncStatus)
         .environmentObject(taskUndoStore)
         .overlay { LedgerTextureOverlay() }
-        .task(id: activeMember) {
-            await canonicalFinancials.load(viewer: activeMember)
+        .task(id: financialLoadID) {
+            await canonicalFinancials.load(viewer: financialLoadID.viewer)
         }
+        .onChange(of: activeMember) { _, _ in cancelReadRetry() }
+        .onDisappear { cancelReadRetry() }
         .safeAreaInset(edge: .top, spacing: 0) {
             syncFailureBanner
                 .padding(.horizontal, AppLayout.sectionPadding)
@@ -173,7 +177,7 @@ struct ContentView: View {
         .sheet(isPresented: $showAddTransaction) {
             addTransactionSheet
         }
-        .sheet(isPresented: $showSyncSetup) {
+        .sheet(isPresented: $showSyncSetup, onDismiss: canonicalFinancials.requestReload) {
             NavigationStack { SyncSetupView() }
         }
         .sheet(isPresented: $showProfileSwitcher) {
@@ -576,12 +580,7 @@ struct ContentView: View {
                         .frame(minHeight: 44)
                     if ConvexConfig.hasReadToken {
                         Button(retryingRead ? "Refreshing…" : "Retry") {
-                            retryingRead = true
-                            Task {
-                                await ConvexSyncService(context: modelContext).syncAll()
-                                await canonicalFinancials.load(viewer: activeMember)
-                                retryingRead = false
-                            }
+                            retryRead()
                         }
                         .frame(minHeight: 44)
                         .disabled(retryingRead)
@@ -643,6 +642,27 @@ struct ContentView: View {
             )
             .shadow(color: Color.black.opacity(0.12), radius: 8, y: 4)
         }
+    }
+
+    private func retryRead() {
+        cancelReadRetry()
+        let viewer = activeMember
+        retryingRead = true
+        readRetryTask = Task {
+            await ConvexSyncService(context: modelContext).syncAll()
+            guard !Task.isCancelled, activeMember == viewer else { return }
+            // A failed download still gets a canonical retry. A successful
+            // download also reloads through the lastReadSuccess task identity.
+            canonicalFinancials.requestReload()
+            retryingRead = false
+            readRetryTask = nil
+        }
+    }
+
+    private func cancelReadRetry() {
+        readRetryTask?.cancel()
+        readRetryTask = nil
+        retryingRead = false
     }
 
     static func readSyncMessage(hasReadToken: Bool, lastError: String) -> String? {

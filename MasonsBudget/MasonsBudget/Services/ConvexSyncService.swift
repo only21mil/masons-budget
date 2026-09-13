@@ -203,7 +203,7 @@ final class ConvexSyncService {
     static func completedVersions(
         previous: [String: Double],
         remote: [String: Double],
-        completed: Set<String],
+        completed: Set<String>,
     ) -> [String: Double] {
         var result = previous
         for file in completed { result[file] = remote[file] }

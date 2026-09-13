@@ -73,6 +73,7 @@ struct AmountView: View {
 
 struct RequiredFinancialSourceView: View {
     @Environment(\.theme) private var theme
+    @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
 
     let title: String
     let message: String
@@ -106,7 +107,7 @@ struct RequiredFinancialSourceView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard()
-        .sheet(isPresented: $showSyncSetup) {
+        .sheet(isPresented: $showSyncSetup, onDismiss: canonicalFinancials.requestReload) {
             NavigationStack { SyncSetupView() }
         }
     }
