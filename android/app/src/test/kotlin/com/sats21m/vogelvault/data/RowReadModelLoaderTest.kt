@@ -327,10 +327,10 @@ class RowReadModelLoaderTest {
 
         assertEquals(Freshness.EMPTY, model.transactions.status)
         assertEquals(Freshness.EMPTY, model.btcAccounts.status)
-        assertEquals(Freshness.EMPTY, model.income.status)
+        assertEquals(Freshness.LIVE, model.income.status)
         assertEquals(Freshness.EMPTY, model.btcBalance.status)
         assertEquals(Freshness.LIVE, model.btcBillPays.status)
-        assertEquals(true, model.incomeFiguresUnavailable)
+        assertEquals(false, model.incomeFiguresUnavailable)
         assertEquals(true, model.netWorthFiguresUnavailable)
         assertEquals(false, model.billPayLedgerUnavailable)
         assertEquals(false, model.todos.suppressFigures, "zero todos remains countable")

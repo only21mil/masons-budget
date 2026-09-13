@@ -16,6 +16,9 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -56,7 +59,7 @@ class BudgetCategoryDrilldownComposeTest {
     val compose = createEmptyComposeRule()
 
     private lateinit var activityController: ActivityController<ComponentActivity>
-    private val model = VaultViewModel()
+    private val model = VaultViewModel(clock = { Fixtures.NOW_MILLIS })
 
     @Before
     fun startHost() {
@@ -84,6 +87,35 @@ class BudgetCategoryDrilldownComposeTest {
     @After
     fun stopHost() {
         activityController.pause().stop().destroy()
+    }
+
+    @Test
+    fun `income month navigation survives unavailable budget actuals`() {
+        val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
+        val income = listOf(
+            com.sats21m.vogelvault.domain.IncomeEntry("aug", "2026-08-31", "2026-08", 10000L, "August payroll", null, FamilyMember.VICTOR),
+            com.sats21m.vogelvault.domain.IncomeEntry("sep", "2026-09-13", "2026-09", 20000L, "September payroll", null, FamilyMember.VICTOR),
+            com.sats21m.vogelvault.domain.IncomeEntry("future", "2026-09-30", "2026-09", 40000L, "Future payroll", null, FamilyMember.VICTOR),
+        )
+        render(VaultUiState(activeProfile = FamilyMember.RACHEL, destination = Destination.BUDGET,
+            now = java.time.Instant.parse("2026-09-13T12:00:00Z").toEpochMilli(),
+            data = fixture.copy(
+                budget = fixture.budget.copy(value = fixture.budget.value!!.copy(month = "2026-09")),
+                income = fixture.income.copy(value = income),
+                btcBillPays = fixture.btcBillPays.copy(status = Freshness.ERROR),
+            )))
+        compose.onNodeWithContentDescription("Month to date, $200.00").fetchSemanticsNode()
+        compose.onNodeWithContentDescription("Year to date, $300.00").fetchSemanticsNode()
+        contentList().performScrollToKey("budget-income:row:victor:future")
+        compose.onNodeWithText("Future payroll", useUnmergedTree = true).fetchSemanticsNode()
+        contentList().performScrollToNode(hasContentDescription("Aug 2026 budget month"))
+        compose.onNodeWithContentDescription("Aug 2026 budget month").performClick()
+        settle()
+        compose.onNodeWithContentDescription("Aug 2026 budget month").assertIsSelected()
+        compose.onNodeWithContentDescription("Month to date, $100.00").fetchSemanticsNode()
+        compose.onNodeWithContentDescription("Year to date, $100.00").fetchSemanticsNode()
+        contentList().performScrollToNode(hasText(activityController.get().getString(R.string.convex_read_error_title)))
+        compose.onNodeWithText(activityController.get().getString(R.string.convex_read_error_title)).fetchSemanticsNode()
     }
 
     @Test
@@ -123,6 +155,7 @@ class BudgetCategoryDrilldownComposeTest {
 
     @Test
     fun `older Budget selection does not change Dashboard MTD`() {
+        contentList().performScrollToNode(hasContentDescription("Jun 2026 budget month"))
         compose.onNodeWithContentDescription("Jun 2026 budget month").performClick()
         settle()
         compose.onNodeWithContentDescription("Jun 2026 budget month").assertIsSelected()
@@ -130,6 +163,7 @@ class BudgetCategoryDrilldownComposeTest {
         compose.runOnUiThread { model.navigate(Destination.DASHBOARD) }
         settle()
 
+        contentList().performScrollToNode(hasContentDescription("Spend, \$611.17"))
         compose.onNodeWithContentDescription("Spend, \$611.17").fetchSemanticsNode()
         compose.onNodeWithContentDescription("Income, \$4,960.00").fetchSemanticsNode()
     }
@@ -138,7 +172,7 @@ class BudgetCategoryDrilldownComposeTest {
     fun `Budget income editor exposes the atomic Bitcoin buy action`() {
         compose.onNodeWithText("+ Add").performClick()
         settle()
-        compose.onNodeWithText("Income").performClick()
+        compose.onNodeWithText("Income", useUnmergedTree = true).performClick()
         settle()
 
         compose.onNodeWithText("Add as Bitcoin buy").fetchSemanticsNode()
@@ -316,4 +350,8 @@ class BudgetCategoryDrilldownComposeTest {
     }
 }
 
-class BudgetDrilldownTestApplication : VaultApplication()
+class BudgetDrilldownTestApplication : VaultApplication() {
+    override val deviceCapabilities = com.sats21m.vogelvault.data.DeviceCapabilities(
+        FamilyMember.VICTOR, com.sats21m.vogelvault.data.DeviceCapability.entries.map { it.wire }.toSet(),
+    )
+}
