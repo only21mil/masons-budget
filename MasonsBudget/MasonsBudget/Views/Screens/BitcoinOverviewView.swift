@@ -445,7 +445,13 @@ struct BitcoinTransferView: View {
                 if let totalDebit, let sats = Int64(amount), sats > 0 {
                     Text("From loses \(totalDebit) sats · To gains \(sats) sats").ledgerType(.rowMeta)
                 }
-                if let validationMessage { Text(validationMessage).foregroundStyle(theme.warn).ledgerType(.rowMeta) }
+                if let validationMessage {
+                    Text(validationMessage)
+                        .foregroundStyle(theme.warn)
+                        .ledgerType(.rowMeta)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, ledgerTokens.metrics.screenGutter)
+                }
                 if let message { Text(message).foregroundStyle(theme.warn) }
             }
             .padding(.bottom, 100)
