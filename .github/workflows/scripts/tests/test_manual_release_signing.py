@@ -35,6 +35,34 @@ class ManualReleaseSigningTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mac_validation.installer_identity("0 valid identities found")
 
+    def test_export_selector_is_the_single_validated_installer_fingerprint(self):
+        valid = f'  1) {"A" * 40} "3rd Party Mac Developer Installer: Fixture (384ZGKG4GB)"'
+        app = f'  2) {"B" * 40} "Apple Distribution: Fixture (384ZGKG4GB)"'
+        self.assertEqual(mac_validation.installer_identity(valid + "\n" + app), "A" * 40)
+        with self.assertRaises(ValueError):
+            mac_validation.installer_identity(valid + "\n" + valid.replace("A" * 40, "C" * 40))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            selector = root / "installer.sha1"
+            options = root / "ExportOptions.plist"
+            original = {"signingStyle": "manual", "installerSigningCertificate": "Mac Installer Distribution",
+                        "signingCertificate": "Apple Distribution", "method": "app-store", "provisioningProfiles": {"fixture": "profile"}}
+            options.write_bytes(plistlib.dumps(original))
+            mac_validation.retain_installer_identity(valid, selector)
+            self.assertEqual(selector.stat().st_mode & 0o777, 0o600)
+            with self.assertRaises(FileExistsError):
+                mac_validation.retain_installer_identity(valid, selector)
+            mac_validation.export_options(options, selector)
+            self.assertEqual(plistlib.loads(options.read_bytes()), {**original, "installerSigningCertificate": "A" * 40})
+            for invalid in ("Mac Installer Distribution", "B" * 39, "private-value\n" + "A" * 40):
+                selector.write_text(invalid)
+                with self.assertRaises(ValueError):
+                    mac_validation.export_options(options, selector)
+        deploy = DEPLOY.read_text()
+        self.assertIn('installer-identity "$SIGNING_ROOT/installer-certificate.sha1"', deploy)
+        self.assertIn('if [ "$PLATFORM" = "macos" ]; then\n            python3 ../.github/workflows/scripts/validate_macos_release.py export-options', deploy)
+        self.assertLess(deploy.index('validate_macos_release.py export-options'), deploy.index('xcodebuild -exportArchive'))
+
     def mac_profile(self):
         return {"UUID": "11111111-2222-3333-4444-555555555555", "TeamIdentifier": [mac_validation.TEAM],
                 "Platform": ["OSX"], "Entitlements": {"com.apple.application-identifier":

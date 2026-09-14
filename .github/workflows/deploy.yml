@@ -280,7 +280,7 @@ jobs:
           fi
           if [ "$PLATFORM" = "macos" ] &&
             ! security find-identity -v "$KEYCHAIN_PATH" |
-              python3 .github/workflows/scripts/validate_macos_release.py installer-identity; then
+              python3 .github/workflows/scripts/validate_macos_release.py installer-identity "$SIGNING_ROOT/installer-certificate.sha1"; then
             echo "::error::The imported installer p12 has no usable Mac Installer Distribution identity and private key."
             exit 1
           fi
@@ -391,6 +391,10 @@ jobs:
             -c "Add :provisioningProfiles:com.sats21m.masonsbudget string $PROFILE_UUID" \
             "$EXPORT_OPTIONS_PATH"
           echo "EXPORT_DIR=$EXPORT_DIR" >> "$GITHUB_ENV"
+          if [ "$PLATFORM" = "macos" ]; then
+            python3 ../.github/workflows/scripts/validate_macos_release.py export-options \
+              "$EXPORT_OPTIONS_PATH" "$SIGNING_ROOT/installer-certificate.sha1"
+          fi
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE" \
             -exportPath "$EXPORT_DIR" \

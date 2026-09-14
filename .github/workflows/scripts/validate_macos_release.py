@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate existing Mac App Store assets without printing signing metadata."""
 import plistlib
+import os
 import re
 import subprocess
 import sys
@@ -18,8 +19,25 @@ def require(condition):
 
 def installer_identity(text):
     # security -v includes valid identities with private keys, not certificates alone.
-    require(any(re.fullmatch(rf'\s*\d+\) [A-Fa-f0-9]{{40}} "{INSTALLER_NAME}"', line)
-                for line in text.splitlines()))
+    matches = [match for line in text.splitlines() if (match := re.fullmatch(
+        rf'\s*\d+\) ([A-Fa-f0-9]{{40}}) "{INSTALLER_NAME}"', line))]
+    require(len(matches) == 1)
+    return matches[0][1].upper()
+
+
+def retain_installer_identity(text, path):
+    identity = installer_identity(text)
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as handle:
+        handle.write(identity + "\n")
+
+
+def export_options(options_path, identity_path):
+    identity = Path(identity_path).read_text(encoding="ascii").strip()
+    require(re.fullmatch(r"[A-F0-9]{40}", identity))
+    options = plistlib.loads(Path(options_path).read_bytes())
+    require(isinstance(options, dict) and options.get("signingStyle") == "manual")
+    options["installerSigningCertificate"] = identity
+    Path(options_path).write_bytes(plistlib.dumps(options))
 
 
 def non_debug(entitlements):
@@ -70,6 +88,10 @@ def package(export_dir, release_root):
 def main():
     if sys.argv[1:] == ["installer-identity"]:
         installer_identity(sys.stdin.read())
+    elif len(sys.argv) == 3 and sys.argv[1] == "installer-identity":
+        retain_installer_identity(sys.stdin.read(), sys.argv[2])
+    elif len(sys.argv) == 4 and sys.argv[1] == "export-options":
+        export_options(sys.argv[2], sys.argv[3])
     elif len(sys.argv) == 3 and sys.argv[1] == "profile":
         profile(plistlib.loads(Path(sys.argv[2]).read_bytes()))
     elif len(sys.argv) == 4 and sys.argv[1] == "package":
