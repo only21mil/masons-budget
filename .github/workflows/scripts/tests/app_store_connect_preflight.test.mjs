@@ -117,6 +117,73 @@ test("existing external groups and internal all-build groups are counted accordi
   }
 });
 
+test("omitted or null all-build flags require exact build links and the matching beta state", async () => {
+  for (const isInternalGroup of [true, false]) {
+    for (const flag of [undefined, null]) {
+      for (const linked of [true, false]) {
+        for (const inBetaTesting of [true, false]) {
+          const fixture = releaseFixture((d, u) => {
+            if (u.pathname.endsWith("/betaGroups")) {
+              d.data[0].attributes.isInternalGroup = isInternalGroup;
+              if (flag === undefined) delete d.data[0].attributes.hasAccessToAllBuilds;
+              else d.data[0].attributes.hasAccessToAllBuilds = flag;
+            }
+            if (u.pathname.endsWith("/relationships/builds")) {
+              // Another build ID must never establish access to this release.
+              if (!linked) d.data = [{ type: "builds", id: "another-build" }];
+            }
+            if (u.pathname.endsWith("/buildBetaDetail")) {
+              d.data.attributes.internalBuildState = isInternalGroup && inBetaTesting ?
+                "IN_BETA_TESTING" : "READY_FOR_BETA_TESTING";
+              d.data.attributes.externalBuildState = !isInternalGroup && inBetaTesting ?
+                "IN_BETA_TESTING" : "READY_FOR_BETA_SUBMISSION";
+            }
+          });
+          const result = await readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request);
+          const available = linked && inBetaTesting;
+          assert.equal(result.classification, available ? "AVAILABLE_TO_EXISTING_GROUPS" : "NOT_READY");
+          assert.equal(fixture.calls.filter(u => u.pathname.endsWith("/relationships/builds")).length, 1);
+          for (const platform of result.platforms) {
+            assert.equal(platform.internalGroupCount, Number(isInternalGroup && linked));
+            assert.equal(platform.externalGroupCount, Number(!isInternalGroup && linked));
+            assert.equal(platform.available, available);
+          }
+        }
+      }
+    }
+  }
+});
+
+test("malformed all-build flags fail before relationship reads even when builds would be linked", async () => {
+  for (const isInternalGroup of [true, false]) {
+    for (const flag of ["true", "false", "", 0, 1, [], {}, [true]]) {
+      const fixture = releaseFixture((d, u) => {
+        if (u.pathname.endsWith("/betaGroups")) {
+          d.data[0].attributes.isInternalGroup = isInternalGroup;
+          d.data[0].attributes.hasAccessToAllBuilds = flag;
+        }
+      });
+      await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request),
+        e => assertDiagnostic(e, "GROUPS", "GROUP_ALL_BUILDS_BOOLEAN"));
+      assert.equal(fixture.calls.length, 1);
+    }
+  }
+});
+
+test("external all-build flag never grants access without an exact build link", async () => {
+  const fixture = releaseFixture((d, u) => {
+    if (u.pathname.endsWith("/betaGroups")) {
+      d.data[0].attributes.isInternalGroup = false;
+      d.data[0].attributes.hasAccessToAllBuilds = true;
+    }
+    if (u.pathname.endsWith("/relationships/builds")) d.data = [];
+    if (u.pathname.endsWith("/buildBetaDetail")) d.data.attributes.externalBuildState = "IN_BETA_TESTING";
+  });
+  const result = await readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request);
+  assert.equal(result.classification, "NOT_READY");
+  assert.ok(result.platforms.every(item => item.externalGroupCount === 0 && !item.available));
+});
+
 test("release check rejects mismatched identity, ambiguous build and unrecognized status", async () => {
   for (const change of [
     d => { d.data[0].attributes.version = "46"; },
@@ -648,7 +715,7 @@ function assertDiagnostic(error, stage, reason, platform) {
 test("release diagnostics identify individual group, build and beta-detail predicates without response values", async () => {
   const cases = [
     ["GROUPS", "GROUP_INTERNAL_BOOLEAN", d => { d.data[0].attributes.isInternalGroup = "PRIVATE_SENTINEL"; }],
-    ["GROUPS", "GROUP_ALL_BUILDS_BOOLEAN", d => { delete d.data[0].attributes.hasAccessToAllBuilds; }],
+    ["GROUPS", "GROUP_ALL_BUILDS_BOOLEAN", d => { d.data[0].attributes.hasAccessToAllBuilds = "PRIVATE_SENTINEL"; }],
     ["BUILDS", "BUILD_COUNT", d => { d.data.push({ ...d.data[0], id: "another-build" }); }],
     ["BUILDS", "PRERELEASE_RELATION_TYPE", d => { d.data[0].relationships.preReleaseVersion.data.type = "PRIVATE_SENTINEL"; }],
     ["BUILDS", "PRERELEASE_RELATION_ID", d => { d.data[0].relationships.preReleaseVersion.data.id = "secret@example.test"; }],

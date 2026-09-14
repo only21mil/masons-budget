@@ -553,7 +553,11 @@ export async function readReleaseVerification(appId, version, number, token, req
     for (const { record: group } of groups) {
       stage = "GROUPS";
       if (typeof group.attributes?.isInternalGroup !== "boolean") invalidResponse("GROUP_INTERNAL_BOOLEAN");
-      if (typeof group.attributes?.hasAccessToAllBuilds !== "boolean") invalidResponse("GROUP_ALL_BUILDS_BOOLEAN");
+      // Apple's BetaGroup schema makes this Boolean optional. Treat absence or
+      // null as unknown, never as all-build access; explicit links still count.
+      // https://developer.apple.com/documentation/appstoreconnectapi/betagroup/attributes-data.dictionary
+      if (group.attributes.hasAccessToAllBuilds != null &&
+          typeof group.attributes.hasAccessToAllBuilds !== "boolean") invalidResponse("GROUP_ALL_BUILDS_BOOLEAN");
       stage = "GROUP_BUILDS";
       group.buildIds = new Set((await releasePages(urlFor(`/v1/betaGroups/${group.id}/relationships/builds`, {
         limit: "200",
@@ -617,7 +621,7 @@ export async function readReleaseVerification(appId, version, number, token, req
         result.internalBuildState = detail.attributes.internalBuildState;
         result.externalBuildState = detail.attributes.externalBuildState;
         result.internalGroupCount = groups.filter(({ record: group }) => group.attributes.isInternalGroup &&
-          (group.attributes.hasAccessToAllBuilds || group.buildIds.has(build.id))).length;
+          (group.attributes.hasAccessToAllBuilds === true || group.buildIds.has(build.id))).length;
         result.externalGroupCount = groups.filter(({ record: group }) => !group.attributes.isInternalGroup &&
           group.buildIds.has(build.id)).length;
         result.available = !result.expired &&
