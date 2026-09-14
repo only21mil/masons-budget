@@ -3,11 +3,14 @@ name: Release and App Store Connect preflight (manual, read-only)
 # Answers "would a TestFlight run get past signing and see the exact app today?"
 # without archiving, signing, exporting, uploading, or writing to App Store
 # Connect. The REST probe performs two bounded read-only requests: exact bundle
-# visibility, then the latest visible build. Run this before Deploy to TestFlight
+# visibility, then the latest visible build. The optional manual build-number
+# lookup also reads paginated build and upload metadata for both Apple platforms.
+# Run this before Deploy to TestFlight
 # rather than discovering a missing secret or invisible app after an archive.
 #
 # Nothing here prints a secret. The report is booleans and fixed classifications
-# only: set or not, whether encoded values decode, whether the API key is an
+# plus validated numeric build/version metadata when requested: set or not,
+# whether encoded values decode, whether the API key is an
 # in-memory ES256/P-256 key, exact bundle visibility, and latest-build presence.
 # Not even a length — the length of an App Store Connect key id would narrow it.
 #
@@ -35,6 +38,12 @@ name: Release and App Store Connect preflight (manual, read-only)
 
 on:
   workflow_dispatch:
+    inputs:
+      build_numbers:
+        description: 'Read used and reserved Apple build numbers for Vogel Vault'
+        type: boolean
+        required: false
+        default: false
   workflow_call:
     secrets:
       APPLE_CERTIFICATE_P12:
@@ -115,4 +124,5 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_BUNDLE_ID: com.sats21m.masonsbudget
+          ASC_BUILD_NUMBER_LOOKUP: ${{ github.event_name == 'workflow_dispatch' && inputs.build_numbers && 'true' || 'false' }}
         run: node .github/workflows/scripts/app_store_connect_preflight.mjs

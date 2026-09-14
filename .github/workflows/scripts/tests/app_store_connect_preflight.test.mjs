@@ -10,6 +10,8 @@ import {
   createToken,
   parsePrivateKey,
   requestJson,
+  readBuildNumbers,
+  renderResult,
   runPreflight,
   selectExactApp,
 } from "../app_store_connect_preflight.mjs";
@@ -286,4 +288,154 @@ test("bounds request timeouts and retries", async () => {
     },
   );
   assert.equal(requests, 2);
+});
+
+function buildPage(platform, number, { next = null, id = `build-${number}` } = {}) {
+  return {
+    data: [{ type: "builds", id, attributes: { version: number },
+      relationships: { preReleaseVersion: { data: { type: "preReleaseVersions", id: "version-id" } } } }],
+    included: [{ type: "preReleaseVersions", id: "version-id",
+      attributes: { version: "0.5.0", platform } }],
+    links: { next },
+  };
+}
+
+function uploadPage(platform, number) {
+  return { data: [{ type: "buildUploads", id: "private-upload-id",
+    attributes: { cfBundleVersion: number, cfBundleShortVersionString: "0.5.0", platform } }],
+    links: {} };
+}
+
+function nextPage(url, cursor = "page-two") {
+  const next = new URL(url);
+  next.searchParams.set("cursor", cursor);
+  return next.href;
+}
+
+test("build inventory includes all pages, both platforms and higher reserved uploads", async () => {
+  const calls = [];
+  const result = await readBuildNumbers("123456789", "private-token", async (url, token) => {
+    calls.push(new URL(url));
+    assert.equal(token, "private-token");
+    assert.equal(url.origin, "https://api.appstoreconnect.apple.com");
+    assert.equal(url.searchParams.has("filter[expired]"), false);
+    assert.equal(url.searchParams.has("filter[state]"), false);
+    assert.equal(url.searchParams.has("filter[preReleaseVersion.version]"), false);
+    assert.equal(url.searchParams.has("filter[cfBundleShortVersionString]"), false);
+    if (url.pathname === "/v1/builds") {
+      assert.equal(url.searchParams.get("filter[app]"), "123456789");
+      const platform = url.searchParams.get("filter[preReleaseVersion.platform]");
+      return buildPage(platform, url.searchParams.has("cursor") ? "46" : "44", {
+        next: url.searchParams.has("cursor") ? null : nextPage(url),
+      });
+    }
+    assert.equal(url.pathname, "/v1/apps/123456789/buildUploads");
+    return uploadPage(url.searchParams.get("filter[platform]"), "49");
+  });
+  assert.equal(calls.length, 6);
+  assert.equal(result.highestObservedBuildNumber, 49);
+  assert.equal(result.inventory.length, 6);
+  assert.deepEqual(new Set(result.inventory.map(item => item.platform)), new Set(["IOS", "MAC_OS"]));
+  const rendered = renderResult({ preflight: "PASS", bundleVisibility: "EXACT_MATCH", latestBuild: "VISIBLE", buildNumbers: result });
+  for (const forbidden of ["private-token", "123456789", "private-upload-id", "version-id", "build-44"]) {
+    assert.equal(rendered.includes(forbidden), false);
+  }
+});
+
+test("empty inventories are complete observations, not a selected next number", async () => {
+  let calls = 0;
+  const result = await readBuildNumbers("123", "token", async () => {
+    calls += 1;
+    return { data: [], links: {} };
+  });
+  assert.equal(calls, 4);
+  assert.deepEqual(result, { inventory: [], highestObservedBuildNumber: null });
+});
+
+test("rejects pagination escaping the origin, exact app, platform or sparse query before sending auth", async () => {
+  const mutations = [
+    url => { url.protocol = "http:"; },
+    url => { url.hostname = "evil.example"; },
+    url => { url.username = "private-user"; },
+    url => { url.hash = "fragment"; },
+    url => { url.pathname = "/v1/apps/999/buildUploads"; },
+    url => { url.searchParams.set("filter[app]", "999"); },
+    url => { url.searchParams.delete("filter[app]"); },
+    url => { url.searchParams.set("filter[preReleaseVersion.platform]", "TV_OS"); },
+    url => { url.searchParams.set("fields[builds]", "individualTesters"); },
+    url => { url.searchParams.append("filter[app]", "999"); },
+    url => { url.searchParams.set("include", "individualTesters"); },
+    url => { url.searchParams.append("arbitrary", "1"); },
+    url => { url.searchParams.append("cursor", "duplicate"); },
+  ];
+  for (const mutate of mutations) {
+    let calls = 0;
+    await assert.rejects(readBuildNumbers("123", "token", async url => {
+      calls += 1;
+      const next = new URL(nextPage(url));
+      mutate(next);
+      return buildPage("IOS", "44", { next: next.href });
+    }), error => error.classification === CLASSIFICATION.INVALID_RESPONSE);
+    assert.equal(calls, 1);
+  }
+});
+
+test("refuses repeated pages, duplicate records and excessive pagination without partial success", async () => {
+  for (const mode of ["cycle", "duplicate", "bound"]) {
+    let calls = 0;
+    await assert.rejects(readBuildNumbers("123", "token", async url => {
+      calls += 1;
+      return buildPage("IOS", "44", {
+        id: mode === "duplicate" ? "same-record" : `record-${calls}`,
+        next: nextPage(url, mode === "cycle" ? "same-cursor" : `cursor-${calls}`),
+      });
+    }), error => error.classification === CLASSIFICATION.INVALID_RESPONSE);
+    assert.equal(calls, mode === "bound" ? 20 : 2);
+  }
+});
+
+test("refuses unorderable numbers, nonnumeric versions, mismatched platforms and missing relationships", async () => {
+  const invalidPages = [
+    buildPage("MAC_OS", "44"),
+    buildPage("IOS", "44.1"),
+    buildPage("IOS", "-1"),
+    buildPage("IOS", "9007199254740992"),
+    buildPage("IOS", "PRIVATE_SECRET"),
+    { ...buildPage("IOS", "44"), included: [] },
+    { ...buildPage("IOS", "44"), links: null },
+  ];
+  const badVersion = buildPage("IOS", "44");
+  badVersion.included[0].attributes.version = "PRIVATE_SECRET";
+  invalidPages.push(badVersion);
+  for (const page of invalidPages) {
+    await assert.rejects(readBuildNumbers("123", "token", async () => page), error => {
+      assert.equal(error.message.includes("PRIVATE_SECRET"), false);
+      return error.classification === CLASSIFICATION.INVALID_RESPONSE;
+    });
+  }
+  for (const page of [uploadPage("MAC_OS", "44"), uploadPage("IOS", "invalid")]) {
+    await assert.rejects(readBuildNumbers("123", "token", async url =>
+      url.pathname === "/v1/builds" ? { data: [], links: {} } : page),
+    error => error.classification === CLASSIFICATION.INVALID_RESPONSE);
+  }
+});
+
+test("number lookup is opt-in and restricted to the fixed Vogel Vault bundle before requests", async () => {
+  let calls = 0;
+  for (const env of [
+    { ...validEnv, ASC_BUILD_NUMBER_LOOKUP: "yes" },
+    { ...validEnv, ASC_BUILD_NUMBER_LOOKUP: "true", ASC_BUNDLE_ID: "com.other.app" },
+  ]) {
+    await assert.rejects(runPreflight({ env, request: async () => { calls += 1; } }),
+      error => error.classification === CLASSIFICATION.INVALID_CONFIGURATION);
+  }
+  assert.equal(calls, 0);
+  const result = await runPreflight({ env: { ...validEnv, ASC_BUILD_NUMBER_LOOKUP: "true" },
+    request: async url => {
+      calls += 1;
+      if (url.pathname === "/v1/apps") return { data: [{ id: "123", attributes: { bundleId: validEnv.ASC_BUNDLE_ID } }] };
+      return { data: [], links: {} };
+    } });
+  assert.equal(calls, 6);
+  assert.deepEqual(result.buildNumbers, { inventory: [], highestObservedBuildNumber: null });
 });

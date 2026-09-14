@@ -338,6 +338,124 @@ export function classifyLatestBuild(document) {
   return "VISIBLE";
 }
 
+// Keep pagination at the exact endpoint, app and platform selected by this
+// caller. Never forward the bearer token to a server-supplied arbitrary URL.
+function nextBuildPage(value, initialUrl) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    fail(CLASSIFICATION.INVALID_RESPONSE);
+  }
+  if (
+    url.origin !== APP_STORE_CONNECT_ORIGIN ||
+    url.pathname !== initialUrl.pathname ||
+    url.username || url.password || url.hash
+  ) fail(CLASSIFICATION.INVALID_RESPONSE);
+  for (const [name, expected] of initialUrl.searchParams) {
+    if (url.searchParams.getAll(name).length !== 1 ||
+        url.searchParams.get(name) !== expected) fail(CLASSIFICATION.INVALID_RESPONSE);
+  }
+  for (const name of url.searchParams.keys()) {
+    if (!initialUrl.searchParams.has(name) && name !== "cursor") {
+      fail(CLASSIFICATION.INVALID_RESPONSE);
+    }
+  }
+  if (url.searchParams.getAll("cursor").length !== 1 ||
+      !url.searchParams.get("cursor") || url.href.length > 8192) {
+    fail(CLASSIFICATION.INVALID_RESPONSE);
+  }
+  return url;
+}
+
+function numericBuild(value) {
+  if (typeof value !== "string" || !/^[0-9]{1,15}$/u.test(value)) {
+    fail(CLASSIFICATION.INVALID_RESPONSE);
+  }
+  return Number(value);
+}
+
+function numericVersion(value) {
+  if (typeof value !== "string" || !/^[0-9]{1,4}(?:\.[0-9]{1,4}){0,2}$/u.test(value)) {
+    fail(CLASSIFICATION.INVALID_RESPONSE);
+  }
+  return value;
+}
+
+export async function readBuildNumbers(appId, token, request = requestJson) {
+  // The app ID remains private. Restrict it before it becomes a URL path.
+  if (!/^[0-9]+$/u.test(appId)) fail(CLASSIFICATION.INVALID_RESPONSE);
+  const inventory = [];
+  for (const platform of ["IOS", "MAC_OS"]) {
+    for (const source of ["builds", "buildUploads"]) {
+      const initialUrl = new URL(source === "builds" ? "/v1/builds" :
+        `/v1/apps/${appId}/buildUploads`, APP_STORE_CONNECT_ORIGIN);
+      initialUrl.searchParams.set("limit", "200");
+      if (source === "builds") {
+        initialUrl.searchParams.set("filter[app]", appId);
+        initialUrl.searchParams.set("filter[preReleaseVersion.platform]", platform);
+        initialUrl.searchParams.set("fields[builds]", "version,preReleaseVersion");
+        initialUrl.searchParams.set("include", "preReleaseVersion");
+        initialUrl.searchParams.set("fields[preReleaseVersions]", "version,platform");
+      } else {
+        initialUrl.searchParams.set("filter[platform]", platform);
+        initialUrl.searchParams.set("fields[buildUploads]",
+          "cfBundleVersion,cfBundleShortVersionString,platform");
+      }
+      let url = initialUrl;
+      const seenPages = new Set();
+      const seenRecords = new Set();
+      while (url) {
+        // Twenty pages per endpoint/platform bounds the entire lookup to at
+        // most 16,000 metadata records. Refuse truncation or moving duplicates.
+        const pageKey = new URL(url);
+        pageKey.searchParams.sort();
+        if (seenPages.has(pageKey.href) || seenPages.size >= 20) {
+          fail(CLASSIFICATION.INVALID_RESPONSE);
+        }
+        seenPages.add(pageKey.href);
+        const document = await request(url, token);
+        const records = requireDataArray(document);
+        if (records.length > 200 || !document.links || typeof document.links !== "object") {
+          fail(CLASSIFICATION.INVALID_RESPONSE);
+        }
+        for (const record of records) {
+          if (record?.type !== source || typeof record.id !== "string" ||
+              !record.id || seenRecords.has(record.id) || !record.attributes) {
+            fail(CLASSIFICATION.INVALID_RESPONSE);
+          }
+          seenRecords.add(record.id);
+          let version;
+          let buildNumber;
+          if (source === "builds") {
+            const relation = record.relationships?.preReleaseVersion?.data;
+            if (relation?.type !== "preReleaseVersions" || !relation.id ||
+                !Array.isArray(document.included)) fail(CLASSIFICATION.INVALID_RESPONSE);
+            const matches = document.included.filter(item =>
+              item?.type === "preReleaseVersions" && item.id === relation.id);
+            if (matches.length !== 1 || matches[0].attributes?.platform !== platform) {
+              fail(CLASSIFICATION.INVALID_RESPONSE);
+            }
+            version = numericVersion(matches[0].attributes.version);
+            buildNumber = numericBuild(record.attributes.version);
+          } else {
+            if (record.attributes.platform !== platform) fail(CLASSIFICATION.INVALID_RESPONSE);
+            version = numericVersion(record.attributes.cfBundleShortVersionString);
+            buildNumber = numericBuild(record.attributes.cfBundleVersion);
+          }
+          inventory.push({ platform, source, version, buildNumber });
+        }
+        url = document.links.next == null ? null : nextBuildPage(document.links.next, initialUrl);
+      }
+    }
+  }
+  return {
+    inventory,
+    highestObservedBuildNumber: inventory.length === 0 ? null :
+      Math.max(...inventory.map(item => item.buildNumber)),
+  };
+}
+
 export async function runPreflight({ env = process.env, request = requestJson } = {}) {
   const requiredNames = ["ASC_API_KEY_P8", "ASC_KEY_ID", "ASC_ISSUER_ID"];
   if (requiredNames.some((name) => !env[name])) {
@@ -345,6 +463,13 @@ export async function runPreflight({ env = process.env, request = requestJson } 
   }
 
   const bundleId = env.ASC_BUNDLE_ID || DEFAULT_BUNDLE_ID;
+  if (env.ASC_BUILD_NUMBER_LOOKUP && !["true", "false"].includes(env.ASC_BUILD_NUMBER_LOOKUP)) {
+    fail(CLASSIFICATION.INVALID_CONFIGURATION);
+  }
+  const lookupBuildNumbers = env.ASC_BUILD_NUMBER_LOOKUP === "true";
+  if (lookupBuildNumbers && bundleId !== DEFAULT_BUNDLE_ID) {
+    fail(CLASSIFICATION.INVALID_CONFIGURATION);
+  }
   if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/u.test(bundleId)) {
     fail(CLASSIFICATION.INVALID_CONFIGURATION);
   }
@@ -367,11 +492,13 @@ export async function runPreflight({ env = process.env, request = requestJson } 
   buildsUrl.searchParams.set("limit", "1");
   buildsUrl.searchParams.set("fields[builds]", "version,uploadedDate");
   const latestBuild = classifyLatestBuild(await request(buildsUrl, token));
+  const buildNumbers = lookupBuildNumbers ? await readBuildNumbers(appId, token, request) : undefined;
 
   return {
     preflight: "PASS",
     bundleVisibility: "EXACT_MATCH",
     latestBuild,
+    ...(buildNumbers ? { buildNumbers } : {}),
   };
 }
 
@@ -380,6 +507,7 @@ export function renderResult(result) {
     `APP_STORE_CONNECT_PREFLIGHT=${result.preflight}`,
     `BUNDLE_VISIBILITY=${result.bundleVisibility}`,
     `LATEST_BUILD=${result.latestBuild}`,
+    ...(result.buildNumbers ? [`BUILD_NUMBERS=${JSON.stringify(result.buildNumbers)}`] : []),
     "Apple identifiers, credential material, and response bodies are intentionally omitted.",
   ].join("\n");
 }
