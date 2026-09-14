@@ -4,17 +4,107 @@
 from __future__ import annotations
 
 import plistlib
+import copy
+import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[4]
 DEPLOY = ROOT / ".github/workflows/deploy.yml"
 SWIFT = ROOT / ".github/workflows/swift.yml"
 EXPORT_OPTIONS = ROOT / "ExportOptions.plist"
+spec = importlib.util.spec_from_file_location("mac_validation", ROOT / ".github/workflows/scripts/validate_macos_release.py")
+mac_validation = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mac_validation)
 
 
 class ManualReleaseSigningTests(unittest.TestCase):
+    def test_mac_installer_accepts_documented_names_and_refuses_other_type_or_team(self):
+        for name in ("Mac Installer Distribution", "3rd Party Mac Developer Installer"):
+            for subject in ("Fixture (384ZGKG4GB)", "384ZGKG4GB"):
+                mac_validation.installer_identity(f'  1) {"A" * 40} "{name}: {subject}"')
+        for name in ("Developer ID Installer", "Apple Distribution", "3rd Party Mac Developer Application"):
+            with self.assertRaises(ValueError):
+                mac_validation.installer_identity(f'  1) {"A" * 40} "{name}: Fixture (384ZGKG4GB)"')
+        for subject in ("Fixture (WRONGTEAM)", "Fixture (384ZGKG4GB) suffix"):
+            with self.assertRaises(ValueError):
+                mac_validation.installer_identity(f'  1) {"A" * 40} "3rd Party Mac Developer Installer: {subject}"')
+        with self.assertRaises(ValueError):
+            mac_validation.installer_identity("0 valid identities found")
+
+    def mac_profile(self):
+        return {"UUID": "11111111-2222-3333-4444-555555555555", "TeamIdentifier": [mac_validation.TEAM],
+                "Platform": ["OSX"], "Entitlements": {"com.apple.application-identifier":
+                f"{mac_validation.TEAM}.{mac_validation.BUNDLE}"}}
+
+    def test_mac_profile_uses_mac_application_key_and_allows_absent_or_false_debug_only(self):
+        data = self.mac_profile()
+        mac_validation.profile(data)
+        for key in ("get-task-allow", "com.apple.security.get-task-allow"):
+            data["Entitlements"][key] = False
+            mac_validation.profile(data)
+            for value in (True, "false", 0, None, []):
+                data["Entitlements"][key] = value
+                with self.assertRaises(ValueError):
+                    mac_validation.profile(data)
+            del data["Entitlements"][key]
+
+    def test_mac_profile_refuses_wrong_team_bundle_platform_and_ios_only_key(self):
+        for key, value in (("TeamIdentifier", ["WRONGTEAM"]), ("Platform", ["iOS"]), ("UUID", "not-a-uuid"),
+                           ("Entitlements", {"com.apple.application-identifier": "384ZGKG4GB.wrong"}),
+                           ("Entitlements", {"application-identifier": f"{mac_validation.TEAM}.{mac_validation.BUNDLE}"})):
+            data = self.mac_profile()
+            data[key] = value
+            with self.assertRaises(ValueError):
+                mac_validation.profile(data)
+
+    def test_final_signed_entitlements_refuse_debug_or_wrong_team(self):
+        data = self.mac_profile()["Entitlements"]
+        data["com.apple.developer.team-identifier"] = mac_validation.TEAM
+        mac_validation.signed_entitlements(data)
+        for key, value in (("com.apple.developer.team-identifier", "WRONGTEAM"),
+                           ("com.apple.application-identifier", "384ZGKG4GB.wrong"),
+                           ("com.apple.security.get-task-allow", True), ("get-task-allow", "false")):
+            broken = copy.deepcopy(data)
+            broken[key] = value
+            with self.assertRaises(ValueError):
+                mac_validation.signed_entitlements(broken)
+
+    def test_exported_package_checks_actual_payload_before_upload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "export").mkdir()
+            (root / "export/app.pkg").write_bytes(b"fixture")
+            entitlements = self.mac_profile()["Entitlements"]
+            entitlements["com.apple.developer.team-identifier"] = mac_validation.TEAM
+            calls = []
+
+            def run(argv):
+                calls.append(argv)
+                if "--check-signature" in argv:
+                    return b"  1. 3rd Party Mac Developer Installer: Fixture (384ZGKG4GB)\n"
+                if "--expand-full" in argv:
+                    app = Path(argv[-1]) / "component.pkg/Payload/Vogel.app/Contents"
+                    app.mkdir(parents=True)
+                    (app / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": mac_validation.BUNDLE}))
+                if "--entitlements" in argv:
+                    return plistlib.dumps(entitlements)
+                return b""
+
+            with patch.object(mac_validation, "checked", side_effect=run):
+                mac_validation.package(root / "export", root)
+            self.assertTrue(any("--verify" in argv and "--strict" in argv for argv in calls))
+            self.assertTrue(any("--entitlements" in argv for argv in calls))
+        deploy = DEPLOY.read_text()
+        self.assertLess(deploy.index("validate_macos_release.py package"), deploy.index("- name: Upload to TestFlight"))
+        self.assertIn('python3 .github/workflows/scripts/validate_macos_release.py profile "$DECODED_PROFILE"', deploy)
+        # The previously successful iOS validation remains explicit and strict.
+        self.assertIn('Print :Entitlements:application-identifier', deploy)
+        self.assertIn('[ "$PROFILE_DEBUG" != "false" ]', deploy)
+
     def test_no_github_hosted_macos_route_remains(self) -> None:
         for workflow in (DEPLOY, SWIFT):
             with self.subTest(workflow=workflow.name):

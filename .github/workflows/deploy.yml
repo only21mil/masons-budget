@@ -280,7 +280,7 @@ jobs:
           fi
           if [ "$PLATFORM" = "macos" ] &&
             ! security find-identity -v "$KEYCHAIN_PATH" |
-              grep -q '"Mac Installer Distribution'; then
+              python3 .github/workflows/scripts/validate_macos_release.py installer-identity; then
             echo "::error::The imported installer p12 has no usable Mac Installer Distribution identity and private key."
             exit 1
           fi
@@ -291,6 +291,9 @@ jobs:
           security cms -D -i "$ENCODED_PROFILE" > "$DECODED_PROFILE"
 
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$DECODED_PROFILE")
+          if [ "$PLATFORM" = "macos" ]; then
+            python3 .github/workflows/scripts/validate_macos_release.py profile "$DECODED_PROFILE"
+          else
           PROFILE_TEAM=$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$DECODED_PROFILE")
           PROFILE_APP_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$DECODED_PROFILE")
           PROFILE_PLATFORM=$(/usr/libexec/PlistBuddy -c "Print :Platform:0" "$DECODED_PROFILE")
@@ -303,6 +306,7 @@ jobs:
             [ "$PROFILE_DEBUG" != "false" ]; then
             echo "::error::The $PLATFORM profile is not a non-debug App Store profile for team 384ZGKG4GB and com.sats21m.masonsbudget."
             exit 1
+          fi
           fi
 
           PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
@@ -391,6 +395,11 @@ jobs:
             -archivePath "$ARCHIVE" \
             -exportPath "$EXPORT_DIR" \
             -exportOptionsPlist "$EXPORT_OPTIONS_PATH"
+
+      - name: Verify the exported Mac package and final signed entitlements
+        if: matrix.platform == 'macos'
+        run: |
+          python3 .github/workflows/scripts/validate_macos_release.py package "$EXPORT_DIR" "$RELEASE_ROOT"
 
       # Keep the signed artifact BEFORE attempting the upload. Archive and export
       # are the expensive, fragile part; the upload depends on App Store Connect
