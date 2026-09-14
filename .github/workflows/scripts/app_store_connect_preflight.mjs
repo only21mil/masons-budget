@@ -45,6 +45,51 @@ function fail(classification) {
   throw new PreflightError(classification);
 }
 
+// Fixed codes only. No response values, object keys, paths or raw errors enter
+// diagnostics. The renderer checks these allowlists again at the output boundary.
+const RELEASE_STAGES = new Set([
+  "APP_LOOKUP", "LATEST_BUILD", "RELEASE_INPUT", "GROUPS", "GROUP_BUILDS", "BUILDS", "BETA_DETAIL",
+]);
+const RELEASE_REASONS = new Set([
+  "REQUEST_FAILED", "UNEXPECTED_EXCEPTION", "JSON_PARSE", "DOCUMENT_OBJECT", "DATA_ARRAY",
+  "APP_NOT_VISIBLE", "APP_AMBIGUOUS", "LATEST_BUILD_COUNT", "LATEST_BUILD_OBJECT",
+  "LATEST_BUILD_ID_TYPE", "LATEST_BUILD_ID_EMPTY", "LATEST_ATTRIBUTES_OBJECT",
+  "LATEST_VERSION_TYPE", "LATEST_VERSION_EMPTY", "LATEST_DATE_TYPE", "LATEST_DATE_INVALID",
+  "INPUT_INVALID", "PAGE_REPEAT", "PAGE_LIMIT", "PAGE_RECORD_LIMIT", "LINKS_OBJECT",
+  "LINKS_ARRAY", "RECORD_TYPE", "RECORD_ID", "RECORD_DUPLICATE", "NEXT_TYPE", "NEXT_URL",
+  "NEXT_ORIGIN", "NEXT_PATH", "NEXT_USERNAME", "NEXT_PASSWORD", "NEXT_HASH",
+  "NEXT_QUERY_COUNT", "NEXT_QUERY_VALUE", "NEXT_QUERY_EXTRA", "NEXT_CURSOR_COUNT",
+  "NEXT_CURSOR_EMPTY", "NEXT_URL_LENGTH", "GROUP_LIMIT", "GROUP_INTERNAL_BOOLEAN",
+  "GROUP_ALL_BUILDS_BOOLEAN", "BUILD_COUNT", "PRERELEASE_RELATION_TYPE", "PRERELEASE_RELATION_ID",
+  "APP_RELATION_TYPE", "APP_RELATION_ID", "INCLUDED_ARRAY", "PRERELEASE_INCLUDED_COUNT",
+  "PRERELEASE_VERSION", "PRERELEASE_PLATFORM", "APP_INCLUDED_COUNT", "APP_BUNDLE",
+  "BUILD_NUMBER", "BUILD_PROCESSING_STATE", "BUILD_EXPIRED_BOOLEAN", "DETAIL_TYPE", "DETAIL_ID",
+  "DETAIL_BUILD_RELATION_TYPE", "DETAIL_BUILD_RELATION_ID", "DETAIL_INCLUDED_BUILD_COUNT",
+  "DETAIL_INCLUDED_BUILD_NUMBER", "DETAIL_INTERNAL_STATE", "DETAIL_EXTERNAL_STATE",
+]);
+
+function invalidResponse(reason) {
+  const error = new PreflightError(CLASSIFICATION.INVALID_RESPONSE);
+  error.reason = reason;
+  throw error;
+}
+
+function releaseFailure(error, stage, platform) {
+  const safeError = new PreflightError(error instanceof PreflightError ?
+    error.classification : CLASSIFICATION.INTERNAL_ERROR);
+  safeError.releaseDiagnostic = { stage,
+    reason: RELEASE_REASONS.has(error?.reason) ? error.reason :
+      error instanceof PreflightError ? "REQUEST_FAILED" : "UNEXPECTED_EXCEPTION",
+    ...(platform ? { platform } : {}),
+  };
+  return safeError;
+}
+
+async function releaseStage(stage, action) {
+  try { return await action(); }
+  catch (error) { throw releaseFailure(error, stage); }
+}
+
 function strictBase64Decode(value) {
   const compact = value.replace(/\s+/gu, "");
   if (
@@ -277,26 +322,21 @@ export async function requestJson(
     try {
       return JSON.parse(response.body.toString("utf8"));
     } catch {
-      fail(CLASSIFICATION.INVALID_RESPONSE);
+      invalidResponse("JSON_PARSE");
     }
   }
 
   fail(CLASSIFICATION.INTERNAL_ERROR);
 }
 
-function requireDataArray(document) {
-  if (
-    document === null ||
-    typeof document !== "object" ||
-    !Array.isArray(document.data)
-  ) {
-    fail(CLASSIFICATION.INVALID_RESPONSE);
-  }
+function requireDataArray(document, invalid = () => fail(CLASSIFICATION.INVALID_RESPONSE)) {
+  if (document === null || typeof document !== "object") invalid("DOCUMENT_OBJECT");
+  if (!Array.isArray(document.data)) invalid("DATA_ARRAY");
   return document.data;
 }
 
-export function selectExactApp(document, bundleId) {
-  const apps = requireDataArray(document);
+export function selectExactApp(document, bundleId, invalid = () => fail(CLASSIFICATION.INVALID_RESPONSE)) {
+  const apps = requireDataArray(document, invalid);
   const exactMatches = apps.filter(
     (app) =>
       app !== null &&
@@ -308,64 +348,61 @@ export function selectExactApp(document, bundleId) {
       app.attributes.bundleId === bundleId,
   );
 
-  if (exactMatches.length === 0) fail(CLASSIFICATION.BUNDLE_NOT_VISIBLE);
+  if (exactMatches.length === 0) {
+    const error = new PreflightError(CLASSIFICATION.BUNDLE_NOT_VISIBLE);
+    error.reason = "APP_NOT_VISIBLE";
+    throw error;
+  }
   if (exactMatches.length !== 1 || apps.length !== 1) {
-    fail(CLASSIFICATION.BUNDLE_AMBIGUOUS);
+    const error = new PreflightError(CLASSIFICATION.BUNDLE_AMBIGUOUS);
+    error.reason = "APP_AMBIGUOUS";
+    throw error;
   }
   return exactMatches[0].id;
 }
 
-export function classifyLatestBuild(document) {
-  const builds = requireDataArray(document);
+export function classifyLatestBuild(document, invalid = () => fail(CLASSIFICATION.INVALID_RESPONSE)) {
+  const builds = requireDataArray(document, invalid);
   if (builds.length === 0) return "NONE";
-  if (builds.length !== 1) fail(CLASSIFICATION.INVALID_RESPONSE);
+  if (builds.length !== 1) invalid("LATEST_BUILD_COUNT");
 
   const build = builds[0];
-  if (
-    build === null ||
-    typeof build !== "object" ||
-    typeof build.id !== "string" ||
-    build.id.length === 0 ||
-    build.attributes === null ||
-    typeof build.attributes !== "object" ||
-    typeof build.attributes.version !== "string" ||
-    build.attributes.version.length === 0 ||
-    typeof build.attributes.uploadedDate !== "string" ||
-    !Number.isFinite(Date.parse(build.attributes.uploadedDate))
-  ) {
-    fail(CLASSIFICATION.INVALID_RESPONSE);
-  }
+  if (build === null || typeof build !== "object") invalid("LATEST_BUILD_OBJECT");
+  if (typeof build.id !== "string") invalid("LATEST_BUILD_ID_TYPE");
+  if (build.id.length === 0) invalid("LATEST_BUILD_ID_EMPTY");
+  if (build.attributes === null || typeof build.attributes !== "object") invalid("LATEST_ATTRIBUTES_OBJECT");
+  if (typeof build.attributes.version !== "string") invalid("LATEST_VERSION_TYPE");
+  if (build.attributes.version.length === 0) invalid("LATEST_VERSION_EMPTY");
+  if (typeof build.attributes.uploadedDate !== "string") invalid("LATEST_DATE_TYPE");
+  if (!Number.isFinite(Date.parse(build.attributes.uploadedDate))) invalid("LATEST_DATE_INVALID");
   return "VISIBLE";
 }
 
 // Keep pagination at the exact endpoint, app and platform selected by this
 // caller. Never forward the bearer token to a server-supplied arbitrary URL.
-function nextBuildPage(value, initialUrl) {
-  if (typeof value !== "string") fail(CLASSIFICATION.INVALID_RESPONSE);
+function nextBuildPage(value, initialUrl, invalid = () => fail(CLASSIFICATION.INVALID_RESPONSE)) {
+  if (typeof value !== "string") invalid("NEXT_TYPE");
   let url;
   try {
     url = new URL(value);
   } catch {
-    fail(CLASSIFICATION.INVALID_RESPONSE);
+    invalid("NEXT_URL");
   }
-  if (
-    url.origin !== APP_STORE_CONNECT_ORIGIN ||
-    url.pathname !== initialUrl.pathname ||
-    url.username || url.password || url.hash
-  ) fail(CLASSIFICATION.INVALID_RESPONSE);
+  if (url.origin !== APP_STORE_CONNECT_ORIGIN) invalid("NEXT_ORIGIN");
+  if (url.pathname !== initialUrl.pathname) invalid("NEXT_PATH");
+  if (url.username) invalid("NEXT_USERNAME");
+  if (url.password) invalid("NEXT_PASSWORD");
+  if (url.hash) invalid("NEXT_HASH");
   for (const [name, expected] of initialUrl.searchParams) {
-    if (url.searchParams.getAll(name).length !== 1 ||
-        url.searchParams.get(name) !== expected) fail(CLASSIFICATION.INVALID_RESPONSE);
+    if (url.searchParams.getAll(name).length !== 1) invalid("NEXT_QUERY_COUNT");
+    if (url.searchParams.get(name) !== expected) invalid("NEXT_QUERY_VALUE");
   }
   for (const name of url.searchParams.keys()) {
-    if (!initialUrl.searchParams.has(name) && name !== "cursor") {
-      fail(CLASSIFICATION.INVALID_RESPONSE);
-    }
+    if (!initialUrl.searchParams.has(name) && name !== "cursor") invalid("NEXT_QUERY_EXTRA");
   }
-  if (url.searchParams.getAll("cursor").length !== 1 ||
-      !url.searchParams.get("cursor") || url.href.length > 8192) {
-    fail(CLASSIFICATION.INVALID_RESPONSE);
-  }
+  if (url.searchParams.getAll("cursor").length !== 1) invalid("NEXT_CURSOR_COUNT");
+  if (!url.searchParams.get("cursor")) invalid("NEXT_CURSOR_EMPTY");
+  if (url.href.length > 8192) invalid("NEXT_URL_LENGTH");
   return url;
 }
 
@@ -476,99 +513,125 @@ async function releasePages(initialUrl, type, token, request) {
   while (url) {
     const pageKey = new URL(url);
     pageKey.searchParams.sort();
-    if (seenPages.has(pageKey.href) || seenPages.size >= 20) fail(CLASSIFICATION.INVALID_RESPONSE);
+    if (seenPages.has(pageKey.href)) invalidResponse("PAGE_REPEAT");
+    if (seenPages.size >= 20) invalidResponse("PAGE_LIMIT");
     seenPages.add(pageKey.href);
     const document = await request(url, token);
-    const data = requireDataArray(document);
-    if (data.length > 200 || !document.links || typeof document.links !== "object" ||
-        Array.isArray(document.links)) fail(CLASSIFICATION.INVALID_RESPONSE);
+    const data = requireDataArray(document, invalidResponse);
+    if (data.length > 200) invalidResponse("PAGE_RECORD_LIMIT");
+    if (!document.links || typeof document.links !== "object") invalidResponse("LINKS_OBJECT");
+    if (Array.isArray(document.links)) invalidResponse("LINKS_ARRAY");
     for (const record of data) {
-      if (record?.type !== type || !validResourceId(record.id) || seenRecords.has(record.id)) {
-        fail(CLASSIFICATION.INVALID_RESPONSE);
-      }
+      if (record?.type !== type) invalidResponse("RECORD_TYPE");
+      if (!validResourceId(record.id)) invalidResponse("RECORD_ID");
+      if (seenRecords.has(record.id)) invalidResponse("RECORD_DUPLICATE");
       seenRecords.add(record.id);
       records.push({ record, included: document.included });
     }
-    url = document.links.next == null ? null : nextBuildPage(document.links.next, initialUrl);
+    url = document.links.next == null ? null : nextBuildPage(document.links.next, initialUrl, invalidResponse);
   }
   return records;
 }
 
 export async function readReleaseVerification(appId, version, number, token, request = requestJson) {
-  if (!/^[0-9]+$/u.test(appId) || numericVersion(version) !== version ||
-      numericBuild(number) < 1) fail(CLASSIFICATION.INVALID_CONFIGURATION);
-  const urlFor = (path, fields) => {
-    const url = new URL(path, APP_STORE_CONNECT_ORIGIN);
-    for (const [key, value] of Object.entries(fields)) url.searchParams.set(key, value);
-    return url;
-  };
-  const groups = await releasePages(urlFor(`/v1/apps/${appId}/betaGroups`, {
-    limit: "200", "fields[betaGroups]": "isInternalGroup,hasAccessToAllBuilds",
-  }), "betaGroups", token, request);
-  // Bound the number of group relationship requests as well as each page list.
-  if (groups.length > 50) fail(CLASSIFICATION.INVALID_RESPONSE);
-  for (const { record: group } of groups) {
-    if (typeof group.attributes?.isInternalGroup !== "boolean" ||
-        typeof group.attributes?.hasAccessToAllBuilds !== "boolean") fail(CLASSIFICATION.INVALID_RESPONSE);
-    group.buildIds = new Set((await releasePages(urlFor(`/v1/betaGroups/${group.id}/relationships/builds`, {
-      limit: "200",
-    }), "builds", token, request)).map(({ record }) => record.id));
-  }
-  const platforms = [];
-  for (const platform of ["IOS", "MAC_OS"]) {
-    const builds = await releasePages(urlFor("/v1/builds", {
-      limit: "200", "filter[app]": appId, "filter[version]": number,
-      "filter[preReleaseVersion.version]": version, "filter[preReleaseVersion.platform]": platform,
-      "fields[builds]": "version,processingState,expired,preReleaseVersion,app",
-      include: "preReleaseVersion,app", "fields[preReleaseVersions]": "version,platform",
-      "fields[apps]": "bundleId",
-    }), "builds", token, request);
-    if (builds.length > 1) fail(CLASSIFICATION.INVALID_RESPONSE);
-    if (!builds.length) {
-      platforms.push({ platform, processingState: "MISSING", available: false });
-      continue;
+  let stage = "RELEASE_INPUT";
+  let diagnosticPlatform;
+  try {
+    if (!/^[0-9]+$/u.test(appId) || numericVersion(version) !== version ||
+        numericBuild(number) < 1) fail(CLASSIFICATION.INVALID_CONFIGURATION);
+    const urlFor = (path, fields) => {
+      const url = new URL(path, APP_STORE_CONNECT_ORIGIN);
+      for (const [key, value] of Object.entries(fields)) url.searchParams.set(key, value);
+      return url;
+    };
+    stage = "GROUPS";
+    const groups = await releasePages(urlFor(`/v1/apps/${appId}/betaGroups`, {
+      limit: "200", "fields[betaGroups]": "isInternalGroup,hasAccessToAllBuilds",
+    }), "betaGroups", token, request);
+    // Bound the number of group relationship requests as well as each page list.
+    if (groups.length > 50) invalidResponse("GROUP_LIMIT");
+    for (const { record: group } of groups) {
+      stage = "GROUPS";
+      if (typeof group.attributes?.isInternalGroup !== "boolean") invalidResponse("GROUP_INTERNAL_BOOLEAN");
+      if (typeof group.attributes?.hasAccessToAllBuilds !== "boolean") invalidResponse("GROUP_ALL_BUILDS_BOOLEAN");
+      stage = "GROUP_BUILDS";
+      group.buildIds = new Set((await releasePages(urlFor(`/v1/betaGroups/${group.id}/relationships/builds`, {
+        limit: "200",
+      }), "builds", token, request)).map(({ record }) => record.id));
     }
-    const { record: build, included } = builds[0];
-    const prerelease = build.relationships?.preReleaseVersion?.data;
-    const app = build.relationships?.app?.data;
-    if (prerelease?.type !== "preReleaseVersions" || !validResourceId(prerelease.id) ||
-        app?.type !== "apps" || app.id !== appId || !Array.isArray(included)) fail(CLASSIFICATION.INVALID_RESPONSE);
-    const versions = included.filter(item => item?.type === "preReleaseVersions" && item.id === prerelease.id);
-    const apps = included.filter(item => item?.type === "apps" && item.id === appId);
-    if (versions.length !== 1 || versions[0].attributes?.version !== version ||
-        versions[0].attributes?.platform !== platform || apps.length !== 1 ||
-        apps[0].attributes?.bundleId !== DEFAULT_BUNDLE_ID || build.attributes?.version !== number ||
-        !["PROCESSING", "FAILED", "INVALID", "VALID"].includes(build.attributes?.processingState) ||
-        typeof build.attributes?.expired !== "boolean") fail(CLASSIFICATION.INVALID_RESPONSE);
-    const result = { platform, processingState: build.attributes.processingState,
-      expired: build.attributes.expired, available: false };
-    if (result.processingState === "VALID") {
-      const detailDocument = await request(urlFor(`/v1/builds/${build.id}/buildBetaDetail`, {
-        "fields[buildBetaDetails]": "internalBuildState,externalBuildState,build",
-        include: "build", "fields[builds]": "version",
-      }), token);
-      const detail = detailDocument.data;
-      const includedBuilds = Array.isArray(detailDocument.included) ? detailDocument.included.filter(item =>
-        item?.type === "builds" && item.id === build.id) : [];
-      if (detail?.type !== "buildBetaDetails" || !validResourceId(detail.id) ||
-          detail.relationships?.build?.data?.type !== "builds" || detail.relationships.build.data.id !== build.id ||
-          includedBuilds.length !== 1 || includedBuilds[0].attributes?.version !== number ||
-          !INTERNAL_BETA_STATES.has(detail.attributes?.internalBuildState) ||
-          !EXTERNAL_BETA_STATES.has(detail.attributes?.externalBuildState)) fail(CLASSIFICATION.INVALID_RESPONSE);
-      result.internalBuildState = detail.attributes.internalBuildState;
-      result.externalBuildState = detail.attributes.externalBuildState;
-      result.internalGroupCount = groups.filter(({ record: group }) => group.attributes.isInternalGroup &&
-        (group.attributes.hasAccessToAllBuilds || group.buildIds.has(build.id))).length;
-      result.externalGroupCount = groups.filter(({ record: group }) => !group.attributes.isInternalGroup &&
-        group.buildIds.has(build.id)).length;
-      result.available = !result.expired &&
-        ((result.internalBuildState === "IN_BETA_TESTING" && result.internalGroupCount > 0) ||
-         (result.externalBuildState === "IN_BETA_TESTING" && result.externalGroupCount > 0));
+    const platforms = [];
+    for (const platform of ["IOS", "MAC_OS"]) {
+      diagnosticPlatform = platform;
+      stage = "BUILDS";
+      const builds = await releasePages(urlFor("/v1/builds", {
+        limit: "200", "filter[app]": appId, "filter[version]": number,
+        "filter[preReleaseVersion.version]": version, "filter[preReleaseVersion.platform]": platform,
+        "fields[builds]": "version,processingState,expired,preReleaseVersion,app",
+        include: "preReleaseVersion,app", "fields[preReleaseVersions]": "version,platform",
+        "fields[apps]": "bundleId",
+      }), "builds", token, request);
+      if (builds.length > 1) invalidResponse("BUILD_COUNT");
+      if (!builds.length) {
+        platforms.push({ platform, processingState: "MISSING", available: false });
+        continue;
+      }
+      const { record: build, included } = builds[0];
+      const prerelease = build.relationships?.preReleaseVersion?.data;
+      const app = build.relationships?.app?.data;
+      if (prerelease?.type !== "preReleaseVersions") invalidResponse("PRERELEASE_RELATION_TYPE");
+      if (!validResourceId(prerelease.id)) invalidResponse("PRERELEASE_RELATION_ID");
+      if (app?.type !== "apps") invalidResponse("APP_RELATION_TYPE");
+      if (app.id !== appId) invalidResponse("APP_RELATION_ID");
+      if (!Array.isArray(included)) invalidResponse("INCLUDED_ARRAY");
+      const versions = included.filter(item => item?.type === "preReleaseVersions" && item.id === prerelease.id);
+      const apps = included.filter(item => item?.type === "apps" && item.id === appId);
+      if (versions.length !== 1) invalidResponse("PRERELEASE_INCLUDED_COUNT");
+      if (versions[0].attributes?.version !== version) invalidResponse("PRERELEASE_VERSION");
+      if (versions[0].attributes?.platform !== platform) invalidResponse("PRERELEASE_PLATFORM");
+      if (apps.length !== 1) invalidResponse("APP_INCLUDED_COUNT");
+      if (apps[0].attributes?.bundleId !== DEFAULT_BUNDLE_ID) invalidResponse("APP_BUNDLE");
+      if (build.attributes?.version !== number) invalidResponse("BUILD_NUMBER");
+      if (!["PROCESSING", "FAILED", "INVALID", "VALID"].includes(build.attributes?.processingState)) {
+        invalidResponse("BUILD_PROCESSING_STATE");
+      }
+      if (typeof build.attributes?.expired !== "boolean") invalidResponse("BUILD_EXPIRED_BOOLEAN");
+      const result = { platform, processingState: build.attributes.processingState,
+        expired: build.attributes.expired, available: false };
+      if (result.processingState === "VALID") {
+        stage = "BETA_DETAIL";
+        const detailDocument = await request(urlFor(`/v1/builds/${build.id}/buildBetaDetail`, {
+          "fields[buildBetaDetails]": "internalBuildState,externalBuildState,build",
+          include: "build", "fields[builds]": "version",
+        }), token);
+        const detail = detailDocument.data;
+        const includedBuilds = Array.isArray(detailDocument.included) ? detailDocument.included.filter(item =>
+          item?.type === "builds" && item.id === build.id) : [];
+        if (detail?.type !== "buildBetaDetails") invalidResponse("DETAIL_TYPE");
+        if (!validResourceId(detail.id)) invalidResponse("DETAIL_ID");
+        if (detail.relationships?.build?.data?.type !== "builds") invalidResponse("DETAIL_BUILD_RELATION_TYPE");
+        if (detail.relationships.build.data.id !== build.id) invalidResponse("DETAIL_BUILD_RELATION_ID");
+        if (includedBuilds.length !== 1) invalidResponse("DETAIL_INCLUDED_BUILD_COUNT");
+        if (includedBuilds[0].attributes?.version !== number) invalidResponse("DETAIL_INCLUDED_BUILD_NUMBER");
+        if (!INTERNAL_BETA_STATES.has(detail.attributes?.internalBuildState)) invalidResponse("DETAIL_INTERNAL_STATE");
+        if (!EXTERNAL_BETA_STATES.has(detail.attributes?.externalBuildState)) invalidResponse("DETAIL_EXTERNAL_STATE");
+        result.internalBuildState = detail.attributes.internalBuildState;
+        result.externalBuildState = detail.attributes.externalBuildState;
+        result.internalGroupCount = groups.filter(({ record: group }) => group.attributes.isInternalGroup &&
+          (group.attributes.hasAccessToAllBuilds || group.buildIds.has(build.id))).length;
+        result.externalGroupCount = groups.filter(({ record: group }) => !group.attributes.isInternalGroup &&
+          group.buildIds.has(build.id)).length;
+        result.available = !result.expired &&
+          ((result.internalBuildState === "IN_BETA_TESTING" && result.internalGroupCount > 0) ||
+           (result.externalBuildState === "IN_BETA_TESTING" && result.externalGroupCount > 0));
+      }
+      platforms.push(result);
     }
-    platforms.push(result);
+    return { version, buildNumber: Number(number), existingGroupCount: groups.length, platforms,
+      classification: platforms.every(item => item.available) ? "AVAILABLE_TO_EXISTING_GROUPS" : "NOT_READY" };
+  } catch (error) {
+    if (stage === "RELEASE_INPUT" && error instanceof PreflightError) error.reason = "INPUT_INVALID";
+    throw releaseFailure(error, stage, diagnosticPlatform);
   }
-  return { version, buildNumber: Number(number), existingGroupCount: groups.length, platforms,
-    classification: platforms.every(item => item.available) ? "AVAILABLE_TO_EXISTING_GROUPS" : "NOT_READY" };
 }
 
 export async function runPreflight({ env = process.env, request = requestJson } = {}) {
@@ -605,14 +668,18 @@ export async function runPreflight({ env = process.env, request = requestJson } 
   const appsUrl = new URL("/v1/apps", APP_STORE_CONNECT_ORIGIN);
   appsUrl.searchParams.set("filter[bundleId]", bundleId);
   appsUrl.searchParams.set("limit", "2");
-  const appId = selectExactApp(await request(appsUrl, token), bundleId);
+  const appId = verifyRelease ? await releaseStage("APP_LOOKUP", async () =>
+    selectExactApp(await request(appsUrl, token), bundleId, invalidResponse)) :
+    selectExactApp(await request(appsUrl, token), bundleId);
 
   const buildsUrl = new URL("/v1/builds", APP_STORE_CONNECT_ORIGIN);
   buildsUrl.searchParams.set("filter[app]", appId);
   buildsUrl.searchParams.set("sort", "-uploadedDate");
   buildsUrl.searchParams.set("limit", "1");
   buildsUrl.searchParams.set("fields[builds]", "version,uploadedDate");
-  const latestBuild = classifyLatestBuild(await request(buildsUrl, token));
+  const latestBuild = verifyRelease ? await releaseStage("LATEST_BUILD", async () =>
+    classifyLatestBuild(await request(buildsUrl, token), invalidResponse)) :
+    classifyLatestBuild(await request(buildsUrl, token));
   const buildNumbers = lookupBuildNumbers ? await readBuildNumbers(appId, token, request) : undefined;
   const releaseVerification = verifyRelease ? {
     ...await readReleaseVerification(appId, env.ASC_RELEASE_VERSION, env.ASC_RELEASE_BUILD, token, request),
@@ -635,6 +702,24 @@ export function renderResult(result) {
     `LATEST_BUILD=${result.latestBuild}`,
     ...(result.buildNumbers ? [`BUILD_NUMBERS=${JSON.stringify(result.buildNumbers)}`] : []),
     ...(result.releaseVerification ? [`RELEASE_VERIFICATION=${JSON.stringify(result.releaseVerification)}`] : []),
+    "Apple identifiers, credential material, and response bodies are intentionally omitted.",
+  ].join("\n");
+}
+
+export function renderFailure(error) {
+  const classification = error instanceof PreflightError &&
+    Object.values(CLASSIFICATION).includes(error.classification) ?
+    error.classification : CLASSIFICATION.INTERNAL_ERROR;
+  const diagnostic = error instanceof PreflightError ? error.releaseDiagnostic : undefined;
+  const safeDiagnostic = diagnostic && RELEASE_STAGES.has(diagnostic.stage) &&
+    RELEASE_REASONS.has(diagnostic.reason) ? {
+      stage: diagnostic.stage, reason: diagnostic.reason,
+      ...(["IOS", "MAC_OS"].includes(diagnostic.platform) ? { platform: diagnostic.platform } : {}),
+    } : undefined;
+  return [
+    "APP_STORE_CONNECT_PREFLIGHT=FAIL",
+    `CLASSIFICATION=${classification}`,
+    ...(safeDiagnostic ? [`RELEASE_DIAGNOSTIC=${JSON.stringify(safeDiagnostic)}`] : []),
     "Apple identifiers, credential material, and response bodies are intentionally omitted.",
   ].join("\n");
 }
@@ -662,15 +747,7 @@ async function main() {
       process.exitCode = 1;
     }
   } catch (error) {
-    const classification =
-      error instanceof PreflightError
-        ? error.classification
-        : CLASSIFICATION.INTERNAL_ERROR;
-    const report = [
-      "APP_STORE_CONNECT_PREFLIGHT=FAIL",
-      `CLASSIFICATION=${classification}`,
-      "Apple identifiers, credential material, and response bodies are intentionally omitted.",
-    ].join("\n");
+    const report = renderFailure(error);
     process.stderr.write(`::error::${report.replaceAll("\n", " ")}\n`);
     await appendSummary(report);
     process.exitCode = 1;
