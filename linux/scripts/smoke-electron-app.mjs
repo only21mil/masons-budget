@@ -36,7 +36,7 @@ const EXPECTED = {
   width: 1440,
   height: 900,
   // The ledger canvas of the saved treatment; a fresh profile is dark.
-  backgroundColor: "#0a0d0c",
+  backgroundColor: "#050505",
   // The body paints nothing so the window colour shows until the shell mounts.
   bodyBackground: "rgba(0, 0, 0, 0)",
   sidebarWide: 130,
@@ -173,7 +173,7 @@ async function setViewport(window, width, height) {
  *
  * getBackgroundColor() only reports what the window was configured with; it says
  * nothing about what was drawn. A white flash, a failed stylesheet, or a blank
- * renderer all produce a window that still claims #0a0d0c. Counting dark pixels
+ * renderer all produce a window that still claims #050505. Counting dark pixels
  * in the real frame is the only version of this check that can fail.
  *
  * The threshold is a fraction, not "no light pixels": cream text and the orange
