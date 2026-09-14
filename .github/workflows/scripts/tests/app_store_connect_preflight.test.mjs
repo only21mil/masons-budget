@@ -13,6 +13,7 @@ import {
   readBuildNumbers,
   readReleaseVerification,
   renderResult,
+  renderFailure,
   runPreflight,
   selectExactApp,
 } from "../app_store_connect_preflight.mjs";
@@ -395,6 +396,11 @@ before(async () => {
     if (request.url === "/hang") {
       return;
     }
+    if (request.url === "/invalid-json") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("PRIVATE_SENTINEL secret@example.test");
+      return;
+    }
     response.writeHead(200, { "content-type": "application/json" });
     response.end('{"data":[]}');
   });
@@ -623,4 +629,200 @@ test("number lookup is opt-in and restricted to the fixed Vogel Vault bundle bef
     } });
   assert.equal(calls, 6);
   assert.deepEqual(result.buildNumbers, { inventory: [], highestObservedBuildNumber: null });
+});
+
+
+function assertDiagnostic(error, stage, reason, platform) {
+  assert.equal(error.classification, CLASSIFICATION.INVALID_RESPONSE);
+  const expected = { stage, reason, ...(platform ? { platform } : {}) };
+  assert.deepEqual(error.releaseDiagnostic, expected);
+  const report = renderFailure(error);
+  assert.ok(report.includes(`RELEASE_DIAGNOSTIC=${JSON.stringify(expected)}`));
+  for (const hidden of ["PRIVATE_SENTINEL", "private-group", "private-detail", "build-IOS",
+    "test-token", "secret@example.test", "https://", privatePem, validEnv.ASC_KEY_ID, validEnv.ASC_ISSUER_ID]) {
+    assert.equal(report.includes(hidden), false, `Leaked ${hidden === privatePem ? "fixture key" : hidden}`);
+  }
+  return true;
+}
+
+test("release diagnostics identify individual group, build and beta-detail predicates without response values", async () => {
+  const cases = [
+    ["GROUPS", "GROUP_INTERNAL_BOOLEAN", d => { d.data[0].attributes.isInternalGroup = "PRIVATE_SENTINEL"; }],
+    ["GROUPS", "GROUP_ALL_BUILDS_BOOLEAN", d => { delete d.data[0].attributes.hasAccessToAllBuilds; }],
+    ["BUILDS", "BUILD_COUNT", d => { d.data.push({ ...d.data[0], id: "another-build" }); }],
+    ["BUILDS", "PRERELEASE_RELATION_TYPE", d => { d.data[0].relationships.preReleaseVersion.data.type = "PRIVATE_SENTINEL"; }],
+    ["BUILDS", "PRERELEASE_RELATION_ID", d => { d.data[0].relationships.preReleaseVersion.data.id = "secret@example.test"; }],
+    ["BUILDS", "APP_RELATION_TYPE", d => { delete d.data[0].relationships.app; }],
+    ["BUILDS", "APP_RELATION_ID", d => { d.data[0].relationships.app.data.id = "PRIVATE_SENTINEL"; }],
+    ["BUILDS", "INCLUDED_ARRAY", d => { d.included = "PRIVATE_SENTINEL"; }],
+    ["BUILDS", "PRERELEASE_INCLUDED_COUNT", d => { d.included.pop(); }],
+    ["BUILDS", "PRERELEASE_VERSION", d => { d.included[1].attributes.version = "PRIVATE_SENTINEL"; }],
+    ["BUILDS", "PRERELEASE_PLATFORM", d => { d.included[1].attributes.platform = "PRIVATE_SENTINEL"; }],
+    ["BUILDS", "APP_INCLUDED_COUNT", d => { d.included.shift(); }],
+    ["BUILDS", "APP_BUNDLE", d => { d.included[0].attributes.bundleId = "PRIVATE_SENTINEL"; }],
+    ["BUILDS", "BUILD_NUMBER", d => { d.data[0].attributes.version = "PRIVATE_SENTINEL"; }],
+    ["BUILDS", "BUILD_PROCESSING_STATE", d => { d.data[0].attributes.processingState = "PRIVATE_SENTINEL"; }],
+    ["BUILDS", "BUILD_EXPIRED_BOOLEAN", d => { d.data[0].attributes.expired = "PRIVATE_SENTINEL"; }],
+    ["BETA_DETAIL", "DETAIL_TYPE", d => { d.data.type = "PRIVATE_SENTINEL"; }],
+    ["BETA_DETAIL", "DETAIL_ID", d => { d.data.id = "secret@example.test"; }],
+    ["BETA_DETAIL", "DETAIL_BUILD_RELATION_TYPE", d => { d.data.relationships.build.data.type = "PRIVATE_SENTINEL"; }],
+    ["BETA_DETAIL", "DETAIL_BUILD_RELATION_ID", d => { d.data.relationships.build.data.id = "PRIVATE_SENTINEL"; }],
+    ["BETA_DETAIL", "DETAIL_INCLUDED_BUILD_COUNT", d => { delete d.included; }],
+    ["BETA_DETAIL", "DETAIL_INCLUDED_BUILD_NUMBER", d => { d.included[0].attributes.version = "PRIVATE_SENTINEL"; }],
+    ["BETA_DETAIL", "DETAIL_INTERNAL_STATE", d => { d.data.attributes.internalBuildState = "PRIVATE_SENTINEL"; }],
+    ["BETA_DETAIL", "DETAIL_EXTERNAL_STATE", d => { d.data.attributes.externalBuildState = "PRIVATE_SENTINEL"; }],
+  ];
+  for (const [stage, reason, change] of cases) {
+    const fixture = releaseFixture((d, u) => {
+      const selected = stage === "GROUPS" ? u.pathname.endsWith("/betaGroups") :
+        stage === "BUILDS" ? u.pathname === "/v1/builds" : u.pathname.endsWith("/buildBetaDetail");
+      if (selected) {
+        d.PRIVATE_SENTINEL = { name: "secret@example.test", token: "test-token" };
+        change(d);
+      }
+    });
+    await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request),
+      e => assertDiagnostic(e, stage, reason, stage === "GROUPS" ? undefined : "IOS"));
+  }
+});
+
+test("release page diagnostics bind list failures to the group, relationship or selected platform stage", async () => {
+  for (const [stage, endpoint, platform] of [
+    ["GROUPS", "/v1/apps/123/betaGroups", undefined],
+    ["GROUP_BUILDS", "/v1/betaGroups/private-group/relationships/builds", undefined],
+    ["BUILDS", "/v1/builds", "MAC_OS"],
+  ]) {
+    for (const [reason, change] of [
+      ["DATA_ARRAY", d => { d.data = "PRIVATE_SENTINEL"; }],
+      ["PAGE_RECORD_LIMIT", d => { d.data = Array(201).fill(d.data[0]); }],
+      ["LINKS_OBJECT", d => { d.links = "PRIVATE_SENTINEL"; }],
+      ["LINKS_ARRAY", d => { d.links = []; }],
+      ["RECORD_TYPE", d => { d.data[0].type = "PRIVATE_SENTINEL"; }],
+      ["RECORD_ID", d => { d.data[0].id = "secret@example.test"; }],
+      ["RECORD_DUPLICATE", d => { d.data.push(d.data[0]); }],
+      ["NEXT_TYPE", d => { d.links.next = ["PRIVATE_SENTINEL"]; }],
+      ["NEXT_URL", d => { d.links.next = "PRIVATE_SENTINEL"; }],
+    ]) {
+      const fixture = releaseFixture((d, u) => {
+        if (u.pathname === endpoint && (!platform || u.searchParams.get("filter[preReleaseVersion.platform]") === platform)) change(d);
+      });
+      await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request),
+        e => assertDiagnostic(e, stage, reason, platform));
+    }
+  }
+});
+
+test("release pagination reports the exact rejected URL guard before any follow-up request", async () => {
+  const cases = [
+    ["NEXT_ORIGIN", u => { u.hostname = "secret.example.test"; }],
+    ["NEXT_PATH", u => { u.pathname = "/PRIVATE_SENTINEL"; }],
+    ["NEXT_USERNAME", u => { u.username = "PRIVATE_SENTINEL"; }],
+    ["NEXT_PASSWORD", u => { u.password = "PRIVATE_SENTINEL"; }],
+    ["NEXT_HASH", u => { u.hash = "PRIVATE_SENTINEL"; }],
+    ["NEXT_QUERY_COUNT", u => { u.searchParams.append("limit", "PRIVATE_SENTINEL"); }],
+    ["NEXT_QUERY_VALUE", u => { u.searchParams.set("limit", "PRIVATE_SENTINEL"); }],
+    ["NEXT_QUERY_EXTRA", u => { u.searchParams.set("PRIVATE_SENTINEL", "secret@example.test"); }],
+    ["NEXT_CURSOR_COUNT", u => { u.searchParams.delete("cursor"); }],
+    ["NEXT_CURSOR_EMPTY", u => { u.searchParams.set("cursor", ""); }],
+    ["NEXT_URL_LENGTH", u => { u.searchParams.set("cursor", "PRIVATE_SENTINEL".repeat(1000)); }],
+  ];
+  for (const [reason, mutate] of cases) {
+    const fixture = releaseFixture((d, u) => {
+      const next = new URL(nextPage(u));
+      mutate(next);
+      d.links.next = next.href;
+    });
+    await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request),
+      e => assertDiagnostic(e, "GROUPS", reason));
+    assert.equal(fixture.calls.length, 1);
+  }
+  for (const [mode, reason, expectedCalls] of [["cycle", "PAGE_REPEAT", 2], ["bound", "PAGE_LIMIT", 20]]) {
+    let calls = 0;
+    await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", async u => {
+      calls += 1;
+      return { data: [], links: { next: nextPage(u, mode === "cycle" ? "same" : `cursor-${calls}`) } };
+    }), e => assertDiagnostic(e, "GROUPS", reason));
+    assert.equal(calls, expectedCalls);
+  }
+  await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", async () => ({
+    data: Array.from({ length: 51 }, (_, i) => ({ type: "betaGroups", id: `group-${i}` })), links: {},
+  })), e => assertDiagnostic(e, "GROUPS", "GROUP_LIMIT"));
+});
+
+test("only release opt-in failures expose fixed app and latest-build stage diagnostics", async () => {
+  for (const verifyRelease of [false, true]) {
+    for (const [stage, reason, page] of [
+      ["APP_LOOKUP", "DOCUMENT_OBJECT", null],
+      ["APP_LOOKUP", "DATA_ARRAY", { data: "PRIVATE_SENTINEL" }],
+      ["LATEST_BUILD", "LATEST_BUILD_COUNT", { data: [{}, {}] }],
+      ["LATEST_BUILD", "LATEST_DATE_INVALID", { data: [{ id: "PRIVATE_SENTINEL", attributes: {
+        version: "45", uploadedDate: "secret@example.test",
+      } }] }],
+    ]) {
+      const env = { ...validEnv, ...(verifyRelease ? { ASC_RELEASE_VERSION: "0.5.0", ASC_RELEASE_BUILD: "45",
+        GITHUB_SHA: "a".repeat(40), GITHUB_RUN_ID: "456" } : {}) };
+      await assert.rejects(runPreflight({ env, request: async u => {
+        if (u.pathname === "/v1/apps" && stage !== "APP_LOOKUP") {
+          return { data: [{ id: "123", attributes: { bundleId: validEnv.ASC_BUNDLE_ID } }] };
+        }
+        return page;
+      } }), e => {
+        if (verifyRelease) return assertDiagnostic(e, stage, reason);
+        assert.equal(e.releaseDiagnostic, undefined);
+        assert.equal(renderFailure(e).includes("RELEASE_DIAGNOSTIC="), false);
+        return true;
+      });
+    }
+  }
+});
+
+test("request and unexpected errors retain only classification and a fixed release stage", async () => {
+  for (const thrown of [new Error("PRIVATE_SENTINEL secret@example.test"),
+    new PreflightError(CLASSIFICATION.AUTHORIZATION_REJECTED)]) {
+    thrown.reason = "PRIVATE_SENTINEL";
+    thrown.response = { private: "secret@example.test" };
+    await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", async () => { throw thrown; }), e => {
+      assert.equal(e.classification, thrown instanceof PreflightError ? CLASSIFICATION.AUTHORIZATION_REJECTED : CLASSIFICATION.INTERNAL_ERROR);
+      assert.deepEqual(e.releaseDiagnostic, { stage: "GROUPS", reason:
+        thrown instanceof PreflightError ? "REQUEST_FAILED" : "UNEXPECTED_EXCEPTION" });
+      assert.equal(renderFailure(e).includes("PRIVATE_SENTINEL"), false);
+      assert.equal(renderFailure(e).includes("secret@example.test"), false);
+      assert.equal(e.response, undefined);
+      return true;
+    });
+  }
+  for (const document of [null, "PRIVATE_SENTINEL"]) {
+    await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", async () => document),
+      e => assertDiagnostic(e, "GROUPS", "DOCUMENT_OBJECT"));
+  }
+});
+
+test("failure output allowlists diagnostic fields and classification even for forged error properties", () => {
+  for (const diagnostic of [
+    { stage: "PRIVATE_SENTINEL", reason: "LINKS_OBJECT" },
+    { stage: "GROUPS", reason: "PRIVATE_SENTINEL" },
+    { stage: "GROUPS", reason: "LINKS_OBJECT", platform: "PRIVATE_SENTINEL", name: "secret@example.test" },
+  ]) {
+    const e = new PreflightError("PRIVATE_SENTINEL");
+    e.releaseDiagnostic = diagnostic;
+    const output = renderFailure(e);
+    assert.ok(output.includes("CLASSIFICATION=INTERNAL_ERROR"));
+    assert.equal(output.includes("PRIVATE_SENTINEL"), false);
+    assert.equal(output.includes("secret@example.test"), false);
+  }
+});
+
+test("malformed JSON receives a fixed parse reason without retaining the body or changing default output", async () => {
+  const request = async () => requestJson(new URL("/invalid-json", origin), "test-token", {
+    transport: http, maxAttempts: 1, timeoutMs: 1_000,
+  });
+  await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", request),
+    e => assertDiagnostic(e, "GROUPS", "JSON_PARSE"));
+  await assert.rejects(request(), e => {
+    assert.equal(e.classification, CLASSIFICATION.INVALID_RESPONSE);
+    assert.equal(e.releaseDiagnostic, undefined);
+    assert.equal(renderFailure(e).includes("RELEASE_DIAGNOSTIC="), false);
+    assert.equal(renderFailure(e).includes("PRIVATE_SENTINEL"), false);
+    return true;
+  });
 });
