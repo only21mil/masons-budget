@@ -341,6 +341,7 @@ export function classifyLatestBuild(document) {
 // Keep pagination at the exact endpoint, app and platform selected by this
 // caller. Never forward the bearer token to a server-supplied arbitrary URL.
 function nextBuildPage(value, initialUrl) {
+  if (typeof value !== "string") fail(CLASSIFICATION.INVALID_RESPONSE);
   let url;
   try {
     url = new URL(value);
@@ -416,7 +417,8 @@ export async function readBuildNumbers(appId, token, request = requestJson) {
         seenPages.add(pageKey.href);
         const document = await request(url, token);
         const records = requireDataArray(document);
-        if (records.length > 200 || !document.links || typeof document.links !== "object") {
+        if (records.length > 200 || !document.links || typeof document.links !== "object" ||
+            Array.isArray(document.links)) {
           fail(CLASSIFICATION.INVALID_RESPONSE);
         }
         for (const record of records) {

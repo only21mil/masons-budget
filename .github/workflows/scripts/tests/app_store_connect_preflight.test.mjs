@@ -352,6 +352,25 @@ test("empty inventories are complete observations, not a selected next number", 
   assert.deepEqual(result, { inventory: [], highestObservedBuildNumber: null });
 });
 
+test("rejects malformed links containers and array next URLs without treating inventory as complete", async () => {
+  for (const endpoint of ["builds", "buildUploads"]) {
+    for (const shape of ["empty-array", "array-with-next", "array-next-url"]) {
+      let calls = 0;
+      await assert.rejects(readBuildNumbers("123", "token", async url => {
+        calls += 1;
+        if (endpoint === "buildUploads" && url.pathname === "/v1/builds") {
+          return { data: [], links: {} };
+        }
+        const next = nextPage(url);
+        const links = shape === "empty-array" ? [] :
+          shape === "array-with-next" ? [{ next }] : { next: [next] };
+        return { data: [], links };
+      }), error => error.classification === CLASSIFICATION.INVALID_RESPONSE);
+      assert.equal(calls, endpoint === "builds" ? 1 : 2);
+    }
+  }
+});
+
 test("rejects pagination escaping the origin, exact app, platform or sparse query before sending auth", async () => {
   const mutations = [
     url => { url.protocol = "http:"; },
