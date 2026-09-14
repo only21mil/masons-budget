@@ -5,11 +5,14 @@ name: Release and App Store Connect preflight (manual, read-only)
 # Connect. The REST probe performs two bounded read-only requests: exact bundle
 # visibility, then the latest visible build. The optional manual build-number
 # lookup also reads paginated build and upload metadata for both Apple platforms.
+# Optional paired release inputs check exact builds, beta states and existing
+# group access for both platforms. No tester records or mutations are requested.
 # Run this before Deploy to TestFlight
 # rather than discovering a missing secret or invisible app after an archive.
 #
 # Nothing here prints a secret. The report is booleans and fixed classifications
-# plus validated numeric build/version metadata when requested: set or not,
+# plus validated numeric build/version metadata and fixed release states/counts
+# when requested: set or not,
 # whether encoded values decode, whether the API key is an
 # in-memory ES256/P-256 key, exact bundle visibility, and latest-build presence.
 # Not even a length — the length of an App Store Connect key id would narrow it.
@@ -44,6 +47,16 @@ on:
         type: boolean
         required: false
         default: false
+      release_version:
+        description: 'Exact Vogel Vault marketing version to verify after upload'
+        type: string
+        required: false
+        default: ''
+      release_build:
+        description: 'Exact shared iOS and macOS build to verify after upload'
+        type: string
+        required: false
+        default: ''
   workflow_call:
     secrets:
       APPLE_CERTIFICATE_P12:
@@ -125,4 +138,6 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_BUNDLE_ID: com.sats21m.masonsbudget
           ASC_BUILD_NUMBER_LOOKUP: ${{ github.event_name == 'workflow_dispatch' && inputs.build_numbers && 'true' || 'false' }}
+          ASC_RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || '' }}
+          ASC_RELEASE_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.release_build || '' }}
         run: node .github/workflows/scripts/app_store_connect_preflight.mjs

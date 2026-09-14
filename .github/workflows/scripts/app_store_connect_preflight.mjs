@@ -458,6 +458,114 @@ export async function readBuildNumbers(appId, token, request = requestJson) {
   };
 }
 
+// Apple enum definitions: /documentation/appstoreconnectapi/{internal,external}betastate.
+// Only fixed enum values reach the report; identifiers and group names never do.
+const INTERNAL_BETA_STATES = new Set([
+  "PROCESSING", "PROCESSING_EXCEPTION", "MISSING_EXPORT_COMPLIANCE",
+  "READY_FOR_BETA_TESTING", "IN_BETA_TESTING", "EXPIRED", "IN_EXPORT_COMPLIANCE_REVIEW",
+]);
+const EXTERNAL_BETA_STATES = new Set([...INTERNAL_BETA_STATES,
+  "READY_FOR_BETA_SUBMISSION", "WAITING_FOR_BETA_REVIEW", "IN_BETA_REVIEW",
+  "BETA_REJECTED", "BETA_APPROVED", "NOT_APPLICABLE",
+]);
+const validResourceId = value => typeof value === "string" && /^[A-Za-z0-9-]{1,100}$/u.test(value);
+
+async function releasePages(initialUrl, type, token, request) {
+  let url = initialUrl;
+  const records = [], seenPages = new Set(), seenRecords = new Set();
+  while (url) {
+    const pageKey = new URL(url);
+    pageKey.searchParams.sort();
+    if (seenPages.has(pageKey.href) || seenPages.size >= 20) fail(CLASSIFICATION.INVALID_RESPONSE);
+    seenPages.add(pageKey.href);
+    const document = await request(url, token);
+    const data = requireDataArray(document);
+    if (data.length > 200 || !document.links || typeof document.links !== "object" ||
+        Array.isArray(document.links)) fail(CLASSIFICATION.INVALID_RESPONSE);
+    for (const record of data) {
+      if (record?.type !== type || !validResourceId(record.id) || seenRecords.has(record.id)) {
+        fail(CLASSIFICATION.INVALID_RESPONSE);
+      }
+      seenRecords.add(record.id);
+      records.push({ record, included: document.included });
+    }
+    url = document.links.next == null ? null : nextBuildPage(document.links.next, initialUrl);
+  }
+  return records;
+}
+
+export async function readReleaseVerification(appId, version, number, token, request = requestJson) {
+  if (!/^[0-9]+$/u.test(appId) || numericVersion(version) !== version ||
+      numericBuild(number) < 1) fail(CLASSIFICATION.INVALID_CONFIGURATION);
+  const urlFor = (path, fields) => {
+    const url = new URL(path, APP_STORE_CONNECT_ORIGIN);
+    for (const [key, value] of Object.entries(fields)) url.searchParams.set(key, value);
+    return url;
+  };
+  const groups = await releasePages(urlFor(`/v1/apps/${appId}/betaGroups`, {
+    limit: "200", "fields[betaGroups]": "isInternalGroup,hasAccessToAllBuilds",
+  }), "betaGroups", token, request);
+  // Bound the number of group relationship requests as well as each page list.
+  if (groups.length > 50) fail(CLASSIFICATION.INVALID_RESPONSE);
+  for (const { record: group } of groups) {
+    if (typeof group.attributes?.isInternalGroup !== "boolean" ||
+        typeof group.attributes?.hasAccessToAllBuilds !== "boolean") fail(CLASSIFICATION.INVALID_RESPONSE);
+    group.buildIds = new Set((await releasePages(urlFor(`/v1/betaGroups/${group.id}/relationships/builds`, {
+      limit: "200",
+    }), "builds", token, request)).map(({ record }) => record.id));
+  }
+  const platforms = [];
+  for (const platform of ["IOS", "MAC_OS"]) {
+    const builds = await releasePages(urlFor("/v1/builds", {
+      limit: "200", "filter[app]": appId, "filter[version]": number,
+      "filter[preReleaseVersion.version]": version, "filter[preReleaseVersion.platform]": platform,
+      "fields[builds]": "version,processingState,expired,preReleaseVersion,app",
+      include: "preReleaseVersion,app", "fields[preReleaseVersions]": "version,platform",
+      "fields[apps]": "bundleId",
+    }), "builds", token, request);
+    if (builds.length > 1) fail(CLASSIFICATION.INVALID_RESPONSE);
+    if (!builds.length) {
+      platforms.push({ platform, processingState: "MISSING", available: false });
+      continue;
+    }
+    const { record: build, included } = builds[0];
+    const prerelease = build.relationships?.preReleaseVersion?.data;
+    const app = build.relationships?.app?.data;
+    if (prerelease?.type !== "preReleaseVersions" || !validResourceId(prerelease.id) ||
+        app?.type !== "apps" || app.id !== appId || !Array.isArray(included)) fail(CLASSIFICATION.INVALID_RESPONSE);
+    const versions = included.filter(item => item?.type === "preReleaseVersions" && item.id === prerelease.id);
+    const apps = included.filter(item => item?.type === "apps" && item.id === appId);
+    if (versions.length !== 1 || versions[0].attributes?.version !== version ||
+        versions[0].attributes?.platform !== platform || apps.length !== 1 ||
+        apps[0].attributes?.bundleId !== DEFAULT_BUNDLE_ID || build.attributes?.version !== number ||
+        !["PROCESSING", "FAILED", "INVALID", "VALID"].includes(build.attributes?.processingState) ||
+        typeof build.attributes?.expired !== "boolean") fail(CLASSIFICATION.INVALID_RESPONSE);
+    const result = { platform, processingState: build.attributes.processingState,
+      expired: build.attributes.expired, available: false };
+    if (result.processingState === "VALID") {
+      const { data: detail } = await request(urlFor(`/v1/builds/${build.id}/buildBetaDetail`, {
+        "fields[buildBetaDetails]": "internalBuildState,externalBuildState,build",
+      }), token);
+      if (detail?.type !== "buildBetaDetails" || !validResourceId(detail.id) ||
+          detail.relationships?.build?.data?.type !== "builds" || detail.relationships.build.data.id !== build.id ||
+          !INTERNAL_BETA_STATES.has(detail.attributes?.internalBuildState) ||
+          !EXTERNAL_BETA_STATES.has(detail.attributes?.externalBuildState)) fail(CLASSIFICATION.INVALID_RESPONSE);
+      result.internalBuildState = detail.attributes.internalBuildState;
+      result.externalBuildState = detail.attributes.externalBuildState;
+      result.internalGroupCount = groups.filter(({ record: group }) => group.attributes.isInternalGroup &&
+        (group.attributes.hasAccessToAllBuilds || group.buildIds.has(build.id))).length;
+      result.externalGroupCount = groups.filter(({ record: group }) => !group.attributes.isInternalGroup &&
+        group.buildIds.has(build.id)).length;
+      result.available = !result.expired &&
+        ((result.internalBuildState === "IN_BETA_TESTING" && result.internalGroupCount > 0) ||
+         (result.externalBuildState === "IN_BETA_TESTING" && result.externalGroupCount > 0));
+    }
+    platforms.push(result);
+  }
+  return { version, buildNumber: Number(number), existingGroupCount: groups.length, platforms,
+    classification: platforms.every(item => item.available) ? "AVAILABLE_TO_EXISTING_GROUPS" : "NOT_READY" };
+}
+
 export async function runPreflight({ env = process.env, request = requestJson } = {}) {
   const requiredNames = ["ASC_API_KEY_P8", "ASC_KEY_ID", "ASC_ISSUER_ID"];
   if (requiredNames.some((name) => !env[name])) {
@@ -469,7 +577,13 @@ export async function runPreflight({ env = process.env, request = requestJson } 
     fail(CLASSIFICATION.INVALID_CONFIGURATION);
   }
   const lookupBuildNumbers = env.ASC_BUILD_NUMBER_LOOKUP === "true";
-  if (lookupBuildNumbers && bundleId !== DEFAULT_BUNDLE_ID) {
+  const verifyRelease = Boolean(env.ASC_RELEASE_VERSION || env.ASC_RELEASE_BUILD);
+  if (verifyRelease && (!/^[0-9]{1,4}(?:\.[0-9]{1,4}){0,2}$/u.test(env.ASC_RELEASE_VERSION ?? "") ||
+      !/^[1-9][0-9]{0,14}$/u.test(env.ASC_RELEASE_BUILD ?? "") ||
+      !/^[a-f0-9]{40}$/u.test(env.GITHUB_SHA ?? "") || !/^[0-9]+$/u.test(env.GITHUB_RUN_ID ?? ""))) {
+    fail(CLASSIFICATION.INVALID_CONFIGURATION);
+  }
+  if ((lookupBuildNumbers || verifyRelease) && bundleId !== DEFAULT_BUNDLE_ID) {
     fail(CLASSIFICATION.INVALID_CONFIGURATION);
   }
   if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/u.test(bundleId)) {
@@ -495,12 +609,17 @@ export async function runPreflight({ env = process.env, request = requestJson } 
   buildsUrl.searchParams.set("fields[builds]", "version,uploadedDate");
   const latestBuild = classifyLatestBuild(await request(buildsUrl, token));
   const buildNumbers = lookupBuildNumbers ? await readBuildNumbers(appId, token, request) : undefined;
+  const releaseVerification = verifyRelease ? {
+    ...await readReleaseVerification(appId, env.ASC_RELEASE_VERSION, env.ASC_RELEASE_BUILD, token, request),
+    workflowSha: env.GITHUB_SHA, runId: env.GITHUB_RUN_ID,
+  } : undefined;
 
   return {
-    preflight: "PASS",
+    preflight: releaseVerification?.classification === "NOT_READY" ? "FAIL" : "PASS",
     bundleVisibility: "EXACT_MATCH",
     latestBuild,
     ...(buildNumbers ? { buildNumbers } : {}),
+    ...(releaseVerification ? { releaseVerification } : {}),
   };
 }
 
@@ -510,6 +629,7 @@ export function renderResult(result) {
     `BUNDLE_VISIBILITY=${result.bundleVisibility}`,
     `LATEST_BUILD=${result.latestBuild}`,
     ...(result.buildNumbers ? [`BUILD_NUMBERS=${JSON.stringify(result.buildNumbers)}`] : []),
+    ...(result.releaseVerification ? [`RELEASE_VERIFICATION=${JSON.stringify(result.releaseVerification)}`] : []),
     "Apple identifiers, credential material, and response bodies are intentionally omitted.",
   ].join("\n");
 }
@@ -533,6 +653,9 @@ async function main() {
     const report = renderResult(result);
     process.stdout.write(`${report}\n`);
     await appendSummary(report);
+    if (result.releaseVerification && result.releaseVerification.classification !== "AVAILABLE_TO_EXISTING_GROUPS") {
+      process.exitCode = 1;
+    }
   } catch (error) {
     const classification =
       error instanceof PreflightError

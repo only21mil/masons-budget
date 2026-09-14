@@ -11,6 +11,7 @@ import {
   parsePrivateKey,
   requestJson,
   readBuildNumbers,
+  readReleaseVerification,
   renderResult,
   runPreflight,
   selectExactApp,
@@ -26,6 +27,164 @@ const validEnv = {
   ASC_ISSUER_ID: "12345678-1234-1234-1234-123456789abc",
   ASC_BUNDLE_ID: "com.sats21m.masonsbudget",
 };
+
+function releaseFixture(change = () => {}) {
+  const calls = [];
+  const request = async (url, token) => {
+    assert.equal(token, "test-token");
+    assert.equal(url.origin, "https://api.appstoreconnect.apple.com");
+    assert.ok(!url.href.includes("betaTesters"));
+    calls.push(url);
+    let document;
+    if (url.pathname === "/v1/apps/123/betaGroups") {
+      assert.equal(url.searchParams.get("fields[betaGroups]"), "isInternalGroup,hasAccessToAllBuilds");
+      document = { data: [{ type: "betaGroups", id: "private-group", attributes: {
+        isInternalGroup: true, hasAccessToAllBuilds: false,
+      } }], links: { next: null } };
+    } else if (url.pathname === "/v1/betaGroups/private-group/relationships/builds") {
+      document = { data: ["IOS", "MAC_OS"].map(platform => ({ type: "builds", id: `build-${platform.replace("_", "-")}` })),
+        links: { next: null } };
+    } else if (url.pathname === "/v1/builds") {
+      const platform = url.searchParams.get("filter[preReleaseVersion.platform]");
+      assert.ok(["IOS", "MAC_OS"].includes(platform));
+      assert.equal(url.searchParams.get("filter[app]"), "123");
+      assert.equal(url.searchParams.get("filter[version]"), "45");
+      assert.equal(url.searchParams.get("filter[preReleaseVersion.version]"), "0.5.0");
+      document = { data: [{ type: "builds", id: `build-${platform.replace("_", "-")}`,
+        attributes: { version: "45", processingState: "VALID", expired: false }, relationships: {
+          app: { data: { type: "apps", id: "123" } },
+          preReleaseVersion: { data: { type: "preReleaseVersions", id: `version-${platform.replace("_", "-")}` } },
+        } }], included: [
+        { type: "apps", id: "123", attributes: { bundleId: "com.sats21m.masonsbudget" } },
+        { type: "preReleaseVersions", id: `version-${platform.replace("_", "-")}`, attributes: { platform, version: "0.5.0" } },
+      ], links: { next: null } };
+    } else if (/^\/v1\/builds\/build-(IOS|MAC-OS)\/buildBetaDetail$/u.test(url.pathname)) {
+      document = { data: { type: "buildBetaDetails", id: "private-detail", attributes: {
+        internalBuildState: "IN_BETA_TESTING", externalBuildState: "READY_FOR_BETA_SUBMISSION",
+      }, relationships: { build: { data: { type: "builds", id: url.pathname.split("/")[3] } } } } };
+    } else assert.fail(`Unexpected endpoint ${url.pathname}`);
+    change(document, url);
+    return document;
+  };
+  return { request, calls };
+}
+
+test("release check verifies both exact builds and reports only fixed statuses/counts", async () => {
+  const fixture = releaseFixture();
+  const result = await readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request);
+  assert.equal(result.classification, "AVAILABLE_TO_EXISTING_GROUPS");
+  assert.deepEqual(result.platforms.map(item => item.platform), ["IOS", "MAC_OS"]);
+  assert.ok(result.platforms.every(item => item.processingState === "VALID" && item.internalGroupCount === 1));
+  const output = JSON.stringify(result);
+  for (const hidden of ["123", "private-group", "private-detail", "build-IOS", "test-token"]) assert.ok(!output.includes(hidden));
+});
+
+test("processing, missing, expired, unlinked and ready-but-undistributed builds are not availability", async () => {
+  const changes = [
+    (d, u) => { if (u.pathname === "/v1/builds") d.data[0].attributes.processingState = "PROCESSING"; },
+    (d, u) => { if (u.pathname === "/v1/builds" && u.searchParams.get("filter[preReleaseVersion.platform]") === "MAC_OS") d.data = []; },
+    (d, u) => { if (u.pathname === "/v1/builds") d.data[0].attributes.expired = true; },
+    (d, u) => { if (u.pathname.endsWith("/relationships/builds")) d.data = []; },
+    (d, u) => { if (u.pathname.endsWith("/buildBetaDetail")) d.data.attributes.internalBuildState = "READY_FOR_BETA_TESTING"; },
+  ];
+  for (const change of changes) {
+    const fixture = releaseFixture(change);
+    const result = await readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request);
+    assert.equal(result.classification, "NOT_READY");
+  }
+});
+
+test("existing external groups and internal all-build groups are counted according to their own beta state", async () => {
+  for (const external of [true, false]) {
+    const fixture = releaseFixture((d, u) => {
+      if (u.pathname.endsWith("/betaGroups")) {
+        d.data[0].attributes.isInternalGroup = !external;
+        d.data[0].attributes.hasAccessToAllBuilds = !external;
+      }
+      if (!external && u.pathname.endsWith("/relationships/builds")) d.data = [];
+      if (external && u.pathname.endsWith("/buildBetaDetail")) {
+        d.data.attributes.internalBuildState = "READY_FOR_BETA_TESTING";
+        d.data.attributes.externalBuildState = "IN_BETA_TESTING";
+      }
+    });
+    const result = await readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request);
+    assert.equal(result.classification, "AVAILABLE_TO_EXISTING_GROUPS");
+    assert.ok(result.platforms.every(item => item[external ? "externalGroupCount" : "internalGroupCount"] === 1));
+  }
+});
+
+test("release check rejects mismatched identity, ambiguous build and unrecognized status", async () => {
+  for (const change of [
+    d => { d.data[0].attributes.version = "46"; },
+    d => { d.included[1].attributes.platform = "TV_OS"; },
+    d => { d.included[1].attributes.version = "0.4.0"; },
+    d => { d.included[0].attributes.bundleId = "com.sats21m.buzz"; },
+    d => { d.data[0].relationships.app.data.id = "999"; },
+    d => { d.data.push({ ...d.data[0], id: "second-build" }); },
+    d => { d.data[0].attributes.processingState = "private-response"; },
+  ]) {
+    const fixture = releaseFixture((d, u) => { if (u.pathname === "/v1/builds") change(d); });
+    await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request),
+      error => error.classification === CLASSIFICATION.INVALID_RESPONSE);
+  }
+  for (const change of [
+    d => { d.data.relationships.build.data.id = "wrong-build"; },
+    d => { d.data.attributes.externalBuildState = "private-response"; },
+  ]) {
+    const fixture = releaseFixture((d, u) => { if (u.pathname.endsWith("/buildBetaDetail")) change(d); });
+    await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request),
+      error => error.classification === CLASSIFICATION.INVALID_RESPONSE);
+  }
+});
+
+test("release pagination preserves endpoint and exact filters without forwarding credentials", async () => {
+  for (const endpoint of ["/v1/apps/123/betaGroups", "/v1/betaGroups/private-group/relationships/builds", "/v1/builds"]) {
+    for (const change of [
+      (d) => { d.links = []; },
+      (d, u) => { d.links.next = [u.href]; },
+      (d) => { d.links.next = "https://evil.example/v1/builds?cursor=next"; },
+      (d, u) => { const next = new URL(u); next.searchParams.set("cursor", "next"); next.searchParams.set("filter[app]", "999"); d.links.next = next.href; },
+      (d, u) => { const next = new URL(u); next.pathname = "/v1/betaTesters"; next.searchParams.set("cursor", "next"); d.links.next = next.href; },
+    ]) {
+      const fixture = releaseFixture((d, u) => { if (u.pathname === endpoint) change(d, u); });
+      await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request),
+        error => error.classification === CLASSIFICATION.INVALID_RESPONSE);
+      assert.equal(fixture.calls.filter(u => u.pathname === endpoint).length, 1);
+    }
+  }
+});
+
+test("release preflight opt-in requires paired numeric inputs, fixed bundle and source/run binding before requests", async () => {
+  const options = { ASC_RELEASE_VERSION: "0.5.0", ASC_RELEASE_BUILD: "45", GITHUB_SHA: "a".repeat(40), GITHUB_RUN_ID: "456" };
+  for (const override of [
+    { ASC_RELEASE_BUILD: "" }, { ASC_RELEASE_VERSION: "" }, { ASC_RELEASE_BUILD: "45\nprivate" },
+    { ASC_BUNDLE_ID: "com.sats21m.buzz" }, { GITHUB_SHA: "" }, { GITHUB_RUN_ID: "private" },
+  ]) {
+    await assert.rejects(runPreflight({ env: { ...validEnv, ...options, ...override },
+      request: async () => assert.fail("invalid configuration must not make requests") }),
+    error => error.classification === CLASSIFICATION.INVALID_CONFIGURATION);
+  }
+});
+
+test("release preflight binds the sanitized observation to its workflow and fails readiness for a missing Mac build", async () => {
+  for (const missingMac of [false, true]) {
+    const fixture = releaseFixture((d, u) => {
+      if (missingMac && u.pathname === "/v1/builds" &&
+          u.searchParams.get("filter[preReleaseVersion.platform]") === "MAC_OS") d.data = [];
+    });
+    const result = await runPreflight({ env: { ...validEnv,
+      ASC_RELEASE_VERSION: "0.5.0", ASC_RELEASE_BUILD: "45", GITHUB_SHA: "a".repeat(40), GITHUB_RUN_ID: "456",
+    }, request: async (url) => {
+      if (url.pathname === "/v1/apps") return { data: [{ type: "apps", id: "123", attributes: { bundleId: validEnv.ASC_BUNDLE_ID } }] };
+      if (url.pathname === "/v1/builds" && url.searchParams.has("sort")) return { data: [] };
+      return fixture.request(url, "test-token");
+    } });
+    assert.equal(result.preflight, missingMac ? "FAIL" : "PASS");
+    assert.equal(result.releaseVerification.workflowSha, "a".repeat(40));
+    assert.equal(result.releaseVerification.runId, "456");
+    assert.ok(!renderResult(result).includes("private-group"));
+  }
+});
 
 function classificationOf(callback) {
   let caught;
