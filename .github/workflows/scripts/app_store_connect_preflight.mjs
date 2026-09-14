@@ -543,11 +543,16 @@ export async function readReleaseVerification(appId, version, number, token, req
     const result = { platform, processingState: build.attributes.processingState,
       expired: build.attributes.expired, available: false };
     if (result.processingState === "VALID") {
-      const { data: detail } = await request(urlFor(`/v1/builds/${build.id}/buildBetaDetail`, {
+      const detailDocument = await request(urlFor(`/v1/builds/${build.id}/buildBetaDetail`, {
         "fields[buildBetaDetails]": "internalBuildState,externalBuildState,build",
+        include: "build", "fields[builds]": "version",
       }), token);
+      const detail = detailDocument.data;
+      const includedBuilds = Array.isArray(detailDocument.included) ? detailDocument.included.filter(item =>
+        item?.type === "builds" && item.id === build.id) : [];
       if (detail?.type !== "buildBetaDetails" || !validResourceId(detail.id) ||
           detail.relationships?.build?.data?.type !== "builds" || detail.relationships.build.data.id !== build.id ||
+          includedBuilds.length !== 1 || includedBuilds[0].attributes?.version !== number ||
           !INTERNAL_BETA_STATES.has(detail.attributes?.internalBuildState) ||
           !EXTERNAL_BETA_STATES.has(detail.attributes?.externalBuildState)) fail(CLASSIFICATION.INVALID_RESPONSE);
       result.internalBuildState = detail.attributes.internalBuildState;

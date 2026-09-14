@@ -59,9 +59,12 @@ function releaseFixture(change = () => {}) {
         { type: "preReleaseVersions", id: `version-${platform.replace("_", "-")}`, attributes: { platform, version: "0.5.0" } },
       ], links: { next: null } };
     } else if (/^\/v1\/builds\/build-(IOS|MAC-OS)\/buildBetaDetail$/u.test(url.pathname)) {
+      assert.equal(url.searchParams.get("include"), "build");
+      assert.equal(url.searchParams.get("fields[builds]"), "version");
       document = { data: { type: "buildBetaDetails", id: "private-detail", attributes: {
         internalBuildState: "IN_BETA_TESTING", externalBuildState: "READY_FOR_BETA_SUBMISSION",
-      }, relationships: { build: { data: { type: "builds", id: url.pathname.split("/")[3] } } } } };
+      }, relationships: { build: { data: { type: "builds", id: url.pathname.split("/")[3] } } } },
+      included: [{ type: "builds", id: url.pathname.split("/")[3], attributes: { version: "45" } }] };
     } else assert.fail(`Unexpected endpoint ${url.pathname}`);
     change(document, url);
     return document;
@@ -130,6 +133,10 @@ test("release check rejects mismatched identity, ambiguous build and unrecognize
   for (const change of [
     d => { d.data.relationships.build.data.id = "wrong-build"; },
     d => { d.data.attributes.externalBuildState = "private-response"; },
+    d => { delete d.included; },
+    d => { d.included[0].id = "wrong-build"; },
+    d => { d.included[0].attributes.version = "46"; },
+    d => { d.included.push(d.included[0]); },
   ]) {
     const fixture = releaseFixture((d, u) => { if (u.pathname.endsWith("/buildBetaDetail")) change(d); });
     await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request),
