@@ -60,6 +60,7 @@ function releaseFixture(change = () => {}) {
         { type: "preReleaseVersions", id: `version-${platform.replace("_", "-")}`, attributes: { platform, version: "0.5.0" } },
       ], links: { next: null } };
     } else if (/^\/v1\/builds\/build-(IOS|MAC-OS)\/buildBetaDetail$/u.test(url.pathname)) {
+      assert.equal(url.searchParams.get("fields[buildBetaDetails]"), "internalBuildState,externalBuildState,build");
       assert.equal(url.searchParams.get("include"), "build");
       assert.equal(url.searchParams.get("fields[builds]"), "version");
       document = { data: { type: "buildBetaDetails", id: "private-detail", attributes: {
@@ -83,6 +84,137 @@ test("release check verifies both exact builds and reports only fixed statuses/c
   for (const hidden of ["123", "private-group", "private-detail", "build-IOS", "test-token"]) assert.ok(!output.includes(hidden));
 });
 
+test("exact build GET tolerates optional reverse linkage and included metadata without changing readiness", async () => {
+  const relationships = [undefined, null, {}, { build: null }, { build: {} }, { build: { data: null } },
+    { build: { links: { related: "PRIVATE_SENTINEL" } } }, "matching"];
+  for (const relationship of relationships) {
+    for (const included of [undefined, null, [], "matching", "no-attributes", "null-attributes", "no-version", "null-version"]) {
+      for (const ready of [true, false]) {
+        const fixture = releaseFixture((d, u) => {
+          if (u.pathname.endsWith("/buildBetaDetail")) {
+            if (relationship !== "matching") d.data.relationships = relationship;
+            if (typeof included !== "string") d.included = included;
+            else if (included === "no-attributes") delete d.included[0].attributes;
+            else if (included === "null-attributes") d.included[0].attributes = null;
+            else if (included === "no-version") delete d.included[0].attributes.version;
+            else if (included === "null-version") d.included[0].attributes.version = null;
+            if (!ready) d.data.attributes.internalBuildState = "READY_FOR_BETA_TESTING";
+          }
+        });
+        const result = await readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request);
+        assert.equal(result.classification, ready ? "AVAILABLE_TO_EXISTING_GROUPS" : "NOT_READY");
+        assert.equal(fixture.calls.length, 6);
+        assert.ok(!JSON.stringify(result).includes("PRIVATE_SENTINEL"));
+      }
+    }
+  }
+});
+
+test("unknown beta states never grant access and do not block the other matching audience", async () => {
+  for (const internal of [true, false]) {
+    const matching = internal ? "internalBuildState" : "externalBuildState";
+    const other = internal ? "externalBuildState" : "internalBuildState";
+    for (const state of [undefined, null, "", "PRIVATE_SENTINEL", "in_beta_testing", "IN_BETA_TESTING "]) {
+      for (const unknownAudience of [matching, other]) {
+        for (const linked of [true, false]) {
+          const fixture = releaseFixture((d, u) => {
+            if (u.pathname.endsWith("/betaGroups")) d.data[0].attributes.isInternalGroup = internal;
+            if (!linked && u.pathname.endsWith("/relationships/builds")) d.data = [];
+            if (u.pathname.endsWith("/buildBetaDetail")) {
+              d.data.attributes[matching] = "IN_BETA_TESTING";
+              d.data.attributes[other] = "IN_BETA_TESTING";
+              d.data.attributes[unknownAudience] = state;
+            }
+          });
+          const result = await readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request);
+          const available = linked && unknownAudience === other;
+          assert.equal(result.classification, available ? "AVAILABLE_TO_EXISTING_GROUPS" : "NOT_READY");
+          assert.ok(result.platforms.every(p => p[unknownAudience] === "UNKNOWN" && p.available === available));
+          assert.ok(!JSON.stringify(result).includes("PRIVATE_SENTINEL"));
+        }
+      }
+    }
+  }
+  for (const attributes of [undefined, null, {}]) {
+    const fixture = releaseFixture((d, u) => {
+      if (u.pathname.endsWith("/buildBetaDetail")) d.data.attributes = attributes;
+    });
+    const result = await readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request);
+    assert.equal(result.classification, "NOT_READY");
+    assert.ok(result.platforms.every(p => p.internalBuildState === "UNKNOWN" && p.externalBuildState === "UNKNOWN"));
+  }
+});
+
+test("every documented beta state requires IN_BETA_TESTING for the audience with access", async () => {
+  const internalStates = ["PROCESSING", "PROCESSING_EXCEPTION", "MISSING_EXPORT_COMPLIANCE",
+    "READY_FOR_BETA_TESTING", "IN_BETA_TESTING", "EXPIRED", "IN_EXPORT_COMPLIANCE_REVIEW"];
+  const externalStates = [...internalStates, "READY_FOR_BETA_SUBMISSION", "WAITING_FOR_BETA_REVIEW",
+    "IN_BETA_REVIEW", "BETA_REJECTED", "BETA_APPROVED", "NOT_APPLICABLE"];
+  for (const internal of [true, false]) {
+    for (const state of internal ? internalStates : externalStates) {
+      const field = internal ? "internalBuildState" : "externalBuildState";
+      const fixture = releaseFixture((d, u) => {
+        if (u.pathname.endsWith("/betaGroups")) d.data[0].attributes.isInternalGroup = internal;
+        if (u.pathname.endsWith("/buildBetaDetail")) {
+          delete d.data.relationships;
+          delete d.included;
+          d.data.attributes = { [field]: state };
+        }
+      });
+      const result = await readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request);
+      assert.equal(result.classification, state === "IN_BETA_TESTING" ? "AVAILABLE_TO_EXISTING_GROUPS" : "NOT_READY");
+      assert.ok(result.platforms.every(p => p[field] === state));
+    }
+  }
+});
+
+test("beta detail rejects contradictory identities and malformed supplied metadata with fixed diagnostics", async () => {
+  const cases = [
+    ["DETAIL_ID", d => { delete d.data.id; }],
+    ["DETAIL_ID", d => { d.data.id = null; }],
+    ["DETAIL_BUILD_RELATION_ID", d => { d.data.relationships.build.data.id = null; }],
+    ["DETAIL_BUILD_RELATION_ID", d => { delete d.data.relationships.build.data.id; }],
+    ["DETAIL_BUILD_RELATION_ID", d => { d.data.relationships.build.data.id = "another-build"; delete d.included; }],
+    ["DETAIL_INCLUDED_BUILD_ID", d => { delete d.data.relationships; d.included[0].id = "another-build"; }],
+    ["DETAIL_INCLUDED_BUILD_ID", d => { d.included[0].id = null; }],
+    ["DETAIL_INCLUDED_BUILD_ID", d => { delete d.included[0].id; }],
+    ["DETAIL_INCLUDED_BUILD_ID", d => { d.included[0].type = "betaTesters"; }],
+    ["DETAIL_INCLUDED_BUILD_ID", d => { d.included = [null]; }],
+    ["DETAIL_INCLUDED_BUILD_COUNT", d => { d.included.push({ ...d.included[0], id: "another-build" }); }],
+    ["DETAIL_INCLUDED_BUILD_NUMBER", d => { delete d.data.relationships; d.included[0].attributes.version = "46"; }],
+    ["DETAIL_INCLUDED_BUILD_NUMBER", d => { d.included[0].attributes.version = 45; }],
+    ["DETAIL_INTERNAL_STATE", d => { d.data.attributes.internalBuildState = {}; }],
+    ["DETAIL_EXTERNAL_STATE", d => { d.data.attributes.externalBuildState = {}; }],
+  ];
+  for (const malformed of [false, true, 0, 1, [], "PRIVATE_SENTINEL"]) {
+    cases.push(
+      ["DETAIL_BUILD_RELATION_TYPE", d => { d.data.relationships = malformed; }],
+      ["DETAIL_BUILD_RELATION_TYPE", d => { d.data.relationships.build = malformed; }],
+      ["DETAIL_BUILD_RELATION_TYPE", d => { d.data.relationships.build.data = malformed; }],
+      ["DETAIL_ATTRIBUTES_OBJECT", d => { d.data.attributes = malformed; }],
+      ["DETAIL_ATTRIBUTES_OBJECT", d => { d.included[0].attributes = malformed; }],
+    );
+    if (!Array.isArray(malformed)) cases.push(["DETAIL_INCLUDED_ARRAY", d => { d.included = malformed; }]);
+    if (typeof malformed !== "string") {
+      for (const [field, reason] of [["internalBuildState", "DETAIL_INTERNAL_STATE"], ["externalBuildState", "DETAIL_EXTERNAL_STATE"]]) {
+        cases.push([reason, d => { d.data.attributes[field] = malformed; }]);
+      }
+    }
+  }
+  cases.push(["DETAIL_INCLUDED_ARRAY", d => { d.included = {}; }]);
+  for (const [reason, change] of cases) {
+    const fixture = releaseFixture((d, u) => { if (u.pathname.endsWith("/buildBetaDetail")) change(d); });
+    await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request),
+      e => assertDiagnostic(e, "BETA_DETAIL", reason, "IOS"));
+  }
+  for (const document of [null, [], {}, "PRIVATE_SENTINEL", { data: null }, { data: [] }]) {
+    const fixture = releaseFixture();
+    await assert.rejects(readReleaseVerification("123", "0.5.0", "45", "test-token", u =>
+      u.pathname.endsWith("/buildBetaDetail") ? document : fixture.request(u, "test-token")),
+    e => assertDiagnostic(e, "BETA_DETAIL", "DETAIL_TYPE", "IOS"));
+  }
+});
+
 test("processing, missing, expired, unlinked and ready-but-undistributed builds are not availability", async () => {
   const changes = [
     (d, u) => { if (u.pathname === "/v1/builds") d.data[0].attributes.processingState = "PROCESSING"; },
@@ -92,7 +224,13 @@ test("processing, missing, expired, unlinked and ready-but-undistributed builds 
     (d, u) => { if (u.pathname.endsWith("/buildBetaDetail")) d.data.attributes.internalBuildState = "READY_FOR_BETA_TESTING"; },
   ];
   for (const change of changes) {
-    const fixture = releaseFixture(change);
+    const fixture = releaseFixture((d, u) => {
+      change(d, u);
+      if (u.pathname.endsWith("/buildBetaDetail")) {
+        delete d.data.relationships;
+        delete d.included;
+      }
+    });
     const result = await readReleaseVerification("123", "0.5.0", "45", "test-token", fixture.request);
     assert.equal(result.classification, "NOT_READY");
   }
@@ -200,8 +338,6 @@ test("release check rejects mismatched identity, ambiguous build and unrecognize
   }
   for (const change of [
     d => { d.data.relationships.build.data.id = "wrong-build"; },
-    d => { d.data.attributes.externalBuildState = "private-response"; },
-    d => { delete d.included; },
     d => { d.included[0].id = "wrong-build"; },
     d => { d.included[0].attributes.version = "46"; },
     d => { d.included.push(d.included[0]); },
@@ -734,10 +870,10 @@ test("release diagnostics identify individual group, build and beta-detail predi
     ["BETA_DETAIL", "DETAIL_ID", d => { d.data.id = "secret@example.test"; }],
     ["BETA_DETAIL", "DETAIL_BUILD_RELATION_TYPE", d => { d.data.relationships.build.data.type = "PRIVATE_SENTINEL"; }],
     ["BETA_DETAIL", "DETAIL_BUILD_RELATION_ID", d => { d.data.relationships.build.data.id = "PRIVATE_SENTINEL"; }],
-    ["BETA_DETAIL", "DETAIL_INCLUDED_BUILD_COUNT", d => { delete d.included; }],
+    ["BETA_DETAIL", "DETAIL_INCLUDED_BUILD_COUNT", d => { d.included.push(d.included[0]); }],
     ["BETA_DETAIL", "DETAIL_INCLUDED_BUILD_NUMBER", d => { d.included[0].attributes.version = "PRIVATE_SENTINEL"; }],
-    ["BETA_DETAIL", "DETAIL_INTERNAL_STATE", d => { d.data.attributes.internalBuildState = "PRIVATE_SENTINEL"; }],
-    ["BETA_DETAIL", "DETAIL_EXTERNAL_STATE", d => { d.data.attributes.externalBuildState = "PRIVATE_SENTINEL"; }],
+    ["BETA_DETAIL", "DETAIL_INTERNAL_STATE", d => { d.data.attributes.internalBuildState = { PRIVATE_SENTINEL: true }; }],
+    ["BETA_DETAIL", "DETAIL_EXTERNAL_STATE", d => { d.data.attributes.externalBuildState = { PRIVATE_SENTINEL: true }; }],
   ];
   for (const [stage, reason, change] of cases) {
     const fixture = releaseFixture((d, u) => {

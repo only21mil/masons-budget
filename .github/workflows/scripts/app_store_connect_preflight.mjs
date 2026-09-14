@@ -66,6 +66,7 @@ const RELEASE_REASONS = new Set([
   "BUILD_NUMBER", "BUILD_PROCESSING_STATE", "BUILD_EXPIRED_BOOLEAN", "DETAIL_TYPE", "DETAIL_ID",
   "DETAIL_BUILD_RELATION_TYPE", "DETAIL_BUILD_RELATION_ID", "DETAIL_INCLUDED_BUILD_COUNT",
   "DETAIL_INCLUDED_BUILD_NUMBER", "DETAIL_INTERNAL_STATE", "DETAIL_EXTERNAL_STATE",
+  "DETAIL_INCLUDED_ARRAY", "DETAIL_INCLUDED_BUILD_ID", "DETAIL_ATTRIBUTES_OBJECT",
 ]);
 
 function invalidResponse(reason) {
@@ -507,6 +508,46 @@ const EXTERNAL_BETA_STATES = new Set([...INTERNAL_BETA_STATES,
 ]);
 const validResourceId = value => typeof value === "string" && /^[A-Za-z0-9-]{1,100}$/u.test(value);
 
+function optionalDetailObject(value, reason) {
+  if (value == null) return {};
+  if (typeof value !== "object" || Array.isArray(value)) invalidResponse(reason);
+  return value;
+}
+
+function betaState(value, knownStates, reason) {
+  if (value != null && typeof value !== "string") invalidResponse(reason);
+  return knownStates.has(value) ? value : "UNKNOWN";
+}
+
+function validateBetaDetail(document, buildId, number) {
+  const detail = document?.data;
+  if (detail?.type !== "buildBetaDetails") invalidResponse("DETAIL_TYPE");
+  if (!validResourceId(detail.id)) invalidResponse("DETAIL_ID");
+  // Apple makes this reverse linkage and included build optional. The related
+  // resource GET already binds the detail to the exact build validated above.
+  // Missing/null metadata adds no evidence; any supplied identity must agree.
+  const relationships = optionalDetailObject(detail.relationships, "DETAIL_BUILD_RELATION_TYPE");
+  const relationship = optionalDetailObject(relationships.build, "DETAIL_BUILD_RELATION_TYPE");
+  if (relationship.data != null) {
+    if (relationship.data.type !== "builds") invalidResponse("DETAIL_BUILD_RELATION_TYPE");
+    if (relationship.data.id !== buildId) invalidResponse("DETAIL_BUILD_RELATION_ID");
+  }
+  if (document.included != null) {
+    if (!Array.isArray(document.included)) invalidResponse("DETAIL_INCLUDED_ARRAY");
+    if (document.included.length > 1) invalidResponse("DETAIL_INCLUDED_BUILD_COUNT");
+    for (const build of document.included) {
+      if (build?.type !== "builds" || build.id !== buildId) invalidResponse("DETAIL_INCLUDED_BUILD_ID");
+      const attributes = optionalDetailObject(build.attributes, "DETAIL_ATTRIBUTES_OBJECT");
+      if (attributes.version != null && attributes.version !== number) invalidResponse("DETAIL_INCLUDED_BUILD_NUMBER");
+    }
+  }
+  const attributes = optionalDetailObject(detail.attributes, "DETAIL_ATTRIBUTES_OBJECT");
+  return {
+    internalBuildState: betaState(attributes.internalBuildState, INTERNAL_BETA_STATES, "DETAIL_INTERNAL_STATE"),
+    externalBuildState: betaState(attributes.externalBuildState, EXTERNAL_BETA_STATES, "DETAIL_EXTERNAL_STATE"),
+  };
+}
+
 async function releasePages(initialUrl, type, token, request) {
   let url = initialUrl;
   const records = [], seenPages = new Set(), seenRecords = new Set();
@@ -607,19 +648,7 @@ export async function readReleaseVerification(appId, version, number, token, req
           "fields[buildBetaDetails]": "internalBuildState,externalBuildState,build",
           include: "build", "fields[builds]": "version",
         }), token);
-        const detail = detailDocument.data;
-        const includedBuilds = Array.isArray(detailDocument.included) ? detailDocument.included.filter(item =>
-          item?.type === "builds" && item.id === build.id) : [];
-        if (detail?.type !== "buildBetaDetails") invalidResponse("DETAIL_TYPE");
-        if (!validResourceId(detail.id)) invalidResponse("DETAIL_ID");
-        if (detail.relationships?.build?.data?.type !== "builds") invalidResponse("DETAIL_BUILD_RELATION_TYPE");
-        if (detail.relationships.build.data.id !== build.id) invalidResponse("DETAIL_BUILD_RELATION_ID");
-        if (includedBuilds.length !== 1) invalidResponse("DETAIL_INCLUDED_BUILD_COUNT");
-        if (includedBuilds[0].attributes?.version !== number) invalidResponse("DETAIL_INCLUDED_BUILD_NUMBER");
-        if (!INTERNAL_BETA_STATES.has(detail.attributes?.internalBuildState)) invalidResponse("DETAIL_INTERNAL_STATE");
-        if (!EXTERNAL_BETA_STATES.has(detail.attributes?.externalBuildState)) invalidResponse("DETAIL_EXTERNAL_STATE");
-        result.internalBuildState = detail.attributes.internalBuildState;
-        result.externalBuildState = detail.attributes.externalBuildState;
+        Object.assign(result, validateBetaDetail(detailDocument, build.id, number));
         result.internalGroupCount = groups.filter(({ record: group }) => group.attributes.isInternalGroup &&
           (group.attributes.hasAccessToAllBuilds === true || group.buildIds.has(build.id))).length;
         result.externalGroupCount = groups.filter(({ record: group }) => !group.attributes.isInternalGroup &&
