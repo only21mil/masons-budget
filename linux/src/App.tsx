@@ -18,8 +18,10 @@ import {
   DEFAULT_ROUTE,
   canonicalRoute,
   navSectionsFor,
+  primaryNavId,
   resolvePage,
 } from "./renderer/pages/index.ts"
+import { GearMenu } from "./renderer/components/GearMenu.tsx"
 
 import "./renderer/styles/global.css"
 import "./renderer/styles/components.css"
@@ -144,7 +146,7 @@ function Cockpit() {
   useEffect(() => {
     const canonical = canonicalRoute(route)
     if (canonical !== route) {
-      navigate(canonical)
+      navigate(route)
       return
     }
     if (!resolvePage(route, activeProfile)) navigate(DEFAULT_ROUTE)
@@ -155,10 +157,14 @@ function Cockpit() {
   return (
     <AppShell
       sections={sections}
-      activeId={route}
+      activeId={primaryNavId(route)}
       onNavigate={navigate}
       topBar={
-        <TopBar profileControl={<ProfileControl />} syncState={<GlobalSyncState />} />
+        <TopBar
+          profileControl={<ProfileControl />}
+          syncState={<GlobalSyncState />}
+          actions={<GearMenu />}
+        />
       }
     >
       {page ? (

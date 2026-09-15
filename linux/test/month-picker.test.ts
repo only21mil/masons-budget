@@ -134,7 +134,7 @@ test("an older Budget selection cannot change the current-month Dashboard", () =
 
   // Render Dashboard with the same persisted selection, as after navigation.
   // The canonical current/server month seed is July 2026.
-  const dashboard = render("dashboard", "victor", JUNE)
+  const dashboard = render("home", "victor", JUNE)
   assert.ok(dashboard.includes("July 2026"), "Dashboard did not retain the current month")
   assert.ok(!dashboard.includes("June 2026"), "the Budget month leaked into Dashboard")
   assert.ok(dashboard.includes("$7,777.77"), "current-month canonical income is missing")
@@ -149,7 +149,7 @@ test("an older Budget selection cannot change the current-month Dashboard", () =
 test("a child's picker offers only the months in that child's own records", () => {
   // Maddox has no June transactions, and he must not learn that June exists
   // from someone else's ledger.
-  const maddox = render("dashboard", "maddox", JUNE)
+  const maddox = render("home", "maddox", JUNE)
   assert.ok(maddox.includes("July 2026"), "Maddox should fall back to July")
   assert.ok(!maddox.includes("June 2026"), "Maddox has no June records to report on")
 

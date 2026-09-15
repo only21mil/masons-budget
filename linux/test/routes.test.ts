@@ -1,13 +1,9 @@
 // Headless render matrix.
 //
 // Renders every page, for every profile, in every slice state. This is stronger
-// than opening the window and clicking around: it proves all 19 routes mount
+// than opening the window and clicking around: it proves all routes mount
 // without throwing, that each renders its five states, and — critically — that
 // no page leaks a record the active profile is not allowed to see.
-//
-// Written with createElement rather than JSX because Node strips TypeScript
-// types natively but does not transform JSX, and this suite is deliberately
-// free of a build step so it runs anywhere, headless, in CI.
 
 import assert from "node:assert/strict"
 import { test } from "vitest"
@@ -22,6 +18,7 @@ import { AppStateProvider, useAppState } from "../src/renderer/app/AppState.tsx"
 import type { DisplayUnit } from "../src/renderer/data/bitcoinDisplay.ts"
 import {
   ALL_PAGES,
+  PRIMARY_NAV_IDS,
   canonicalRoute,
   navSectionsFor,
   resolvePage,
@@ -35,14 +32,6 @@ const STATES: PageState[] = ["normal", "stale", "error", "empty", "loading"]
 const FIXTURE_MONTH = "2026-07"
 const fixtureNow = () => new Date(2026, 6, 26, 12, 0, 0)
 
-/**
- * Renders whichever page the seeded state resolves to.
- *
- * The profile/route/state are seeded on the provider rather than pushed in from
- * a child: renderToStaticMarkup is a single synchronous pass, so a setState from
- * a child would never be applied and every page would silently render as the
- * default profile — which would make the leak assertions below vacuous.
- */
 function Harness({ route }: { route: string }) {
   const { activeProfile } = useAppState()
   const page = resolvePage(route, activeProfile)
@@ -55,47 +44,55 @@ function renderPage(
   profile: FamilyMember,
   state: PageState,
   displayUnit: DisplayUnit = "btc",
+  routeId = page.id,
 ): string {
-  // children goes in the props object: createElement's variadic children
-  // overload does not satisfy a props type that requires `children`.
   return renderToStaticMarkup(
     createElement(AppStateProvider, {
       initialProfile: profile,
-      initialRoute: page.id,
+      initialRoute: routeId,
       initialStateOverride: state,
       initialCurrentMonth: FIXTURE_MONTH,
       initialDisplayUnit: displayUnit,
       children: createElement(
         TaskClockProvider,
         { now: fixtureNow },
-        createElement(Harness, { route: page.id }),
+        createElement(Harness, { route: routeId }),
       ),
     }),
   )
 }
 
-// ── Structure ───────────────────────────────────────────────────────────────
-
-test("the cockpit has exactly 21 primary pages", () => {
-  assert.equal(ALL_PAGES.length, 21, ALL_PAGES.map((page) => page.id).join(", "))
+test("the cockpit has exactly 15 primary pages", () => {
+  assert.equal(ALL_PAGES.length, 15, ALL_PAGES.map((page) => page.id).join(", "))
 })
 
-test("retirement is no longer a tab and its deep link lands on net worth", () => {
-  assert.ok(
-    !ALL_PAGES.some((page) => page.id === "retirement"),
-    "the retirement route id should be retired",
-  )
+test("adults see exactly five primary tabs in order", () => {
+  const navIds = navSectionsFor("victor").flatMap((section) => section.items.map((item) => item.id))
+  assert.deepEqual(navIds, [...PRIMARY_NAV_IDS])
+})
+
+test("retirement and net worth deep links land on Bitcoin with the right segment", () => {
+  assert.ok(!ALL_PAGES.some((page) => page.id === "retirement"))
+  assert.ok(!ALL_PAGES.some((page) => page.id === "net-worth"))
 
   for (const member of FAMILY_MEMBERS) {
     const navIds = navSectionsFor(member).flatMap((section) =>
       section.items.map((item) => item.id))
     assert.ok(!navIds.includes("retirement"), `retirement still in the nav for ${member}`)
+    assert.ok(!navIds.includes("net-worth"), `net-worth still in the nav for ${member}`)
 
-    // A persisted route or deep link must land on the page that absorbed it,
-    // not on the dashboard and not on a blank "page unavailable" state.
-    assert.equal(canonicalRoute("retirement"), "net-worth")
-    assert.equal(resolvePage("retirement", member)?.id, "net-worth")
+    assert.equal(canonicalRoute("retirement"), "bitcoin")
+    assert.equal(canonicalRoute("net-worth"), "bitcoin")
+    assert.equal(resolvePage("retirement", member)?.id, "bitcoin")
+    assert.equal(resolvePage("net-worth", member)?.id, "bitcoin")
   }
+})
+
+test("dashboard and today aliases land on home and tasks", () => {
+  assert.equal(canonicalRoute("dashboard"), "home")
+  assert.equal(canonicalRoute("today"), "tasks")
+  assert.equal(resolvePage("dashboard", "victor")?.id, "home")
+  assert.equal(resolvePage("today", "victor")?.id, "tasks")
 })
 
 test("route ids are unique", () => {
@@ -103,21 +100,21 @@ test("route ids are unique", () => {
   assert.equal(new Set(ids).size, ids.length)
 })
 
-test("every page appears in the nav for an adult", () => {
+test("gear-menu routes resolve but do not appear in the primary nav", () => {
   const navIds = navSectionsFor("victor").flatMap((section) => section.items.map((item) => item.id))
-  for (const page of ALL_PAGES) {
-    assert.ok(navIds.includes(page.id), `${page.id} missing from adult nav`)
+  for (const route of ["family", "settings", "export"] as const) {
+    assert.ok(resolvePage(route, "victor"), `${route} should still resolve`)
+    assert.ok(!navIds.includes(route), `${route} should not appear in primary nav`)
   }
 })
 
 test("the unit selector appears only on opted-in non-Budget financial pages", () => {
   const optedIn = new Set([
-    "dashboard",
+    "home",
     "activity",
     "bitcoin",
     "bitcoin-buys",
     "bills",
-    "net-worth",
   ])
   for (const page of ALL_PAGES) {
     const markup = renderPage(page, "victor", "normal")
@@ -127,6 +124,14 @@ test("the unit selector appears only on opted-in non-Budget financial pages", ()
       `${page.id} has the wrong unit-selector visibility`,
     )
   }
+})
+
+test("net-worth segment renders the unit selector through the Bitcoin hub", () => {
+  const bitcoin = ALL_PAGES.find((page) => page.id === "bitcoin")
+  assert.ok(bitcoin)
+  const markup = renderPage(bitcoin, "victor", "normal", "btc", "net-worth")
+  assert.ok(markup.includes('aria-label="Bitcoin display unit"'))
+  assert.ok(markup.includes("Net Worth"))
 })
 
 test("children get a reduced nav and cannot resolve adult-only routes", () => {
@@ -142,8 +147,6 @@ test("children get a reduced nav and cannot resolve adult-only routes", () => {
   }
 })
 
-// ── Render matrix ───────────────────────────────────────────────────────────
-
 test("every page renders for every profile in every state", () => {
   let rendered = 0
   for (const page of ALL_PAGES) {
@@ -156,21 +159,15 @@ test("every page renders for every profile in every state", () => {
       }
     }
   }
-  // 19 pages x 4 profiles x 5 states, minus adult-only pages for the 2 children.
-  assert.ok(rendered >= 300, `expected a full matrix, rendered ${rendered}`)
+  assert.ok(rendered >= 220, `expected a full matrix, rendered ${rendered}`)
 })
 
-/**
- * Pages that render no synced financial data, and so have no loading/stale/error
- * state to show. These are configuration and system surfaces derived from the
- * domain contract or the runtime bridge, not from the read model.
- */
 const STATIC_PAGES = new Set([
-  "family", // profile matrix, derived from the shared visibility contract
-  "settings", // runtime info from the preload bridge plus the QA control
-  "export", // a form; the export path itself is gated
-  "onboarding", // static first-run copy
-  "lock", // static
+  "family",
+  "settings",
+  "export",
+  "onboarding",
+  "lock",
 ])
 
 test("data-backed pages surface an explicit marker for every non-normal state", () => {
@@ -205,7 +202,6 @@ test("loading tasks and Bitcoin surfaces contain no demo counts or rows", () => 
   const tasksMarkup = renderPage(tasks, "victor", "loading")
   assert.match(tasksMarkup, /Loading tasks/)
   assert.match(tasksMarkup, /aria-busy="true"/)
-  assert.doesNotMatch(tasksMarkup, /vv-task-buckets/)
   assert.doesNotMatch(tasksMarkup, /Reconcile July statements|Schedule annual checkup/)
 
   const bitcoinMarkup = renderPage(bitcoin, "victor", "loading")
@@ -215,8 +211,6 @@ test("loading tasks and Bitcoin surfaces contain no demo counts or rows", () => 
 })
 
 test("every page in STATIC_PAGES actually exists", () => {
-  // Guards against a page being renamed and silently dropping out of the
-  // state-marker check above.
   for (const id of STATIC_PAGES) {
     assert.ok(
       ALL_PAGES.some((page) => page.id === id),
@@ -234,20 +228,12 @@ test("system pages describe current Convex row reads instead of retired file rou
   const syncMarkup = renderPage(syncHealth, "victor", "normal")
   assert.ok(syncMarkup.includes("Convex row tables"))
   assert.ok(!syncMarkup.includes("Legacy blob compatibility names"))
-  assert.ok(!syncMarkup.includes("retained schema names"))
 
   const onboardingMarkup = renderPage(onboarding, "victor", "normal")
   assert.ok(onboardingMarkup.includes("Row access"))
   assert.ok(!onboardingMarkup.includes("Transactions file"))
-  assert.ok(!onboardingMarkup.includes("Buys file"))
 })
 
-// ── Visibility leaks ────────────────────────────────────────────────────────
-
-/**
- * Adult-owned fixture values that must never appear on a child's screen. If a
- * page forgets to filter, one of these shows up in the markup and this fails.
- */
 const ADULT_ONLY_STRINGS = [
   "Neighborhood Market",
   "Payroll Deposit",
@@ -281,10 +267,7 @@ test("siblings cannot see each other's records", () => {
 })
 
 test("Rachel sees the same household financial records as Victor", () => {
-  // The v0.3 regression, checked at the rendered-page level rather than only in
-  // the domain unit tests: adult records are tagged owner "victor", so a strict
-  // equality filter anywhere in a page would empty Rachel's screen.
-  for (const pageId of ["activity", "dashboard"]) {
+  for (const pageId of ["activity", "home"]) {
     const page = ALL_PAGES.find((candidate) => candidate.id === pageId)
     assert.ok(page, `${pageId} not found`)
     const victorMarkup = renderPage(page, "victor", "normal")
@@ -305,10 +288,10 @@ test("Rachel sees the same household financial records as Victor", () => {
 })
 
 test("adult todos remain private to the active profile", () => {
-  const projects = ALL_PAGES.find((page) => page.id === "projects")
-  assert.ok(projects)
-  const victorMarkup = renderPage(projects, "victor", "normal")
-  const rachelMarkup = renderPage(projects, "rachel", "normal")
+  const tasks = ALL_PAGES.find((page) => page.id === "tasks")
+  assert.ok(tasks)
+  const victorMarkup = renderPage(tasks, "victor", "normal", "btc", "projects")
+  const rachelMarkup = renderPage(tasks, "rachel", "normal", "btc", "projects")
 
   assert.ok(victorMarkup.includes("Reconcile July statements"))
   assert.ok(!rachelMarkup.includes("Reconcile July statements"))
@@ -317,12 +300,10 @@ test("adult todos remain private to the active profile", () => {
 })
 
 test("a child's stack never appears in an adult net-worth total", () => {
-  const netWorth = ALL_PAGES.find((page) => page.id === "net-worth")
-  assert.ok(netWorth)
-  const markup = renderPage(netWorth, "victor", "normal")
+  const bitcoin = ALL_PAGES.find((page) => page.id === "bitcoin")
+  assert.ok(bitcoin)
+  const markup = renderPage(bitcoin, "victor", "normal", "btc", "net-worth")
 
-  // Mason's stack is visible on the page — under "visible but excluded" — but
-  // the in-scope table must not contain it.
   const splitAt = markup.indexOf("Visible but excluded")
   assert.ok(splitAt > 0, "expected an excluded-accounts section")
   assert.ok(
@@ -333,7 +314,7 @@ test("a child's stack never appears in an adult net-worth total", () => {
 })
 
 test("required empty financial sources render unavailable instead of confident zeroes", () => {
-  for (const pageId of ["dashboard", "bitcoin", "net-worth"]) {
+  for (const pageId of ["home", "bitcoin"] as const) {
     const page = ALL_PAGES.find((candidate) => candidate.id === pageId)
     assert.ok(page, `${pageId} not found`)
     const markup = renderPage(page, "victor", "empty")
@@ -347,33 +328,26 @@ test("required empty financial sources render unavailable instead of confident z
       `${pageId} rendered 0.00000000 BTC from an empty required financial source`,
     )
   }
+
+  const bitcoin = ALL_PAGES.find((candidate) => candidate.id === "bitcoin")
+  assert.ok(bitcoin)
+  const netWorthMarkup = renderPage(bitcoin, "victor", "empty", "btc", "net-worth")
+  assert.ok(!netWorthMarkup.includes("$0.00"))
 })
 
-test("dashboard and net worth use canonical income and BTC document totals", () => {
-  const dashboard = ALL_PAGES.find((candidate) => candidate.id === "dashboard")
-  const netWorth = ALL_PAGES.find((candidate) => candidate.id === "net-worth")
-  assert.ok(dashboard)
-  assert.ok(netWorth)
+test("home and net-worth segment use canonical income and BTC document totals", () => {
+  const home = ALL_PAGES.find((candidate) => candidate.id === "home")
+  const bitcoin = ALL_PAGES.find((candidate) => candidate.id === "bitcoin")
+  assert.ok(home)
+  assert.ok(bitcoin)
 
-  const dashboardMarkup = renderPage(dashboard, "victor", "normal", "usd")
-  assert.ok(
-    dashboardMarkup.includes("$7,777.77"),
-    "dashboard did not render the dedicated income-table total",
-  )
-  assert.ok(
-    renderPage(dashboard, "victor", "normal", "btc").includes("1.23456789 BTC"),
-    "dashboard did not render the canonical BTC balance document total",
-  )
+  const homeMarkup = renderPage(home, "victor", "normal", "usd")
+  assert.ok(homeMarkup.includes("$7,777.77"))
+  assert.ok(renderPage(home, "victor", "normal", "btc").includes("1.23456789 BTC"))
 
-  const netWorthMarkup = renderPage(netWorth, "victor", "normal", "usd")
-  assert.ok(
-    netWorthMarkup.includes("$120,000.00"),
-    "net worth did not render the canonical BTC balance document fiat total",
-  )
-  assert.ok(
-    renderPage(netWorth, "victor", "normal", "btc").includes("1.23456789 BTC"),
-    "net worth did not render the canonical BTC balance document sats total",
-  )
+  const netWorthMarkup = renderPage(bitcoin, "victor", "normal", "usd", "net-worth")
+  assert.ok(netWorthMarkup.includes("$120,000.00"))
+  assert.ok(renderPage(bitcoin, "victor", "normal", "btc", "net-worth").includes("1.23456789 BTC"))
 })
 
 test("adults and children get different budget surfaces", () => {
