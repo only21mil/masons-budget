@@ -15,6 +15,7 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasText
@@ -90,15 +91,15 @@ class NavigationBackTest {
     }
     @Test fun `tasks hub offset survives smart list detail and Back`() {
         render(Destination.TASKS, longTasks = true)
-        val list = compose.onNode(hasScrollToIndexAction())
-        list.performScrollToIndex(12).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 27f) }
+        val list = compose.onNode(hasScrollAction())
+        list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 500f) }
         compose.waitForIdle()
         val before = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
         assertTrue(before > 0f)
         compose.onNode(hasText("Inbox") and hasClickAction()).performScrollTo().performClick()
         back()
         assertEquals(Destination.TASKS, destination)
-        val after = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode()
+        val after = compose.onNode(hasScrollAction()).fetchSemanticsNode()
             .config[SemanticsProperties.VerticalScrollAxisRange].value()
         assertEquals(before, after)
     }

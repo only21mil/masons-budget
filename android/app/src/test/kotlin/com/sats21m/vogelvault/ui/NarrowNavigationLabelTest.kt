@@ -34,7 +34,7 @@ import kotlin.test.assertTrue
 class NarrowNavigationLabelTest {
     @get:Rule val compose = createEmptyComposeRule()
 
-    @Test fun `large Dashboard label stays centered within one fifth of narrow bar`() {
+    @Test fun `large Activity label stays centered within one fifth of narrow bar`() {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java)
         controller.get().setTheme(R.style.Theme_VogelVault)
         controller.setup()
@@ -43,20 +43,20 @@ class NarrowNavigationLabelTest {
                 CompositionLocalProvider(LocalDensity provides Density(1f, 1.5f)) {
                     LedgerTheme {
                         Row(Modifier.width(345.dp)) {
-                            LedgerTabItem(Icons.Default.Home, "Home", true, {}, Modifier.weight(1f))
+                            LedgerTabItem(Icons.Default.Home, "Activity", true, {}, Modifier.weight(1f))
                             repeat(4) { LedgerTabItem(Icons.Default.Home, "Other", false, {}, Modifier.weight(1f), showLabel = false) }
                         }
                     }
                 }
             }
             val results = mutableListOf<TextLayoutResult>()
-            compose.onNodeWithText("HOME", useUnmergedTree = true)
+            compose.onNodeWithText("ACTIVITY", useUnmergedTree = true)
                 .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
             val layout = results.single()
             assertEquals(TextAlign.Center, layout.layoutInput.style.textAlign)
             assertEquals(69, layout.size.width)
             assertTrue(layout.isLineEllipsized(0))
-            compose.onNodeWithText("Home").assertExists()
+            compose.onNodeWithText("Activity").assertExists()
         } finally { controller.pause().stop().destroy() }
     }
 }
