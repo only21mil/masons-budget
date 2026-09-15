@@ -628,7 +628,6 @@ fun ScreenHost(
                             onEnableRemoteRows,
                             ledgerSettings,
                             onLedgerSettingsChange,
-                            onNavigate,
                             displayUnit,
                             onDisplayUnitChange,
                         )
@@ -1913,7 +1912,6 @@ private fun VaultLazyListScope.settings(
     onEnableRemoteRows: (String) -> Unit,
     ledgerSettings: LedgerUiSettings,
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit,
-    onNavigate: (Destination) -> Unit,
     displayUnit: DisplayUnit,
     onDisplayUnitChange: (DisplayUnit) -> Unit,
 ) {
