@@ -25,32 +25,29 @@ class ProfileSwitcherMenuTest {
 
     @Test fun `Mason menu hides Settings and keeps adult switch authenticated`() = checkMenu(FamilyMember.MASON)
     @Test fun `Maddox menu hides Settings and keeps adult switch authenticated`() = checkMenu(FamilyMember.MADDOX)
-    @Test fun `adult menu opens the available Settings destination`() = checkMenu(FamilyMember.VICTOR)
+    @Test fun `adult profile menu lists only other family members`() = checkMenu(FamilyMember.VICTOR)
 
     private fun checkMenu(member: FamilyMember) {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java)
         controller.get().setTheme(R.style.Theme_VogelVault)
         controller.setup()
-        var openedSettings = false
         var request: ProfileSwitchRequest? = null
         var switched: FamilyMember? = null
         try {
             controller.get().setContent {
                 VogelVaultTheme {
                     ProfileSwitcher(member, onAuthenticationRequired = { request = it },
-                        onAuthorizedSwitch = { switched = it }, onSettings = { openedSettings = true })
+                        onAuthorizedSwitch = { switched = it })
                 }
             }
             compose.onNodeWithText(member.displayName).performClick()
+            compose.onNodeWithText("Settings").assertDoesNotExist()
             if (member.isAdult) {
-                compose.onNodeWithText("Settings").performClick()
-                assertTrue(openedSettings)
+                compose.onNodeWithText(FamilyMember.RACHEL.displayName).assertExists()
             } else {
-                compose.onNodeWithText("Settings").assertDoesNotExist()
                 compose.onNodeWithText(FamilyMember.VICTOR.displayName).performClick()
                 assertTrue(requireNotNull(request).requiresAuthentication)
                 assertNull(switched)
-                assertFalse(openedSettings)
             }
         } finally {
             controller.pause().stop().destroy()

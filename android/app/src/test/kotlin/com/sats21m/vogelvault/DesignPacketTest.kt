@@ -124,7 +124,7 @@ class DesignPacketFoldedTest {
     fun terminalTreatmentRootAndStatusTokens() {
         capture(
             "folded-dashboard-victor-terminal",
-            VaultUiState.of(FamilyMember.VICTOR, Destination.DASHBOARD),
+            VaultUiState.of(FamilyMember.VICTOR, Destination.HOME),
             appearance = LedgerAppearance.TERMINAL,
         )
         captureStatusAndUnavailableTokens(
@@ -213,10 +213,10 @@ class DesignPacketFoldedTest {
     @Test
     fun nonNormalStates() {
         val sampled = listOf(
-            Destination.DASHBOARD,
+            Destination.HOME,
             Destination.BUDGET,
             Destination.ACTIVITY,
-            Destination.NET_WORTH,
+            Destination.BITCOIN,
         )
         val states = listOf(Freshness.STALE, Freshness.ERROR, Freshness.EMPTY, Freshness.LOADING)
         for (destination in sampled) {
@@ -243,7 +243,7 @@ class DesignPacketUnfoldedTest {
     fun terminalTreatmentRoot() {
         capture(
             "unfolded-dashboard-victor-terminal",
-            VaultUiState.of(FamilyMember.VICTOR, Destination.DASHBOARD),
+            VaultUiState.of(FamilyMember.VICTOR, Destination.HOME),
             appearance = LedgerAppearance.TERMINAL,
         )
     }
@@ -262,7 +262,7 @@ class DesignPacketUnfoldedTest {
     fun childDashboard() {
         capture(
             "unfolded-dashboard-mason-normal",
-            VaultUiState.of(FamilyMember.MASON, Destination.DASHBOARD),
+            VaultUiState.of(FamilyMember.MASON, Destination.HOME),
         )
     }
 
@@ -275,7 +275,7 @@ class DesignPacketUnfoldedTest {
     fun twoPaneDashboardAndBudget() {
         capture(
             "unfolded-dashboard-victor-two-pane",
-            VaultUiState.of(FamilyMember.VICTOR, Destination.DASHBOARD),
+            VaultUiState.of(FamilyMember.VICTOR, Destination.HOME),
         )
         capture(
             "unfolded-budget-victor-two-pane",

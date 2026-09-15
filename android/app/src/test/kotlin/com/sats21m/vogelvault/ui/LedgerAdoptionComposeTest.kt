@@ -164,7 +164,7 @@ class LedgerAdoptionComposeTest {
             VaultApp(
                 state = VaultUiState(
                     activeProfile = FamilyMember.VICTOR,
-                    destination = Destination.DASHBOARD,
+                    destination = Destination.HOME,
                     data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE),
                 ),
                 onNavigate = {},

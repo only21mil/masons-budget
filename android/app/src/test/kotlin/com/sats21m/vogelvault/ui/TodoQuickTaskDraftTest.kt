@@ -61,7 +61,7 @@ class TodoQuickTaskDraftTest {
                     TodoScreen(
                         state = VaultUiState(
                             activeProfile = FamilyMember.VICTOR,
-                            destination = Destination.TODAY,
+                            destination = Destination.TASKS,
                             data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE),
                         ),
                         onWriteSucceeded = { refreshes++ },
