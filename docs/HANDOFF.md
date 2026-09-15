@@ -197,8 +197,9 @@ inspect the actual client path before changing fallback behavior.
 
 ## 7. How to work and verify
 
-- Work on a branch and use a GitHub pull request. Never commit directly to
-  `main`; do not use Linear for this repository.
+- Work on a branch and use a GitHub pull request — the GitHub PR is the
+  authoritative review record (the old relay-side authoritative-PR path is
+  retired). Never commit directly to `main`; do not use Linear for this repository.
 - Check open issues and pull requests before starting so another lane is not
   changing the same boundary.
 - Production Convex mutations, schema deployment, migrations, credential

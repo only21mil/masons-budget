@@ -76,12 +76,12 @@ postmerge suite.
 
 ## Canonical authority and bootstrap
 
-GitHub is Budget's CI mirror. The hosted verifier checks provider main and source
-objects; it does not claim to contact the private canonical relay. The delivery
-controller must separately retain fresh authoritative Budget relay main and PR
-readback, the reviewed candidate, tested base and actual landing parents,
-GitHub mirror equality, and a later complete no-op mirror cycle. An operator-
-written SHA receipt is not canonical authority.
+GitHub is Budget's authority for branches, pull requests, review, and history.
+The hosted verifier checks provider main and source objects. The delivery
+controller retains the fresh GitHub `main` and GitHub PR readback, the reviewed
+candidate, tested base and actual landing parents. Buzz-mirror convergence is
+informational lag, not a landing gate. An operator-
+written SHA receipt is not authority on its own.
 
 The first candidate carrying this policy must receive fresh review and qualify
 once on its own PR before promotion. Older green runs, including runs made by
@@ -95,7 +95,7 @@ candidate checkout to retain `protected-ci-candidate.json` before promotion.
 It requires the captured tested base to remain the current main and records no
 landed commit.
 
-After the canonical-first promotion and mirror readback, run the landing
+After the GitHub merge and GitHub PR readback, run the landing
 verifier from the clean, exact landed checkout with a read-only GitHub token and
 the current policy epoch in the environment:
 

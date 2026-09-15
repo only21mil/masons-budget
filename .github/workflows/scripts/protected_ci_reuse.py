@@ -582,7 +582,7 @@ def verify_qualification(api, head, *, candidate_only=False):
             "inapplicable_checks": sorted(inapplicable), "authority": protection,
             "fresh_checks": ["provider authority and source identity" + ("" if candidate_only else " and landing equivalence")],
             "reused_checks": [check["name"] for check in qualified_checks if check["provider_result"]["conclusion"] == "success"],
-            "canonical_authority": "Required separate delivery evidence: fresh relay main, reviewed PR/parents and subsequent complete no-op mirror equality",
+            "canonical_authority": "Required separate delivery evidence: fresh GitHub main, GitHub PR readback, reviewed PR/parents and required-checks green; Buzz-mirror convergence is informational",
             "execution_context": "Original source execution retained; no new platform execution claimed. Release builds/signing have independent fresh contexts."}
 
 
