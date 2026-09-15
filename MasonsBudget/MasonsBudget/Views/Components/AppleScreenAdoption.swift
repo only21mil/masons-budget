@@ -1,7 +1,7 @@
 import Foundation
 
 enum ApplePrimaryScreen: String, CaseIterable, Identifiable {
-    case home, activity, budget, tasks
+    case home, budget, activity, bitcoin, tasks
 
     var id: String {
         rawValue
@@ -9,7 +9,8 @@ enum ApplePrimaryScreen: String, CaseIterable, Identifiable {
 }
 
 enum AppleAccountScreen: String, CaseIterable, Identifiable {
-    case profile, settings, family, awards, sync, export
+    case profile, family, settings, export
+
     var id: String { rawValue }
 }
 

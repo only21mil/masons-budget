@@ -2,6 +2,8 @@ import SwiftData
 import SwiftUI
 
 struct NetWorthView: View {
+    var showsScreenHeader = true
+
     @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
@@ -88,7 +90,9 @@ struct NetWorthView: View {
         TimelineView(.periodic(from: .now, by: 60)) { _ in
             ScrollView {
                 VStack(spacing: 0) {
-                    ScreenHeader(title: "Net Worth", eyebrow: "Recorded history")
+                    if showsScreenHeader {
+                        ScreenHeader(title: "Net Worth", eyebrow: "Recorded history")
+                    }
 
                     quoteStatus
                         .padding(.horizontal, ledgerTokens.metrics.screenGutter)
