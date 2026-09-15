@@ -182,7 +182,7 @@ class WriteCredentialAccessorTest {
             activityController.get().setContent {
                 VogelVaultTheme {
                     TodoScreen(
-                        state = VaultUiState.of(FamilyMember.VICTOR, Destination.TODAY),
+                        state = VaultUiState.of(FamilyMember.VICTOR, Destination.TASKS),
                         onWriteSucceeded = {},
                     )
                 }

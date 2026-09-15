@@ -80,8 +80,8 @@ class TaskStateProfileSwitchTest {
 
     @Test
     fun `Today draft is discarded by a real profile switch`() {
-        navigateTo(Destination.TODAY)
-        showScreenHost()
+        navigateTo(Destination.TASKS)
+        showTodoScreen()
 
         val victorDraft = "Victor private appointment"
         compose.onNode(
@@ -102,8 +102,8 @@ class TaskStateProfileSwitchTest {
 
     @Test
     fun `profile switch disables task controls until explicit reprovisioning`() {
-        navigateTo(Destination.TODAY)
-        showScreenHost()
+        navigateTo(Destination.TASKS)
+        showTodoScreen()
 
         switchTo(FamilyMember.RACHEL)
 
@@ -212,6 +212,20 @@ class TaskStateProfileSwitchTest {
                     Box(Modifier.size(width = 411.dp, height = 900.dp)) {
                         val state by model.state.collectAsState()
                         ScreenHost(destination = state.destination, state = state)
+                    }
+                }
+            }
+        }
+        settle()
+    }
+
+    private fun showTodoScreen() {
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                VogelVaultTheme {
+                    Box(Modifier.size(width = 411.dp, height = 900.dp)) {
+                        val state by model.state.collectAsState()
+                        TodoScreen(state = state, onWriteSucceeded = {})
                     }
                 }
             }

@@ -27,7 +27,7 @@ class LedgerAdoptionLogicTest {
             assertEquals(colors.foregroundSecondary, ledgerNavigationUnselectedTint(colors))
             assertEquals(
                 colors.foreground,
-                ledgerNavigationSelectedTint(Destination.DASHBOARD, colors),
+                ledgerNavigationSelectedTint(Destination.HOME, colors),
             )
             assertEquals(
                 colors.bitcoin,

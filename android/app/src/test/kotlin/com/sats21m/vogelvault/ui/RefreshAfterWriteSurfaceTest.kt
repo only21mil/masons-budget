@@ -261,7 +261,7 @@ class RefreshAfterWriteSurfaceTest {
         val state =
             VaultUiState(
                 activeProfile = FamilyMember.VICTOR,
-                destination = Destination.TODAY,
+                destination = Destination.TASKS,
                 data = base.copy(todos = base.todos.copy(value = emptyList())),
             )
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
@@ -303,7 +303,7 @@ class RefreshAfterWriteSurfaceTest {
         val state =
             VaultUiState(
                 activeProfile = FamilyMember.VICTOR,
-                destination = Destination.TODAY,
+                destination = Destination.TASKS,
                 data = base.copy(todos = base.todos.copy(value = listOf(todo))),
             )
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
@@ -413,21 +413,22 @@ class RefreshAfterWriteSurfaceTest {
         val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
         val state = VaultUiState(
             activeProfile = FamilyMember.VICTOR,
-            destination = Destination.TODAY,
+            destination = Destination.TASKS,
             data = base.copy(todos = base.todos.copy(value = emptyList())),
         )
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
             ScreenHost(
-                destination = Destination.TODAY,
+                destination = Destination.TASKS,
                 state = state,
                 onWriteSucceeded = onWriteSucceeded,
             )
         }
         val interact = {
-            compose.onNodeWithText(application.getString(R.string.todo_new_task))
-                .performTextInput("Production shell task")
-            compose.onNodeWithContentDescription(application.getString(R.string.todo_add))
-                .performClick()
+            compose.onNodeWithText("Add task").performScrollTo().performClick()
+            settle()
+            compose.onNodeWithText("Task title").performTextInput("Production shell task")
+            compose.onNode(hasText("Save task") and hasClickAction()).assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.OnClick)
             Unit
         }
 

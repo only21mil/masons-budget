@@ -83,9 +83,9 @@ import com.sats21m.vogelvault.ui.theme.VaultSpace
  * not an authorization boundary.
  */
 enum class Destination(val label: String) {
-    DASHBOARD("Dashboard"), ACTIVITY("Activity"), BUDGET("Budget"), BITCOIN("Bitcoin"),
-    BTC_BUYS("BTC Buys"), BTC_BILL_PAYS("BTC Bill Pays"), NET_WORTH("Net Worth"),
-    RETIREMENT("Retirement"), EXPORT("Export"), TODAY("Today"), TASKS("Tasks"),
+    HOME("Home"), BUDGET("Budget"), ACTIVITY("Activity"), BITCOIN("Bitcoin"),
+    BTC_BUYS("BTC Buys"), BTC_BILL_PAYS("BTC Bill Pays"),
+    EXPORT("Export"), TASKS("Tasks"),
     FAMILY("Family"), SETTINGS("Settings");
 }
 
@@ -114,6 +114,7 @@ internal const val RAIL_ITEM_COUNT = 5
 internal const val VAULT_RAIL_TEST_TAG = "vault-navigation-rail"
 internal const val VAULT_RAIL_MORE_TEST_TAG = "vault-navigation-rail-more"
 internal const val VAULT_SCREEN_CONTENT_TEST_TAG = "vault-screen-content"
+internal const val VAULT_GEAR_MENU_TEST_TAG = "vault-gear-menu"
 
 private val RAIL_EDGE_MARKER_WIDTH = 2.dp
 private val RAIL_GLYPH_SIZE = 24.dp
@@ -122,8 +123,8 @@ private val RAIL_GLYPH_INSET = 22.dp
 private val RAIL_LABEL_GAP = 10.dp
 
 internal val RAIL_PRIMARY_ORDER: List<Destination> = listOf(
-    Destination.DASHBOARD, Destination.ACTIVITY, Destination.BUDGET,
-    Destination.BITCOIN, Destination.TODAY,
+    Destination.HOME, Destination.BUDGET, Destination.ACTIVITY,
+    Destination.BITCOIN, Destination.TASKS,
 )
 internal fun railPrimaryDestinations(destinations: List<Destination>): List<Destination> =
     RAIL_PRIMARY_ORDER.filter { it in destinations }
@@ -206,7 +207,7 @@ fun VaultApp(
         ).widthSizeClass
         val expanded = widthClass != androidx.compose.material3.windowsizeclass.WindowWidthSizeClass.Compact
         val destinations = destinationsFor(state.activeProfile)
-        val current = state.destination.takeIf { it in destinations } ?: Destination.DASHBOARD
+        val current = state.destination.takeIf { it in destinations } ?: Destination.HOME
         val selectedPrimary = routeParents.firstOrNull()?.let(Destination::valueOf) ?: current
         val hinge = hingeOverride ?: observedHinge
         val sheetRegion = ledgerSheetRegion(maxWidth, maxHeight, hinge)
@@ -245,7 +246,12 @@ fun VaultApp(
                         }
                         Column(Modifier.weight(1f)) {
                             Box(Modifier.width(plan.listWidth)) {
-                                VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile, { navigateWithin(Destination.SETTINGS) }) {
+                                VaultTopBar(
+                                    state,
+                                    requestProfileSwitchAuthentication,
+                                    onSwitchProfile,
+                                    navigateWithin,
+                                ) {
                                     onWriteSucceeded()
                                 }
                             }
@@ -537,10 +543,13 @@ private fun VaultTopBar(
     state: VaultUiState,
     onRequestProfileSwitchAuthentication: (ProfileSwitchRequest) -> Unit,
     onAuthorizedSwitch: (FamilyMember) -> Unit,
-    onSettings: () -> Unit,
+    onNavigate: (Destination) -> Unit,
     onRefresh: () -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
+    var gearExpanded by remember { mutableStateOf(false) }
+    val gearDestinations = listOf(Destination.FAMILY, Destination.SETTINGS, Destination.EXPORT)
+        .filter { it in destinationsFor(state.activeProfile) }
     Row(
         Modifier
             .fillMaxWidth()
@@ -552,9 +561,33 @@ private fun VaultTopBar(
             activeProfile = state.activeProfile,
             onAuthenticationRequired = onRequestProfileSwitchAuthentication,
             onAuthorizedSwitch = onAuthorizedSwitch,
-            onSettings = onSettings,
         )
         Spacer(Modifier.weight(1f))
+        if (gearDestinations.isNotEmpty()) {
+            Box(Modifier.testTag(VAULT_GEAR_MENU_TEST_TAG)) {
+                IconButton(onClick = { gearExpanded = true }) {
+                    Icon(
+                        com.sats21m.vogelvault.ui.components.LedgerGlyphs.Cog,
+                        contentDescription = "More options",
+                        tint = tokens.colors.foreground,
+                    )
+                }
+                DropdownMenu(
+                    expanded = gearExpanded,
+                    onDismissRequest = { gearExpanded = false },
+                ) {
+                    gearDestinations.forEach { destination ->
+                        LedgerMenuItem(
+                            label = destination.label,
+                            onClick = {
+                                gearExpanded = false
+                                onNavigate(destination)
+                            },
+                        )
+                    }
+                }
+            }
+        }
         if (state.worstStatus == Freshness.LOADING) {
             CircularProgressIndicator(
                 modifier = Modifier.size(24.dp),

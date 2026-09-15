@@ -38,16 +38,13 @@ import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 
 /** The handoff's stroke glyph for each destination, from `Design/icons.jsx`. */
 internal fun Destination.ledgerGlyph(): ImageVector = when (this) {
-    Destination.DASHBOARD -> LedgerGlyphs.Bars
+    Destination.HOME -> LedgerGlyphs.Bars
     Destination.ACTIVITY -> LedgerGlyphs.Stack
     Destination.BUDGET -> LedgerGlyphs.Wallet
     Destination.BITCOIN -> LedgerGlyphs.Btc
     Destination.BTC_BUYS -> LedgerGlyphs.ArrowDown
     Destination.BTC_BILL_PAYS -> LedgerGlyphs.Chain
-    Destination.NET_WORTH -> LedgerGlyphs.Vault
-    Destination.RETIREMENT -> LedgerGlyphs.Target
     Destination.EXPORT -> LedgerGlyphs.Doc
-    Destination.TODAY -> LedgerGlyphs.Calendar
     Destination.TASKS -> LedgerGlyphs.CheckCircle
     Destination.FAMILY -> LedgerGlyphs.People
     Destination.SETTINGS -> LedgerGlyphs.Cog

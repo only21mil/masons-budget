@@ -187,7 +187,7 @@ class BudgetCategoryDrilldownComposeTest {
         settle()
         compose.onNodeWithContentDescription("Jun 2026 budget month").assertIsSelected()
 
-        compose.runOnUiThread { model.navigate(Destination.DASHBOARD) }
+        compose.runOnUiThread { model.navigate(Destination.HOME) }
         settle()
 
         contentList().performScrollToNode(hasContentDescription("Spend, \$611.17"))
