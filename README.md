@@ -26,7 +26,8 @@ aggregator.
 ## Working on the repository
 
 Tracking, review, and builds are on GitHub. Work on a branch and open a pull
-request; never commit to `main`. See `AGENTS.md` for the approval gates around
+request; never commit to `main`. The Buzz relay is a read mirror, not an
+authority. See `AGENTS.md` for the approval gates around
 Apple builds, releases, production Convex operations, and credentials.
 
 ```bash

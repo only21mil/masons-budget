@@ -9,8 +9,8 @@ release path.
 
 Two things to know before you touch anything:
 
-- **Tracking follows the Buzz-first rules in `AGENTS.md`.** GitHub is the CI
-  mirror. Do not use Linear or commit to `main`.
+- **Tracking follows the GitHub-primary rules in `AGENTS.md`.** GitHub is
+  authoritative; the Buzz relay is the read mirror. Do not use Linear or commit to `main`.
 - **Nothing is kept locally.** Clone where you need it, push the branch, delete
   the checkout. Builds run in GitHub Actions, not on a workstation.
 
@@ -18,7 +18,7 @@ Two things to know before you touch anything:
 
 Do not start a distributable app build without Victor's explicit approval.
 
-Freely: fix bugs, file Buzz issues, edit code, run static checks and tests.
+Freely: fix bugs, file GitHub issues, edit code, run static checks and tests.
 
 Stop and ask before: bumping the build number for distribution, archiving,
 exporting, uploading to TestFlight or the App Store, notarizing, or any other
