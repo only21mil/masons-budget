@@ -440,10 +440,10 @@ fun ScreenHost(
         }
     }
     val listState = listStates.getValue(destination)
-    var bitcoinSegmentName by rememberSaveable(state.activeProfile, destination) {
-        mutableStateOf(
-            if (destination == Destination.BITCOIN) initialBitcoinSegment.name else BitcoinSegment.OVERVIEW.name,
-        )
+    val initialBitcoinSegmentKey =
+        if (destination == Destination.BITCOIN) initialBitcoinSegment.name else BitcoinSegment.OVERVIEW.name
+    var bitcoinSegmentName by rememberSaveable(state.activeProfile, destination, initialBitcoinSegmentKey) {
+        mutableStateOf(initialBitcoinSegmentKey)
     }
     val bitcoinSegment = BitcoinSegment.entries.firstOrNull { it.name == bitcoinSegmentName }
         ?: BitcoinSegment.OVERVIEW
