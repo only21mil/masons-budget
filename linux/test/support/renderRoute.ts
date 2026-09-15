@@ -12,7 +12,7 @@ import type {
   RendererMutationAdapter,
   RendererMutationKind,
 } from "../../src/renderer/data/mutations.ts"
-import { ALL_PAGES } from "../../src/renderer/pages/index.ts"
+import { resolvePage } from "../../src/renderer/pages/index.ts"
 import { TaskClockProvider } from "../../src/renderer/pages/tasks/taskClock.tsx"
 
 export type RenderProfile = "victor" | "rachel" | "mason" | "maddox"
@@ -90,7 +90,10 @@ export function renderRoute(
   profile: RenderProfile = "victor",
   data: FixtureEnvelope = liveEnvelope(profile),
 ): string {
-  const page = ALL_PAGES.find((candidate) => candidate.id === route)!
+  const page = resolvePage(route, profile)
+  if (!page) {
+    throw new Error(`Unknown route ${route} for profile ${profile}`)
+  }
   return renderToStaticMarkup(
     createElement(AppStateProvider, {
       initialProfile: profile,

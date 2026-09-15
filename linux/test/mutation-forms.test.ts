@@ -183,7 +183,7 @@ describe("exact renderer mutation forms", () => {
     },
     {
       slice: "todos",
-      route: "today",
+      route: "tasks",
       label: "Add task",
       at: (live: FixtureEnvelope, status: Freshness): FixtureEnvelope => ({
         ...live,

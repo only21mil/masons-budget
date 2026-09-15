@@ -1,13 +1,36 @@
-// Route registry. The 19 primary pages of the cockpit.
+// Route registry. Primary navigation is five tabs; secondary routes stay reachable.
 
 import type { FamilyMember } from "@vogel-vault/domain/family"
 
 import type { NavSection } from "../components/index.ts"
+import {
+  DEFAULT_ROUTE,
+  PRIMARY_NAV_IDS,
+  canonicalRoute,
+  type BitcoinSegment,
+  type PrimaryNavId,
+  type TaskSegment,
+  primaryNavId,
+  isGearMenuRoute,
+  bitcoinSegmentForRoute,
+  taskSegmentForRoute,
+} from "../navigation.ts"
 import { adminPageManifest } from "./admin/index.tsx"
 import { financePageManifest } from "./finance/index.tsx"
 import { pricePageDefinition } from "./finance/priceRoute.tsx"
 import { tasksPageManifest } from "./tasks/index.tsx"
-import { type PageDefinition, type PageManifest, visiblePages } from "./types.ts"
+import { type PageDefinition, type PageManifest } from "./types.ts"
+
+export {
+  DEFAULT_ROUTE,
+  PRIMARY_NAV_IDS,
+  canonicalRoute,
+  primaryNavId,
+  isGearMenuRoute,
+  bitcoinSegmentForRoute,
+  taskSegmentForRoute,
+}
+export type { BitcoinSegment, PrimaryNavId, TaskSegment }
 
 export { adminPageManifest, financePageManifest, tasksPageManifest }
 
@@ -24,35 +47,26 @@ export const ALL_PAGES: readonly PageDefinition[] = PAGE_MANIFESTS.flatMap(
 const ROUTE_ONLY_PAGES: readonly PageDefinition[] = [pricePageDefinition]
 const ROUTABLE_PAGES: readonly PageDefinition[] = [...ALL_PAGES, ...ROUTE_ONLY_PAGES]
 
-export const DEFAULT_ROUTE = "dashboard"
-
-/**
- * Retired route ids that must still resolve.
- *
- * A persisted route or a deep link is not a bug report: "retirement" now means
- * the Net Worth page, which carries the retirement accounts and total. Sending
- * it to the dashboard instead would silently lose the page the user asked for.
- */
-const ROUTE_ALIASES: Readonly<Record<string, string>> = {
-  retirement: "net-worth",
-}
-
-/** Map a retired route id onto the page that absorbed it. */
-export function canonicalRoute(routeId: string): string {
-  return ROUTE_ALIASES[routeId] ?? routeId
-}
-
-/** Nav sections for a profile, with adult-only pages removed for children. */
+/** Nav sections for a profile — five primary tabs only. */
 export function navSectionsFor(member: FamilyMember): NavSection[] {
-  return PAGE_MANIFESTS.map((manifest) => ({
-    id: manifest.id,
-    label: manifest.label,
-    items: visiblePages(manifest, member).map((page) => ({
-      id: page.id,
-      label: page.label,
-      icon: page.icon,
-    })),
-  })).filter((section) => section.items.length > 0)
+  const items = PRIMARY_NAV_IDS.flatMap((id) => {
+    const page = resolvePage(id, member)
+    return page
+      ? [{
+          id: page.id,
+          label: page.label,
+          icon: page.icon,
+        }]
+      : []
+  })
+
+  if (items.length === 0) return []
+
+  return [{
+    id: "primary",
+    label: "Ledger",
+    items,
+  }]
 }
 
 /**
@@ -60,7 +74,8 @@ export function navSectionsFor(member: FamilyMember): NavSection[] {
  * so the router can fall back rather than rendering an adult page for a child.
  */
 export function resolvePage(routeId: string, member: FamilyMember): PageDefinition | null {
-  const page = ROUTABLE_PAGES.find((candidate) => candidate.id === canonicalRoute(routeId))
+  const canonical = canonicalRoute(routeId)
+  const page = ROUTABLE_PAGES.find((candidate) => candidate.id === canonical)
   if (!page) return null
   const isChild = member === "mason" || member === "maddox"
   if (isChild && page.adultOnly) return null
