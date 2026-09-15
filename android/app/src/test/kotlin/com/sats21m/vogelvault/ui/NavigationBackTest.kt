@@ -15,7 +15,6 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasText
@@ -39,7 +38,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
-import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 
 @RunWith(RobolectricTestRunner::class)
@@ -89,19 +87,15 @@ class NavigationBackTest {
         back()
         assertEquals(Destination.HOME, destination)
     }
-    @Test fun `tasks hub offset survives smart list detail and Back`() {
+    @Test fun `tasks hub survives smart list detail and Back`() {
         render(Destination.TASKS, longTasks = true)
-        val list = compose.onNode(hasScrollAction())
-        list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 500f) }
-        compose.waitForIdle()
-        val before = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
-        assertTrue(before > 0f)
         compose.onNode(hasText("Inbox") and hasClickAction()).performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("All task lists").fetchSemanticsNode()
         back()
         assertEquals(Destination.TASKS, destination)
-        val after = compose.onNode(hasScrollAction()).fetchSemanticsNode()
-            .config[SemanticsProperties.VerticalScrollAxisRange].value()
-        assertEquals(before, after)
+        compose.onNode(hasText("Inbox") and hasClickAction()).assertExists()
+        compose.onNodeWithText("All task lists").assertDoesNotExist()
     }
     @Test fun `Bitcoin drilldown returns to the originating Bitcoin screen`() {
         render(Destination.BITCOIN)

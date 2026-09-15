@@ -1,7 +1,6 @@
 package com.sats21m.vogelvault.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxSize
@@ -165,7 +164,6 @@ private fun ProfileTaskListsScreen(
     }
     var editing by remember { mutableStateOf<TodoItem?>(null) }
     var selectedTaskKey by rememberSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
-    val hubScroll = rememberSaveable(state.activeProfile, saver = ScrollState.Saver) { ScrollState(0) }
     val selectedTask = localTodos.firstOrNull { "${it.owner.key}:${it.id}" == selectedTaskKey }
     BackHandler(selectedTask != null) { selectedTaskKey = null }
     val route = TaskListRoute.entries.firstOrNull { it.name == routeName } ?: TaskListRoute.HUB
@@ -338,14 +336,10 @@ private fun ProfileTaskListsScreen(
             plan = LocalLedgerPanePlan.current,
             showCompactDetail = route != TaskListRoute.HUB || selectedTask != null,
             modifier = Modifier.fillMaxSize(),
-            list = { Column(Modifier.fillMaxSize().verticalScroll(hubScroll).padding(VaultSpace.md)) { hubContent() } },
+            list = { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(VaultSpace.md)) { hubContent() } },
             detail = { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { detailContent() } },
         )
-    } else if (route == TaskListRoute.HUB) {
-        Column(Modifier.verticalScroll(hubScroll)) { hubContent() }
-    } else {
-        detailContent()
-    }
+    } else if (route == TaskListRoute.HUB) hubContent() else detailContent()
 
 }
 
