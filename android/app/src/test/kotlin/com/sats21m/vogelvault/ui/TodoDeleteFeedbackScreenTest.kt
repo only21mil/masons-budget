@@ -255,7 +255,7 @@ class TodoDeleteFeedbackScreenTest {
             activityController.get().setContent {
                 val state = VaultUiState(
                     activeProfile = FamilyMember.VICTOR,
-                    destination = Destination.TODAY,
+                    destination = Destination.TASKS,
                     data = base.copy(
                         todos = base.todos.copy(status = Freshness.LIVE, value = displayedTodos),
                     ),

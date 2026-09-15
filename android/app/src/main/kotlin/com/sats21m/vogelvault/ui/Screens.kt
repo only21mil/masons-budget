@@ -190,6 +190,7 @@ fun ScreenHost(
     onStartRiverBillPay: (BillPayPrefill) -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
+    initialBitcoinSegment: BitcoinSegment = BitcoinSegment.OVERVIEW,
     ledgerSettings: LedgerUiSettings = LedgerUiSettings(),
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -439,28 +440,13 @@ fun ScreenHost(
         }
     }
     val listState = listStates.getValue(destination)
-
-    // Today is the one destination that edits rows rather than listing them, so it
-    // owns its own scaffold, snackbar and scrolling list, and renders instead of the
-    // shared ledger column rather than inside it. It reaches the write transport
-    // itself; nothing about writing passes through this shell.
-    if (destination == Destination.TODAY) {
-        key(state.activeProfile) {
-            LedgerPanes(
-                plan = LocalLedgerPanePlan.current,
-                showCompactDetail = false,
-                modifier = modifier.fillMaxSize(),
-                detail = {},
-                list = {
-                    Column(Modifier.fillMaxSize()) {
-                        TextButton(onClick = { onNavigate(Destination.TASKS) }) { Text("Task lists") }
-                        TodoScreen(state = state, onWriteSucceeded = onWriteSucceeded, modifier = Modifier.weight(1f), listState = listState)
-                    }
-                },
-            )
-        }
-        return
+    var bitcoinSegmentName by rememberSaveable(state.activeProfile, destination) {
+        mutableStateOf(
+            if (destination == Destination.BITCOIN) initialBitcoinSegment.name else BitcoinSegment.OVERVIEW.name,
+        )
     }
+    val bitcoinSegment = BitcoinSegment.entries.firstOrNull { it.name == bitcoinSegmentName }
+        ?: BitcoinSegment.OVERVIEW
 
     if (destination == Destination.TASKS) {
         Column(modifier.fillMaxSize()) {
@@ -555,10 +541,10 @@ fun ScreenHost(
                 ) {
                     vaultContent {
                     item {
-                        ScreenHeader(destination, state, budgetSelectedMonth)
+                        ScreenHeader(destination, state, budgetSelectedMonth, bitcoinSegment)
                     }
                     when (destination) {
-                        Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit, { target ->
+                        Destination.HOME -> dashboard(state, dashboardProjection, displayUnit, { target ->
                             if (target == Destination.BUDGET) {
                                 picked = dashboardMonth
                                 budgetDrilldownMonth = null
@@ -592,17 +578,29 @@ fun ScreenHost(
                                 )
 
                         }
-                        Destination.BITCOIN ->
-                            bitcoin(
-                                state,
-                                bitcoinProjection,
-                                displayUnit,
-                                onAdd = { showBitcoinAdd = true },
-                                onNavigate = onNavigate,
-                                capabilities = capabilities,
-                                onAddAccount = { showBtcAccountEditor = true },
-                                onWriteSucceeded = onWriteSucceeded,
-                            )
+                        Destination.BITCOIN -> {
+                            item {
+                                BitcoinSegmentSelector(
+                                    selected = bitcoinSegment,
+                                    onSelect = { bitcoinSegmentName = it.name },
+                                )
+                            }
+                            when (bitcoinSegment) {
+                                BitcoinSegment.OVERVIEW ->
+                                    bitcoin(
+                                        state,
+                                        bitcoinProjection,
+                                        displayUnit,
+                                        onAdd = { showBitcoinAdd = true },
+                                        onNavigate = onNavigate,
+                                        capabilities = capabilities,
+                                        onAddAccount = { showBtcAccountEditor = true },
+                                        onWriteSucceeded = onWriteSucceeded,
+                                    )
+                                BitcoinSegment.NET_WORTH -> netWorth(state, displayUnit)
+                                BitcoinSegment.RETIREMENT -> retirement(state, displayUnit)
+                            }
+                        }
                         Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle, onWriteSucceeded = onWriteSucceeded)
                         Destination.BTC_BILL_PAYS -> btcBillPaysScreen(
                             state,
@@ -614,11 +612,7 @@ fun ScreenHost(
                                 showBtcBillPayEditor = true
                             },
                         )
-                        Destination.NET_WORTH -> netWorth(state, displayUnit)
-                        Destination.RETIREMENT -> retirement(state, displayUnit)
                         Destination.EXPORT -> item { ExportScreen(state) }
-                        // Rendered above, outside the shared ledger column.
-                        Destination.TODAY -> Unit
                         Destination.TASKS -> item {
                             // ScreenHost is the privacy boundary: a destination never
                             // receives rows its active profile cannot see. The refresh
@@ -669,10 +663,11 @@ private fun ScreenHeader(
     destination: Destination,
     state: VaultUiState,
     budgetMonth: String?,
+    bitcoinSegment: BitcoinSegment = BitcoinSegment.OVERVIEW,
 ) {
     val tokens = LocalLedgerTheme.current
     val subtitle = when (destination) {
-        Destination.DASHBOARD ->
+        Destination.HOME ->
             "${monthLabel(calendarMonth(state.now))} · " +
                 if (state.activeProfile.isAdult) "Household" else state.activeProfile.displayName
         Destination.ACTIVITY -> "Transactions visible to this profile"
@@ -680,14 +675,15 @@ private fun ScreenHeader(
         // earlier month is picked, and the header must not contradict the picker.
         // A profile with no budget file still says so; Maddox has none.
         Destination.BUDGET -> state.data.budget.value?.let { monthLabel(budgetMonth ?: it.month) } ?: "No budget"
-        Destination.BITCOIN -> "Stack and custody"
+        Destination.BITCOIN -> when (bitcoinSegment) {
+            BitcoinSegment.OVERVIEW -> "Stack and custody"
+            BitcoinSegment.NET_WORTH -> "Household for adults; self only for children"
+            BitcoinSegment.RETIREMENT -> "Retirement accounts and long-range scenario"
+        }
         Destination.BTC_BUYS -> "Purchases visible to this profile"
         Destination.BTC_BILL_PAYS -> "Bitcoin spent on bills visible to this profile"
-        Destination.NET_WORTH -> "Household for adults; self only for children"
-        Destination.RETIREMENT -> "Retirement accounts and long-range scenario"
         Destination.EXPORT -> "Share files for this profile"
-        Destination.TODAY -> "Due today or overdue"
-        Destination.TASKS -> "Projects, areas and smart lists"
+        Destination.TASKS -> "Due today, projects, and smart lists"
         Destination.FAMILY -> "Who can see what"
         Destination.SETTINGS -> "Appearance and connection"
     }
@@ -705,13 +701,11 @@ private fun ScreenHeader(
 internal val Destination.supportsFinancialDisplayUnit: Boolean
     get() =
         this in setOf(
-            Destination.DASHBOARD,
+            Destination.HOME,
             Destination.ACTIVITY,
             Destination.BITCOIN,
             Destination.BTC_BUYS,
             Destination.BTC_BILL_PAYS,
-            Destination.NET_WORTH,
-            Destination.RETIREMENT,
         )
 
 @Composable
@@ -822,11 +816,9 @@ private fun VaultLazyListScope.dashboard(
     }
     item {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { onNavigate(Destination.NET_WORTH) }) { Text("Net Worth") }
             TextButton(onClick = { onNavigate(Destination.BUDGET) }) { Text("Budget") }
-            TextButton(onClick = { onNavigate(Destination.TODAY) }) { Text("Today") }
+            TextButton(onClick = { onNavigate(Destination.TASKS) }) { Text("Tasks") }
         }
-        TextButton(onClick = { onNavigate(Destination.RETIREMENT) }) { Text("Retirement") }
         TextButton(onClick = { onNavigate(Destination.ACTIVITY) }) { Text("Recent activity · See all") }
     }
     item { StaleNotice(state.data.transactions.status, state.data.transactions.updatedAt, state.now) }
@@ -1567,8 +1559,6 @@ private fun VaultLazyListScope.bitcoin(
         if (state.activeProfile.isAdult) VaultButton("+ Add", onClick = onAdd, enabled = canWriteBitcoin)
         TextButton(onClick = { onNavigate(Destination.BTC_BUYS) }) { Text("Buys · See all") }
         TextButton(onClick = { onNavigate(Destination.BTC_BILL_PAYS) }) { Text("Bill Pays · See all") }
-        TextButton(onClick = { onNavigate(Destination.NET_WORTH) }) { Text("Net Worth") }
-        TextButton(onClick = { onNavigate(Destination.RETIREMENT) }) { Text("Retirement") }
     }
     if (state.data.btcBuys.suppressFigures) {
         item {
@@ -1928,10 +1918,6 @@ private fun VaultLazyListScope.settings(
     onDisplayUnitChange: (DisplayUnit) -> Unit,
 ) {
     item { Panel("Display unit") { BitcoinUnitToggle(displayUnit, onDisplayUnitChange) } }
-    item {
-        TextButton(onClick = { onNavigate(Destination.FAMILY) }) { Text("Family") }
-        TextButton(onClick = { onNavigate(Destination.EXPORT) }) { Text("Export") }
-    }
     item { LedgerAppearanceSettings(ledgerSettings, onLedgerSettingsChange) }
     item { BudgetNotificationSettings(state) }
     item { com.sats21m.vogelvault.ui.components.SectionLabel("Diagnostics") }

@@ -261,7 +261,7 @@ class RefreshAfterWriteSurfaceTest {
         val state =
             VaultUiState(
                 activeProfile = FamilyMember.VICTOR,
-                destination = Destination.TODAY,
+                destination = Destination.TASKS,
                 data = base.copy(todos = base.todos.copy(value = emptyList())),
             )
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
@@ -303,7 +303,7 @@ class RefreshAfterWriteSurfaceTest {
         val state =
             VaultUiState(
                 activeProfile = FamilyMember.VICTOR,
-                destination = Destination.TODAY,
+                destination = Destination.TASKS,
                 data = base.copy(todos = base.todos.copy(value = listOf(todo))),
             )
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
@@ -413,12 +413,12 @@ class RefreshAfterWriteSurfaceTest {
         val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
         val state = VaultUiState(
             activeProfile = FamilyMember.VICTOR,
-            destination = Destination.TODAY,
+            destination = Destination.TASKS,
             data = base.copy(todos = base.todos.copy(value = emptyList())),
         )
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
             ScreenHost(
-                destination = Destination.TODAY,
+                destination = Destination.TASKS,
                 state = state,
                 onWriteSucceeded = onWriteSucceeded,
             )
