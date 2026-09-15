@@ -11,7 +11,7 @@ import androidx.compose.ui.platform.testTag
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 
 /** In-tab segments for the Bitcoin primary destination. */
-internal enum class BitcoinSegment(val label: String) {
+enum class BitcoinSegment(val label: String) {
     OVERVIEW("Overview"),
     NET_WORTH("Net Worth"),
     RETIREMENT("Retirement"),
