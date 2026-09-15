@@ -4,18 +4,18 @@ final class AppleScreenAdoptionTests: XCTestCase {
     func testPrimaryScreenCatalogMatchesAppleNavigation() {
         XCTAssertEqual(
             ApplePrimaryScreen.allCases,
-            [.home, .activity, .budget, .tasks],
+            [.home, .budget, .activity, .bitcoin, .tasks],
         )
-        XCTAssertEqual(AppTab.allCases, [.home, .activity, .budget, .tasks])
+        XCTAssertEqual(AppTab.allCases, [.home, .budget, .activity, .bitcoin, .tasks])
     }
 
     func testTabTitlesAreUppercaseLedgerLabels() {
-        XCTAssertEqual(AppTab.allCases.map(\.tabTitle), ["HOME", "ACTIVITY", "BUDGET", "TASKS"])
+        XCTAssertEqual(AppTab.allCases.map(\.tabTitle), ["HOME", "BUDGET", "ACTIVITY", "BITCOIN", "TASKS"])
     }
 
-    func testAvatarCatalogKeepsAccountDestinationsAccessible() {
-        XCTAssertEqual(AppleAccountScreen.allCases, [.profile, .settings, .family, .awards, .sync, .export])
-        XCTAssertTrue(MacNav.taskItems.contains(.tasks))
+    func testGearMenuKeepsAccountDestinationsAccessible() {
+        XCTAssertEqual(AppleAccountScreen.allCases, [.profile, .family, .settings, .export])
+        XCTAssertTrue(MacNav.primaryItems.contains(.tasks))
     }
 
     func testHomeTodayMatchesActivityVisibilityAndLocalDay() throws {

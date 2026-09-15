@@ -107,43 +107,34 @@ struct HomeDashboardView: View {
                     UnitToggleView(unit: unitBinding, size: .sm)
                 }
             }
-            NavigationLink {
-                LedgerDrilldown(title: "Net Worth") { NetWorthView() }
-            } label: {
-                VStack(alignment: .leading, spacing: 10) {
-                    if let total = netWorthUSD, let price = BTCPriceService.storedPrice {
-                        AmountView(sats: total / price * 100_000_000, unit: unit, role: .heroNumeral, btcPrice: price)
-                            .lineLimit(1).minimumScaleFactor(0.7)
-                        if history.count > 1 {
-                            Chart(history, id: \.date) { point in
-                                LineMark(x: .value("Date", point.date), y: .value("USD", NSDecimalNumber(decimal: point.total).doubleValue))
-                                    .foregroundStyle(theme.accent)
-                            }
-                            .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 64)
-                            Text("Recorded USD history · \(NetWorthHistory.spanLabel(history))").ledgerType(.rowMeta)
+            VStack(alignment: .leading, spacing: 10) {
+                if let total = netWorthUSD, let price = BTCPriceService.storedPrice {
+                    AmountView(sats: total / price * 100_000_000, unit: unit, role: .heroNumeral, btcPrice: price)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    if history.count > 1 {
+                        Chart(history, id: \.date) { point in
+                            LineMark(x: .value("Date", point.date), y: .value("USD", NSDecimalNumber(decimal: point.total).doubleValue))
+                                .foregroundStyle(theme.accent)
                         }
-                    } else {
-                        Text("Net worth unavailable").ledgerType(.kpiValue)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(HomeDashboardData.netWorthUnavailableHint(hasReadToken: hasReadToken))
-                            .ledgerType(.rowMeta)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
+                        .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 64)
+                        Text("Recorded USD history · \(NetWorthHistory.spanLabel(history))").ledgerType(.rowMeta)
                     }
+                } else {
+                    Text("Net worth unavailable").ledgerType(.kpiValue)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(HomeDashboardData.netWorthUnavailableHint(hasReadToken: hasReadToken))
+                        .ledgerType(.rowMeta)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
             if let quote = MarketQuoteService.quote(.btc) {
                 Text("BTC · \(quote.source) · \(quote.effectiveStatus().rawValue)").ledgerType(.rowMeta)
             }
             Text("Retirement includes recorded values when a market quote is unavailable.")
                 .ledgerType(.rowMeta).foregroundStyle(theme.textMuted)
-            HStack(spacing: 16) {
-                link("Price") { BitcoinPriceView() }
-                link("Retirement") { RetirementView() }
-            }
         }
         .foregroundStyle(theme.text)
         .glassCard(padding: 16, radius: 4)

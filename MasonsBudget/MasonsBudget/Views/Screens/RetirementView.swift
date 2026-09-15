@@ -2,6 +2,8 @@ import SwiftData
 import SwiftUI
 
 struct RetirementView: View {
+    var showsScreenHeader = true
+
     @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
@@ -101,7 +103,9 @@ struct RetirementView: View {
         TimelineView(.periodic(from: .now, by: 60)) { _ in
             ScrollView {
                 VStack(spacing: 0) {
-                    ScreenHeader(title: "Retirement", eyebrow: "The Long Stack")
+                    if showsScreenHeader {
+                        ScreenHeader(title: "Retirement", eyebrow: "The Long Stack")
+                    }
 
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(MarketQuote.Symbol.allCases, id: \.rawValue) { symbol in
