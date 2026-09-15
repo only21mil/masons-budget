@@ -32,7 +32,6 @@ import type { FixtureEnvelope } from "../../data/fixtures.ts"
 import { fiatCentsOf } from "../../data/btcFiatValuation.ts"
 import { PRICE_UNAVAILABLE } from "../../data/bitcoinDisplay.ts"
 import { paymentSourceDisplay } from "../../data/paymentSource.ts"
-import { useTaskToday } from "../tasks/taskClock.tsx"
 import {
   Badge,
   type BannerTone,
@@ -1147,11 +1146,11 @@ function OnboardingPage() {
         </div>
         <Button
           variant="primary"
-          onClick={() => step === steps.length - 1 ? navigate("dashboard") : setStep(step + 1)}
+          onClick={() => step === steps.length - 1 ? navigate("home") : setStep(step + 1)}
         >
           {step === steps.length - 1 ? "Open ledger" : "Continue"}
         </Button>
-        <Button variant="ghost" onClick={() => navigate("dashboard")}>Skip</Button>
+        <Button variant="ghost" onClick={() => navigate("home")}>Skip</Button>
       </footer>
     </section>
   )
@@ -1309,17 +1308,12 @@ function AwardsPage() {
 }
 
 function MorePage() {
-  const { activeProfile, data, financeModel, navigate } = useAppState()
+  const { activeProfile, data, navigate } = useAppState()
   const transactionCount = visibleTo(activeProfile, data.transactions.value).length
   const buyCount = visibleTo(activeProfile, data.btcBuys.value).length
   const billPayCount = visibleTo(activeProfile, data.billPays.value).length
-  const tasks = data.todos.value.filter((todo) => todo.owner === activeProfile)
-  // The local task day, not a UTC slice of a timestamp: the Today list and the
-  // badge must agree on what "today" means for a profile west of Greenwich.
-  const today = useTaskToday()
-  const todayCount = tasks.filter((todo) => todo.due !== null && todo.due <= today).length
-  const openTasks = tasks.filter((todo) => !todo.done).length
-  const completedTasks = tasks.filter((todo) => todo.done).length
+  const completedTasks = data.todos.value
+    .filter((todo) => todo.owner === activeProfile && todo.done).length
   const awardCount = ledgerAwards(transactionCount, buyCount, completedTasks)
     .filter((award) => award.earned).length
   const awardStatus = combinedLedgerState([
@@ -1327,26 +1321,12 @@ function MorePage() {
     data.btcBuys.status,
     data.todos.status,
   ]) ?? "live"
-  const retirement = financeModel.finance.status === "live"
-    ? sum(financeModel.finance.value.accounts
-        .filter((account) => sharesNetWorthWith(activeProfile, account.owner))
-        .map((account) => account.totalValueCents))
-    : null
-  const bitcoin = data.btcBalanceDocument.status !== "error" &&
-    data.btcBalanceDocument.status !== "loading" &&
-    data.btcBalanceDocument.status !== "stale" &&
-    data.btcBalanceDocument.value
-    ? fiatCentsOf(data.btcBalanceDocument.value.totals)
-    : null
-  const netWorth = retirement !== null && bitcoin !== null ? retirement + bitcoin : null
-  const currency = (value: bigint | null) => value === null ? "—" : `$${formatMinorUnits(value, 2)}`
   const state = combinedLedgerState([
     data.transactions.status,
     data.btcBuys.status,
     data.billPays.status,
     data.btcBalanceDocument.status,
     data.todos.status,
-    financeModel.finance.status,
   ])
   const rows: ReadonlyArray<{
     readonly icon: IconName
@@ -1369,22 +1349,6 @@ function MorePage() {
       value: readableCount(data.billPays.status, billPayCount),
       valueLabel: countValueLabel(data.billPays.status, billPayCount, "Bitcoin bill pays"),
     },
-    { icon: "bank", label: "Net Worth", route: "net-worth", value: currency(netWorth) },
-    { icon: "retirement", label: "Retirement", route: "net-worth", value: currency(retirement) },
-    {
-      icon: "today",
-      label: "Today",
-      route: "today",
-      value: readableCount(data.todos.status, todayCount),
-      valueLabel: countValueLabel(data.todos.status, todayCount, "tasks due today or overdue"),
-    },
-    {
-      icon: "check",
-      label: "Tasks",
-      route: "tasks",
-      value: readableCount(data.todos.status, openTasks),
-      valueLabel: countValueLabel(data.todos.status, openTasks, "open tasks"),
-    },
     {
       icon: "sparkles",
       label: "Awards",
@@ -1392,14 +1356,6 @@ function MorePage() {
       value: readableCount(awardStatus, awardCount),
       valueLabel: countValueLabel(awardStatus, awardCount, "earned awards"),
     },
-    {
-      icon: "users",
-      label: "Family",
-      route: "family",
-      value: moreCountLabel(FAMILY_MEMBERS.length),
-      valueLabel: `${FAMILY_MEMBERS.length} family profiles`,
-    },
-    { icon: "settings", label: "Settings", route: "settings", value: "" },
   ]
 
   return (

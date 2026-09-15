@@ -27,6 +27,13 @@ import {
   displayUnitFromStorageKey,
 } from "../data/bitcoinDisplay.ts"
 import {
+  type BitcoinSegment,
+  type TaskSegment,
+  bitcoinSegmentForRoute,
+  canonicalRoute,
+  taskSegmentForRoute,
+} from "../navigation.ts"
+import {
   EMPTY_MUTATION_CONTROLLER,
   type DataOrigin,
   type MutationControllerState,
@@ -64,6 +71,10 @@ interface AppStateValue {
   readonly switchTargets: readonly FamilyMember[]
   readonly route: string
   readonly navigate: (id: string) => void
+  readonly bitcoinSegment: BitcoinSegment
+  readonly setBitcoinSegment: (segment: BitcoinSegment) => void
+  readonly taskSegment: TaskSegment
+  readonly setTaskSegment: (segment: TaskSegment) => void
   readonly locked: boolean
   readonly setLocked: (locked: boolean) => void
   /** Canonical current UTC/server month used by Dashboard MTD. */
@@ -148,7 +159,7 @@ export interface AppStateProviderProps {
 export function AppStateProvider({
   children,
   initialProfile = "victor",
-  initialRoute = "dashboard",
+  initialRoute = "home",
   initialStateOverride = "normal",
   initialCurrentMonth,
   initialSelectedMonth = null,
@@ -161,7 +172,13 @@ export function AppStateProvider({
   initialPairingStatus,
 }: AppStateProviderProps) {
   const [activeProfile, setActiveProfile] = useState<FamilyMember>(initialProfile)
-  const [route, setRoute] = useState(initialRoute)
+  const [route, setRoute] = useState(() => canonicalRoute(initialRoute))
+  const [bitcoinSegment, setBitcoinSegment] = useState<BitcoinSegment>(
+    () => bitcoinSegmentForRoute(initialRoute),
+  )
+  const [taskSegment, setTaskSegment] = useState<TaskSegment>(
+    () => taskSegmentForRoute(initialRoute),
+  )
   const [locked, setLocked] = useState(false)
   const currentMonth = initialCurrentMonth ?? monthOf(new Date().toISOString().slice(0, 10))
   const [stateOverride, setStateOverride] = useState<StateOverride>(initialStateOverride)
@@ -290,6 +307,17 @@ export function AppStateProvider({
     } catch {
       // Blocked storage is already non-authoritative, so there is nothing to do.
     }
+  }, [])
+
+  const navigate = useCallback((id: string) => {
+    const canonical = canonicalRoute(id)
+    if (canonical === "bitcoin") {
+      setBitcoinSegment(bitcoinSegmentForRoute(id))
+    }
+    if (canonical === "tasks") {
+      setTaskSegment(taskSegmentForRoute(id))
+    }
+    setRoute(canonical)
   }, [])
 
   const switchProfile = useCallback(
@@ -613,7 +641,11 @@ export function AppStateProvider({
       switchProfile,
       switchTargets,
       route,
-      navigate: setRoute,
+      navigate,
+      bitcoinSegment,
+      setBitcoinSegment,
+      taskSegment,
+      setTaskSegment,
       locked,
       setLocked,
       currentMonth,
@@ -651,6 +683,11 @@ export function AppStateProvider({
       switchProfile,
       switchTargets,
       route,
+      navigate,
+      bitcoinSegment,
+      setBitcoinSegment,
+      taskSegment,
+      setTaskSegment,
       locked,
       currentMonth,
       selectedMonth,

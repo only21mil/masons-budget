@@ -194,7 +194,7 @@ test("a non-positive newest visible buy is unavailable instead of falling back",
 })
 
 test("USD UI labels the canonical BTC snapshot date and plainly says it is not live", () => {
-  const markup = renderPage("dashboard", "victor", "usd")
+  const markup = renderPage("home", "victor", "usd")
 
   assert.ok(markup.includes('aria-label="Bitcoin display unit"'))
   assert.ok(markup.includes('aria-pressed="true">USD</button>'))
@@ -203,7 +203,7 @@ test("USD UI labels the canonical BTC snapshot date and plainly says it is not l
 })
 
 test("display-unit buttons expose pressed semantics and 24px minimum targets", () => {
-  const markup = renderPage("dashboard", "victor", "usd")
+  const markup = renderPage("home", "victor", "usd")
   const css = readFileSync(
     new URL("../src/renderer/styles/components.css", import.meta.url),
     "utf8",
@@ -219,13 +219,13 @@ test("display-unit buttons expose pressed semantics and 24px minimum targets", (
 })
 
 test("USD UI shows Price unavailable when the required BTC document source is empty", () => {
-  const markup = renderPage("dashboard", "victor", "usd", "empty")
+  const markup = renderPage("home", "victor", "usd", "empty")
 
   assert.ok(markup.includes(PRICE_UNAVAILABLE))
   assert.ok(markup.includes("No canonical BTC balance document is available."))
 })
 
-test.each(["dashboard", "bitcoin", "net-worth"])(
+test.each(["home", "bitcoin", "net-worth"])(
   "%s keeps production sats visible while every canonical USD surface is unavailable",
   (route) => {
     const markup = renderPage(
@@ -247,8 +247,8 @@ test.each(["dashboard", "bitcoin", "net-worth"])(
 
 test("the production-shaped stack remains exact in BTC and SATS modes", () => {
   const data = buildKnownSatsUnavailableFiatEnvelope()
-  const btc = renderPage("dashboard", "victor", "btc", "normal", data)
-  const sats = renderPage("dashboard", "victor", "sats", "normal", data)
+  const btc = renderPage("home", "victor", "btc", "normal", data)
+  const sats = renderPage("home", "victor", "sats", "normal", data)
 
   assert.ok(btc.includes("5.41782856 BTC"))
   assert.ok(sats.includes("541 782 856 sats"))
@@ -262,7 +262,7 @@ test.each([
   "Dashboard income MTD and spend honor %s with a live operational quote",
   (unit, expectedIncome, expectedSpend) => {
     const markup = renderPage(
-      "dashboard",
+      "home",
       "victor",
       unit,
       "normal",
@@ -280,7 +280,7 @@ test("Dashboard renders a valid nonempty zero-income month instead of a dash", (
   const first = base.income.value[0]
   assert.ok(first)
   const markup = renderPage(
-    "dashboard",
+    "home",
     "victor",
     "usd",
     "normal",
@@ -331,7 +331,7 @@ test("exact native USD does not warn when the operational quote is unavailable",
 
 test("an explicitly stale operational BTC quote still drives conversion", () => {
   const markup = renderPage(
-    "dashboard",
+    "home",
     "victor",
     "sats",
     "normal",

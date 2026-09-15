@@ -1799,3 +1799,45 @@
     flex-direction: column;
   }
 }
+
+.vv-gear-menu {
+  position: relative;
+}
+
+.vv-gear-menu__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--vv-border);
+  border-radius: var(--vv-radius-sm);
+  background: var(--vv-surface-raised);
+  box-shadow: var(--vv-shadow-md);
+}
+
+.vv-gear-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--vv-radius-sm);
+  background: transparent;
+  color: var(--vv-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vv-gear-menu__item:hover,
+.vv-gear-menu__item--active {
+  background: var(--vv-ledger-bitcoin-soft);
+}
+
+.vv-bitcoin-segments,
+.vv-task-segments {
+  margin-bottom: 16px;
+}

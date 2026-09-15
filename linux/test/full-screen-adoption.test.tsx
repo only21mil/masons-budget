@@ -116,14 +116,14 @@ test("Today retains completed due rows and joins them with scoped money out", ()
     date: "2026-07-26",
     merchant: "Today proof merchant",
   }
-  const markup = renderRoute("today", "victor", {
+  const markup = renderRoute("tasks", "victor", {
     ...data,
     todos: { ...data.todos, value: [completed] },
     transactions: { ...data.transactions, value: [todaySpend] },
   })
 
   assert.ok(todayLedgerTaskFilter("2026-07-26")(completed))
-  assert.match(markup, /Due today or overdue, including completed tasks/)
+  assert.match(markup, /Today tasks with task actions/)
   assert.match(markup, /Completed today proof/)
   assert.match(markup, /vv-task-complete/)
   assert.match(markup, /Money out today/)
@@ -165,10 +165,13 @@ test("Family, Settings, onboarding, Awards, Tasks, and More close the packet gap
   assert.equal((onboarding.match(/vv-onboarding__progress/g) ?? []).length, 1)
 
   const more = renderRoute("more")
-  for (const copy of ["BTC Buys", "BTC Bill Pays", "Net Worth", "Retirement", "Today", "Tasks", "Family", "Settings", "Awards"]) {
+  for (const copy of ["BTC Buys", "BTC Bill Pays", "Awards"]) {
     assert.match(more, new RegExp(copy))
   }
   assert.doesNotMatch(more, /Export/)
+  assert.doesNotMatch(more, /Net Worth/)
+  assert.doesNotMatch(more, /Family/)
+  assert.doesNotMatch(more, /Settings/)
 
   assert.equal(moreCountLabel(0), "")
   assert.equal(moreCountLabel(8), "8")

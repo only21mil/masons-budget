@@ -49,6 +49,7 @@ const ICONS = {
   "circle-alert": CircleAlert,
   "circle-dashed": CircleDashed,
   dashboard: LayoutDashboard,
+  home: LayoutDashboard,
   download: Download,
   flag: Flag,
   inbox: Inbox,
