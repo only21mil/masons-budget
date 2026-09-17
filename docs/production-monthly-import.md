@@ -6,9 +6,9 @@ gates.
 
 ## Boundary
 
-The monthly importer is a trusted, admin-only operator for canonical Convex
-typed rows. It is not a client feature and must never place an administrative
-deploy credential in an app, package, repository, log, shell history, or
+The monthly importer, `scripts/vv-ledger-batch.mjs`, is a trusted, admin-only
+operator for canonical Convex typed rows. It is not a client feature and must
+never place an administrative deploy credential in an app, package, repository, log, shell history, or
 generated artifact. The operator loads credentials at runtime from the
 sanctioned host secrets store; only the public deployment-binding environment
 variable may identify the target.

@@ -59,8 +59,8 @@ npm run convex:test
 Android unit tests can run locally with the repository wrapper:
 
 ```bash
-export ANDROID_HOME=/home/victor/Android/Sdk
-export JAVA_HOME=/home/victor/.local/opt/jdk21
+export ANDROID_HOME=/path/to/android-sdk
+export JAVA_HOME=/path/to/jdk21
 cd android
 ./gradlew testDebugUnitTest
 ```
