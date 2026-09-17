@@ -16,8 +16,6 @@ export type TaskSegment = "today" | "inbox" | "upcoming" | "flagged" | "projects
 
 export const DEFAULT_ROUTE: PrimaryNavId = "home"
 
-const GEAR_MENU_ROUTE_IDS = new Set(["family", "settings", "export"])
-
 const ROUTE_ALIASES: Readonly<Record<string, string>> = {
   dashboard: "home",
   today: "tasks",
@@ -52,19 +50,5 @@ export function primaryNavId(routeId: string): string {
   if (canonical === "bitcoin" || routeId === "bitcoin-buys" || routeId === "bills") {
     return "bitcoin"
   }
-  if (
-    canonical === "tasks" ||
-    routeId === "inbox" ||
-    routeId === "upcoming" ||
-    routeId === "flagged" ||
-    routeId === "projects"
-  ) {
-    return "tasks"
-  }
-  if (PRIMARY_NAV_IDS.includes(canonical as PrimaryNavId)) return canonical
   return canonical
-}
-
-export function isGearMenuRoute(routeId: string): boolean {
-  return GEAR_MENU_ROUTE_IDS.has(routeId)
 }

@@ -2237,7 +2237,7 @@ function RetirementAccountsPanel({ accounts }: { accounts: readonly AccountValua
   )
 }
 
-function NetWorthPage({ showRetirementPanel = true }: { showRetirementPanel?: boolean }) {
+function NetWorthPage() {
   const { activeProfile, data, displayUnit, financeModel, stateOverride } = useAppState()
   const document = data.btcBalanceDocument.value
   const inScope = document?.accounts ?? []
@@ -2437,7 +2437,6 @@ function NetWorthPage({ showRetirementPanel = true }: { showRetirementPanel?: bo
           />
         </Panel>
       </PageGrid>
-      {showRetirementPanel ? <RetirementAccountsPanel accounts={accounts} /> : null}
       <Panel title="Market quote snapshot" source="Operational prices · never inferred from buys" flush>
         {overrideState ? (
           <StateBlock state={overrideState} detail="No QA fixture is presented as a market quote." />
@@ -2465,7 +2464,7 @@ function BitcoinSegmentNav() {
   const { bitcoinSegment, setBitcoinSegment } = useAppState()
 
   return (
-    <div className="vv-filter-chips vv-bitcoin-segments" role="tablist" aria-label="Bitcoin views">
+    <div className="vv-filter-chips vv-bitcoin-segments" role="group" aria-label="Bitcoin views">
       {BITCOIN_SEGMENTS.map((segment) => (
         <Button
           key={segment.id}
@@ -2484,13 +2483,16 @@ function BitcoinMoreLinks() {
   const { navigate } = useAppState()
 
   return (
-    <Panel title="More Bitcoin" source="Buys and bill pays stay one click away">
+    <Panel title="More Bitcoin" source="Buys, bill pays, and price stay one click away">
       <div className="vv-row">
         <Button variant="secondary" onClick={() => navigate("bitcoin-buys")}>
           Bitcoin Buys
         </Button>
         <Button variant="secondary" onClick={() => navigate("bills")}>
           Bill Pays
+        </Button>
+        <Button variant="secondary" onClick={() => navigate("price")}>
+          Price
         </Button>
       </div>
     </Panel>
@@ -2525,7 +2527,7 @@ function BitcoinPage() {
           <BitcoinMoreLinks />
         </>
       ) : null}
-      {bitcoinSegment === "net-worth" ? <NetWorthPage showRetirementPanel={false} /> : null}
+      {bitcoinSegment === "net-worth" ? <NetWorthPage /> : null}
       {bitcoinSegment === "retirement" ? <RetirementSegmentPage /> : null}
     </>
   )

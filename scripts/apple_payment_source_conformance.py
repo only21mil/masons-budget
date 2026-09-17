@@ -10,7 +10,7 @@ against hardcoded contract values; this gate diffs against the live fixture
 JSON so drift in either direction is caught.
 
 Usage:
-    scripts/check-apple-payment-source-conformance.py [--root <repo root>]
+    scripts/apple_payment_source_conformance.py [--root <repo root>]
 """
 
 from __future__ import annotations

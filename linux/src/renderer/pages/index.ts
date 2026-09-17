@@ -7,13 +7,7 @@ import {
   DEFAULT_ROUTE,
   PRIMARY_NAV_IDS,
   canonicalRoute,
-  type BitcoinSegment,
-  type PrimaryNavId,
-  type TaskSegment,
   primaryNavId,
-  isGearMenuRoute,
-  bitcoinSegmentForRoute,
-  taskSegmentForRoute,
 } from "../navigation.ts"
 import { adminPageManifest } from "./admin/index.tsx"
 import { financePageManifest } from "./finance/index.tsx"
@@ -26,11 +20,7 @@ export {
   PRIMARY_NAV_IDS,
   canonicalRoute,
   primaryNavId,
-  isGearMenuRoute,
-  bitcoinSegmentForRoute,
-  taskSegmentForRoute,
 }
-export type { BitcoinSegment, PrimaryNavId, TaskSegment }
 
 export { adminPageManifest, financePageManifest, tasksPageManifest }
 
@@ -45,7 +35,7 @@ export const ALL_PAGES: readonly PageDefinition[] = PAGE_MANIFESTS.flatMap(
 )
 
 const ROUTE_ONLY_PAGES: readonly PageDefinition[] = [pricePageDefinition]
-const ROUTABLE_PAGES: readonly PageDefinition[] = [...ALL_PAGES, ...ROUTE_ONLY_PAGES]
+export const ROUTABLE_PAGES: readonly PageDefinition[] = [...ALL_PAGES, ...ROUTE_ONLY_PAGES]
 
 /** Nav sections for a profile — five primary tabs only. */
 export function navSectionsFor(member: FamilyMember): NavSection[] {

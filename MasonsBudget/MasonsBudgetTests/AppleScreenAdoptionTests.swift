@@ -2,10 +2,6 @@ import XCTest
 
 final class AppleScreenAdoptionTests: XCTestCase {
     func testPrimaryScreenCatalogMatchesAppleNavigation() {
-        XCTAssertEqual(
-            ApplePrimaryScreen.allCases,
-            [.home, .budget, .activity, .bitcoin, .tasks],
-        )
         XCTAssertEqual(AppTab.allCases, [.home, .budget, .activity, .bitcoin, .tasks])
     }
 
@@ -14,7 +10,7 @@ final class AppleScreenAdoptionTests: XCTestCase {
     }
 
     func testGearMenuKeepsAccountDestinationsAccessible() {
-        XCTAssertEqual(AppleAccountScreen.allCases, [.profile, .family, .settings, .export])
+        XCTAssertEqual(GearDestination.allCases, [.family, .settings, .export])
         XCTAssertTrue(MacNav.primaryItems.contains(.tasks))
     }
 
@@ -151,9 +147,37 @@ final class AppleScreenAdoptionTests: XCTestCase {
             updatedAtMs: 42,
         )
 
-        XCTAssertTrue(TodayView.wasCompletedToday(todo, now: now, calendar: calendar))
+        XCTAssertTrue(SmartListFilter.wasCompletedToday(todo, now: now, calendar: calendar))
         XCTAssertEqual(todo.ownerMember, .mason)
         XCTAssertEqual(todo.updatedAtMs, 42)
+    }
+
+    func testCompletedTodayFilterPreservesVisibilityAndSupportsReopening() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: -6 * 3600))
+        let now = Date(timeIntervalSince1970: 1_767_268_800)
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: now))
+        let adult = TodoItem(id: "adult", title: "Adult task", isDone: true, owner: .victor, completedAt: now)
+        let child = TodoItem(id: "child", title: "Child task", isDone: true, owner: .mason, completedAt: now)
+        let old = TodoItem(id: "old", title: "Old task", dueDate: now, isDone: true, completedAt: yesterday)
+        let legacy = TodoItem(id: "legacy", title: "Legacy task", dueDate: now, isDone: true)
+        let open = TodoItem(id: "open", title: "Open task", completedAt: now)
+        let undated = TodoItem(id: "undated", title: "Undated task", isDone: true)
+        let todos = [adult, child, old, legacy, open, undated]
+
+        XCTAssertEqual(SmartListFilter.today.completedTodayItems(
+            todos, viewer: .victor, now: now, calendar: calendar
+        ).map(\.id), ["adult", "legacy"])
+        XCTAssertEqual(SmartListFilter.today.completedTodayItems(
+            todos, viewer: .mason, now: now, calendar: calendar
+        ).map(\.id), ["child"])
+        for filter in [SmartListFilter.inbox, .upcoming, .flagged] {
+            XCTAssertTrue(filter.completedTodayItems(todos, viewer: .victor, now: now, calendar: calendar).isEmpty)
+        }
+        adult.isDone = false
+        XCTAssertTrue(SmartListFilter.today.completedTodayItems(
+            [adult], viewer: .victor, now: now, calendar: calendar
+        ).isEmpty)
     }
 
     func testCategoryDeletionMonthKeyUsesInjectedCalendar() throws {

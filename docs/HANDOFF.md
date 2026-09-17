@@ -106,15 +106,14 @@ Never rely on a default adult source when writing or deleting a child row.
 
 ### Why the legacy blob write code still exists
 
-Shipped clients have not all retired the blob compatibility path. The Swift
-`AppWriteSyncService` still contains approved app-originated blob write routes,
-and `convex/writeback.ts` preserves validating/audited transaction and todo
-operations for that compatibility period. Those functions do not make blobs
-the canonical path for new integrations.
+Current client source has no callers of `convex/writeback.ts` or the legacy
+`dataFiles` ledger/todo mutations. Its `dataFiles` calls are `get`, `getVersions`,
+`list`, `claimMobilePairing`, `revokeMobileDevice`, and
+`claimAndroidReadBootstrap`. Blob reads remain a compatibility path.
 
-Removing blob writers or changing the JSON shapes now would break compatible
-clients and could make a later blob fallback disagree with rows. Retirement
-requires an explicit convergence design, including row-native tombstones and
+Older installed builds may still depend on the retained blob writers. Changing
+the JSON shapes could break readers or make a later blob fallback disagree with
+rows. Retirement requires an explicit convergence design, including row-native tombstones and
 proof that no shipped reader or writer depends on `dataFiles`.
 
 ### Monthly import operator
@@ -191,7 +190,7 @@ inspect the actual client path before changing fallback behavior.
 | Shared visibility, money, and wire contracts | `shared/domain/` |
 | Swift visibility authority | `MasonsBudget/MasonsBudget/Models/SharedEnums.swift` |
 | Swift Convex transport | `MasonsBudget/MasonsBudget/Services/ConvexClient.swift` |
-| Swift blob compatibility | `MasonsBudget/MasonsBudget/Services/MC2*.swift` |
+| Swift blob compatibility | `MasonsBudget/MasonsBudget/Services/LegacyBlobDTOs.swift`, `LedgerMapper.swift`, `ConvexDataReader.swift`, and `ConvexSyncService.swift` |
 | Android row transport | `android/app/src/main/kotlin/com/sats21m/vogelvault/data/` |
 | Linux main-process row transport | `linux/electron/convexRows.ts` |
 

@@ -102,11 +102,6 @@ body {
   color: var(--vv-planned);
 }
 
-.vv-estimated {
-  color: var(--vv-estimated);
-  border-bottom: 1px dashed var(--vv-line-strong);
-}
-
 .vv-stale {
   color: var(--vv-stale);
   border-bottom: 1px dashed var(--vv-warning);

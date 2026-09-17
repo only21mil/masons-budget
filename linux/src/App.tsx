@@ -16,7 +16,6 @@ import {
 } from "./renderer/components/index.ts"
 import {
   DEFAULT_ROUTE,
-  canonicalRoute,
   navSectionsFor,
   primaryNavId,
   resolvePage,
@@ -134,21 +133,13 @@ function LockOverlay() {
   )
 }
 
-function Cockpit() {
+export function Cockpit() {
   const { activeProfile, route, navigate, locked } = useAppState()
 
   const sections = navSectionsFor(activeProfile)
   const page = resolvePage(route, activeProfile)
 
-  // A profile switch can strand the user on a page they may no longer see, and
-  // a retired route id keeps the sidebar highlighting nothing until it is
-  // rewritten to the page that absorbed it.
   useEffect(() => {
-    const canonical = canonicalRoute(route)
-    if (canonical !== route) {
-      navigate(route)
-      return
-    }
     if (!resolvePage(route, activeProfile)) navigate(DEFAULT_ROUTE)
   }, [route, activeProfile, navigate])
 
