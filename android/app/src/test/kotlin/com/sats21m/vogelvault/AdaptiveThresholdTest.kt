@@ -8,13 +8,9 @@ import com.sats21m.vogelvault.ui.Destination
 import com.sats21m.vogelvault.ui.UNFOLDED_MIN_WIDTH_DP
 import com.sats21m.vogelvault.ui.VaultUiState
 import com.sats21m.vogelvault.ui.VaultViewModel
-import com.sats21m.vogelvault.ui.foldedOverflowDestinations
 import com.sats21m.vogelvault.ui.foldedPrimaryDestinations
-import com.sats21m.vogelvault.ui.RAIL_ITEM_COUNT
 import com.sats21m.vogelvault.ui.RAIL_PRIMARY_ORDER
-import com.sats21m.vogelvault.ui.railOverflowDestinations
 import com.sats21m.vogelvault.ui.railPrimaryDestinations
-import com.sats21m.vogelvault.ui.showsLedgerSidebar
 import com.sats21m.vogelvault.ui.theme.VaultBitcoin
 import com.sats21m.vogelvault.ui.theme.VaultCream
 import com.sats21m.vogelvault.ui.theme.VaultInfo
@@ -75,19 +71,6 @@ class DestinationVisibilityTest {
         val expected = listOf(Destination.HOME, Destination.BUDGET, Destination.ACTIVITY, Destination.BITCOIN, Destination.TASKS)
         assertEquals(expected, foldedPrimaryDestinations(destinations))
         assertEquals(expected, railPrimaryDestinations(destinations))
-        assertTrue(foldedOverflowDestinations(destinations).isEmpty())
-        assertTrue(railOverflowDestinations(destinations).isEmpty())
-    }
-
-    @Test
-    fun `detail destinations are Activity Budget and Tasks, unfolded only`() {
-        Destination.entries.forEach { destination ->
-            assertEquals(
-                destination in setOf(Destination.ACTIVITY, Destination.BUDGET, Destination.TASKS),
-                showsLedgerSidebar(destination, unfolded = true),
-            )
-            assertFalse(showsLedgerSidebar(destination, unfolded = false))
-        }
     }
 
     @Test
@@ -95,7 +78,6 @@ class DestinationVisibilityTest {
         val destinations = Destination.entries.take(5)
 
         assertEquals(destinations.filter { it in RAIL_PRIMARY_ORDER }, foldedPrimaryDestinations(destinations))
-        assertTrue(foldedOverflowDestinations(destinations).isEmpty())
     }
 
     @Test

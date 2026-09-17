@@ -50,9 +50,6 @@ internal fun Destination.ledgerGlyph(): ImageVector = when (this) {
     Destination.SETTINGS -> LedgerGlyphs.Cog
 }
 
-/** Short tab label. The full destination name stays in the semantics. */
-internal fun Destination.tabLabel(): String = label
-
 private val TAB_GLYPH_SIZE = 20.dp
 
 /**
@@ -60,8 +57,8 @@ private val TAB_GLYPH_SIZE = 20.dp
  *
  * Glyph and label share one tint: Bitcoin orange when active, tertiary ink at
  * rest, settling over 160ms. There is no pill and no ripple. The node reads as
- * a tab with [semanticLabel] in the caller's casing, so `More (9)` is still
- * found by name while the drawn label is uppercase.
+ * a tab with [semanticLabel] in the caller's casing, so it is still found by
+ * name while the drawn label is uppercase.
  */
 @Composable
 internal fun LedgerTabItem(

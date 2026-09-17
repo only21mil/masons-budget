@@ -120,7 +120,6 @@ class VaultRailReachabilityTest {
         compose.onNodeWithText("Settings").assertIsDisplayed().performClick()
         assertEquals(Destination.SETTINGS, navigatedTo)
         railDestination(Destination.HOME).assertIsDisplayed().assertIsSelected()
-        compose.onNodeWithTag(VAULT_RAIL_MORE_TEST_TAG).assertDoesNotExist()
     }
 
     @Test

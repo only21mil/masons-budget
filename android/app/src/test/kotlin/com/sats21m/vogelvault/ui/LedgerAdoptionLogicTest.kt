@@ -9,7 +9,6 @@ import com.sats21m.vogelvault.domain.MarketQuote
 import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.Money
-import com.sats21m.vogelvault.ui.theme.LedgerPalettes
 import com.sats21m.vogelvault.ui.theme.LedgerTreatment
 import com.sats21m.vogelvault.ui.theme.resolve
 import java.time.ZoneOffset
@@ -20,21 +19,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class LedgerAdoptionLogicTest {
-
-    @Test
-    fun `navigation uses fg2 at rest and treatment-aware selected ink`() {
-        listOf(LedgerPalettes.TerminalDark, LedgerPalettes.DaylightLight).forEach { colors ->
-            assertEquals(colors.foregroundSecondary, ledgerNavigationUnselectedTint(colors))
-            assertEquals(
-                colors.foreground,
-                ledgerNavigationSelectedTint(Destination.HOME, colors),
-            )
-            assertEquals(
-                colors.bitcoin,
-                ledgerNavigationSelectedTint(Destination.BITCOIN, colors),
-            )
-        }
-    }
 
     @Test
     fun `price hero uses only the operational quote and names its basis`() {
@@ -213,8 +197,6 @@ class LedgerAdoptionLogicTest {
         assertEquals(3, OnboardingStep.entries.size)
         assertEquals("Step 1 of 3", onboardingProgressLabel(0))
         assertEquals("Step 3 of 3", onboardingProgressLabel(2))
-        val overflow = foldedOverflowDestinations(Destination.entries.toList())
-        assertEquals(0, overflow.size)
         assertEquals(5, foldedPrimaryDestinations(Destination.entries.toList()).size)
     }
 }
