@@ -275,7 +275,7 @@ class VaultViewModel(
 
             current.copy(
                 activeProfile = next,
-                destination = current.destination.takeIf { it in destinationsFor(next) } ?: Destination.HOME,
+                destination = current.destination.takeIf { it in RAIL_PRIMARY_ORDER } ?: Destination.HOME,
                 data = if (!readReady.value) Fixtures.envelope(next) else loadingModel(next),
                 financeDocument = null,
                 financeStatus = if (readReady.value) Freshness.LOADING else Freshness.EMPTY,

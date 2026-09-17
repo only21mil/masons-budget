@@ -122,6 +122,8 @@ private val RAIL_ITEM_HEIGHT = 48.dp
 private val RAIL_GLYPH_INSET = 22.dp
 private val RAIL_LABEL_GAP = 10.dp
 
+internal val GEAR_DESTINATIONS = setOf(Destination.FAMILY, Destination.SETTINGS, Destination.EXPORT)
+
 internal val RAIL_PRIMARY_ORDER: List<Destination> = listOf(
     Destination.HOME, Destination.BUDGET, Destination.ACTIVITY,
     Destination.BITCOIN, Destination.TASKS,
@@ -181,7 +183,9 @@ fun VaultApp(
     var primaryReset by rememberSaveable(state.activeProfile) { mutableStateOf("") }
     val navigateWithin: (Destination) -> Unit = { target ->
         if (target != state.destination && target in destinationsFor(state.activeProfile)) {
-            routeParents = routeParents + state.destination.name
+            if (state.destination !in GEAR_DESTINATIONS || target !in GEAR_DESTINATIONS) {
+                routeParents = routeParents + state.destination.name
+            }
             onNavigate(target)
         }
     }
@@ -264,6 +268,7 @@ fun VaultApp(
                                 },
                                 current = current,
                                 onNavigate = navigateWithin,
+                                onNavigatePrimary = navigatePrimary,
                                 primaryReset = primaryReset,
                                 onBack = navigateBack.takeIf { routeParents.isNotEmpty() },
                                 onEnableRemoteRows = onEnableRemoteRows,
@@ -300,6 +305,7 @@ private fun VaultScreenContent(
     profileSwitcher: @Composable () -> Unit,
     current: Destination,
     onNavigate: (Destination) -> Unit,
+    onNavigatePrimary: (Destination) -> Unit,
     onBack: (() -> Unit)?,
     primaryReset: String,
     onEnableRemoteRows: (String) -> Unit,
@@ -338,6 +344,7 @@ private fun VaultScreenContent(
                     state = state,
                     profileSwitcher = profileSwitcher,
                     onNavigate = onNavigate,
+                    onNavigatePrimary = onNavigatePrimary,
                     onBack = onBack,
                     primaryReset = primaryReset,
                     onEnableRemoteRows = onEnableRemoteRows,

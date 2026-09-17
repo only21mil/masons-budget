@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -84,8 +85,9 @@ class NavigationBackTest {
         // The home link is inside the scrolling content, unlike the primary tab.
         compose.onNode(hasText("Budget") and hasClickAction() and androidx.compose.ui.test.hasAnyAncestor(hasScrollToIndexAction())).performClick()
         compose.onNodeWithContentDescription("Jul 2026 budget month").assertIsSelected()
-        back()
-        assertEquals(Destination.HOME, destination)
+        compose.onNode(hasText("Budget") and hasClickAction() and
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Tab)).assertIsSelected()
+        compose.onNodeWithText("Back").assertDoesNotExist()
     }
     @Test fun `tasks hub survives smart list detail and Back`() {
         render(Destination.TASKS, longTasks = true)
@@ -121,6 +123,61 @@ class NavigationBackTest {
         assertEquals(Destination.FAMILY, destination)
         back()
         assertEquals(Destination.HOME, destination)
+    }
+    @Test fun `switching adult profiles from Family returns to highlighted Home`() {
+        val viewModel = VaultViewModel(remoteInitiallyEnabled = false)
+        controller.get().setContent {
+            val state by viewModel.state.collectAsState()
+            LedgerTheme {
+                VaultApp(state = state, onNavigate = viewModel::navigate,
+                    onSwitchProfile = { viewModel.switchProfile(it) })
+            }
+        }
+        compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).performClick()
+        compose.onNodeWithText("Family").performClick()
+        // The top bar and Family body both expose a switcher. Exercise the
+        // authorized model callback shared by both, then inspect shell selection.
+        compose.runOnIdle { viewModel.switchProfile(FamilyMember.RACHEL) }
+        compose.waitForIdle()
+        assertEquals(Destination.HOME, viewModel.state.value.destination)
+        compose.onNode(hasText("Home") and hasClickAction()).assertIsSelected()
+        compose.onNodeWithText("Back").assertDoesNotExist()
+    }
+    @Test fun `Bitcoin segment survives gear Back and tab retap resets it`() {
+        render(Destination.BITCOIN)
+        compose.onNodeWithText("Net Worth").performClick().assertIsSelected()
+        compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).performClick()
+        compose.onNodeWithText("Settings").performClick()
+        back()
+        compose.onNodeWithText("Net Worth").assertIsSelected()
+        compose.onNode(hasText("Bitcoin") and hasClickAction()).performClick()
+        compose.onNodeWithText("Overview").assertIsSelected()
+    }
+    @Test fun `Bitcoin segment resets when the active profile changes`() {
+        val viewModel = VaultViewModel(remoteInitiallyEnabled = false)
+        viewModel.navigate(Destination.BITCOIN)
+        controller.get().setContent {
+            val state by viewModel.state.collectAsState()
+            LedgerTheme {
+                VaultApp(state = state, onNavigate = viewModel::navigate,
+                    onSwitchProfile = { viewModel.switchProfile(it) })
+            }
+        }
+        compose.onNodeWithText("Net Worth").performClick().assertIsSelected()
+        compose.runOnIdle { viewModel.switchProfile(FamilyMember.RACHEL) }
+        compose.onNodeWithText("Overview").assertIsSelected()
+    }
+    @Test fun `gear hops replace the secondary destination above the primary tab`() {
+        render(Destination.BITCOIN)
+        for (label in listOf("Settings", "Family", "Export")) {
+            compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).performClick()
+            compose.onNodeWithText(label).performClick()
+            compose.waitForIdle()
+        }
+        back()
+        assertEquals(Destination.BITCOIN, destination)
+        compose.onNode(hasText("Bitcoin") and hasClickAction()).assertIsSelected()
+        compose.onNodeWithText("Back").assertDoesNotExist()
     }
     @Test fun `selected task list consumes Back before leaving Tasks`() {
         render(Destination.TASKS)

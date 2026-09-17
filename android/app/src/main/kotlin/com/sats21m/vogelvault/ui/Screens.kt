@@ -180,6 +180,7 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onNavigate: (Destination) -> Unit = {},
+    onNavigatePrimary: (Destination) -> Unit = onNavigate,
     onBack: (() -> Unit)? = null,
     primaryReset: String = "",
     quickAddRequested: Boolean = false,
@@ -440,9 +441,9 @@ fun ScreenHost(
         }
     }
     val listState = listStates.getValue(destination)
-    val initialBitcoinSegmentKey =
-        if (destination == Destination.BITCOIN) initialBitcoinSegment.name else BitcoinSegment.OVERVIEW.name
-    var bitcoinSegmentName by rememberSaveable(state.activeProfile, destination, initialBitcoinSegmentKey) {
+    val initialBitcoinSegmentKey = initialBitcoinSegment.name
+    val bitcoinPrimaryReset = primaryReset.takeIf { it.substringBefore(":") == Destination.BITCOIN.name }
+    var bitcoinSegmentName by rememberSaveable(state.activeProfile, initialBitcoinSegmentKey, bitcoinPrimaryReset) {
         mutableStateOf(initialBitcoinSegmentKey)
     }
     val bitcoinSegment = BitcoinSegment.entries.firstOrNull { it.name == bitcoinSegmentName }
@@ -550,7 +551,7 @@ fun ScreenHost(
                                 budgetDrilldownMonth = null
                                 budgetDrilldownCategory = null
                             }
-                            onNavigate(target)
+                            onNavigatePrimary(target)
                         }) { selectedTransactionKey = it.selectionKey }
                         Destination.ACTIVITY -> {
                             activity(state, checkNotNull(activitySearch), displayUnit, selectedTransactionKey) {
