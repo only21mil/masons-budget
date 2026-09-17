@@ -141,7 +141,7 @@ behavior.
 This app is often worked by Codex, OpenCode, Claude, and Sats lanes. All of them may keep fixing bugs, filing GitHub issues, moving to the next item, editing code, and running static/non-app-artifact checks automatically.
 
 The unsigned Apple verification automatically routed by `.github/workflows/swift.yml`
-to the registered MacBook Pro is pre-authorized for affected PRs and main pushes.
+to the registered MacBook Pro is pre-authorized for affected PRs and merge groups.
 It creates no distributable artifact. The Mac mini route requires an explicit
 manual fallback dispatch.
 

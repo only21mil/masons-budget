@@ -420,7 +420,7 @@ export const list = query({
   },
 });
 
-// ── Mutations (called by the MC2 sync script) ──
+// ── Legacy compatibility mutations ──
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LEGACY BLOB PAYLOAD VALIDATION (L-8 of the 2026-09-02 backend audit)

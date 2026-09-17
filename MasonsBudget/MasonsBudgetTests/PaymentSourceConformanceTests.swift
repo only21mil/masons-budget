@@ -1,6 +1,6 @@
 // Payment-source conformance — TransactionSourceCatalog vs the closed wire contract.
 //
-// This suite and scripts/check-apple-payment-source-conformance.py guard the same
+// This suite and scripts/apple_payment_source_conformance.py guard the same
 // contract from two directions, and the split is deliberate:
 //
 //   - This Swift test pins TransactionSourceCatalog against the contract values
