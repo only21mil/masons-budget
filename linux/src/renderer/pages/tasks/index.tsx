@@ -305,24 +305,20 @@ function useInteractiveTodoColumns(): ReadonlyArray<Column<TodoItem>> {
 /** Shared list page — the five task views differ only by filter and copy. */
 function TodoListPage({
   title,
-  subtitle,
   filter,
   emptyTitle,
   emptyDetail,
   showComposer = false,
   defaultDue,
   after,
-  hideHeader = false,
 }: {
   title: string
-  subtitle?: string
   filter: (todo: TodoItem) => boolean
   emptyTitle: string
   emptyDetail: string
   showComposer?: boolean
   defaultDue?: string
   after?: ReactNode
-  hideHeader?: boolean
 }) {
   const {
     activeProfile,
@@ -382,11 +378,7 @@ function TodoListPage({
 
   return (
     <>
-      {hideHeader ? (
-        <Toolbar>{addTaskControl}</Toolbar>
-      ) : (
-        <PageHeader title={title} subtitle={subtitle} actions={addTaskControl} />
-      )}
+      <Toolbar>{addTaskControl}</Toolbar>
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <TaskWriteStatus />
       {showComposer ? (
@@ -461,7 +453,7 @@ function TasksHubPage() {
           ))}
         </div>
       )}
-      <div className="vv-filter-chips vv-task-segments" role="tablist" aria-label="Task views">
+      <div className="vv-filter-chips vv-task-segments" role="group" aria-label="Task views">
         {([
           ["today", "Today"],
           ["inbox", "Inbox"],
@@ -494,14 +486,12 @@ function TodayPage() {
   return (
     <TodoListPage
       title="Today"
-      subtitle="Due today or overdue, including completed tasks"
       filter={filter}
       emptyTitle="Nothing due today"
       emptyDetail="Nothing is due today."
       showComposer
       defaultDue={today}
       after={<TodayMoneyOut today={today} />}
-      hideHeader
     />
   )
 }
@@ -552,12 +542,10 @@ function InboxPage() {
   return (
     <TodoListPage
       title="Inbox"
-      subtitle="Unsorted — still in the default Inbox"
       filter={filters.inbox}
       emptyTitle="Inbox is clear"
       emptyDetail="Every open task has been filed under a project or area."
       showComposer
-      hideHeader
     />
   )
 }
@@ -568,11 +556,9 @@ function UpcomingPage() {
   return (
     <TodoListPage
       title="Upcoming"
-      subtitle="Scheduled beyond today"
       filter={filters.upcoming}
       emptyTitle="Nothing scheduled"
       emptyDetail="No open tasks have a due date after today."
-      hideHeader
     />
   )
 }
@@ -583,11 +569,9 @@ function FlaggedPage() {
   return (
     <TodoListPage
       title="Flagged"
-      subtitle="Marked for attention"
       filter={filters.flagged}
       emptyTitle="Nothing flagged"
       emptyDetail="No open tasks are currently flagged for this profile."
-      hideHeader
     />
   )
 }

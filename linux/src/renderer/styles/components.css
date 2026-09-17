@@ -1003,10 +1003,6 @@
   gap: var(--vv-space-2);
 }
 
-.vv-spacer {
-  flex: 1 1 auto;
-}
-
 .vv-muted {
   color: var(--vv-text-muted);
 }
@@ -1651,41 +1647,6 @@
   font-size: var(--vv-ledger-text-meta);
   font-weight: 500;
   letter-spacing: var(--vv-ledger-tracking-meta);
-}
-
-.vv-more-list {
-  border-top: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule);
-}
-
-.vv-more-list button {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto 18px;
-  width: 100%;
-  min-height: 52px;
-  align-items: center;
-  gap: 10px;
-  padding: 0 12px;
-  border: 0;
-  border-bottom: 1px var(--vv-ledger-rule-style) var(--vv-ledger-rule-subtle);
-  background: transparent;
-  color: var(--vv-ledger-ink);
-  font: inherit;
-  font-size: var(--vv-ledger-row-text-size);
-  text-align: left;
-  cursor: pointer;
-}
-
-.vv-more-list button:hover {
-  background: var(--vv-ledger-bitcoin-soft);
-}
-
-.vv-more-list button > .vv-icon:first-child {
-  color: var(--vv-ledger-bitcoin);
-}
-
-.vv-more-list strong {
-  color: var(--vv-ledger-ink-secondary);
-  font-weight: 500;
 }
 
 .vv-onboarding {

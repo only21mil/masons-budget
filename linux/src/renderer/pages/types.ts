@@ -1,7 +1,5 @@
 import type { ComponentType } from "react"
 
-import type { FamilyMember } from "@vogel-vault/domain/family"
-
 import type { IconName } from "../components/index.ts"
 
 export interface PageDefinition {
@@ -21,9 +19,4 @@ export interface PageManifest {
   readonly id: string
   readonly label: string
   readonly pages: readonly PageDefinition[]
-}
-
-export function visiblePages(manifest: PageManifest, member: FamilyMember): PageDefinition[] {
-  const isChild = member === "mason" || member === "maddox"
-  return manifest.pages.filter((page) => !(isChild && page.adultOnly))
 }

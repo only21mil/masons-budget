@@ -1,4 +1,4 @@
-// Top-bar gear menu: Family, Settings, and Export live here instead of the sidebar.
+// Top-bar menu for profile tools, settings, exports, and locking the window.
 
 import { useEffect, useRef, useState } from "react"
 
@@ -13,10 +13,11 @@ const MENU_ITEMS = [
   { id: "family", label: "Family", icon: "users" as const },
   { id: "settings", label: "Settings", icon: "settings" as const },
   { id: "export", label: "Export", icon: "download" as const, adultOnly: true },
+  { id: "lock", label: "Lock now", icon: "lock" as const },
 ] as const
 
 export function GearMenu() {
-  const { activeProfile, navigate, route } = useAppState()
+  const { activeProfile, navigate, route, setLocked } = useAppState()
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -39,7 +40,7 @@ export function GearMenu() {
   const items = MENU_ITEMS.filter((item) => !("adultOnly" in item) || isAdult(activeProfile))
 
   return (
-    <div ref={rootRef} className={cx("vv-gear-menu", open && "vv-gear-menu--open")}>
+    <div ref={rootRef} className="vv-gear-menu">
       <Button
         variant="ghost"
         aria-haspopup="menu"
@@ -61,7 +62,8 @@ export function GearMenu() {
                 route === item.id && "vv-gear-menu__item--active",
               )}
               onClick={() => {
-                navigate(item.id)
+                if (item.id === "lock") setLocked(true)
+                else navigate(item.id)
                 setOpen(false)
               }}
             >
