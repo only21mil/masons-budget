@@ -1,8 +1,8 @@
 package com.sats21m.vogelvault.ui
 
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -66,8 +67,13 @@ fun ProfileSwitcher(
     var expanded by remember(activeProfile) { mutableStateOf(false) }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { expanded = true }, modifier = Modifier.weight(1f, fill = false).height(48.dp)) {
-            Text(activeProfile.displayName, color = colors.foreground, maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Text(
+                activeProfile.displayName,
+                color = colors.foreground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
             Icon(
                 Icons.Filled.ExpandMore,
                 contentDescription = stringResource(R.string.profile_switcher_open),

@@ -51,8 +51,6 @@
     <string name="navigation_more">More</string>
     <string name="btc_buys_screen_title">BTC Buys</string>
     <string name="btc_bill_pays_screen_title">BTC Bill Pays</string>
-    <string name="refresh_data">Refresh live data</string>
-    <string name="refresh_unavailable">Refresh unavailable while live reads are disabled</string>
     <string name="refresh_failed_title">Refresh failed</string>
     <string name="refresh_failed_detail">Check the connection in Settings, then try again.</string>
     <string name="add_transaction_action">+ Add</string>
@@ -321,6 +319,7 @@
     <string name="sync_loading">Syncing</string>
     <string name="sync_failed_retry">Sync failed. Retry</string>
     <string name="sync_demo_unavailable">Sync unavailable in demo</string>
+    <string name="sync_not_yet_refresh">Not synced yet. Refresh</string>
     <string name="sync_refresh">Synced %1$s. Refresh</string>
     <string name="sync_stale_refresh">Stale. Synced %1$s. Refresh</string>
     <string name="sync_error_label">ERR</string>

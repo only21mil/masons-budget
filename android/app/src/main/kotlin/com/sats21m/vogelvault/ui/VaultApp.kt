@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.DropdownMenu
@@ -511,9 +510,6 @@ internal fun VaultTopBar(
     }
     BoxWithConstraints(Modifier.fillMaxWidth().testTag(VAULT_TOP_BAR_TEST_TAG)) {
         val compact = maxWidth < 360.dp
-        val controlWidth = if (compact) 48.dp else 112.dp
-        val profileMaxWidth = (maxWidth - VaultSpace.md * 2 - controlWidth -
-            if (gearDestinations.isNotEmpty()) 48.dp else 0.dp).coerceAtLeast(0.dp)
         Row(
             Modifier.fillMaxWidth().background(tokens.colors.panel)
                 .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
@@ -523,10 +519,9 @@ internal fun VaultTopBar(
                 activeProfile = state.activeProfile,
                 onAuthenticationRequired = onRequestProfileSwitchAuthentication,
                 onAuthorizedSwitch = onAuthorizedSwitch,
-                modifier = Modifier.widthIn(max = profileMaxWidth),
+                modifier = Modifier.weight(1f),
                 compact = compact,
             )
-            Spacer(Modifier.weight(1f))
             com.sats21m.vogelvault.ui.components.SyncControl(
                 status = state.worstStatus,
                 updatedAt = updatedAt,

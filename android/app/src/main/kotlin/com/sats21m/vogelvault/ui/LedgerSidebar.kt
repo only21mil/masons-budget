@@ -9,7 +9,7 @@ import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 
-/** Shared dimensions and empty-detail prompt for the unfolded panes. */
+// Shared dimensions and empty-detail prompt for the unfolded panes.
 const val LEDGER_SIDEBAR_WIDTH_DP = 296
 internal const val LEDGER_SIDEBAR_TEST_TAG = "vault-ledger-sidebar"
 internal val DETAIL_DESTINATIONS: Set<Destination> = setOf(Destination.ACTIVITY, Destination.BUDGET, Destination.TASKS)

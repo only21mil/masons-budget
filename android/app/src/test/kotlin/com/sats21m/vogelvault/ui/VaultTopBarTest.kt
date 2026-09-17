@@ -4,10 +4,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -19,6 +23,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.FamilyMember
@@ -34,10 +41,12 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [34], qualifiers = "w400dp-h800dp-mdpi")
 class VaultTopBarTest {
     @get:Rule val compose = createEmptyComposeRule()
@@ -51,11 +60,13 @@ class VaultTopBarTest {
         controller.setup()
     }
     @After fun stop() { controller.pause().stop().destroy() }
-    private fun render(width: Int = 320) {
+    private fun render(width: Int = 320, fontScale: Float = 1f) {
         controller.get().setContent {
             LedgerTheme {
-                Box(Modifier.width(width.dp)) {
-                    VaultTopBar(state, {}, {}, {}, { refreshes++ })
+                CompositionLocalProvider(LocalDensity provides Density(1f, fontScale)) {
+                    Box(Modifier.width(width.dp)) {
+                        VaultTopBar(state, {}, {}, {}, { refreshes++ })
+                    }
                 }
             }
         }
@@ -83,6 +94,47 @@ class VaultTopBarTest {
         compose.onNodeWithTag(VAULT_SYNC_CONTROL_TEST_TAG).assertIsDisplayed()
         compose.onNodeWithContentDescription("Child profile").assertIsDisplayed()
         compose.onNodeWithText("Child", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag(VAULT_TOP_BAR_TEST_TAG).assertHeightIsEqualTo(64.dp)
+    }
+    @Test fun `loading with no prior age shows no age text`() {
+        state = VaultUiState.of(FamilyMember.VICTOR, status = Freshness.LOADING).let { loading ->
+            loading.copy(data = loading.data.copy(transactions = loading.data.transactions.copy(updatedAt = null)))
+        }
+        assertEquals(null, state.worstUpdatedAt)
+        render(400)
+        compose.onNodeWithContentDescription("Syncing").assertIsDisplayed().assertIsNotEnabled()
+        val sync = compose.onNodeWithTag(VAULT_SYNC_CONTROL_TEST_TAG).fetchSemanticsNode()
+        assertTrue(sync.config.getOrElse(SemanticsProperties.Text) { emptyList() }.isEmpty())
+        compose.onNodeWithText("never").assertDoesNotExist()
+    }
+    @Test fun `long display name ellipsizes and gear stays flush`() {
+        state = VaultUiState.of(FamilyMember.RACHEL)
+        // Names come from a fixed enum; enlarged text exercises a name wider than its slot.
+        render(fontScale = 5f)
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("Rachel", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertTrue(layouts.single().isLineEllipsized(0))
+        assertEquals(1, layouts.single().lineCount)
+        val gear = compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).assertIsDisplayed().assertWidthIsEqualTo(48.dp)
+        assertEquals(308f, gear.fetchSemanticsNode().boundsInRoot.right)
+        compose.onNodeWithTag(VAULT_TOP_BAR_TEST_TAG).assertHeightIsEqualTo(64.dp)
+    }
+    @Test fun `360dp child bar keeps full Child profile badge on one line`() {
+        state = VaultUiState.of(FamilyMember.MADDOX, status = Freshness.STALE)
+        render(360)
+        compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).assertDoesNotExist()
+        val layouts = mutableListOf<TextLayoutResult>()
+        val badge = compose.onNodeWithText("Child profile", useUnmergedTree = true).assertIsDisplayed()
+        badge.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertEquals(1, layouts.single().lineCount)
+        assertTrue(!layouts.single().isLineEllipsized(0))
+        assertTrue(layouts.single().getLineRight(0) <= layouts.single().size.width + 1f)
+        assertTrue(!layouts.single().didOverflowHeight)
+        val sync = compose.onNodeWithTag(VAULT_SYNC_CONTROL_TEST_TAG).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val badgeBounds = badge.fetchSemanticsNode().boundsInRoot
+        assertEquals(sync.center.y, badgeBounds.center.y)
+        assertTrue(badgeBounds.right <= sync.left)
         compose.onNodeWithTag(VAULT_TOP_BAR_TEST_TAG).assertHeightIsEqualTo(64.dp)
     }
     @Test fun `compact age remains available through semantics and long press`() {
