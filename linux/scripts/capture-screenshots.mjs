@@ -39,7 +39,7 @@ const WIDE = { name: "1920", width: 1920, height: 1200 }
 const ALL_PAGES = [
   "home", "budget", "activity", "bitcoin", "bitcoin-buys", "bills",
   "tasks",
-  "family", "sync-health", "export", "settings", "awards", "more", "onboarding", "lock",
+  "family", "sync-health", "export", "settings", "awards", "onboarding", "lock",
 ]
 
 const ROUTE_ONLY_PAGES = ["price", "net-worth", "retirement"]
@@ -47,7 +47,7 @@ const ROUTE_ONLY_PAGES = ["price", "net-worth", "retirement"]
 // Pages a child profile can reach (adult-only ones are excluded by the router).
 const CHILD_PAGES = [
   "home", "budget", "activity", "bitcoin", "tasks",
-  "family", "awards", "more",
+  "family", "awards",
 ]
 
 // Pages that read synced data, so the four non-normal states are meaningful.

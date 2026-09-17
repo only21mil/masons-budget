@@ -62,8 +62,9 @@ function renderPage(
   )
 }
 
-test("the cockpit has exactly 15 primary pages", () => {
-  assert.equal(ALL_PAGES.length, 15, ALL_PAGES.map((page) => page.id).join(", "))
+test("the cockpit has 14 registered pages and five primary tabs", () => {
+  assert.equal(PRIMARY_NAV_IDS.length, 5)
+  assert.equal(ALL_PAGES.length, 14, ALL_PAGES.map((page) => page.id).join(", "))
 })
 
 test("adults see exactly five primary tabs in order", () => {

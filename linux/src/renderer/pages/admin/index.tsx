@@ -43,7 +43,6 @@ import {
   FreshnessTag,
   HorizonMark,
   IconGlyph,
-  type IconName,
   PageGrid,
   PageHeader,
   Panel,
@@ -811,9 +810,17 @@ function SettingsPage() {
           </li>
         </ul>
       </Panel>
-      <Button variant="secondary" onClick={() => navigate("onboarding")}>
-        Replay onboarding
-      </Button>
+      <Toolbar>
+        <Button variant="secondary" onClick={() => navigate("onboarding")}>
+          Replay onboarding
+        </Button>
+        <Button variant="secondary" onClick={() => navigate("awards")}>
+          Awards
+        </Button>
+        <Button variant="secondary" onClick={() => navigate("sync-health")}>
+          Sync Health
+        </Button>
+      </Toolbar>
     </>
   )
 }
@@ -1179,7 +1186,7 @@ function LockScreenPage() {
   )
 }
 
-// ── Awards / More ───────────────────────────────────────────────────────────
+// ── Awards ───────────────────────────────────────────────────────────
 
 type LedgerPageState = "empty" | "error" | "loading" | "stale"
 
@@ -1224,23 +1231,6 @@ export function ledgerAwards(
       earned: completedTaskCount >= 10,
     },
   ]
-}
-
-export function moreCountLabel(count: number): string {
-  if (count <= 0) return ""
-  return count > 999 ? "999+" : String(count)
-}
-
-function readableCount(status: Freshness, count: number): string {
-  if (status === "error" || status === "loading" || status === "stale") return SUPPRESSED
-  return moreCountLabel(count)
-}
-
-function countValueLabel(status: Freshness, count: number, label: string): string {
-  if (status === "error" || status === "loading" || status === "stale") {
-    return `${label} unavailable`
-  }
-  return `${count} ${label}`
 }
 
 function AwardsPage() {
@@ -1307,80 +1297,6 @@ function AwardsPage() {
   )
 }
 
-function MorePage() {
-  const { activeProfile, data, navigate } = useAppState()
-  const transactionCount = visibleTo(activeProfile, data.transactions.value).length
-  const buyCount = visibleTo(activeProfile, data.btcBuys.value).length
-  const billPayCount = visibleTo(activeProfile, data.billPays.value).length
-  const completedTasks = data.todos.value
-    .filter((todo) => todo.owner === activeProfile && todo.done).length
-  const awardCount = ledgerAwards(transactionCount, buyCount, completedTasks)
-    .filter((award) => award.earned).length
-  const awardStatus = combinedLedgerState([
-    data.transactions.status,
-    data.btcBuys.status,
-    data.todos.status,
-  ]) ?? "live"
-  const state = combinedLedgerState([
-    data.transactions.status,
-    data.btcBuys.status,
-    data.billPays.status,
-    data.btcBalanceDocument.status,
-    data.todos.status,
-  ])
-  const rows: ReadonlyArray<{
-    readonly icon: IconName
-    readonly label: string
-    readonly route: string
-    readonly value: string
-    readonly valueLabel?: string
-  }> = [
-    {
-      icon: "wallet",
-      label: "BTC Buys",
-      route: "bitcoin-buys",
-      value: readableCount(data.btcBuys.status, buyCount),
-      valueLabel: countValueLabel(data.btcBuys.status, buyCount, "Bitcoin buys"),
-    },
-    {
-      icon: "receipt",
-      label: "BTC Bill Pays",
-      route: "bills",
-      value: readableCount(data.billPays.status, billPayCount),
-      valueLabel: countValueLabel(data.billPays.status, billPayCount, "Bitcoin bill pays"),
-    },
-    {
-      icon: "sparkles",
-      label: "Awards",
-      route: "awards",
-      value: readableCount(awardStatus, awardCount),
-      valueLabel: countValueLabel(awardStatus, awardCount, "earned awards"),
-    },
-  ]
-
-  return (
-    <>
-      <PageHeader title="More" subtitle="Everything else in the household" />
-      {state ? (
-        <StateBlock
-          state={state}
-          detail="Navigation remains available. A dash replaces each count that cannot be read safely."
-        />
-      ) : null}
-      <div className="vv-more-list">
-        {rows.map((row) => (
-          <button key={`${row.label}-${row.route}`} type="button" onClick={() => navigate(row.route)}>
-            <IconGlyph name={row.icon} size={18} />
-            <span>{row.label}</span>
-            <strong className="vv-num" aria-label={row.valueLabel}>{row.value}</strong>
-            <IconGlyph name="chevron-right" size={14} />
-          </button>
-        ))}
-      </div>
-    </>
-  )
-}
-
 export const adminPageManifest: PageManifest = {
   id: "admin",
   label: "System",
@@ -1390,7 +1306,6 @@ export const adminPageManifest: PageManifest = {
     { id: "export", label: "Export", icon: "download", Component: ExportPage, adultOnly: true },
     { id: "settings", label: "Settings", icon: "settings", Component: SettingsPage },
     { id: "awards", label: "Awards", icon: "sparkles", Component: AwardsPage },
-    { id: "more", label: "More", icon: "chevron-right", Component: MorePage },
     { id: "onboarding", label: "Onboarding", icon: "sparkles", Component: OnboardingPage },
     { id: "lock", label: "Lock Screen", icon: "lock", Component: LockScreenPage },
   ],
