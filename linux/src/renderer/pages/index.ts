@@ -7,13 +7,7 @@ import {
   DEFAULT_ROUTE,
   PRIMARY_NAV_IDS,
   canonicalRoute,
-  type BitcoinSegment,
-  type PrimaryNavId,
-  type TaskSegment,
   primaryNavId,
-  isGearMenuRoute,
-  bitcoinSegmentForRoute,
-  taskSegmentForRoute,
 } from "../navigation.ts"
 import { adminPageManifest } from "./admin/index.tsx"
 import { financePageManifest } from "./finance/index.tsx"
@@ -26,11 +20,7 @@ export {
   PRIMARY_NAV_IDS,
   canonicalRoute,
   primaryNavId,
-  isGearMenuRoute,
-  bitcoinSegmentForRoute,
-  taskSegmentForRoute,
 }
-export type { BitcoinSegment, PrimaryNavId, TaskSegment }
 
 export { adminPageManifest, financePageManifest, tasksPageManifest }
 
