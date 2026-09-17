@@ -1,19 +1,5 @@
 import Foundation
 
-enum ApplePrimaryScreen: String, CaseIterable, Identifiable {
-    case home, budget, activity, bitcoin, tasks
-
-    var id: String {
-        rawValue
-    }
-}
-
-enum AppleAccountScreen: String, CaseIterable, Identifiable {
-    case profile, family, settings, export
-
-    var id: String { rawValue }
-}
-
 enum PaymentRailPresentation: String, CaseIterable {
     case bolt = "Bolt"
     case chain = "Chain"

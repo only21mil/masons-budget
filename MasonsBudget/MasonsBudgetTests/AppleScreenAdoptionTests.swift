@@ -2,10 +2,6 @@ import XCTest
 
 final class AppleScreenAdoptionTests: XCTestCase {
     func testPrimaryScreenCatalogMatchesAppleNavigation() {
-        XCTAssertEqual(
-            ApplePrimaryScreen.allCases,
-            [.home, .budget, .activity, .bitcoin, .tasks],
-        )
         XCTAssertEqual(AppTab.allCases, [.home, .budget, .activity, .bitcoin, .tasks])
     }
 
@@ -14,7 +10,7 @@ final class AppleScreenAdoptionTests: XCTestCase {
     }
 
     func testGearMenuKeepsAccountDestinationsAccessible() {
-        XCTAssertEqual(AppleAccountScreen.allCases, [.profile, .family, .settings, .export])
+        XCTAssertEqual(GearDestination.allCases, [.family, .settings, .export])
         XCTAssertTrue(MacNav.primaryItems.contains(.tasks))
     }
 

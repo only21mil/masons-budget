@@ -41,9 +41,6 @@ enum AppTab: String, CaseIterable, Identifiable {
 
 enum MacNav: String, CaseIterable, Identifiable {
     case home, budget, activity, bitcoin, tasks
-    case price, btcBuys, billPay, transfer
-    case inbox, upcoming, flagged
-    case family, awards, settings, syncSetup, export
 
     var id: String {
         rawValue
@@ -56,18 +53,6 @@ enum MacNav: String, CaseIterable, Identifiable {
         case .activity: "Activity"
         case .bitcoin: "Bitcoin"
         case .tasks: "Tasks"
-        case .price: "Price"
-        case .btcBuys: "Bitcoin Buys"
-        case .billPay: "Bill Pay"
-        case .transfer: "Transfer"
-        case .inbox: "Inbox"
-        case .upcoming: "Upcoming"
-        case .flagged: "Flagged"
-        case .family: "Family"
-        case .awards: "Awards"
-        case .settings: "Settings"
-        case .syncSetup: "Sync Setup"
-        case .export: "Export"
         }
     }
 
@@ -78,25 +63,13 @@ enum MacNav: String, CaseIterable, Identifiable {
         case .activity: "bolt.fill"
         case .bitcoin: "bitcoinsign.circle.fill"
         case .tasks: "checkmark.circle.fill"
-        case .price: "chart.xyaxis.line"
-        case .btcBuys: "bitcoinsign.circle.fill"
-        case .billPay: "banknote.fill"
-        case .transfer: "arrow.left.arrow.right"
-        case .inbox: "tray"
-        case .upcoming: "calendar"
-        case .flagged: "flag.fill"
-        case .family: "person.3.fill"
-        case .awards: "medal.fill"
-        case .settings: "gearshape"
-        case .syncSetup: "arrow.triangle.2.circlepath"
-        case .export: "square.and.arrow.up"
         }
     }
 
-    static let primaryItems: [MacNav] = [.home, .budget, .activity, .bitcoin, .tasks]
+    static let primaryItems = allCases
 }
 
-enum GearDestination: String, Identifiable {
+enum GearDestination: String, CaseIterable, Identifiable {
     case family, settings, export
 
     var id: String {
@@ -332,18 +305,6 @@ struct ContentView: View {
                 case .activity: ActivityView()
                 case .bitcoin: BitcoinOverviewView()
                 case .tasks: TasksView()
-                case .price: BitcoinPriceView()
-                case .btcBuys: BTCBuysView()
-                case .billPay: BTCBillPayView()
-                case .transfer: BitcoinTransferView()
-                case .inbox: TaskSmartListView(filter: .inbox)
-                case .upcoming: TaskSmartListView(filter: .upcoming)
-                case .flagged: TaskSmartListView(filter: .flagged)
-                case .family: FamilyView()
-                case .awards: AwardsView()
-                case .settings: SettingsView()
-                case .syncSetup: SyncSetupView()
-                case .export: ExportView()
                 }
             }
             .id(macNav)
