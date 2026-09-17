@@ -614,13 +614,7 @@ fun ScreenHost(
                             },
                         )
                         Destination.EXPORT -> item { ExportScreen(state) }
-                        Destination.TASKS -> item {
-                            // ScreenHost is the privacy boundary: a destination never
-                            // receives rows its active profile cannot see. The refresh
-                            // callback travels with the rows via taskListsContent's
-                            // default, so filtering and refreshing cannot diverge.
-                            taskListsContent(state, collections.visibleTodos)
-                        }
+                        Destination.TASKS -> Unit // Rendered above the scrolling screen host.
                         Destination.FAMILY -> family(state, profileSwitcher)
                         Destination.SETTINGS -> settings(
                             state,

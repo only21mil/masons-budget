@@ -40,8 +40,7 @@ internal val TODO_ORDER: Comparator<TodoItem> =
 /**
  * Everything due today or earlier, completed included.
  *
- * Deliberately wider than [todosDueToday], which the read-only surfaces use:
- * this screen has to show a completed task so it can be reopened.
+ * This screen includes completed tasks so they can be reopened.
  */
 internal fun todosForToday(
     todos: List<TodoItem>,
