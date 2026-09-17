@@ -35,7 +35,7 @@ export const ALL_PAGES: readonly PageDefinition[] = PAGE_MANIFESTS.flatMap(
 )
 
 const ROUTE_ONLY_PAGES: readonly PageDefinition[] = [pricePageDefinition]
-const ROUTABLE_PAGES: readonly PageDefinition[] = [...ALL_PAGES, ...ROUTE_ONLY_PAGES]
+export const ROUTABLE_PAGES: readonly PageDefinition[] = [...ALL_PAGES, ...ROUTE_ONLY_PAGES]
 
 /** Nav sections for a profile — five primary tabs only. */
 export function navSectionsFor(member: FamilyMember): NavSection[] {

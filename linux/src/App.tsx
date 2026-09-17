@@ -133,7 +133,7 @@ function LockOverlay() {
   )
 }
 
-function Cockpit() {
+export function Cockpit() {
   const { activeProfile, route, navigate, locked } = useAppState()
 
   const sections = navSectionsFor(activeProfile)

@@ -7,9 +7,8 @@ import { afterEach, expect, test } from "vitest"
 import { FAMILY_MEMBERS, isAdult, type FamilyMember } from "@vogel-vault/domain/family"
 
 import { AppStateProvider, useAppState } from "../src/renderer/app/AppState.tsx"
-import { AppShell } from "../src/renderer/components/AppShell.tsx"
-import { GearMenu } from "../src/renderer/components/GearMenu.tsx"
-import { ALL_PAGES, navSectionsFor, primaryNavId, resolvePage } from "../src/renderer/pages/index.ts"
+import { Cockpit } from "../src/App.tsx"
+import { ROUTABLE_PAGES, navSectionsFor, resolvePage } from "../src/renderer/pages/index.ts"
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
   .IS_REACT_ACT_ENVIRONMENT = true
@@ -29,16 +28,13 @@ const SECONDARY_ENTRY_POINTS: Readonly<Record<string, readonly string[]>> = {
   price: ["Bitcoin", "Price"],
 }
 
-function NavigationHarness() {
-  const { activeProfile, route, navigate, locked } = useAppState()
-  const Page = resolvePage(route, activeProfile)?.Component
+function StateProbe() {
+  const { route, locked } = useAppState()
   return (
-    <AppShell sections={navSectionsFor(activeProfile)} activeId={primaryNavId(route)}
-      onNavigate={navigate} topBar={<GearMenu />}>
+    <>
       <output data-testid="route">{route}</output>
       <output data-testid="locked">{String(locked)}</output>
-      {Page ? <Page /> : null}
-    </AppShell>
+    </>
   )
 }
 
@@ -60,7 +56,8 @@ async function mount(profile: FamilyMember) {
   }
   await act(async () => root.render(
     <AppStateProvider initialProfile={profile} initialRoute="home" initialCurrentMonth="2026-07">
-      <NavigationHarness />
+      <Cockpit />
+      <StateProbe />
     </AppStateProvider>,
   ))
   return container
@@ -76,7 +73,7 @@ async function click(container: HTMLElement, label: string) {
 
 for (const profile of FAMILY_MEMBERS) {
   const primary = navSectionsFor(profile).flatMap((section) => section.items)
-  for (const id of [...ALL_PAGES.map((page) => page.id), "price"]) {
+  for (const { id } of ROUTABLE_PAGES) {
     if (!resolvePage(id, profile)) continue
     test(`${profile} reaches ${id} through rendered navigation`, async () => {
       const container = await mount(profile)
@@ -84,9 +81,15 @@ for (const profile of FAMILY_MEMBERS) {
       const path = sidebarItem ? [sidebarItem.label] : SECONDARY_ENTRY_POINTS[id]
       expect(path, `no entry point declared for ${id}`).toBeDefined()
       for (const label of path!) await click(container, label)
-      expect(container.querySelector('[data-testid="route"]')?.textContent).toBe(id)
       if (id === "lock") {
         expect(container.querySelector('[data-testid="locked"]')?.textContent).toBe("true")
+        expect(container.querySelector('[role="dialog"][aria-label="Locked"]')).not.toBeNull()
+        expect(container.querySelector('[data-testid="route"]')?.textContent).toBe("home")
+        await click(container, "Unlock")
+        expect(container.querySelector('[data-testid="locked"]')?.textContent).toBe("false")
+        expect(container.querySelector('[data-testid="route"]')?.textContent).toBe("home")
+      } else {
+        expect(container.querySelector('[data-testid="route"]')?.textContent).toBe(id)
       }
     })
   }

@@ -62,8 +62,8 @@ export function GearMenu() {
                 route === item.id && "vv-gear-menu__item--active",
               )}
               onClick={() => {
-                navigate(item.id)
                 if (item.id === "lock") setLocked(true)
+                else navigate(item.id)
                 setOpen(false)
               }}
             >
