@@ -117,16 +117,11 @@ struct TodayView: View {
     }
 
     static func isDueTodayOrOverdue(_ dueDate: Date?, now: Date = Date(), calendar: Calendar = .current) -> Bool {
-        guard let dueDate else { return false }
-        return calendar.startOfDay(for: dueDate) <= calendar.startOfDay(for: now)
+        SmartListFilter.isDueTodayOrOverdue(dueDate, now: now, calendar: calendar)
     }
 
     static func wasCompletedToday(_ todo: TodoItem, now: Date = Date(), calendar: Calendar = .current) -> Bool {
-        guard todo.isDone else { return false }
-        if let completedAt = todo.completedAt {
-            return calendar.isDate(completedAt, inSameDayAs: now)
-        }
-        return todo.dueDate.map { calendar.isDate($0, inSameDayAs: now) } ?? false
+        SmartListFilter.wasCompletedToday(todo, now: now, calendar: calendar)
     }
 
     private var moneyOutCard: some View {

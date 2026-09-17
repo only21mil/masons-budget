@@ -58,9 +58,9 @@ struct BitcoinOverviewView: View {
             case .overview:
                 overviewContent
             case .netWorth:
-                NetWorthView(showsScreenHeader: false)
+                NetWorthView()
             case .retirement:
-                RetirementView(showsScreenHeader: false)
+                RetirementView()
             }
         }
         .background(theme.bg)
