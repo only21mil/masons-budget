@@ -26,9 +26,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,7 +55,6 @@ import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
-import com.sats21m.vogelvault.ui.components.FreshnessTag
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import com.sats21m.vogelvault.ui.theme.VaultSpace
@@ -91,6 +87,7 @@ const val RAIL_WIDTH_DP = 72
 
 internal const val VAULT_RAIL_TEST_TAG = "vault-navigation-rail"
 internal const val VAULT_SCREEN_CONTENT_TEST_TAG = "vault-screen-content"
+internal const val VAULT_TOP_BAR_TEST_TAG = "vault-top-bar"
 internal const val VAULT_GEAR_MENU_TEST_TAG = "vault-gear-menu"
 
 private val RAIL_EDGE_MARKER_WIDTH = 2.dp
@@ -497,7 +494,7 @@ private fun VaultBottomBar(
 }
 
 @Composable
-private fun VaultTopBar(
+internal fun VaultTopBar(
     state: VaultUiState,
     onRequestProfileSwitchAuthentication: (ProfileSwitchRequest) -> Unit,
     onAuthorizedSwitch: (FamilyMember) -> Unit,
@@ -505,75 +502,64 @@ private fun VaultTopBar(
     onRefresh: () -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
-    var gearExpanded by remember { mutableStateOf(false) }
-    val gearDestinations = listOf(Destination.FAMILY, Destination.SETTINGS, Destination.EXPORT)
-        .filter { it in destinationsFor(state.activeProfile) }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(tokens.colors.panel)
-            .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ProfileSwitcher(
-            activeProfile = state.activeProfile,
-            onAuthenticationRequired = onRequestProfileSwitchAuthentication,
-            onAuthorizedSwitch = onAuthorizedSwitch,
-        )
-        Spacer(Modifier.weight(1f))
-        if (gearDestinations.isNotEmpty()) {
-            Box(Modifier.testTag(VAULT_GEAR_MENU_TEST_TAG)) {
-                IconButton(onClick = { gearExpanded = true }) {
-                    Icon(
-                        com.sats21m.vogelvault.ui.components.LedgerGlyphs.Cog,
-                        contentDescription = "More options",
-                        tint = tokens.colors.foreground,
-                    )
-                }
-                DropdownMenu(
-                    expanded = gearExpanded,
-                    onDismissRequest = { gearExpanded = false },
-                ) {
-                    gearDestinations.forEach { destination ->
-                        LedgerMenuItem(
-                            label = destination.label,
-                            onClick = {
-                                gearExpanded = false
-                                onNavigate(destination)
-                            },
+    var gearExpanded by remember(state.activeProfile) { mutableStateOf(false) }
+    val gearDestinations = GEAR_DESTINATIONS.filter { it in destinationsFor(state.activeProfile) }
+    var lastUpdatedAt by rememberSaveable(state.activeProfile) { mutableStateOf<Long?>(null) }
+    val updatedAt = state.worstUpdatedAt ?: lastUpdatedAt.takeIf { state.worstStatus == Freshness.LOADING }
+    androidx.compose.runtime.SideEffect {
+        if (state.worstStatus != Freshness.LOADING) lastUpdatedAt = state.worstUpdatedAt
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth().testTag(VAULT_TOP_BAR_TEST_TAG)) {
+        val compact = maxWidth < 360.dp
+        val controlWidth = if (compact) 48.dp else 112.dp
+        val profileMaxWidth = (maxWidth - VaultSpace.md * 2 - controlWidth -
+            if (gearDestinations.isNotEmpty()) 48.dp else 0.dp).coerceAtLeast(0.dp)
+        Row(
+            Modifier.fillMaxWidth().background(tokens.colors.panel)
+                .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ProfileSwitcher(
+                activeProfile = state.activeProfile,
+                onAuthenticationRequired = onRequestProfileSwitchAuthentication,
+                onAuthorizedSwitch = onAuthorizedSwitch,
+                modifier = Modifier.widthIn(max = profileMaxWidth),
+                compact = compact,
+            )
+            Spacer(Modifier.weight(1f))
+            com.sats21m.vogelvault.ui.components.SyncControl(
+                status = state.worstStatus,
+                updatedAt = updatedAt,
+                now = state.now,
+                compact = compact,
+                onRefresh = onRefresh,
+            )
+            if (gearDestinations.isNotEmpty()) {
+                Box(Modifier.testTag(VAULT_GEAR_MENU_TEST_TAG)) {
+                    IconButton(onClick = { gearExpanded = true }, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            com.sats21m.vogelvault.ui.components.LedgerGlyphs.Cog,
+                            contentDescription = stringResource(R.string.vault_settings),
+                            tint = tokens.colors.foreground,
                         )
+                    }
+                    DropdownMenu(
+                        expanded = gearExpanded,
+                        onDismissRequest = { gearExpanded = false },
+                    ) {
+                        gearDestinations.forEach { destination ->
+                            LedgerMenuItem(
+                                label = destination.label,
+                                onClick = {
+                                    gearExpanded = false
+                                    onNavigate(destination)
+                                },
+                            )
+                        }
                     }
                 }
             }
         }
-        if (state.worstStatus == Freshness.LOADING) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                color = tokens.colors.bitcoin,
-                strokeWidth = 2.dp,
-            )
-        } else {
-            IconButton(
-                onClick = onRefresh,
-                enabled = state.worstStatus != Freshness.DEMO,
-            ) {
-                Icon(
-                    Icons.Filled.Refresh,
-                    contentDescription = stringResource(
-                        if (state.worstStatus == Freshness.DEMO) {
-                            R.string.refresh_unavailable
-                        } else {
-                            R.string.refresh_data
-                        },
-                    ),
-                    tint = if (state.worstStatus == Freshness.DEMO) tokens.colors.foregroundTertiary else tokens.colors.foreground,
-                )
-            }
-        }
-        Spacer(Modifier.width(VaultSpace.xs))
-        Text("SYNC", style = tokens.type.tabLabel, color = tokens.colors.foregroundTertiary)
-        Spacer(Modifier.width(VaultSpace.xs))
-        FreshnessTag(state.worstStatus, state.worstUpdatedAt, state.now)
     }
 }
 

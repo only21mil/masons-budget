@@ -545,7 +545,7 @@ fun FreshnessTag(status: Freshness, updatedAt: Long?, now: Long, provenance: Str
     ) {
         LedgerStatusDot(ledgerColor(tone))
         Spacer(Modifier.width(LedgerSpacing.small))
-        Text(listOfNotNull(label, provenance).joinToString(" · "), style = tokens.type.chip, color = tokens.colors.foregroundSecondary)
+        Text(listOfNotNull(label, provenance).joinToString(" · "), style = tokens.type.chip, color = tokens.colors.foregroundSecondary, maxLines = 1)
     }
 }
 

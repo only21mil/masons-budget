@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
@@ -59,12 +60,14 @@ fun ProfileSwitcher(
     onAuthenticationRequired: (ProfileSwitchRequest) -> Unit,
     onAuthorizedSwitch: (FamilyMember) -> Unit,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val colors = LocalLedgerTheme.current.colors
     var expanded by remember(activeProfile) { mutableStateOf(false) }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = { expanded = true }) {
-            Text(activeProfile.displayName, color = colors.foreground)
+        TextButton(onClick = { expanded = true }, modifier = Modifier.weight(1f, fill = false).height(48.dp)) {
+            Text(activeProfile.displayName, color = colors.foreground, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             Icon(
                 Icons.Filled.ExpandMore,
                 contentDescription = stringResource(R.string.profile_switcher_open),
@@ -73,7 +76,11 @@ fun ProfileSwitcher(
         }
         if (!activeProfile.isAdult) {
             Spacer(Modifier.width(8.dp))
-            Badge(stringResource(R.string.profile_switcher_child_profile))
+            val childDescription = stringResource(R.string.profile_switcher_child_profile)
+            Badge(
+                stringResource(if (compact) R.string.profile_switcher_child else R.string.profile_switcher_child_profile),
+                spoken = childDescription,
+            )
         }
         DropdownMenu(
             expanded = expanded,
