@@ -437,11 +437,11 @@ final class ConvexSyncService {
     }
 
     func recordNetWorthSnapshot() throws {
-            // Only record one snapshot per day per member to avoid unbounded growth
+            // Only record one snapshot per day per canonical ledger owner to avoid unbounded growth
             let cal = Calendar.current
             let existing = try context.fetch(FetchDescriptor<NetWorthSnapshot>())
             let todaySnapshots = existing.filter {
-                $0.ownerMember == currentMember && cal.isDateInToday($0.date)
+                $0.ownerMember == currentMember.ledgerOwner && cal.isDateInToday($0.date)
             }
             // Remove today's stale snapshots — we'll replace with fresh data
             for old in todaySnapshots {
@@ -470,7 +470,7 @@ final class ConvexSyncService {
                 totalValue: btcValue + holdingsValue,
                 btcValue: btcValue,
                 holdingsValue: holdingsValue,
-                owner: currentMember,
+                owner: currentMember.ledgerOwner,
             )
             context.insert(snapshot)
     }

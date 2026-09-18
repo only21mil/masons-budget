@@ -78,12 +78,6 @@ struct ActivityView: View {
         return scoped.filter { (!todayOnly || Calendar.current.isDateInToday($0.date)) && SearchMatcher.matches(transaction: $0, query: searchText) }
     }
 
-    private static let shortDateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateFormat = "MMM d"
-        return df
-    }()
-
     private var grouped: [(Date, [Transaction])] {
         let grouped = Dictionary(grouping: filtered) { Calendar.current.startOfDay(for: $0.date) }
         return grouped.keys.sorted(by: >).map { ($0, grouped[$0] ?? []) }
@@ -341,11 +335,6 @@ struct ActivityView: View {
 enum ActivityDateScope {
     static func includesIncomeDate(_ date: String, todayOnly: Bool, now: Date, calendar: Calendar = .current) -> Bool {
         guard todayOnly else { return true }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = "yyyy-MM-dd"
-        return date == formatter.string(from: now)
+        return date == LegacyTransactionDTO.dateString(from: now, timeZone: calendar.timeZone)
     }
 }

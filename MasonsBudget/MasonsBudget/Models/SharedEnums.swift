@@ -65,10 +65,6 @@ enum FamilyMember: String, Codable, CaseIterable, Identifiable, Sendable {
         return [self]
     }
 
-    var requiresAuthToSwitch: Bool {
-        true
-    }
-
     var transactionsDataFileName: String {
         switch self {
         case .victor, .rachel:

@@ -77,10 +77,7 @@ struct BudgetView: View {
         guard let income = incomeSummary else { return nil }
         let cal = Calendar.current
         let date = cal.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
-        let df = DateFormatter()
-        df.calendar = Calendar(identifier: .gregorian)
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.dateFormat = "yyyy-MM"
+        let df = AppFormatter.monthFormatter(for: "yyyy-MM")
         return income.amount(forMonth: df.string(from: date), emptyLedgerFallback: snapshot(for: date)?.mtdIncome)
     }
 
@@ -132,10 +129,7 @@ struct BudgetView: View {
     }
 
     private func snapshot(for date: Date) -> MonthlyBudgetSnapshot? {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMMM yyyy"
+        let formatter = AppFormatter.monthFormatter(for: "MMMM yyyy")
         let prefix = activeMember.isAdult ? "" : "\(activeMember.rawValue):"
         return snapshots.first { $0.monthKey == prefix + formatter.string(from: date) }
     }
@@ -190,8 +184,7 @@ struct BudgetView: View {
     // MARK: - Month Eyebrow
 
     private var monthEyebrow: String {
-        let df = DateFormatter()
-        df.dateFormat = "MMMM yyyy"
+        let df = AppFormatter.monthFormatter(for: "MMMM yyyy", locale: .current)
         let base = df.string(from: selectedMonth)
         return isCurrent ? "\(base) · MTD" : base
     }
