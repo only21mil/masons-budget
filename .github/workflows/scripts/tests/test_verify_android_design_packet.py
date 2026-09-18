@@ -130,6 +130,134 @@ class AndroidDesignPacketTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported Android capture contract"):
             self.changed_catalog(MODULE.DESTINATION_SOURCE, "enum class Destination", "enum class Other")
 
+    def test_digit_bearing_destination_is_included(self) -> None:
+        actual = self.changed_catalog(
+            MODULE.DESTINATION_SOURCE, 'HOME("Home")', 'V2("V2"), HOME("Home")'
+        )
+        self.assertEqual(MODULE.EXPECTED_PNGS | {
+            "folded-v2-victor-normal.png", "folded-v2-mason-normal.png",
+            "unfolded-v2-victor-normal.png",
+        }, actual)
+
+    def test_named_storage_key_is_included(self) -> None:
+        actual = self.changed_catalog(
+            MODULE.UNIT_SOURCE, 'SATS("sats", "SATS")',
+            'SATS(label = "sats", storageKey = "satoshi")',
+        )
+        self.assertEqual(
+            (MODULE.EXPECTED_PNGS - {"folded-bitcoin-victor-sats.png"})
+            | {"folded-bitcoin-victor-satoshi.png"}, actual,
+        )
+
+    def test_unusual_prefix_is_included(self) -> None:
+        actual = self.changed_catalog(
+            MODULE.CAPTURE_SOURCE, '"folded-budget-maddox-normal"',
+            '"tablet-budget-maddox-normal"',
+        )
+        self.assertEqual(
+            (MODULE.EXPECTED_PNGS - {"folded-budget-maddox-normal.png"})
+            | {"tablet-budget-maddox-normal.png"}, actual,
+        )
+
+    def test_named_capture_argument_is_included(self) -> None:
+        actual = self.changed_catalog(
+            MODULE.CAPTURE_SOURCE, '"folded-budget-maddox-normal",',
+            'name = "folded-budget-maddox-normal",',
+        )
+        self.assertEqual(MODULE.EXPECTED_PNGS, actual)
+
+    def test_filtered_iterations_fail_closed(self) -> None:
+        for old, new in (
+            ("Destination.entries)", "Destination.entries.take(3))"),
+            ("DisplayUnit.entries)", "DisplayUnit.entries.reversed())"),
+            ("destination in sampled)", "destination in sampled.drop(1))"),
+            ("status in states)", "status in states.filter { true })"),
+        ):
+            with self.subTest(new=new), self.assertRaisesRegex(ValueError, "iteration"):
+                self.changed_catalog(MODULE.CAPTURE_SOURCE, old, new)
+
+    def test_filtered_capture_list_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "filtered list"):
+            self.changed_catalog(
+                MODULE.CAPTURE_SOURCE, "Freshness.LOADING)",
+                "Freshness.LOADING).take(2)",
+            )
+
+    def test_foreach_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "control flow"):
+            self.changed_catalog(
+                MODULE.CAPTURE_SOURCE, "for (destination in Destination.entries) {",
+                "Destination.entries.forEach { destination ->",
+            )
+
+    def test_unbound_interpolation_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported capture filename"):
+            self.changed_catalog(
+                MODULE.CAPTURE_SOURCE, "-maddox-normal", "-${status.name.lowercase()}",
+            )
+
+    def test_duplicate_capture_names_fail_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "duplicate Android capture filenames"):
+            self.changed_catalog(
+                MODULE.CAPTURE_SOURCE, '"folded-budget-maddox-normal"',
+                '"folded-budget-victor-2026-06"',
+            )
+
+    def test_commented_captures_are_ignored(self) -> None:
+        actual = self.changed_catalog(
+            MODULE.CAPTURE_SOURCE, "fun maddoxBudgetIsEmpty() {",
+            'fun maddoxBudgetIsEmpty() { /* nested /* comment */ capture("ignored", state) */',
+        )
+        self.assertEqual(MODULE.EXPECTED_PNGS, actual)
+
+    def test_comment_markers_inside_strings_survive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.kt"
+            source.write_text('val name = "a//b/*c*/" // gone\n')
+            self.assertIn('"a//b/*c*/"', MODULE.source_text(source))
+            self.assertNotIn("gone", MODULE.source_text(source))
+        with self.assertRaisesRegex(ValueError, "basename"):
+            self.changed_catalog(
+                MODULE.CAPTURE_SOURCE, '"folded-budget-maddox-normal"',
+                '"unusual//capture"',
+            )
+
+    def test_unrelated_filename_string_does_not_enter_manifest(self) -> None:
+        actual = self.changed_catalog(
+            MODULE.CAPTURE_SOURCE, "fun maddoxBudgetIsEmpty() {",
+            'fun maddoxBudgetIsEmpty() { val ignored = "folded-unused"',
+        )
+        self.assertEqual(MODULE.EXPECTED_PNGS, actual)
+
+    def test_capture_helper_output_change_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "helper output path"):
+            self.changed_catalog(
+                MODULE.CAPTURE_SOURCE, '$name.png', 'prefix-$name.png',
+            )
+
+    def test_malformed_catalog_entry_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Destination entry"):
+            self.changed_catalog(
+                MODULE.DESTINATION_SOURCE, 'HOME("Home")', 'HOME("Home") { override() }',
+            )
+
+    def test_renamed_loop_variable_keeps_its_catalog(self) -> None:
+        actual = self.changed_catalog(MODULE.CAPTURE_SOURCE, "unit", "displayChoice")
+        self.assertEqual(MODULE.EXPECTED_PNGS, actual)
+
+    def test_two_fields_of_one_entry_stay_bound(self) -> None:
+        actual = self.changed_catalog(
+            MODULE.CAPTURE_SOURCE, "${unit.storageKey}",
+            "${unit.name.lowercase()}-${unit.storageKey}",
+        )
+        self.assertEqual(
+            (MODULE.EXPECTED_PNGS - {
+                f"folded-bitcoin-victor-{unit}.png" for unit in ("btc", "sats", "usd")
+            }) | {
+                f"folded-bitcoin-victor-{unit}-{unit}.png" for unit in ("btc", "sats", "usd")
+            }, actual,
+        )
+
     def test_accepts_complete_packet(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             packet_dir = Path(directory)
@@ -160,7 +288,7 @@ class AndroidDesignPacketTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             errors = MODULE.verify(Path(directory))
 
-            self.assertTrue(any("missing PNGs (60)" in error for error in errors))
+            self.assertTrue(any(f"missing PNGs ({MODULE.EXPECTED_COUNT})" in error for error in errors))
 
     def test_rejects_duplicate_basename(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
