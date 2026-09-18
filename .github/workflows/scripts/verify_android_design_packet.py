@@ -3,70 +3,89 @@
 from __future__ import annotations
 
 import argparse
+import itertools
+import re
 from collections import Counter
 from pathlib import Path
 
 
-# Reviewed against DesignPacketTest.kt. Keeping the contract here avoids a
-# circular gate that trusts the test output, while these explicit dimensions
-# make each generated basename easy to audit when the packet changes.
-DESTINATIONS = (
-    "dashboard",
-    "activity",
-    "budget",
-    "bitcoin",
-    "btc_buys",
-    "btc_bill_pays",
-    "net_worth",
-    "retirement",
-    "export",
-    "today",
-    "tasks",
-    "family",
-    "settings",
-)
-DISPLAY_UNITS = ("btc", "sats", "usd")
-SAMPLED_STATE_DESTINATIONS = ("dashboard", "budget", "activity", "net_worth")
-NON_NORMAL_STATES = ("stale", "error", "empty", "loading")
+# Read the source contract, never the recorded output or historical screenshots.
+# Paths are relative to this script so direct CI invocation and unittest discovery
+# both work regardless of the caller's working directory.
+REPO_ROOT = Path(__file__).resolve().parents[3]
+KOTLIN_ROOT = Path("android/app/src")
+CAPTURE_SOURCE = KOTLIN_ROOT / "test/kotlin/com/sats21m/vogelvault/DesignPacketTest.kt"
+DESTINATION_SOURCE = KOTLIN_ROOT / "main/kotlin/com/sats21m/vogelvault/ui/VaultApp.kt"
+UNIT_SOURCE = Path("android/domain/src/main/kotlin/com/sats21m/vogelvault/domain/Money.kt")
 
-DAYLIGHT_PNGS = frozenset(
-    {"folded-status-and-unavailable-tokens.png"}
-    | {f"folded-{destination}-victor-normal.png" for destination in DESTINATIONS}
-    | {f"folded-{destination}-mason-normal.png" for destination in DESTINATIONS}
-    | {f"folded-bitcoin-victor-{unit}.png" for unit in DISPLAY_UNITS}
-    | {
-        "folded-bitcoin-victor-usd-no-price.png",
-        "folded-budget-victor-2026-06.png",
-        "folded-budget-maddox-normal.png",
-    }
-    | {
-        f"folded-{destination}-victor-{state}.png"
-        for destination in SAMPLED_STATE_DESTINATIONS
-        for state in NON_NORMAL_STATES
-    }
-    | {f"unfolded-{destination}-victor-normal.png" for destination in DESTINATIONS}
-    | {
-        "unfolded-dashboard-mason-normal.png",
-        "unfolded-budget-victor-2026-06.png",
-        # Two-pane unfolded captures added with the ledger sidebar (2026-09-05).
-        "unfolded-dashboard-victor-two-pane.png",
-        "unfolded-budget-victor-two-pane.png",
-    }
-)
-TERMINAL_PNGS = frozenset(
-    {
-        "folded-dashboard-victor-terminal.png",
-        "folded-status-and-unavailable-tokens-terminal.png",
-        "unfolded-dashboard-victor-terminal.png",
-    }
-)
-EXPECTED_PNGS = DAYLIGHT_PNGS | TERMINAL_PNGS
 
-EXPECTED_COUNT = 69
-if len(EXPECTED_PNGS) != EXPECTED_COUNT:
-    raise RuntimeError(
-        f"design-packet manifest has {len(EXPECTED_PNGS)} names; expected {EXPECTED_COUNT}"
+def source_text(path: Path) -> str:
+    # Ignore commented-out entries and captures.
+    return re.sub(r"/\*.*?\*/|//[^\n]*", "", path.read_text(), flags=re.S)
+
+
+def required_match(pattern: str, source: str) -> str:
+    match = re.search(pattern, source, flags=re.S)
+    if match is None:
+        raise ValueError(f"unsupported Android capture contract: {pattern}")
+    return match.group(1)
+
+
+def expected_pngs(repo_root: Path = REPO_ROOT) -> frozenset[str]:
+    captures = source_text(repo_root / CAPTURE_SOURCE)
+    destinations = required_match(
+        r"enum class Destination\([^{}]*\)\s*\{([^}]+)",
+        source_text(repo_root / DESTINATION_SOURCE),
+    ).split(";")[0]
+    destination_names = re.findall(r'\b([A-Z][A-Z_]+)\s*\(', destinations)
+    units = required_match(
+        r"enum class DisplayUnit\([^{}]*\)\s*\{([^;]+);",
+        source_text(repo_root / UNIT_SOURCE),
     )
+    unit_keys = re.findall(r'[A-Z][A-Z_]+\s*\(\s*"([^"\n]+)"', units)
+    sampled = re.findall(
+        r"Destination\.([A-Z_]+)",
+        required_match(r"val sampled = listOf\((.*?)\)", captures),
+    )
+    states = re.findall(
+        r"Freshness\.([A-Z_]+)",
+        required_match(r"val states = listOf\((.*?)\)", captures),
+    )
+    if not all((destination_names, unit_keys, sampled, states)):
+        raise ValueError("empty Android capture catalog")
+    if not set(sampled) <= set(destination_names):
+        raise ValueError("sampled destination missing from Destination catalog")
+
+    # Includes explicit captures and the status-token helper's default name.
+    # The only interpolations in the current contract are expanded below. Fail
+    # closed if the capture code introduces a new interpolation syntax.
+    templates = re.findall(r'"((?:folded|unfolded)-[^"\n]+)"', captures)
+    if not templates:
+        raise ValueError("no Android capture filename templates found")
+    names: set[str] = set()
+    for template in templates:
+        dimensions = {
+            "${destination.name.lowercase()}": [
+                name.lower() for name in (
+                    sampled if "${status.name.lowercase()}" in template else destination_names
+                )
+            ],
+            "${status.name.lowercase()}": [state.lower() for state in states],
+            "${unit.storageKey}": unit_keys,
+        }
+        tokens = [token for token in dimensions if token in template]
+        for values in itertools.product(*(dimensions[token] for token in tokens)):
+            name = template
+            for token, value in zip(tokens, values):
+                name = name.replace(token, value)
+            if "$" in name:
+                raise ValueError(f"unsupported capture filename template: {template}")
+            names.add(f"{name}.png")
+    return frozenset(names)
+
+
+EXPECTED_PNGS = expected_pngs()
+EXPECTED_COUNT = len(EXPECTED_PNGS)
 
 
 def verify(packet_dir: Path) -> list[str]:
