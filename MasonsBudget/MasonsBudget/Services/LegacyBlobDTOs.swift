@@ -111,6 +111,7 @@ extension LegacyTransactionDTO {
 
     // Shared date-only wire formatter. The transaction and todo DTOs must
     // produce byte-identical yyyy-MM-dd strings, so this is the single copy.
+    private static let wireDateFormatterLock = NSLock()
     private static let wireDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -120,8 +121,18 @@ extension LegacyTransactionDTO {
         return formatter
     }()
 
-    static func dateString(from date: Date) -> String {
-        wireDateFormatter.string(from: date)
+    static func dateString(from date: Date, timeZone: TimeZone = .current) -> String {
+        wireDateFormatterLock.lock()
+        defer { wireDateFormatterLock.unlock() }
+        wireDateFormatter.timeZone = timeZone
+        return wireDateFormatter.string(from: date)
+    }
+
+    static func date(from string: String, timeZone: TimeZone = .current) -> Date? {
+        wireDateFormatterLock.lock()
+        defer { wireDateFormatterLock.unlock() }
+        wireDateFormatter.timeZone = timeZone
+        return wireDateFormatter.date(from: string)
     }
 
     func convexJSONObject() throws -> [String: Any] {

@@ -1,6 +1,32 @@
 import XCTest
 
 final class AppleScreenAdoptionTests: XCTestCase {
+    func testCachedMonthFormatterPreservesLocalizedHeadings() {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        for locale in [Locale.current, Locale(identifier: "en_US_POSIX"), Locale(identifier: "fr_FR")] {
+            let original = DateFormatter()
+            original.locale = locale
+            original.dateFormat = "MMMM yyyy"
+            XCTAssertEqual(
+                AppFormatter.monthFormatter(for: "MMMM yyyy", locale: locale).string(from: date),
+                original.string(from: date),
+            )
+        }
+    }
+
+    func testCachedWireDayFormatterKeepsEachCallsTimeZone() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-03-01T01:00:00Z"))
+        for (offset, expected) in [(-6, "2026-02-28"), (9, "2026-03-01"), (-6, "2026-02-28")] {
+            let timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: offset * 3600))
+            XCTAssertEqual(LegacyTransactionDTO.dateString(from: now, timeZone: timeZone), expected)
+            let midnight = try XCTUnwrap(LegacyTransactionDTO.date(from: expected, timeZone: timeZone))
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = timeZone
+            XCTAssertTrue(calendar.isDate(now, inSameDayAs: midnight))
+            XCTAssertEqual(calendar.component(.hour, from: midnight), 0)
+        }
+    }
+
     func testPrimaryScreenCatalogMatchesAppleNavigation() {
         XCTAssertEqual(AppTab.allCases, [.home, .budget, .activity, .bitcoin, .tasks])
     }

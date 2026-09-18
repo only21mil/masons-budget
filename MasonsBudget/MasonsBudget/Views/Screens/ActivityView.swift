@@ -335,11 +335,6 @@ struct ActivityView: View {
 enum ActivityDateScope {
     static func includesIncomeDate(_ date: String, todayOnly: Bool, now: Date, calendar: Calendar = .current) -> Bool {
         guard todayOnly else { return true }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = "yyyy-MM-dd"
-        return date == formatter.string(from: now)
+        return date == LegacyTransactionDTO.dateString(from: now, timeZone: calendar.timeZone)
     }
 }

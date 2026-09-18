@@ -863,11 +863,7 @@ enum AppWriteSyncService {
     }
 
     private static func ledgerDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        LegacyTransactionDTO.dateString(from: date)
     }
 
     private static func positiveCents(_ amount: Decimal, field: String) throws -> Int64 {
