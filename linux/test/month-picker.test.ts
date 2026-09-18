@@ -10,7 +10,7 @@
 // suite runs with no transform step.
 
 import assert from "node:assert/strict"
-import { test } from "vitest"
+import { test, vi } from "vitest"
 
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
@@ -133,7 +133,7 @@ test("an older Budget selection cannot change the current-month Dashboard", () =
   assert.ok(juneBudget.includes("$741.05"), "the selected Budget month lost its June actual")
 
   // Render Dashboard with the same persisted selection, as after navigation.
-  // The canonical current/server month seed is July 2026.
+  // The current month seed is July 2026.
   const dashboard = render("home", "victor", JUNE)
   assert.ok(dashboard.includes("July 2026"), "Dashboard did not retain the current month")
   assert.ok(!dashboard.includes("June 2026"), "the Budget month leaked into Dashboard")
@@ -157,4 +157,29 @@ test("a child's picker offers only the months in that child's own records", () =
   const mason = render("budget", "mason", JUNE)
   assert.ok(mason.includes("June 2026"), "Mason's June should be reachable")
   assert.ok(!mason.includes("Neighborhood Market"), "adult June rows leaked to a child")
+})
+
+test("Dashboard stays in the local month at 19:30 Chicago on July's last day", () => {
+  const previousTimezone = process.env.TZ
+  process.env.TZ = "America/Chicago"
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date("2026-07-31T19:30:00-05:00"))
+  try {
+    assert.equal(new Date().getHours(), 19)
+    assert.equal(new Date().toISOString().slice(0, 10), "2026-08-01")
+    const dashboard = renderToStaticMarkup(
+      createElement(AppStateProvider, {
+        initialProfile: "victor",
+        initialDisplayUnit: "usd",
+        children: createElement(Harness, { route: "home" }),
+      }),
+    )
+    assert.ok(dashboard.includes("July 2026"), "Dashboard advanced before local midnight")
+    assert.ok(dashboard.includes("$7,777.77"), "local-month income is missing")
+    assert.ok(dashboard.includes("$673.46"), "local-month spend is missing")
+  } finally {
+    vi.useRealTimers()
+    if (previousTimezone === undefined) delete process.env.TZ
+    else process.env.TZ = previousTimezone
+  }
 })

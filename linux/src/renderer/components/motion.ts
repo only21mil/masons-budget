@@ -40,7 +40,7 @@ function systemPrefersReducedMotion(): boolean {
 }
 
 /** True when the app setting or the system preference asks for no motion. */
-export function useReducedMotion(): boolean {
+function useReducedMotion(): boolean {
   const appSetting = useOptionalAppState()?.reduceMotionEnabled ?? false
   const [systemSetting, setSystemSetting] = useState(systemPrefersReducedMotion)
 

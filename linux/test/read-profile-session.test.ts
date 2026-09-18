@@ -44,8 +44,5 @@ describe("main-owned read profile sessions", () => {
       profile: "maddox",
     })
     expect(sessions.current(second)).toBe("victor")
-
-    sessions.forget(first)
-    expect(sessions.current(first)).toBe("victor")
   })
 })

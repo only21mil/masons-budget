@@ -22,9 +22,7 @@ export {
   primaryNavId,
 }
 
-export { adminPageManifest, financePageManifest, tasksPageManifest }
-
-export const PAGE_MANIFESTS: readonly PageManifest[] = [
+const PAGE_MANIFESTS: readonly PageManifest[] = [
   financePageManifest,
   tasksPageManifest,
   adminPageManifest,

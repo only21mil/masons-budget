@@ -116,7 +116,7 @@ function ErrorSummary({ error }: { error: string | null }) {
  * match is refused for the same reason it is refused there: the credit would be
  * going somewhere nobody chose.
  */
-export function canonicalRiverAccount(
+function canonicalRiverAccount(
   accounts: readonly BTCAccount[],
 ): BTCAccount | null {
   const matches = accounts.filter(
