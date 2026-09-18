@@ -14,6 +14,8 @@ expected_checks="$(
     {"context":"Detect changed trees","app_id":15368},
     {"context":"Detect Apple changes","app_id":15368},
     {"context":"actionlint + secret inventory","app_id":15368},
+    {"context":"Credential mint tooling","app_id":15368},
+    {"context":"Verify committed Xcode project","app_id":15368},
     {"context":"Shared domain contract","app_id":15368},
     {"context":"Production wire golden decoders","app_id":15368},
     {"context":"Convex functions","app_id":15368},
