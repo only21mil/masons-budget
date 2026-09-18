@@ -371,7 +371,7 @@ jobs:
           UDID: ${{ steps.simulator.outputs.udid }}
         run: |
           if [ -n "$UDID" ]; then
-            xcrun simctl shutdown "$UDID"
+            xcrun simctl shutdown "$UDID" || true
           fi
 
       # Only on failure. The xcresult carries the per-test failure detail that
