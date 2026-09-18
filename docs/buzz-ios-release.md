@@ -69,23 +69,11 @@ needs device or user-confirmed evidence. No USB connection is required for
 TestFlight delivery. Preserve prior artifacts; recovery is a corrected build
 with an increased build number, never destructive app removal.
 
-## Preserved artifact signing recovery
+## Retired signing recovery
 
-The manual `buzz-ios-signing-recovery.yml` signs the successful unsigned build
-from run 34247966654, attempt 1, artifact 10065006053. Its trusted driver pins
-the original controller, successful build job, provider artifact digest and both
-contained file hashes. It never compiles or executes fetched app code. The
-original receipt stays byte-identical; a separate provenance receipt identifies
-the current recovery run and controller. Temporary signing paths use the current
-execution identity.
-
-The original signing attempt failed before upload with no usable error detail.
-Recovery retains fixed native phase names, error classifications and assertion
-hashes while applying the same profile, identity, entitlement and signature
-checks. It never logs command arguments, raw native output, secrets or private
-paths. Existing ASC inventory, IPA retention, upload and processing checks run
-in the same recovery when signing succeeds. Public recovery receipts survive
-failures and temporary signing material is always cleaned up.
+The one-use iOS signing recovery workflow and driver were retired after signing
+recovered and the TestFlight deployment succeeded on 2026-09-14. Use the retained
+`buzz-ios-release.yml` workflow for future approved releases.
 
 ## Invite one recipient to the preserved TestFlight build
 

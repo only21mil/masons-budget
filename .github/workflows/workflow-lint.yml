@@ -114,6 +114,18 @@ jobs:
       - name: Secret presence reporter tests
         run: python3 .github/workflows/scripts/tests/test_report_secret_presence.py
 
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          gradle-version: '8.12'
+
+      - name: Offline Gradle dependency collector tests
+        run: python3 .github/workflows/scripts/tests/test_ci_reuse_dependencies.py --gradle "$(command -v gradle)"
+
       - name: Protected CI reuse proof tests
         run: python3 .github/workflows/scripts/tests/test_protected_ci_reuse.py
 
@@ -137,13 +149,13 @@ jobs:
           python3 .github/workflows/scripts/tests/test_mac_release_workflow.py
           python3 .github/workflows/scripts/tests/test_mac_build_portability.py
           python3 .github/workflows/scripts/tests/test_mac_build_boundary.py
+          python3 .github/workflows/scripts/tests/test_buzz_account_attributes.py
+          python3 .github/workflows/scripts/tests/test_buzz_builder_home.py
           python3 .github/workflows/scripts/tests/test_buzz_ios_release.py
           python3 .github/workflows/scripts/tests/test_buzz_ios_hosted.py
-          python3 .github/workflows/scripts/tests/test_buzz_ios_recovery.py
           node --test .github/workflows/scripts/tests/buzz_ios_asc.test.mjs
           node --test .github/workflows/scripts/tests/buzz_testflight_recipient.test.mjs
           python3 .github/workflows/scripts/tests/test_buzz_macos_build_supervisor.py
-          python3 .github/workflows/scripts/tests/test_home_rmdir_diagnostic.py
           shellcheck .github/workflows/scripts/buzz_macos_build.sh .github/workflows/scripts/buzz-verify-macos-entitlements.sh .github/workflows/scripts/buzz_ios_build.sh .github/workflows/scripts/buzz_ios_hosted_build.sh
 
       - name: Manual Apple release signing contract
@@ -166,7 +178,7 @@ jobs:
           RC=0
           OUT=$(python3 .github/workflows/scripts/report_secret_presence.py 2>&1) || RC=$?
           printf '%s\n' "$OUT"
-          if [ "$RC" -ne 1 ] || ! printf '%s' "$OUT" | grep -q 'APPLE_CERTIFICATE_P12'; then
+          if [ "$RC" -ne 1 ] || ! printf '%s' "$OUT" | grep -q 'APPLE_DISTRIBUTION_CERTIFICATE_P12'; then
             echo "::error::The preflight reporter did not fail closed on a run with no secrets bound (exit $RC)."
             exit 1
           fi
