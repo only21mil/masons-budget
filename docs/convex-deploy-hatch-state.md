@@ -20,7 +20,6 @@ Gates implementing the precedence (hatch checked first, then token):
 | --- | --- | --- |
 | `convex/dataFiles.ts` | `validateSyncToken` | `validateReadToken` |
 | `convex/tables.ts` (mirror) | `validateSyncToken` | `validateReadToken` |
-| `convex/writeback.ts` (mirror) | `validateSyncToken` | — |
 | `convex/marketQuotes.ts` | — | `validateReadToken` |
 
 `convex/readCanary.ts` is deliberately hatch-free and fails closed on an

@@ -458,24 +458,6 @@ function monthOf(date: string): string {
   return date.slice(0, 7);
 }
 
-const INT64_MIN = -(1n << 63n);
-const INT64_MAX = (1n << 63n) - 1n;
-
-function checkedMoneyOutCentsAdd(left: bigint, right: bigint): bigint {
-  const total = left + right;
-  if (
-    left < INT64_MIN ||
-    left > INT64_MAX ||
-    right < INT64_MIN ||
-    right > INT64_MAX ||
-    total < INT64_MIN ||
-    total > INT64_MAX
-  ) {
-    throw new ConvexError("Money Out Today cents must fit signed int64.");
-  }
-  return total;
-}
-
 function rejectRowDate(code: string, field: string, message: string): never {
   throw new ConvexError({ code, field, message });
 }
@@ -1424,95 +1406,6 @@ export const listBtcBillPays = query({
     rows.sort(byDateDescending);
     return {
       ...publicEnvelope(rows.slice(0, cap).map(projectBtcBillPay), limit, "listBtcBillPays"),
-      ...readAuthDeprecation(auth),
-    };
-  },
-});
-
-/** Exact same-day spending for the active profile's ledger. */
-export const getMoneyOutToday = query({
-  args: {
-    viewer: familyMemberValidator,
-    date: v.string(),
-    token: v.optional(v.string()),
-  deviceId: v.optional(v.string()),
-  deviceToken: v.optional(v.string()),
-  },
-  handler: async (ctx, { viewer, date, token, deviceId, deviceToken }) => {
-    const auth = await authorizeQueryViewer(ctx, { viewer, token, deviceId, deviceToken });
-    if (!isRealIsoDate(date)) {
-      throw new ConvexError(
-        "getMoneyOutToday: date must be a real ISO calendar date in yyyy-MM-dd form.",
-      );
-    }
-
-    // Net-worth scope is the spending scope here: adults share one household
-    // ledger, while a child gets only their exact owner rows.
-    const owners = ownersInScope(auth.viewer, "netWorth");
-    const [transactionRows, billPayRows] = await Promise.all([
-      Promise.all(
-        owners.map((owner) =>
-          ctx.db
-            .query("transactions")
-            .withIndex("by_owner_date", (q) =>
-              q.eq("owner", owner).eq("date", date),
-            )
-            .collect(),
-        ),
-      ),
-      Promise.all(
-        owners.map((owner) =>
-          ctx.db
-            .query("btcBillPays")
-            .withIndex("by_owner_date", (q) =>
-              q.eq("owner", owner).eq("date", date),
-            )
-            .collect(),
-        ),
-      ),
-    ]);
-
-    const transactionSources = transactionRows
-      .flat()
-      .filter((row) => {
-        const category = row.category.toLowerCase();
-        return category !== "income" && category !== "credit card payment";
-      })
-      .map((row) => ({
-        kind: "transaction" as const,
-        row: projectTransaction(row),
-        contributionCents: row.amountCents,
-      }));
-    const billPaySources = billPayRows
-      .flat()
-      .filter(
-        (row) =>
-          (row.budgetEffect ?? "credit_card_payment") === "budget_category",
-      )
-      .map((row) => {
-        const feeUsdCents = row.feeUsdCents ?? 0n;
-        return {
-          kind: "btc_bill_pay" as const,
-          row: projectBtcBillPay({ ...row, feeUsdCents }),
-          principalCents: row.amountUsdCents,
-          feeUsdCents,
-          contributionCents: checkedMoneyOutCentsAdd(
-            row.amountUsdCents,
-            feeUsdCents,
-          ),
-        };
-      });
-    const sources = [...transactionSources, ...billPaySources];
-
-    return {
-      date,
-      owner: canonicalLedgerOwner(auth.viewer),
-      totalCents: sources.reduce(
-        (total, source) =>
-          checkedMoneyOutCentsAdd(total, source.contributionCents),
-        0n,
-      ),
-      sources,
       ...readAuthDeprecation(auth),
     };
   },

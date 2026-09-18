@@ -564,10 +564,10 @@ const fn = {
     { name: string; token?: string },
     unknown
   >,
-  dataFilesSync: "dataFiles:sync" as unknown as FunctionReference<
+  dataFilesRemove: "dataFiles:remove" as unknown as FunctionReference<
     "mutation",
     "public",
-    { name: string; data: unknown; token?: string },
+    { name: string; token?: string },
     { name: string; version: number }
   >,
 };
@@ -3575,7 +3575,7 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
         ALLOW_TOKENLESS_SYNC: "true",
       });
       await expect(
-        t.mutation(fn.dataFilesSync, { name: "probe", data: [] }),
+        t.mutation(fn.dataFilesRemove, { name: "probe" }),
       ).resolves.toBeDefined();
       for (const entry of writeEntryPoints) {
         await expect(entry.call()).resolves.toBeDefined();
@@ -3591,7 +3591,7 @@ describe("auth: the gates in tables.ts match the gates in dataFiles.ts", () => {
       ).rejects.toThrow(/read auth is not configured/);
 
       await expect(
-        t.mutation(fn.dataFilesSync, { name: "probe", data: [] }),
+        t.mutation(fn.dataFilesRemove, { name: "probe" }),
       ).rejects.toThrow(/write auth is not configured/);
     });
   });
