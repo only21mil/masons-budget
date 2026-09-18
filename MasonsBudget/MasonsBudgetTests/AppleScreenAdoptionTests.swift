@@ -27,6 +27,17 @@ final class AppleScreenAdoptionTests: XCTestCase {
         }
     }
 
+    func testCachedWireDayFormatterRepeatsSameZoneAfterDifferentZone() throws {
+        let date = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-03-01T01:00:00Z"))
+        let west = try XCTUnwrap(TimeZone(secondsFromGMT: -6 * 3600))
+        let east = try XCTUnwrap(TimeZone(secondsFromGMT: 9 * 3600))
+        let first = LegacyTransactionDTO.dateString(from: date, timeZone: west)
+        XCTAssertEqual(first, "2026-02-28")
+        XCTAssertEqual(LegacyTransactionDTO.dateString(from: date, timeZone: west), first)
+        XCTAssertEqual(LegacyTransactionDTO.dateString(from: date, timeZone: east), "2026-03-01")
+        XCTAssertEqual(LegacyTransactionDTO.dateString(from: date, timeZone: west), first)
+    }
+
     func testPrimaryScreenCatalogMatchesAppleNavigation() {
         XCTAssertEqual(AppTab.allCases, [.home, .budget, .activity, .bitcoin, .tasks])
     }

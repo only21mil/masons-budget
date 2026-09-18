@@ -120,19 +120,33 @@ extension LegacyTransactionDTO {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
+    private static var wireDateFormatters: [String: DateFormatter] = [
+        wireDateFormatter.timeZone.identifier: wireDateFormatter,
+    ]
+
+    // Caller holds wireDateFormatterLock through lookup and formatting/parsing.
+    private static func wireDateFormatter(for timeZone: TimeZone) -> DateFormatter {
+        let key = timeZone.identifier
+        if let cached = wireDateFormatters[key] { return cached }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        wireDateFormatters[key] = formatter
+        return formatter
+    }
 
     static func dateString(from date: Date, timeZone: TimeZone = .current) -> String {
         wireDateFormatterLock.lock()
         defer { wireDateFormatterLock.unlock() }
-        wireDateFormatter.timeZone = timeZone
-        return wireDateFormatter.string(from: date)
+        return wireDateFormatter(for: timeZone).string(from: date)
     }
 
     static func date(from string: String, timeZone: TimeZone = .current) -> Date? {
         wireDateFormatterLock.lock()
         defer { wireDateFormatterLock.unlock() }
-        wireDateFormatter.timeZone = timeZone
-        return wireDateFormatter.date(from: string)
+        return wireDateFormatter(for: timeZone).date(from: string)
     }
 
     func convexJSONObject() throws -> [String: Any] {
