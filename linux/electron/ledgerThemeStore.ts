@@ -17,7 +17,7 @@ import {
   parseLedgerWindowTheme,
 } from "../shared/ledgerWindow.ts"
 
-export const LEDGER_THEME_FILE = "ledger-theme"
+const LEDGER_THEME_FILE = "ledger-theme"
 
 export interface LedgerThemeStore {
   /** Synchronous so createWindow can use it; a missing or odd file reads as dark. */
