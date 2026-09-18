@@ -25,7 +25,6 @@ actor BTCPriceService {
     }
 
     static var storedPrice: Decimal? { MarketQuoteService.price(.btc) }
-    static var storedChange24h: Decimal? { nil }
     static var storedUpdatedAt: Date? { MarketQuoteService.quote(.btc)?.observationDate }
 
     func refreshAndStore() async {

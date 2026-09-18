@@ -745,11 +745,7 @@ struct AddBitcoinAccountView: View {
     }
 
     static func defaultAsOf(date: Date = .now) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date) + "T00:00:00.000Z"
+        LegacyTransactionDTO.dateString(from: date) + "T00:00:00.000Z"
     }
 }
 

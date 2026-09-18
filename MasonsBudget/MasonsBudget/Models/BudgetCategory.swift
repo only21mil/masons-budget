@@ -13,13 +13,6 @@ final class BudgetCategory {
     var isIncome: Bool
     var owner: String = "victor"
 
-    static let displayPriority: [String: Int] = [
-        "Bills & Utilities": 0,
-        "Groceries": 1,
-        "Dining & Drinks": 98,
-        "Auto & Transport": 99,
-    ]
-
     /// Household budget scope excludes child totals; invalid profiles match nothing.
     static func predicate(for member: FamilyMember?) -> Predicate<BudgetCategory> {
         let owner = member?.rawValue ?? "__invalid_owner__"
@@ -38,10 +31,6 @@ final class BudgetCategory {
     func matches(_ transaction: Transaction) -> Bool {
         ownerMember.sharesNetWorth(with: transaction.ownerMember) &&
             LedgerMapper.wireBudgetCategoryName(from: transaction.category, owner: transaction.ownerMember) == displayName
-    }
-
-    var displayRank: Int {
-        Self.displayPriority[displayName] ?? 50
     }
 
     var ownerMember: FamilyMember {
