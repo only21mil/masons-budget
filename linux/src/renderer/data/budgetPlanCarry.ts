@@ -28,7 +28,7 @@ export interface BudgetPlanCarryInput {
 }
 
 /** The shared eligibility decision for this page's budget document. */
-export function budgetPlanCarryOffer(input: BudgetPlanCarryInput): BudgetPlanCarryEligibility {
+function budgetPlanCarryOffer(input: BudgetPlanCarryInput): BudgetPlanCarryEligibility {
   return budgetPlanCarryEligibility({
     activeProfile: input.activeProfile,
     currentMonth: input.currentMonth,

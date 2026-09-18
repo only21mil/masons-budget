@@ -11,7 +11,7 @@
 
 import type { BTCBillPay } from "@vogel-vault/domain/readModel"
 
-export const BILL_PAY_BUDGET_EFFECTS = [
+const BILL_PAY_BUDGET_EFFECTS = [
   "budget_category",
   "credit_card_payment",
 ] as const
@@ -37,7 +37,7 @@ export interface LinuxBillPay extends BTCBillPay {
   readonly budgetEffect: BillPayBudgetEffect
 }
 
-export function isBillPayBudgetEffect(value: unknown): value is BillPayBudgetEffect {
+function isBillPayBudgetEffect(value: unknown): value is BillPayBudgetEffect {
   return BILL_PAY_BUDGET_EFFECTS.includes(value as BillPayBudgetEffect)
 }
 
@@ -109,7 +109,7 @@ export interface BillPayPrefill {
 }
 
 /** Wire value the contract names for a River bill pay's `platform`. */
-export const RIVER_BILL_PAY_PLATFORM = "river_bitcoin_bill_pay"
+const RIVER_BILL_PAY_PLATFORM = "river_bitcoin_bill_pay"
 
 /**
  * Project transaction-form state onto a bill-pay prefill.

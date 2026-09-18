@@ -235,7 +235,7 @@ export function createRemoteReadConfigurationProvider(
 }
 
 /** One data file, metadata only. There is no financial content in this type. */
-export interface RemoteDataFileSummary {
+interface RemoteDataFileSummary {
   readonly name: string
   readonly version: number
   /** Epoch milliseconds, as the deployment stores it. */
