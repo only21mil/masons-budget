@@ -25,18 +25,6 @@ internal sealed class ConvexMutation(val path: String) {
         override fun arguments(): JsonObject = JsonObject(emptyMap())
     }
 
-    data class UpsertTransaction(
-        val transaction: TransactionInput,
-        val sourceFile: String? = null,
-        val baseUpdatedAtMs: Long? = null,
-    ) : ConvexMutation("tables:upsertTransaction") {
-        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
-            put("transaction", transaction.toJson())
-            sourceFile?.let { put("sourceFile", JsonPrimitive(it)) }
-            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
-        }.let(::JsonObject)
-    }
-
     /** Capability-scoped transaction write used by the Android add surface. */
     data class UpsertTransactionFromDevice(
         val owner: FamilyMember,
@@ -57,28 +45,6 @@ internal sealed class ConvexMutation(val path: String) {
             put("owner", JsonPrimitive(owner.ledgerOwner.key))
             put("sourceFile", JsonPrimitive(sourceFile))
             put("transaction", transaction.toJson())
-            baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
-        }.let(::JsonObject)
-    }
-
-    data class DeleteTransaction(
-        val txId: String,
-        val owner: FamilyMember,
-        val sourceFile: String,
-        val baseUpdatedAtMs: Long? = null,
-    ) : ConvexMutation("tables:deleteTransaction") {
-        init {
-            require(txId.isNotBlank()) { "transaction id must not be blank" }
-            require(sourceFile.isNotBlank()) { "source file must not be blank" }
-            require(sourceFile == owner.transactionsDataFileName) {
-                "source file must match the transaction owner"
-            }
-        }
-
-        override fun arguments(): JsonObject = buildMap<String, JsonElement> {
-            put("txId", JsonPrimitive(txId))
-            put("owner", JsonPrimitive(owner.key))
-            put("sourceFile", JsonPrimitive(sourceFile))
             baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
         }.let(::JsonObject)
     }
@@ -247,14 +213,6 @@ internal sealed class ConvexMutation(val path: String) {
         )
     }
 
-    data class UpsertBtcBuy(
-        val buy: BtcBuyInput,
-        val sourceFile: String? = null,
-    ) : ConvexMutation("tables:upsertBtcBuy") {
-        override fun arguments(): JsonObject =
-            argumentsWithOptionalSource("buy", buy.toJson(), sourceFile)
-    }
-
     data class UpsertBtcBillPayFromDevice(
         val owner: FamilyMember,
         val billPay: BtcBillPayInput,
@@ -316,14 +274,6 @@ internal sealed class ConvexMutation(val path: String) {
         }.let(::JsonObject)
     }
 
-    data class UpsertBtcAccount(
-        val account: BtcAccountInput,
-        val sourceFile: String? = null,
-    ) : ConvexMutation("tables:upsertBtcAccount") {
-        override fun arguments(): JsonObject =
-            argumentsWithOptionalSource("account", account.toJson(), sourceFile)
-    }
-
     data class UpsertBtcTransferFromDevice(
         val owner: FamilyMember,
         val transfer: BtcTransferInput,
@@ -341,25 +291,6 @@ internal sealed class ConvexMutation(val path: String) {
             put("transfer", transfer.toJson())
             baseUpdatedAtMs?.let { put("baseUpdatedAtMs", JsonPrimitive(it)) }
         }.let(::JsonObject)
-    }
-
-    data class UpsertBudgetCategory(
-        val viewer: FamilyMember,
-        val month: String,
-        val category: BudgetCategoryInput,
-    ) : ConvexMutation("tables:upsertBudgetCategory") {
-        init {
-            require(month.matches(BUDGET_MONTH_PATTERN)) {
-                "budget month must be canonical yyyy-MM"
-            }
-        }
-
-        override fun arguments(): JsonObject =
-            jsonObject(
-                "viewer" to JsonPrimitive(viewer.key),
-                "month" to JsonPrimitive(month),
-                "category" to category.toJson(),
-            )
     }
 
     /** Capability-scoped current-month category deletion. */
@@ -716,18 +647,6 @@ internal fun Long.toConvexInt64(): JsonObject {
         "\$integer" to JsonPrimitive(Base64.getEncoder().encodeToString(bytes)),
     )
 }
-
-private fun argumentsWithOptionalSource(
-    valueKey: String,
-    value: JsonObject,
-    sourceFile: String?,
-): JsonObject = buildMap<String, JsonElement> {
-    put(valueKey, value)
-    sourceFile?.let {
-        require(it.isNotBlank()) { "source file must not be blank" }
-        put("sourceFile", JsonPrimitive(it))
-    }
-}.let(::JsonObject)
 
 private fun jsonObject(vararg entries: Pair<String, JsonElement>): JsonObject =
     JsonObject(linkedMapOf(*entries))

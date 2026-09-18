@@ -59,9 +59,9 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
- * One mutation session shared by Today and every Tasks route.
+ * One mutation session shared by every Tasks route.
  *
- * The local-list callbacks are supplied per operation because Today and Tasks
+ * The local-list callbacks are supplied per operation because Tasks routes
  * have different projections of the same owner-scoped todo ledger. Transport
  * result handling, busy-row behavior and the delete/Undo boundary must not
  * differ between those projections.
@@ -482,3 +482,18 @@ internal fun TodoRow(
         }
     }
 }
+
+/**
+ * The normaliser fills `project` with "Inbox" for an unfiled todo rather than
+ * leaving it unset, so this screen treats that value as "not filed". See
+ * DOMAIN_ADOPTION.md in this app's package root; the Linux client's Tasks page
+ * carries the identical rule.
+ */
+private const val UNFILED_TODO_PROJECT = "Inbox"
+
+/** Where a todo is filed: its project, else its area, else nowhere. */
+internal fun filing(todo: TodoItem): String? =
+    todo.project
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() && !it.equals(UNFILED_TODO_PROJECT, ignoreCase = true) }
+        ?: todo.area?.trim()?.takeIf(String::isNotEmpty)

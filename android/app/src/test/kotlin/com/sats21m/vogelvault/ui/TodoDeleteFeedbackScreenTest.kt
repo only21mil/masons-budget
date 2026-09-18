@@ -1,19 +1,19 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.semantics.getOrNull
-import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.sats21m.vogelvault.R
@@ -45,16 +45,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 
-/**
- * Delete feedback as the user actually meets it: through TodoScreen, driving the
- * real Delete control, against a transport this test holds open.
- *
- * The isolated helper test next door cannot see the defect it names. Reverting
- * TodoScreen to the optimistic version it was written to guard leaves that test
- * green, because the helper is still correct — the call site was the bug. So
- * these two cases press the screen's own snackbar sequencing, and both were
- * observed failing against the production lines they guard.
- */
+/** Delete and undo feedback through Tasks with a controlled transport. */
 @RunWith(RobolectricTestRunner::class)
 @Config(
     sdk = [34],
@@ -108,8 +99,8 @@ class TodoDeleteFeedbackScreenTest {
     }
 
     @Test
-    fun `TodoScreen announces no deletion while the delete is still in flight`() {
-        showToday()
+    fun `TaskListsScreen announces no deletion while the delete is still in flight`() {
+        showTasks()
         deleteTheTodo()
 
         assertTrue(
@@ -119,12 +110,12 @@ class TodoDeleteFeedbackScreenTest {
         assertEquals(
             0,
             nodesWithText(deletedAnnouncement),
-            "TodoScreen published \"$deletedAnnouncement\" before the delete result arrived",
+            "TaskListsScreen published \"$deletedAnnouncement\" before the delete result arrived",
         )
         assertEquals(
             0,
             nodesWithText(undoLabel),
-            "TodoScreen offered Undo for a delete the server has not accepted yet",
+            "TaskListsScreen offered Undo for a delete the server has not accepted yet",
         )
         assertEquals(0, refreshCount, "an in-flight delete refreshed rows before Convex accepted it")
 
@@ -151,7 +142,7 @@ class TodoDeleteFeedbackScreenTest {
 
     @Test
     fun `failed delete restores a newer authoritative row received while in flight`() {
-        showToday()
+        showTasks()
         deleteTheTodo()
         val newer = todo.copy(
             title = "Pay electric bill after rate update",
@@ -169,7 +160,7 @@ class TodoDeleteFeedbackScreenTest {
 
     @Test
     fun `a slow successful delete starts a full undo window at acceptance`() {
-        showToday()
+        showTasks()
         deleteTheTodo()
 
         // The server is slower than six seconds. That time must not consume the
@@ -199,7 +190,7 @@ class TodoDeleteFeedbackScreenTest {
 
     @Test
     fun `a successful undo uses the safe restore route and refreshes both writes`() {
-        showToday()
+        showTasks()
         deleteTheTodo()
 
         application.poster.answer(deleteSuccess())
@@ -249,7 +240,7 @@ class TodoDeleteFeedbackScreenTest {
         """{"status":"success","value":{"ok":true,"entityId":"${todo.id}","updatedAtMs":1800000000001}}""",
     )
 
-    private fun showToday() {
+    private fun showTasks() {
         val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
         compose.runOnUiThread {
             activityController.get().setContent {
@@ -261,17 +252,19 @@ class TodoDeleteFeedbackScreenTest {
                     ),
                 )
                 VogelVaultTheme {
-                    TodoScreen(
-                        state = state,
-                        onWriteSucceeded = { refreshCount++ },
-                        nowMillis = { screenNowMillis },
-                    )
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        TaskListsScreen(
+                            state = state,
+                            todos = state.data.todos.value,
+                            onWriteSucceeded = { refreshCount++ },
+                            nowMillis = { screenNowMillis },
+                        )
+                    }
                 }
             }
         }
         settle()
-        compose.onNode(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsActions.ScrollToIndex))
-            .performScrollToNode(hasText(todo.title))
+        compose.onNodeWithText(todo.title).performScrollTo()
         assertEquals(1, nodesWithText(todo.title), "the todo under test never rendered")
     }
 
