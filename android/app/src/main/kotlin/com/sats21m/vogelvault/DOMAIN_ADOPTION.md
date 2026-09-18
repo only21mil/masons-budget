@@ -25,9 +25,8 @@ Boundary shape, in one line:
 ## Status, 2026-09-18
 
 - **`ui/TaskListsScreen.kt`** is the live task destination. It consumes canonical
-  `TodoItem` rows, including completed tasks that can be reopened. The retained
-  `ui/TodoScreen.kt` implementation is not the destination used by `ScreenHost`.
-  `ui/TodayLogic.kt` uses the same canonical due-date contract for read-only views.
+  `TodoItem` rows, including completed tasks that can be reopened. The retired
+  Today screen and its money-out projection have been removed.
 - **`domain/Fixtures.kt`** builds `TodoItem` samples directly. Legacy normalization
   is covered separately by the shared parity fixtures.
 - **The legacy Convex blob reader** remains compatibility code with no live

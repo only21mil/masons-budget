@@ -218,10 +218,6 @@
     <string name="transaction_delete_confirm_title">Delete this transaction?</string>
     <string name="transaction_delete_confirm_detail">This cannot be undone. There is no transaction tombstone.</string>
     <string name="transaction_delete_confirm_action">Delete permanently</string>
-    <string name="todo_today_subtitle">Due today or overdue, including completed tasks</string>
-    <string name="todo_new_task">New task</string>
-    <string name="todo_add">Add task</string>
-    <string name="todo_empty">Nothing is due today.</string>
     <string name="todo_edit">Edit task</string>
     <string name="todo_mark_complete_named">Mark “%1$s” complete</string>
     <string name="todo_mark_open_named">Mark “%1$s” open</string>
