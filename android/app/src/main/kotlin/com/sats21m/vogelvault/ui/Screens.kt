@@ -198,8 +198,8 @@ fun ScreenHost(
     },
 ) {
     val ledgerTokens = LocalLedgerTheme.current
-    var addingTransaction by rememberSaveable { mutableStateOf(false) }
-    var addingIncome by rememberSaveable { mutableStateOf(false) }
+    var addingTransaction by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var addingIncome by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(quickAddRequested) {
         if (quickAddRequested) {
             addingIncome = false
@@ -258,11 +258,11 @@ fun ScreenHost(
         budgetDrilldownMonth = null
         budgetDrilldownCategory = null
     }
-    var showBitcoinAdd by rememberSaveable { mutableStateOf(false) }
-    var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
-    var showBtcBillPayEditor by rememberSaveable { mutableStateOf(false) }
-    var showBtcTransferEditor by rememberSaveable { mutableStateOf(false) }
-    var showBtcAccountEditor by rememberSaveable { mutableStateOf(false) }
+    var showBitcoinAdd by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcBuyEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcBillPayEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcTransferEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcAccountEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
     var btcBillPayPrefill by remember(state.activeProfile) { mutableStateOf<BillPayPrefill?>(null) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
