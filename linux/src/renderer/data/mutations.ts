@@ -45,7 +45,7 @@ export interface RendererMutationAdapter {
 
 export type DataOrigin = "remote" | "fixture"
 
-export const MUTATION_MESSAGES: Readonly<Record<RendererMutationResult["status"], string>> = {
+const MUTATION_MESSAGES: Readonly<Record<RendererMutationResult["status"], string>> = {
   ok: "Saved.",
   disabled: "Editing is not available for this item in this build.",
   "not-configured": "Editing is not configured on this device.",
@@ -335,7 +335,7 @@ export function stableId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export function entityKey(request: RendererMutationRequest): string {
+function entityKey(request: RendererMutationRequest): string {
   switch (request.kind) {
     case "budgetCategory.upsert":
       return `budgetCategory:${request.month}:${request.originalName ?? request.name}`
