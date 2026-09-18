@@ -118,9 +118,4 @@ final class Transaction {
         let sats = abs(satsValue(btcPrice: btcPrice))
         return isSpend && !hasOppositeSpendSign ? -sats : sats
     }
-
-    func spendSatsValue(btcPrice: Decimal = BTCPriceService.fallbackPriceUSD) -> Decimal {
-        guard isSpend else { return 0 }
-        return satsValue(btcPrice: btcPrice)
-    }
 }

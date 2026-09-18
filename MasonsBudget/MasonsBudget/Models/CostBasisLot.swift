@@ -30,12 +30,6 @@ final class CostBasisLot {
         Decimal(sats) / 100_000_000
     }
 
-    var costPerBtc: Decimal {
-        let btc = btcAmount
-        guard btc > 0 else { return 0 }
-        return basisUsd / btc
-    }
-
     func currentValue(btcPrice: Decimal) -> Decimal {
         btcAmount * btcPrice
     }

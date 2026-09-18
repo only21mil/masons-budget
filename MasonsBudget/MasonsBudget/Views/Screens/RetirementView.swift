@@ -410,12 +410,6 @@ struct RetirementView: View {
         visibleHoldings.reduce(Decimal(0)) { $0 + $1.weeklyContribution }
     }
 
-    private var currentHoldingsBalance: Decimal {
-        let vooPrice = StockPriceService.vooPrice
-        let ibitPrice = StockPriceService.ibitPrice
-        return visibleHoldings.reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
-    }
-
     private var monthlyBudgetTotal: Decimal {
         budgetCategories
             .filter { activeMember.sharesNetWorth(with: $0.ownerMember) && !$0.isIncome }

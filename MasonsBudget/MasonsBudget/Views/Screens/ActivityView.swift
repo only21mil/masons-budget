@@ -78,12 +78,6 @@ struct ActivityView: View {
         return scoped.filter { (!todayOnly || Calendar.current.isDateInToday($0.date)) && SearchMatcher.matches(transaction: $0, query: searchText) }
     }
 
-    private static let shortDateFormatter: DateFormatter = {
-        let df = DateFormatter()
-        df.dateFormat = "MMM d"
-        return df
-    }()
-
     private var grouped: [(Date, [Transaction])] {
         let grouped = Dictionary(grouping: filtered) { Calendar.current.startOfDay(for: $0.date) }
         return grouped.keys.sorted(by: >).map { ($0, grouped[$0] ?? []) }
