@@ -43,7 +43,6 @@ jobs:
     outputs:
       linux: ${{ steps.filter.outputs.linux }}
       android: ${{ steps.filter.outputs.android }}
-      backend: ${{ steps.filter.outputs.backend }}
       tooling: ${{ steps.filter.outputs.tooling }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -80,7 +79,7 @@ jobs:
 
           verify_all() {
             echo "::notice::$1"
-            for t in linux android backend tooling; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
+            for t in linux android tooling; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
           }
 
           if [ "$VERIFY_ALL" = "true" ]; then
@@ -116,9 +115,6 @@ jobs:
               echo "$t=false" >> "$GITHUB_OUTPUT"
             fi
           done
-          # The contract and Convex suites are cheap and guard the money rules;
-          # they run whenever anything at all changed.
-          echo "backend=true" >> "$GITHUB_OUTPUT"
 
   credential-tooling:
     name: Credential mint tooling

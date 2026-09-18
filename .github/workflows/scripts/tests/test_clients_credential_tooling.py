@@ -93,7 +93,7 @@ class CredentialToolingRoutingTests(unittest.TestCase):
         self.assertIn("tooling: ${{ steps.filter.outputs.tooling }}", self.clients)
         self.assertRegex(
             self.clients,
-            r"for t in linux android backend tooling; do",
+            r"(?s)verify_all\(\) \{.*?for t in linux android tooling; do",
         )
         self.assertRegex(self.clients, r"for t in linux android tooling; do")
 
