@@ -7,6 +7,10 @@ extension EnvironmentValues {
         get { self[LedgerRootTitleKey.self] }
         set { self[LedgerRootTitleKey.self] = newValue }
     }
+    func ledgerRootAccessory(for title: String) -> AnyView? {
+        ledgerRootTitle == title ? ledgerRootAccessory : nil
+    }
+
     var ledgerRootAccessory: AnyView? {
         get { self[LedgerRootAccessoryKey.self] }
         set { self[LedgerRootAccessoryKey.self] = newValue }
@@ -36,7 +40,7 @@ struct ScreenHeader<Accessory: View>: View {
     @Environment(\.ledgerTokens) private var tokens
     @Environment(\.theme) var theme
     @Environment(\.ledgerRootTitle) private var rootTitle
-    @Environment(\.ledgerRootAccessory) private var rootAccessory
+    @Environment(\.self) private var environment
 
     init(title: String, eyebrow: String? = nil, @ViewBuilder accessory: @escaping () -> Accessory = { EmptyView() }) {
         self.title = title
@@ -76,7 +80,7 @@ struct ScreenHeader<Accessory: View>: View {
                     .foregroundStyle(theme.text)
 
                 Spacer()
-                if rootTitle == title, let rootAccessory {
+                if let rootAccessory = environment.ledgerRootAccessory(for: title) {
                     rootAccessory.frame(minHeight: LedgerMetrics.minimumHitTarget)
                 } else {
                     accessory().frame(minHeight: LedgerMetrics.minimumHitTarget)

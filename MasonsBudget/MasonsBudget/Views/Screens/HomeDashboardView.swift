@@ -4,6 +4,7 @@ import SwiftUI
 
 struct HomeDashboardView: View {
     let hasReadToken: Bool
+    @Binding var selectedTab: AppTab
 
     @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
@@ -175,7 +176,9 @@ struct HomeDashboardView: View {
         .padding(.horizontal, ledgerTokens.metrics.screenGutter)
     }
     @ViewBuilder private var bitcoinLinks: some View {
-        link("Accounts") { BitcoinOverviewView() }
+        Button { selectedTab = .bitcoin } label: {
+            Text("Accounts").ledgerType(.button).frame(minHeight: 44)
+        }.foregroundStyle(theme.accent)
         link("Buys") { BTCBuysView() }
         link("Bill Pay") { BTCBillPayView() }
     }
