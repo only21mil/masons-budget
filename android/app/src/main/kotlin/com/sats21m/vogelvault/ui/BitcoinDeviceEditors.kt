@@ -233,8 +233,8 @@ internal fun newAccountKey(name: String, owner: FamilyMember): String {
     return "${slug.take(256 - suffix.length)}$suffix"
 }
 
-internal fun accountAsOf(loadedAsOf: String?, today: LocalDate = LocalDate.now()): String =
-    loadedAsOf ?: "${today}T00:00:00.000Z"
+internal fun accountAsOf(loadedAsOf: String?, today: LocalDate = ledgerToday()): String =
+    loadedAsOf ?: today.toString()
 
 internal data class BtcAccountWriteSnapshot(
     val asOf: String,

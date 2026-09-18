@@ -64,7 +64,6 @@ import com.sats21m.vogelvault.ui.theme.rememberLedgerHaptics
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
@@ -109,7 +108,7 @@ internal data class AddTransactionDraft(
     // `card` remains as a source-compatible bridge for the older add surface.
     // New callers use paymentSource; new drafts carry the canonical source wire.
     val card: String = PaymentSource.DEFAULT.wire,
-    val date: LocalDate = LocalDate.now(ZoneOffset.UTC),
+    val date: LocalDate,
     val note: String = "",
     val owner: FamilyMember = FamilyMember.VICTOR,
     val paymentSource: PaymentSource = PaymentSource.DEFAULT,
@@ -125,7 +124,7 @@ internal data class PreparedTransaction(
 /** Values needed by the separate River bill-pay editor. */
 data class BillPayPrefill(
     val merchant: String,
-    val date: LocalDate = LocalDate.now(ZoneOffset.UTC),
+    val date: LocalDate,
     val amountUsd: String,
     val owner: FamilyMember,
 ) {
@@ -527,7 +526,7 @@ internal fun AddTransactionSheet(
     val keyboard = LocalSoftwareKeyboardController.current
     var amount by rememberProfileSaveable(state.activeProfile) { mutableStateOf("") }
     var bitcoinAccountKey by rememberProfileSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
-    var dateIso by rememberProfileSaveable(state.activeProfile) { mutableStateOf(LocalDate.now().toString()) }
+    var dateIso by rememberProfileSaveable(state.activeProfile) { mutableStateOf(ledgerToday().toString()) }
     var note by rememberProfileSaveable(state.activeProfile) { mutableStateOf("") }
     var errorMessage by rememberProfileSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
     // Deliberately NOT rememberSaveable: a recreated sheet cannot reconnect to

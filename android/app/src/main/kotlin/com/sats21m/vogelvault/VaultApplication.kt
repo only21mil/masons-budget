@@ -33,8 +33,6 @@ import com.sats21m.vogelvault.ui.TransactionDeviceMutationGateway
 import com.sats21m.vogelvault.ui.TodoMutationGateway
 import com.sats21m.vogelvault.ui.VaultViewModel
 import java.io.IOException
-import java.time.YearMonth
-import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -386,6 +384,8 @@ open class VaultApplication : Application() {
         )
     }
 
+    internal open val ledgerClock: java.time.Clock get() = java.time.Clock.systemDefaultZone()
+
     /** Current-month budget deletion stays behind the paired-device capability. */
     internal open val budgetCategoryDeletionGateway: BudgetCategoryDeletionGateway by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
@@ -397,7 +397,7 @@ open class VaultApplication : Application() {
             ),
             // UI month pickers cannot supply or override this value. Convex
             // repeats the current-month check against its own clock.
-            trustedCurrentMonth = { YearMonth.now(ZoneOffset.UTC).toString() },
+            trustedCurrentMonth = { com.sats21m.vogelvault.ui.ledgerCurrentMonth(ledgerClock) },
         )
     }
 
@@ -410,7 +410,7 @@ open class VaultApplication : Application() {
                 configSource = MutableConvexConfigSource(writeConvexConfig()),
                 credentialSource = SecureConvexDeviceCredentialSource(storedConvexConfigSource),
             ),
-            trustedCurrentMonth = { YearMonth.now(ZoneOffset.UTC).toString() },
+            trustedCurrentMonth = { com.sats21m.vogelvault.ui.ledgerCurrentMonth(ledgerClock) },
         )
     }
 

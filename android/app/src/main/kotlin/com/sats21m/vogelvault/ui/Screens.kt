@@ -1053,10 +1053,10 @@ internal fun formatTransactionAmount(
 }
 
 internal fun calendarDate(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): java.time.LocalDate =
-    java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    ledgerToday(java.time.Clock.fixed(java.time.Instant.ofEpochMilli(now), zone))
 
 internal fun calendarMonth(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String =
-    calendarDate(now, zone).toString().take(7)
+    ledgerCurrentMonth(java.time.Clock.fixed(java.time.Instant.ofEpochMilli(now), zone))
 
 private fun VaultLazyListScope.incomeSection(state: VaultUiState, month: String, onAddIncome: () -> Unit) {
     val rows = state.data.dashboardIncomeEntries(state.activeProfile, month)
