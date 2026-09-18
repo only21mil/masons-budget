@@ -3,8 +3,10 @@
 // step, so these tests pin the observable contract of the copy: the dual-field
 // superset, the lane resolution order, and the LWW timestamp rules.
 import { describe, expect, it } from "vitest";
+import { TODO_LANES as DOMAIN_TODO_LANES } from "@vogel-vault/domain/todo";
 
 import {
+  TODO_LANES,
   canonicalTodoId,
   isAppCreatedTodo,
   mergeTodoPayload,
@@ -15,6 +17,10 @@ import {
 } from "./todoNormalize";
 
 describe("normalizeTodoLane", () => {
+  it("uses the same todo lanes as the shared domain contract", () => {
+    expect([...TODO_LANES]).toEqual([...DOMAIN_TODO_LANES]);
+  });
+
   it("accepts the three known lanes", () => {
     expect(normalizeTodoLane("work")).toBe("work");
     expect(normalizeTodoLane("personal")).toBe("personal");
@@ -464,7 +470,7 @@ describe("todoUpdatedMs parses stamps under the shared domain contract", () => {
 
   for (const stamp of stamps) {
     it(`agrees with the domain for ${JSON.stringify(stamp)}`, async () => {
-      const domain = await import("../shared/domain/src/todo.ts");
+      const domain = await import("@vogel-vault/domain/todo");
       expect(todoUpdatedMs({ updated_at: stamp })).toBe(
         domain.todoUpdatedMillis({ updated_at: stamp }),
       );
