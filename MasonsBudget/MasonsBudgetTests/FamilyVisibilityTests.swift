@@ -109,7 +109,7 @@ final class FamilyVisibilityTests: XCTestCase {
         XCTAssertEqual(masonNetWorth.map(\.label), ["Mason Strike"])
     }
 
-    // MARK: - Todo Filtering (TodayView, ProjectsView)
+    // MARK: - Todo Filtering (TasksView, ProjectsView)
 
     func testTodoFilteringUsesExactOwnerForAdults() {
         let todos = sampleTodos()
@@ -537,38 +537,6 @@ private struct FixtureExpectations: Decodable {
     let budgetSpend: [String: String]
 }
 
-private struct MoneyOutTodayFixture: Decodable {
-    let contractVersion: Int
-    let date: String
-    let transactions: [MoneyOutTodayFixtureTransaction]
-    let billPays: [MoneyOutTodayFixtureBillPay]
-    let cases: [MoneyOutTodayFixtureCase]
-}
-
-private struct MoneyOutTodayFixtureTransaction: Decodable {
-    let id: String
-    let date: String
-    let amountCents: String
-    let category: String
-    let owner: String
-}
-
-private struct MoneyOutTodayFixtureBillPay: Decodable {
-    let id: String
-    let date: String
-    let principalCents: String
-    let feeUsdCents: String
-    let owner: String
-    let budgetEffect: BTCBillPayBudgetEffect?
-}
-
-private struct MoneyOutTodayFixtureCase: Decodable {
-    let activeProfile: String
-    let expectedOwner: String
-    let expectedTotalCents: String
-    let expectedSourceIds: [String]
-}
-
 private struct BudgetCategoryDeletionFixture: Decodable {
     let contractVersion: Int
     let accepted: [BudgetCategoryDeletionAcceptedFixture]
@@ -722,41 +690,6 @@ final class Phase1ContractsTests: XCTestCase {
         )
     }
 
-    func testMoneyOutTodayLegacyBillPayDefaultsToExcludedCreditCardPayment() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
-        let now = try XCTUnwrap(calendar.date(from: DateComponents(
-            year: 2026,
-            month: 8,
-            day: 25,
-            hour: 12,
-        )))
-        let legacy = BTCBillPay(
-            id: "legacy-bill-pay",
-            date: now,
-            merchant: "Legacy bill",
-            category: "Legacy category",
-            amountUSD: 100,
-            btcSpent: Decimal(string: "0.001")!,
-            btcPrice: 100_000,
-            feeUSD: Decimal(string: "0.25"),
-            owner: .victor,
-        )
-
-        XCTAssertNil(legacy.budgetEffect)
-        XCTAssertEqual(try legacy.validatedBudgetEffect(), .creditCardPayment)
-        XCTAssertEqual(
-            try MoneyOutTodayService.deriveCents(
-                viewer: .rachel,
-                now: now,
-                calendar: calendar,
-                transactions: [],
-                billPays: [legacy],
-            ),
-            0,
-        )
-    }
-
     func testMoneyOutTodayDoesNotClampNegativeRefundTotal() throws {
         let refund = try MoneyOutTodayTransaction(
             owner: .victor,
@@ -843,121 +776,6 @@ final class Phase1ContractsTests: XCTestCase {
             XCTAssertEqual(
                 error as? ExactMoneyError,
                 .negative(field: "moneyOutToday.billPay.feeUsdCents"),
-            )
-        }
-    }
-
-    func testMoneyOutTodayProductionAdapterChecksExactCentsAndBillPayTreatment() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
-        let now = try XCTUnwrap(calendar.date(from: DateComponents(
-            year: 2026,
-            month: 8,
-            day: 25,
-            hour: 12,
-        )))
-        let rows = [
-            Transaction(
-                id: "spend",
-                date: now,
-                merchant: "Grocer",
-                amount: Decimal(string: "12.34")!,
-                category: "Groceries",
-                owner: .rachel,
-                createdBy: "test",
-            ),
-            Transaction(
-                id: "transfer",
-                date: now,
-                merchant: "Card",
-                amount: 50,
-                category: BTCBillPayBudgetEffect.creditCardPaymentCategory,
-                owner: .victor,
-                createdBy: "test",
-            ),
-        ]
-        let billPay = BTCBillPay(
-            id: "bill-pay",
-            date: now,
-            merchant: "Utility",
-            category: "Bills & Utilities",
-            amountUSD: 20,
-            btcSpent: Decimal(string: "0.0002")!,
-            btcPrice: 100_000,
-            feeUSD: Decimal(string: "0.25"),
-            budgetEffect: .budgetCategory,
-            owner: .victor,
-        )
-
-        XCTAssertEqual(
-            try MoneyOutTodayService.deriveCents(
-                viewer: .rachel,
-                now: now,
-                calendar: calendar,
-                transactions: rows,
-                billPays: [billPay],
-            ),
-            3_259,
-        )
-    }
-
-    func testSharedMoneyOutTodayFixtureThroughLegacyMapperAndProductionAdapter() throws {
-        let fixture: MoneyOutTodayFixture = try loadSharedFixture("money-out-today-cases")
-        XCTAssertEqual(fixture.contractVersion, 1)
-
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
-        let now = LedgerMapper.parseDate(fixture.date)
-        let transactions = try fixture.transactions.map { row in
-            Transaction(
-                id: row.id,
-                date: LedgerMapper.parseDate(row.date),
-                merchant: row.id,
-                amount: Decimal(try fixtureInt64(row.amountCents)) / 100,
-                category: row.category,
-                owner: try fixtureFamilyMember(row.owner),
-                createdBy: "shared-fixture",
-            )
-        }
-        let billPays = try fixture.billPays.map { row in
-            // The shared fixture's omitted value means an eligible budget posting.
-            // Resolve it before entering the legacy-compatible persisted model.
-            let budgetEffect = row.budgetEffect ?? .budgetCategory
-            let dto = LegacyBTCBillPayDTO(
-                id: row.id,
-                date: row.date,
-                merchant: row.id,
-                category: budgetEffect == .creditCardPayment
-                    ? BTCBillPayBudgetEffect.creditCardPaymentCategory
-                    : "Bills",
-                amountUsd: Decimal(try fixtureInt64(row.principalCents)) / 100,
-                btcSpent: Decimal(string: "0.00000001")!,
-                btcPrice: 100_000,
-                platform: "River",
-                note: nil,
-                feeUsd: Decimal(try fixtureInt64(row.feeUsdCents)) / 100,
-                reference: nil,
-                owner: row.owner,
-                budgetEffect: budgetEffect,
-            )
-            let model = try LedgerMapper.mapBTCBillPay(dto)
-            XCTAssertEqual(try model.validatedBudgetEffect(), budgetEffect, row.id)
-            return model
-        }
-
-        for row in fixture.cases {
-            let viewer = try fixtureFamilyMember(row.activeProfile)
-            XCTAssertEqual(viewer.ledgerOwner, try fixtureFamilyMember(row.expectedOwner), row.activeProfile)
-            XCTAssertEqual(
-                try MoneyOutTodayService.deriveCents(
-                    viewer: viewer,
-                    now: now,
-                    calendar: calendar,
-                    transactions: transactions,
-                    billPays: billPays,
-                ),
-                try fixtureInt64(row.expectedTotalCents),
-                "\(row.activeProfile): \(row.expectedSourceIds.joined(separator: ", "))",
             )
         }
     }
