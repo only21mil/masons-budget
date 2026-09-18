@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Shared "add a task" affordance (SAT-1508). Collapsed it renders as a
 /// prominent accent "New Task" row; expanded it shows the draft field.
-/// Used by TodayView, TasksView, and TaskSmartListView so every task surface has a
+/// Used by TasksView and TaskSmartListView so every task surface has a
 /// visible place to create a todo manually.
 struct InlineAddTaskBar: View {
     @Environment(\.theme) var theme

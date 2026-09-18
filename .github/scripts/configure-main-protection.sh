@@ -14,6 +14,8 @@ expected_checks="$(
     {"context":"Detect changed trees","app_id":15368},
     {"context":"Detect Apple changes","app_id":15368},
     {"context":"actionlint + secret inventory","app_id":15368},
+    {"context":"Credential mint tooling","app_id":15368},
+    {"context":"Verify committed Xcode project","app_id":15368},
     {"context":"Shared domain contract","app_id":15368},
     {"context":"Production wire golden decoders","app_id":15368},
     {"context":"Convex functions","app_id":15368},
@@ -71,5 +73,5 @@ if [[ "$actual_checks" != "$sorted_expected" ]]; then
   exit 1
 fi
 
-echo "main protection verified: enforce_admins=true, strict=false, 9 required checks"
+echo "main protection verified: enforce_admins=true, strict=false, $(jq 'length' <<<"$actual_checks") required checks"
 jq -r '.[] | "  \(.context) (app \(.app_id))"' <<<"$actual_checks"
