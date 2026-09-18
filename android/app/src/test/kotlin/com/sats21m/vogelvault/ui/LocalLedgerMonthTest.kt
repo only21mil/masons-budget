@@ -29,7 +29,7 @@ class LocalLedgerMonthTest {
         assertEquals(LocalDate.of(2026, 9, 30), today)
         assertEquals(today, calendarDate(clock.millis(), clock.zone))
         assertEquals("2026-09", calendarMonth(clock.millis(), clock.zone))
-        assertEquals("2026-09-30", accountAsOf(null, today))
+        assertEquals("2026-09-30T00:00:00.000Z", accountAsOf(null, today))
         assertEquals("2026-09", application.budgetPlanCarryGateway.currentMonth())
 
         val current = Budget(
