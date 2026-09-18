@@ -111,6 +111,7 @@ extension LegacyTransactionDTO {
 
     // Shared date-only wire formatter. The transaction and todo DTOs must
     // produce byte-identical yyyy-MM-dd strings, so this is the single copy.
+    private static let wireDateFormatterLock = NSLock()
     private static let wireDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -119,9 +120,33 @@ extension LegacyTransactionDTO {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
+    private static var wireDateFormatters: [String: DateFormatter] = [
+        wireDateFormatter.timeZone.identifier: wireDateFormatter,
+    ]
 
-    static func dateString(from date: Date) -> String {
-        wireDateFormatter.string(from: date)
+    // Caller holds wireDateFormatterLock through lookup and formatting/parsing.
+    private static func wireDateFormatter(for timeZone: TimeZone) -> DateFormatter {
+        let key = timeZone.identifier
+        if let cached = wireDateFormatters[key] { return cached }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        wireDateFormatters[key] = formatter
+        return formatter
+    }
+
+    static func dateString(from date: Date, timeZone: TimeZone = .current) -> String {
+        wireDateFormatterLock.lock()
+        defer { wireDateFormatterLock.unlock() }
+        return wireDateFormatter(for: timeZone).string(from: date)
+    }
+
+    static func date(from string: String, timeZone: TimeZone = .current) -> Date? {
+        wireDateFormatterLock.lock()
+        defer { wireDateFormatterLock.unlock() }
+        return wireDateFormatter(for: timeZone).date(from: string)
     }
 
     func convexJSONObject() throws -> [String: Any] {

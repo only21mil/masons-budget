@@ -89,10 +89,42 @@ final class ConvexSyncServiceTests: XCTestCase {
         let snapshots = try context.fetch(FetchDescriptor<NetWorthSnapshot>())
         let snapshot = try XCTUnwrap(snapshots.first)
         XCTAssertEqual(snapshots.count, 1)
-        XCTAssertEqual(snapshot.ownerMember, .rachel)
+        XCTAssertEqual(snapshot.ownerMember, .victor)
         XCTAssertEqual(snapshot.btcValue, 100_000)
         XCTAssertEqual(snapshot.holdingsValue, 10_000)
         XCTAssertEqual(snapshot.totalValue, 110_000)
+    }
+
+    @MainActor
+    func testDailyNetWorthSnapshotsUseCanonicalHouseholdAndChildOwners() throws {
+        let defaults = UserDefaults.standard
+        let previousMember = defaults.object(forKey: ConvexSyncService.selectedMemberKey)
+        defer { restore(previousMember, forKey: ConvexSyncService.selectedMemberKey, in: defaults) }
+
+        let schema = Schema([
+            BTCAccount.self, HoldingAccount.self, Holding.self, HoldingLot.self, NetWorthSnapshot.self,
+        ])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let context = ModelContext(container)
+
+        for member in [FamilyMember.victor, .rachel] {
+            defaults.set(member.rawValue, forKey: ConvexSyncService.selectedMemberKey)
+            try ConvexSyncService(context: context).recordNetWorthSnapshot()
+            try context.save()
+        }
+        let householdSnapshots = try context.fetch(FetchDescriptor<NetWorthSnapshot>())
+        XCTAssertEqual(householdSnapshots.count, 1)
+        XCTAssertEqual(householdSnapshots.first?.ownerMember, .victor)
+
+        for member in [FamilyMember.mason, .maddox, .mason, .rachel] {
+            defaults.set(member.rawValue, forKey: ConvexSyncService.selectedMemberKey)
+            try ConvexSyncService(context: context).recordNetWorthSnapshot()
+            try context.save()
+        }
+        let snapshots = try context.fetch(FetchDescriptor<NetWorthSnapshot>())
+        XCTAssertEqual(snapshots.count, 3)
+        XCTAssertEqual(Set(snapshots.map(\.ownerMember)), Set([.victor, .mason, .maddox]))
     }
 
     @MainActor

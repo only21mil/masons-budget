@@ -156,8 +156,6 @@ struct ExportView: View {
             csv += row + "\n"
         }
 
-        let dateFmt = DateFormatter()
-        dateFmt.dateFormat = "yyyy-MM-dd"
         shareCSV(csv, filename: "budget-\(monthKey.replacingOccurrences(of: " ", with: "-")).csv")
     }
 

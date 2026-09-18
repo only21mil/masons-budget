@@ -119,7 +119,6 @@ final class WriteBatchTally: ObservableObject {
 
     var failed: Int { localFailure == nil ? completed - succeeded : expected }
     var isFinished: Bool { expected > 0 && (localFailure != nil || completed >= expected) }
-    var isRunning: Bool { expected > 0 && localFailure == nil && completed < expected }
 
     func start(expected count: Int) {
         expected = count

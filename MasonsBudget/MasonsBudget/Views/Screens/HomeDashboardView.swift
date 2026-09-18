@@ -230,11 +230,8 @@ struct HomeDashboardView: View {
     }
     private var recentEntries: [RecentEntry] {
         var entries = visibleTransactions.map { RecentEntry(id: "tx:" + $0.id, date: $0.date, transaction: $0, income: nil) }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
         entries += (financials.income.value?.rows ?? []).filter { member.canSee(dataOwnedBy: $0.owner) }.compactMap {
-            guard let date = formatter.date(from: String($0.date.prefix(10))) else { return nil }
+            guard let date = LegacyTransactionDTO.date(from: String($0.date.prefix(10))) else { return nil }
             return RecentEntry(id: "income:" + $0.incomeId, date: date, transaction: nil, income: $0)
         }
         return Array(entries.sorted { $0.date > $1.date }.prefix(4))
