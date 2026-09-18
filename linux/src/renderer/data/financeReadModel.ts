@@ -88,7 +88,7 @@ export function adaptFinanceDocument(row: VogelVaultFinanceDocument): FinanceDoc
 }
 
 /** Reassert the closed three-symbol contract at the renderer adapter edge. */
-export function adaptMarketQuoteSnapshot(
+function adaptMarketQuoteSnapshot(
   row: VogelVaultMarketQuoteSnapshot,
 ): MarketQuoteSnapshot {
   return assertMarketQuoteSnapshot({

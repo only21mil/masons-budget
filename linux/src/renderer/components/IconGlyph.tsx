@@ -74,5 +74,3 @@ export function IconGlyph({ name, size = 16, className, label }: IconGlyphProps)
     />
   )
 }
-
-export const ICON_NAMES = Object.keys(ICONS) as IconName[]

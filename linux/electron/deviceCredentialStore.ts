@@ -51,7 +51,7 @@ const SAFE_LINUX_BACKENDS: ReadonlySet<string> = new Set([
   "kwallet6",
 ])
 
-export type CredentialStorageReadiness =
+type CredentialStorageReadiness =
   | "ready"
   | "app-not-ready"
   | "encryption-unavailable"
@@ -75,7 +75,7 @@ export interface DeviceCredentialSnapshot {
   readonly capabilities: readonly VogelVaultMutationKind[]
 }
 
-export type NewDeviceCredentialSnapshot =
+type NewDeviceCredentialSnapshot =
   Omit<DeviceCredentialSnapshot, "revision" | "profile"> & {
     readonly profile: VogelVaultMember
   }
