@@ -211,7 +211,7 @@ struct ContentView: View {
                         // NavigationStack to forward a safe-area inset to its scroll content.
                         syncBanner
                         NavigationStack {
-                            screenForTab(tab)
+                            screenForTab(tab, selection: $selectedTab)
                                 .environment(\.ledgerRootTitle, tab.label)
                                 .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
                                     profileButton
@@ -297,26 +297,25 @@ struct ContentView: View {
             .accessibilityAddTraits(isSelected ? .isSelected : [])
         }
 
+        private var macTabBinding: Binding<AppTab> {
+            Binding(
+                get: { AppTab(rawValue: (macNav ?? .home).rawValue) ?? .home },
+                set: { macNav = MacNav(rawValue: $0.rawValue) ?? .home },
+            )
+        }
+
         private var macDetail: some View {
-            NavigationStack {
-                switch macNav ?? .home {
-                case .home: HomeDashboardView(hasReadToken: ConvexConfig.hasReadToken)
-                case .budget: BudgetView()
-                case .activity: ActivityView()
-                case .bitcoin: BitcoinOverviewView()
-                case .tasks: TasksView()
-                }
+            let tab = macTabBinding.wrappedValue
+            return NavigationStack {
+                screenForTab(tab, selection: macTabBinding)
+                    .environment(\.ledgerRootTitle, tab.label)
+                    .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
+                        gearMenuButton
+                        syncStatusGlyph
+                        appearanceToggle
+                    }))
             }
             .id(macNav)
-            .overlay(alignment: .topTrailing) {
-                HStack(spacing: 8) {
-                    gearMenuButton
-                    syncStatusGlyph
-                    appearanceToggle
-                }
-                .padding(.top, 12)
-                .padding(.trailing, 20)
-            }
         }
 
         private var appearanceToggle: some View {
@@ -727,9 +726,9 @@ struct ContentView: View {
     // MARK: - Screen Routing
 
     @ViewBuilder
-    private func screenForTab(_ tab: AppTab) -> some View {
+    private func screenForTab(_ tab: AppTab, selection: Binding<AppTab>) -> some View {
         switch tab {
-        case .home: HomeDashboardView(hasReadToken: ConvexConfig.hasReadToken)
+        case .home: HomeDashboardView(hasReadToken: ConvexConfig.hasReadToken, selectedTab: selection)
         case .budget: BudgetView()
         case .activity: ActivityView()
         case .bitcoin: BitcoinOverviewView()

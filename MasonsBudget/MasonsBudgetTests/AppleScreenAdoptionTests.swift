@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 
 final class AppleScreenAdoptionTests: XCTestCase {
@@ -36,6 +37,20 @@ final class AppleScreenAdoptionTests: XCTestCase {
         XCTAssertEqual(LegacyTransactionDTO.dateString(from: date, timeZone: west), first)
         XCTAssertEqual(LegacyTransactionDTO.dateString(from: date, timeZone: east), "2026-03-01")
         XCTAssertEqual(LegacyTransactionDTO.dateString(from: date, timeZone: west), first)
+    }
+
+    func testRootAccessoryIsAvailableForEveryTabButNotPushedScreens() {
+        var environment = EnvironmentValues()
+        environment.ledgerRootAccessory = AnyView(EmptyView())
+        for tab in AppTab.allCases {
+            environment.ledgerRootTitle = tab.label
+            XCTAssertNotNil(environment.ledgerRootAccessory(for: tab.label), tab.rawValue)
+            XCTAssertNil(environment.ledgerRootAccessory(for: "Bill Pay"), tab.rawValue)
+            XCTAssertNil(environment.ledgerRootAccessory(for: "Awards"), tab.rawValue)
+            // LedgerDrilldown clears the root title even for a same-title destination.
+            environment.ledgerRootTitle = ""
+            XCTAssertNil(environment.ledgerRootAccessory(for: tab.label), tab.rawValue)
+        }
     }
 
     func testPrimaryScreenCatalogMatchesAppleNavigation() {
