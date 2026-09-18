@@ -313,15 +313,6 @@ class VaultViewModel(
         connectRows(_state.value.activeProfile)
     }
 
-    fun simulate(status: Freshness) {
-        _state.update {
-            it.copy(
-                data = Fixtures.envelope(it.activeProfile, status),
-                rowReadDiagnostics = emptySet(),
-            )
-        }
-    }
-
     fun enableRemoteRows(readToken: String) {
         if (readToken.isBlank()) return
         val configure =

@@ -229,18 +229,6 @@ internal data class CredentialFailureMessage(
         formatArgument?.let { context.getString(resourceId, it) } ?: context.getString(resourceId)
 }
 
-/** Why storing the write credential failed, one distinct cause at a time. */
-internal fun credentialSaveFailureMessage(error: Throwable): CredentialFailureMessage = when (error) {
-    is IllegalArgumentException -> CredentialFailureMessage(R.string.write_credential_blank)
-    is IOException -> CredentialFailureMessage(R.string.convex_sync_token_save_failed)
-    is IllegalStateException -> CredentialFailureMessage(R.string.write_credential_save_readback_failed)
-    else ->
-        CredentialFailureMessage(
-            R.string.write_credential_save_unexpected,
-            error.javaClass.simpleName,
-        )
-}
-
 /** Why removing the write credential failed, without exposing stored content. */
 internal fun credentialRemovalFailureMessage(error: Throwable): CredentialFailureMessage = when (error) {
     is IOException -> CredentialFailureMessage(R.string.convex_sync_token_remove_failed)

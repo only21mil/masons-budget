@@ -61,9 +61,8 @@ internal val DEVICE_PLAN_EXISTS_REASON = ConvexServerRejection.PLAN_EXISTS.safeR
 /**
  * Mutation transport for the capability-scoped device endpoints.
  *
- * This is intentionally separate from [ConvexMutationClient]: adding a sync
- * token to these calls would turn an authentication mistake into a silent
- * fallback to the unsafe legacy write contract.
+ * These calls accept only paired-device credentials. A shared sync token
+ * must never provide a fallback to the legacy write contract.
  */
 internal class ConvexDeviceMutationClient(
     private val configSource: ConvexConfigSource,

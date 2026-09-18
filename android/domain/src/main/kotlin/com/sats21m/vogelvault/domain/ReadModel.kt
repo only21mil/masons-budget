@@ -10,22 +10,6 @@ package com.sats21m.vogelvault.domain
  * `Double`. See [Money].
  */
 
-/** Every legacy `dataFiles` blob retained for compatibility tooling. */
-val LEGACY_DATA_FILE_NAMES: List<String> = listOf(
-    "transactions",
-    "budget",
-    "bitcoin-buys",
-    "bitcoin-bill-pays",
-    "btc-balance-snapshot",
-    "finances",
-    "todos",
-    "mason-transactions",
-    "mason-budget",
-    "mason-bitcoin-buys",
-    "maddox-transactions",
-    "son-balances",
-)
-
 /** Freshness of a slice of the read model, surfaced explicitly in the UI. */
 enum class Freshness { DEMO, LIVE, STALE, ERROR, EMPTY, LOADING }
 

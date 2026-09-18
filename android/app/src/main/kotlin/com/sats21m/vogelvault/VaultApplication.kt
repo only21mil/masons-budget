@@ -10,7 +10,6 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.sats21m.vogelvault.data.DeviceCapabilities
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
-import com.sats21m.vogelvault.data.ConvexMutationClient
 import com.sats21m.vogelvault.data.ConvexReadBootstrapRepository
 import com.sats21m.vogelvault.data.ConvexResult
 import com.sats21m.vogelvault.data.BudgetCategoryDeletionGateway
@@ -21,7 +20,6 @@ import com.sats21m.vogelvault.data.RecoveringFinanceReadSource
 import com.sats21m.vogelvault.data.RowQueryRepositories
 import com.sats21m.vogelvault.data.SecureConvexConfigSource
 import com.sats21m.vogelvault.data.SecureConvexDeviceCredentialSource
-import com.sats21m.vogelvault.data.SecureConvexSyncTokenSource
 import com.sats21m.vogelvault.data.ReadBootstrapStatus
 import com.sats21m.vogelvault.data.cache.CachedRowDataSource
 import com.sats21m.vogelvault.data.cache.VaultDatabase
@@ -365,21 +363,6 @@ open class VaultApplication : Application() {
             requestTodoWrite = bundledReadBootstrapRequestsTodoWrite(),
         )
 
-    /**
-     * Shared sync-token transport for non-task editors and admin-compatible
-     * mutations. Interactive tasks are deliberately absent from this client.
-     */
-    internal open val convexMutationClient: ConvexMutationClient by lazy(
-        LazyThreadSafetyMode.SYNCHRONIZED,
-    ) {
-        ConvexMutationClient(
-            // The public deployment route is not a credential. Writes remain
-            // available even when authenticated row reads are disabled.
-            configSource = MutableConvexConfigSource(writeConvexConfig()),
-            syncTokenSource = SecureConvexSyncTokenSource(storedConvexConfigSource),
-        )
-    }
-
     private val rowDataSource: CachedRowDataSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         CachedRowDataSource(
             remote = RowQueryRepositories.convex(convexConfigSource),
@@ -389,16 +372,11 @@ open class VaultApplication : Application() {
         )
     }
 
-    /**
-     * Edit and delete share the one write transport above, so they read the
-     * latest encrypted sync token at request time. Constructing a second client
-     * here would have no sync-token source and would stay fail-closed forever.
-     */
     internal val transactionActions by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         ConvexTransactionActions(deviceMutationClient)
     }
 
-    /** Capability-scoped todo writes, isolated from the legacy sync-token transport. */
+    /** Capability-scoped todo writes using the paired-device credential. */
     internal open val todoMutationGateway: TodoMutationGateway by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TodoMutationGateway(
             ConvexDeviceMutationClient(
@@ -499,44 +477,6 @@ open class VaultApplication : Application() {
                 storedConvexConfigSource.clearDeviceCredential()
                 check(!storedConvexConfigSource.hasDeviceCredential()) {
                     "the removed todo device credential was still readable"
-                }
-            }
-        }
-
-    /** Whether a write credential exists. The value itself never reaches the UI. */
-    internal open fun hasConvexWriteCredential(): Boolean =
-        synchronized(convexConfigLock) {
-            storedConvexConfigSource.hasSyncToken()
-        }
-
-    /**
-     * Encrypts and stores a replacement write credential.
-     *
-     * The failure is returned rather than collapsed to false so a screen can say
-     * which problem occurred: a blank entry, storage that refused the commit, or
-     * a value that could not be read back after being written.
-     */
-    internal open fun saveConvexWriteCredential(token: String): Result<Unit> =
-        synchronized(convexConfigLock) {
-            runCatching {
-                storedConvexConfigSource.updateSyncToken(token)
-                check(storedConvexConfigSource.hasSyncToken()) {
-                    "the stored write credential could not be read back"
-                }
-            }
-        }
-
-    /**
-     * Removes the write credential through the same process lock and accessor
-     * used by Save. Settings receives only the outcome and the postcondition;
-     * the stored value never crosses this boundary.
-     */
-    internal open fun removeConvexWriteCredential(): Result<Unit> =
-        synchronized(convexConfigLock) {
-            runCatching {
-                storedConvexConfigSource.clearSyncToken()
-                check(!storedConvexConfigSource.hasSyncToken()) {
-                    "the removed write credential was still readable"
                 }
             }
         }

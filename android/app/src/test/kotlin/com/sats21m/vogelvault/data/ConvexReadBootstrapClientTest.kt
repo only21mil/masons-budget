@@ -247,13 +247,11 @@ class ConvexReadBootstrapClientTest {
         val context: Application = RuntimeEnvironment.getApplication()
         val preferences = context.getSharedPreferences("bootstrap-${UUID.randomUUID()}", Context.MODE_PRIVATE)
         val stored = SecureConvexConfigSource(preferences, TestCipher)
-        val syncToken = "s".repeat(43)
         val device = ConvexDeviceCredential(
             "existing-device",
             "d".repeat(43),
             FamilyMember.MASON,
         )
-        stored.updateSyncToken(syncToken)
         stored.updateDeviceCredential(device)
         val effective = MutableConvexConfigSource(ConvexConfig())
         val repository = ConvexReadBootstrapRepository(
@@ -266,7 +264,6 @@ class ConvexReadBootstrapClientTest {
         assertEquals(ReadReadiness.READY, stored.current().readiness)
         assertEquals(ReadReadiness.READY, effective.current().readiness)
         assertEquals(readToken, effective.current().readTokenOrNull())
-        assertEquals(syncToken, SecureConvexSyncTokenSource(stored).currentSyncToken())
         assertEquals(device, SecureConvexDeviceCredentialSource(stored).currentDeviceCredential())
         preferences.all.values.forEach { value -> assertNotEquals(readToken, value) }
     }

@@ -23,10 +23,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
@@ -243,82 +239,8 @@ class SecureConvexConfigSourceTest {
     }
 
     @Test
-    fun `encrypted sync token source authenticates a mutation without storing plaintext`() {
-        val syncToken = "vv-sync-${UUID.randomUUID()}"
-        source.updateSyncToken(syncToken)
-        val poster = CapturingPoster()
-        val client =
-            ConvexMutationClient(
-                configSource =
-                    MutableConvexConfigSource(
-                        ConvexConfig(deploymentUrl = "https://example.convex.cloud"),
-                    ),
-                syncTokenSource = SecureConvexSyncTokenSource(source),
-                http = poster,
-            )
-
-        val result = runBlocking {
-            client.mutate(
-                ConvexMutation.UpsertBudgetCategory(
-                    viewer = com.sats21m.vogelvault.domain.FamilyMember.VICTOR,
-                    month = "2026-07",
-                    category = BudgetCategoryInput("Food", 1L),
-                ),
-            )
-        }
-
-        assertTrue(result.isOk)
-        val body = Json.parseToJsonElement(poster.body).jsonObject
-        val sentToken =
-            body["args"]
-                ?.jsonObject
-                ?.get("token")
-                ?.jsonPrimitive
-                ?.content
-        assertEquals(syncToken, sentToken)
-        context
-            .getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-            .all
-            .values
-            .forEach { stored -> assertNotEquals(syncToken, stored) }
-    }
-
-    @Test
-    fun `read and sync credentials can be removed independently`() {
+    fun `rejected read recovery preserves paired device credentials`() {
         val readToken = "vv-read-${UUID.randomUUID()}"
-        val syncToken = "vv-sync-${UUID.randomUUID()}"
-        source.update(
-            ConvexConfig(
-                deploymentUrl = "https://example.convex.cloud",
-                readToken = readToken,
-                remoteReadEnabled = true,
-            ),
-        )
-        source.updateSyncToken(syncToken)
-
-        source.clear()
-
-        assertEquals(ReadReadiness.DISABLED, source.current().readiness)
-        assertEquals(syncToken, SecureConvexSyncTokenSource(source).currentSyncToken())
-
-        source.update(
-            ConvexConfig(
-                deploymentUrl = "https://example.convex.cloud",
-                readToken = readToken,
-                remoteReadEnabled = true,
-            ),
-        )
-        source.clearSyncToken()
-
-        assertEquals(ReadReadiness.READY, source.current().readiness)
-        assertEquals(readToken, source.current().readTokenOrNull())
-        assertFalse(source.hasSyncToken())
-    }
-
-    @Test
-    fun `rejected read recovery preserves sync and paired device credentials`() {
-        val readToken = "vv-read-${UUID.randomUUID()}"
-        val syncToken = "vv-sync-${UUID.randomUUID()}"
         val device = ConvexDeviceCredential("android-device", "d".repeat(43), FamilyMember.MASON)
         val rejected =
             ConvexConfig(
@@ -327,7 +249,6 @@ class SecureConvexConfigSourceTest {
                 remoteReadEnabled = true,
             )
         source.update(rejected)
-        source.updateSyncToken(syncToken)
         source.updateDeviceCredential(device)
         val effective = MutableConvexConfigSource(rejected)
 
@@ -341,15 +262,12 @@ class SecureConvexConfigSourceTest {
 
         assertEquals(ReadReadiness.DISABLED, source.current().readiness)
         assertEquals(ReadReadiness.DISABLED, effective.current().readiness)
-        assertEquals(syncToken, SecureConvexSyncTokenSource(source).currentSyncToken())
         assertEquals(device, SecureConvexDeviceCredentialSource(source).currentDeviceCredential())
     }
 
     @Test
-    fun `paired device credential is encrypted atomic and independent of sync token`() {
+    fun `paired device credential is encrypted and atomic`() {
         val device = ConvexDeviceCredential("android-device", "d".repeat(43), FamilyMember.MASON)
-        val syncToken = "vv-sync-${UUID.randomUUID()}"
-        source.updateSyncToken(syncToken)
         source.updateDeviceCredential(device)
 
         assertEquals(device, SecureConvexDeviceCredentialSource(source).currentDeviceCredential())
@@ -360,7 +278,6 @@ class SecureConvexConfigSourceTest {
 
         source.clearDeviceCredential()
         assertFalse(source.hasDeviceCredential())
-        assertEquals(syncToken, SecureConvexSyncTokenSource(source).currentSyncToken())
     }
 
     @Test
@@ -403,47 +320,6 @@ class SecureConvexConfigSourceTest {
 
         assertFalse(source.hasDeviceCredential())
         assertNull(reconstructedSource().currentDeviceCredential())
-    }
-
-    @Test
-    fun `tampered sync token fails closed without disabling valid reads`() {
-        source.update(
-            ConvexConfig(
-                deploymentUrl = "https://example.convex.cloud",
-                readToken = "vv-read-${UUID.randomUUID()}",
-                remoteReadEnabled = true,
-            ),
-        )
-        source.updateSyncToken("vv-sync-${UUID.randomUUID()}")
-        context
-            .getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-            .edit()
-            .putString("sync_token", "not-valid-ciphertext")
-            .commit()
-
-        assertFalse(source.hasSyncToken())
-        assertNull(SecureConvexSyncTokenSource(source).currentSyncToken())
-        assertEquals(ReadReadiness.READY, source.current().readiness)
-    }
-
-    @Test
-    fun `failed sync token removal is reported and retains the credential`() {
-        val syncToken = "vv-sync-${UUID.randomUUID()}"
-        source.updateSyncToken(syncToken)
-        val failingSource =
-            SecureConvexConfigSource(
-                preferences =
-                    ClearCommitFailingPreferences(
-                        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE),
-                    ),
-                cipher = TestConfigCipher,
-            )
-
-        assertFailsWith<IOException> {
-            failingSource.clearSyncToken()
-        }
-
-        assertEquals(syncToken, SecureConvexSyncTokenSource(failingSource).currentSyncToken())
     }
 
     @Test
@@ -602,41 +478,6 @@ class SecureConvexConfigSourceTest {
         assertTrue(context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).all.isEmpty())
     }
 
-    @Test
-    fun `write credential round trips encrypted and separately from read config`() {
-        val writePreferences =
-            context.getSharedPreferences("$preferencesName-write", Context.MODE_PRIVATE)
-        val writeSource =
-            SecureConvexConfigSource(
-                preferences = writePreferences,
-                cipher = TestConfigCipher,
-            )
-        val token = "vv-write-${UUID.randomUUID()}"
-
-        writeSource.updateSyncToken(token)
-
-        assertEquals(token, SecureConvexSyncTokenSource(writeSource).currentSyncToken())
-        assertTrue(writeSource.hasSyncToken())
-        assertNotEquals(token, writePreferences.all.values.single())
-        assertEquals(ReadReadiness.DISABLED, source.current().readiness)
-    }
-
-    @Test
-    fun `tampered write credential fails closed`() {
-        val writePreferences =
-            context.getSharedPreferences("$preferencesName-write", Context.MODE_PRIVATE)
-        val writeSource =
-            SecureConvexConfigSource(
-                preferences = writePreferences,
-                cipher = TestConfigCipher,
-            )
-        writeSource.updateSyncToken("vv-write-${UUID.randomUUID()}")
-        writePreferences.edit().putString("sync_token", "not-valid-ciphertext").commit()
-
-        assertNull(SecureConvexSyncTokenSource(writeSource).currentSyncToken())
-        assertFalse(writeSource.hasSyncToken())
-    }
-
     private fun reconstructedSource(): SecureConvexConfigSource =
         SecureConvexConfigSource(
             preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE),
@@ -654,18 +495,6 @@ private class ClearCommitFailingPreferences(
 
             override fun commit(): Boolean = false
         }
-    }
-}
-
-private class CapturingPoster : HttpPoster {
-    lateinit var body: String
-
-    override suspend fun postJson(
-        url: String,
-        body: String,
-    ): HttpTextResponse {
-        this.body = body
-        return HttpTextResponse(200, """{"status":"success","value":{"outcome":"deleted"}}""")
     }
 }
 
