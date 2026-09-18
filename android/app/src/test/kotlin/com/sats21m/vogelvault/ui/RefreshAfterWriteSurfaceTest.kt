@@ -24,8 +24,6 @@ import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.BudgetCategoryDeletionGateway
 import com.sats21m.vogelvault.data.ConvexConfig
-import com.sats21m.vogelvault.data.ConvexMutationClient
-import com.sats21m.vogelvault.data.ConvexSyncTokenSource
 import com.sats21m.vogelvault.data.ConvexDeviceCredential
 import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
@@ -41,7 +39,6 @@ import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
-import java.util.UUID
 import kotlin.test.assertEquals
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -684,7 +681,6 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
         super.noteAcceptedWrite()
     }
 
-    override fun hasConvexWriteCredential(): Boolean = true
     override fun hasTodoWriteCredential(): Boolean = true
 
     @Volatile
@@ -759,15 +755,4 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
         )
     }
 
-    override val convexMutationClient: ConvexMutationClient by lazy(
-        LazyThreadSafetyMode.SYNCHRONIZED,
-    ) {
-        ConvexMutationClient(
-            configSource = MutableConvexConfigSource(
-                ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud"),
-            ),
-            syncTokenSource = ConvexSyncTokenSource { "vv-test-" + UUID.randomUUID() },
-            http = poster,
-        )
-    }
 }

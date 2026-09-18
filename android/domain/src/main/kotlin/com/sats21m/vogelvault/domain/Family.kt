@@ -48,10 +48,6 @@ enum class FamilyMember(val key: String) {
     val gatedSwitchTargets: List<FamilyMember>
         get() = if (isAdult) allowedSwitchTargets else entries.filter { it == this || it.isAdult }
 
-    /** Every profile switch is authenticated in the shared baseline contract. */
-    val requiresAuthToSwitch: Boolean
-        get() = true
-
     val transactionsDataFileName: String
         get() = when (this) {
             VICTOR, RACHEL -> "transactions"

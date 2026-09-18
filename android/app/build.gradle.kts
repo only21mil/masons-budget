@@ -267,7 +267,6 @@ dependencies {
     implementation("androidx.fragment:fragment:1.8.9")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
 
     val roomVersion = "2.7.2"
     implementation("androidx.room:room-runtime:$roomVersion")
@@ -284,7 +283,6 @@ dependencies {
     // 60s Espresso timeout. 1.8.2 sends them before checking idleness.
     val composeBom = platform("androidx.compose:compose-bom:2025.05.01")
     implementation(composeBom)
-    androidTestImplementation(composeBom)
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")

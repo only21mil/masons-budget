@@ -86,5 +86,6 @@ class BtcAccountEntryValidationTest {
     @Test fun `adding zero account preserves document as of and uses midnight only without a document`() {
         assertEquals("2026-08-01T12:00:00Z", accountAsOf("2026-08-01T12:00:00Z"))
         assertEquals("2026-09-13T00:00:00.000Z", accountAsOf(null, LocalDate.of(2026, 9, 13)))
+        assertTrue(Regex("""^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$""").matches(accountAsOf(null, LocalDate.of(2026, 9, 13))))
     }
 }

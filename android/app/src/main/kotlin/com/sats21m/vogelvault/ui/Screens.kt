@@ -23,7 +23,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.material3.MaterialTheme
-import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,7 +41,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
@@ -131,12 +129,6 @@ private data class BitcoinProjection(
     val selfCustodySats: Long,
 )
 
-private data class NetWorthProjection(
-    val accounts: List<BtcAccount>,
-    val excludedAccounts: List<BtcAccount>,
-    val balance: BtcBalance?,
-)
-
 internal data class BudgetCategoryDrilldownScope(
     val month: String,
     val category: String,
@@ -206,8 +198,8 @@ fun ScreenHost(
     },
 ) {
     val ledgerTokens = LocalLedgerTheme.current
-    var addingTransaction by rememberSaveable { mutableStateOf(false) }
-    var addingIncome by rememberSaveable { mutableStateOf(false) }
+    var addingTransaction by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var addingIncome by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(quickAddRequested) {
         if (quickAddRequested) {
             addingIncome = false
@@ -266,11 +258,11 @@ fun ScreenHost(
         budgetDrilldownMonth = null
         budgetDrilldownCategory = null
     }
-    var showBitcoinAdd by rememberSaveable { mutableStateOf(false) }
-    var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
-    var showBtcBillPayEditor by rememberSaveable { mutableStateOf(false) }
-    var showBtcTransferEditor by rememberSaveable { mutableStateOf(false) }
-    var showBtcAccountEditor by rememberSaveable { mutableStateOf(false) }
+    var showBitcoinAdd by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcBuyEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcBillPayEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcTransferEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcAccountEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
     var btcBillPayPrefill by remember(state.activeProfile) { mutableStateOf<BillPayPrefill?>(null) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
@@ -1061,10 +1053,10 @@ internal fun formatTransactionAmount(
 }
 
 internal fun calendarDate(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): java.time.LocalDate =
-    java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    ledgerToday(java.time.Clock.fixed(java.time.Instant.ofEpochMilli(now), zone))
 
 internal fun calendarMonth(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String =
-    calendarDate(now, zone).toString().take(7)
+    ledgerCurrentMonth(java.time.Clock.fixed(java.time.Instant.ofEpochMilli(now), zone))
 
 private fun VaultLazyListScope.incomeSection(state: VaultUiState, month: String, onAddIncome: () -> Unit) {
     val rows = state.data.dashboardIncomeEntries(state.activeProfile, month)
@@ -1816,7 +1808,7 @@ internal fun operationalBitcoinPriceBasis(quote: MarketQuote?, nowMillis: Long? 
 
 internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapshot · ${balance.asOf}"
 
-// Today lives in TodoScreen.kt: it edits rows, so it owns its own scaffold.
+// Tasks live in TaskListsScreen.kt and own their editing scaffold.
 
 // ── Family ──────────────────────────────────────────────────────────────────
 
@@ -1956,7 +1948,6 @@ private fun VaultLazyListScope.settings(
             )
         }
     }
-    item { SyncTokenConfiguration() }
     item {
         Panel("Slices") {
             Column {
@@ -1984,113 +1975,6 @@ private fun VaultLazyListScope.settings(
         }
     }
     item { Spacer(Modifier.height(VaultSpace.lg)) }
-}
-
-@Composable
-internal fun SyncTokenConfiguration() {
-    // Deliberately not saveable: the plaintext token must not enter saved
-    // instance state. Submission immediately hands it to encrypted storage.
-    var token by remember { mutableStateOf("") }
-    val context = LocalContext.current
-    val application = context.applicationContext as? VaultApplication
-    var hasStoredToken by remember(application) {
-        mutableStateOf(application?.hasConvexWriteCredential() == true)
-    }
-    var saveFailure by remember { mutableStateOf<String?>(null) }
-    var removalFailure by remember { mutableStateOf<String?>(null) }
-
-    Panel(stringResource(R.string.write_credential_title)) {
-        Column(
-            Modifier.padding(vertical = VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
-        ) {
-            Text(
-                text = stringResource(R.string.write_credential_source),
-                color = LocalLedgerTheme.current.colors.foregroundSecondary,
-                style = MaterialTheme.typography.labelSmall,
-            )
-            Text(
-                text =
-                    stringResource(
-                        if (hasStoredToken) {
-                            R.string.write_credential_configured
-                        } else {
-                            R.string.write_credential_unconfigured
-                        },
-                    ),
-                color = LocalLedgerTheme.current.colors.foregroundSecondary,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            LedgerTextField(
-                value = token,
-                onValueChange = {
-                    token = it
-                    saveFailure = null
-                },
-                label = stringResource(R.string.write_credential_label),
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-            )
-            VaultButton(
-                label = stringResource(R.string.write_credential_save),
-                enabled = token.isNotBlank() && application != null,
-                onClick = {
-                    val app = checkNotNull(application)
-                    app
-                        .saveConvexWriteCredential(token)
-                        .onSuccess {
-                            token = ""
-                            hasStoredToken = app.hasConvexWriteCredential()
-                            saveFailure = null
-                            removalFailure = null
-                        }.onFailure {
-                            saveFailure = credentialSaveFailureMessage(it).resolve(context)
-                        }
-                },
-            )
-            if (hasStoredToken && application != null) {
-                androidx.compose.material3.OutlinedButton(
-                    onClick = {
-                        application
-                            .removeConvexWriteCredential()
-                            .onSuccess {
-                                token = ""
-                                hasStoredToken = application.hasConvexWriteCredential()
-                                saveFailure = null
-                                removalFailure = null
-                            }.onFailure {
-                                removalFailure = credentialRemovalFailureMessage(it).resolve(context)
-                            }
-                    },
-                    border =
-                        androidx.compose.foundation.BorderStroke(
-                            width = 1.dp,
-                            color = LocalLedgerTheme.current.colors.line,
-                        ),
-                    colors =
-                        androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                            contentColor = LocalLedgerTheme.current.colors.foreground,
-                        ),
-                ) {
-                    Text(stringResource(R.string.write_credential_remove))
-                }
-            }
-            saveFailure?.let {
-                Text(
-                    text = it,
-                    color = LocalLedgerTheme.current.colors.loss,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            removalFailure?.let {
-                Text(
-                    text = it,
-                    color = LocalLedgerTheme.current.colors.loss,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
-    }
 }
 
 // ── shared ──────────────────────────────────────────────────────────────────

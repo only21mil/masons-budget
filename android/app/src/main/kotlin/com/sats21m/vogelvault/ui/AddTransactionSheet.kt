@@ -64,7 +64,6 @@ import com.sats21m.vogelvault.ui.theme.rememberLedgerHaptics
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
@@ -109,7 +108,7 @@ internal data class AddTransactionDraft(
     // `card` remains as a source-compatible bridge for the older add surface.
     // New callers use paymentSource; new drafts carry the canonical source wire.
     val card: String = PaymentSource.DEFAULT.wire,
-    val date: LocalDate = LocalDate.now(ZoneOffset.UTC),
+    val date: LocalDate,
     val note: String = "",
     val owner: FamilyMember = FamilyMember.VICTOR,
     val paymentSource: PaymentSource = PaymentSource.DEFAULT,
@@ -503,7 +502,7 @@ internal fun AddTransactionSheet(
     // The wire is both saveable UI state and durable process state. The latter is
     // the source of truth when a new composition is created without a saved-state
     // bundle; the former keeps the visible choice stable through recreation.
-    var paymentSourceWire by rememberSaveable {
+    var paymentSourceWire by rememberProfileSaveable(state.activeProfile) {
         mutableStateOf(QuickAddDefaults(applicationContext, state.activeProfile.ledgerOwner).source().wire)
     }
     // One process-owned id survives dismissal and Activity recreation until the
@@ -513,23 +512,23 @@ internal fun AddTransactionSheet(
     val draftTransactionId = remember(draftScope, transactionDraftIds) {
         transactionDraftIds.currentId(draftScope)
     }
-    var typeName by rememberSaveable { mutableStateOf(initialType.name) }
-    var inputUnitName by rememberSaveable { mutableStateOf(DisplayUnit.USD.name) }
-    var merchant by rememberSaveable { mutableStateOf("") }
+    var typeName by rememberProfileSaveable(state.activeProfile) { mutableStateOf(initialType.name) }
+    var inputUnitName by rememberProfileSaveable(state.activeProfile) { mutableStateOf(DisplayUnit.USD.name) }
+    var merchant by rememberProfileSaveable(state.activeProfile) { mutableStateOf("") }
     val defaults = remember(applicationContext, state.activeProfile.ledgerOwner) {
         QuickAddDefaults(applicationContext, state.activeProfile.ledgerOwner)
     }
-    var category by rememberSaveable(state.activeProfile.ledgerOwner) { mutableStateOf(defaults.category()) }
-    var detailsStep by rememberSaveable { mutableStateOf(false) }
-    var showOptions by rememberSaveable { mutableStateOf(false) }
+    var category by rememberProfileSaveable(state.activeProfile) { mutableStateOf(defaults.category()) }
+    var detailsStep by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showOptions by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
     val amountFocus = remember { FocusRequester() }
     val merchantFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    var amount by rememberSaveable { mutableStateOf("") }
-    var bitcoinAccountKey by rememberSaveable { mutableStateOf<String?>(null) }
-    var dateIso by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
-    var note by rememberSaveable { mutableStateOf("") }
-    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var amount by rememberProfileSaveable(state.activeProfile) { mutableStateOf("") }
+    var bitcoinAccountKey by rememberProfileSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
+    var dateIso by rememberProfileSaveable(state.activeProfile) { mutableStateOf(ledgerToday().toString()) }
+    var note by rememberProfileSaveable(state.activeProfile) { mutableStateOf("") }
+    var errorMessage by rememberProfileSaveable(state.activeProfile) { mutableStateOf<String?>(null) }
     // Deliberately NOT rememberSaveable: a recreated sheet cannot reconnect to
     // the in-flight job. A fresh sheet reconnects to the same process-owned id
     // and safely retries instead.

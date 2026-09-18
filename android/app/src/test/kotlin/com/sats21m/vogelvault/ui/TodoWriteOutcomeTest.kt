@@ -130,19 +130,6 @@ class TodoWriteOutcomeTest {
     }
 
     @Test
-    fun `each credential storage failure names its own cause`() {
-        val blank = credentialSaveFailureMessage(IllegalArgumentException("sync token must not be blank"))
-        val storage = credentialSaveFailureMessage(IOException("not persisted"))
-        val readback = credentialSaveFailureMessage(IllegalStateException("could not be read back"))
-        val unexpected = credentialSaveFailureMessage(RuntimeException("boom"))
-        val all = listOf(blank, storage, readback, unexpected)
-
-        assertEquals(all.size, all.distinct().size, "distinct causes: $all")
-        assertTrue(all.none { it.formatArgument == "sync token must not be blank" }, "no exception text is echoed")
-        assertEquals("RuntimeException", unexpected.formatArgument, "an unexpected cause is still identifiable")
-    }
-
-    @Test
     fun `each credential removal failure names its own cause`() {
         val storage = credentialRemovalFailureMessage(IOException("not persisted"))
         val readback = credentialRemovalFailureMessage(IllegalStateException("still readable"))

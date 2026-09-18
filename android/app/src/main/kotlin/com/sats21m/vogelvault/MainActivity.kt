@@ -287,9 +287,7 @@ class MainActivity : FragmentActivity(), ConnectionAuthenticationHost {
             SystemBarStyle.dark(appearance.background)
         }
         enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            window.isNavigationBarContrastEnforced = false
-        }
+        window.isNavigationBarContrastEnforced = false
     }
 
     private fun requestAppUnlock() {
