@@ -12,11 +12,8 @@
  * The three todo lanes — the single Convex-side source.
  *
  * Convex functions cannot import from outside convex/ at deploy time (same
- * constraint as the other mirrors), so this constant lives here and
- * writeback.ts re-exports it rather than holding its own copy. The domain
- * copy (shared/domain/src/todo.ts TODO_LANES) is the cross-runtime contract
- * and cannot be imported at runtime; writeback.test.ts pins all three
- * spellings against each other so a one-sided edit fails the suite.
+ * constraint as the other mirrors), so this constant lives here. The domain
+ * copy (shared/domain/src/todo.ts TODO_LANES) is the cross-runtime contract.
  */
 export const TODO_LANES = ["work", "personal", "sats"] as const;
 
@@ -322,8 +319,7 @@ export function todoUpdatedMs(todo: Record<string, any>): number {
 //
 // Copied rather than imported because Convex functions cannot import from
 // outside convex/. The server's own alias chain stays local; only the stamp
-// PARSING is mirrored. writeback.test.ts pins this against the real domain
-// implementation across the fixture matrix.
+// parsing mirrors the domain implementation.
 
 const ISO_DATE_MIRROR = /^(\d{4})-(\d{2})-(\d{2})$/;
 const ISO_DATETIME_MIRROR =

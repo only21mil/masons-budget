@@ -6,6 +6,7 @@ import {
   freshProofHash,
   freshSecret,
   readDataFile,
+  seedDataFile,
   setDeploymentEnv,
   testConvex,
   useIsolatedDeploymentEnv,
@@ -15,49 +16,8 @@ useIsolatedDeploymentEnv();
 
 type T = ReturnType<typeof testConvex>;
 
-/**
- * Every mutation guarded by validateSyncToken. Amounts are whole units on
- * purpose: the Convex layer stores the payload verbatim and does no arithmetic,
- * so no test here should imply that float money is acceptable anywhere.
- */
+// Keep the shared sync gate covered through the surviving admin delete route.
 const TOKEN_GUARDED_MUTATIONS = [
-  {
-    name: "sync",
-    call: (t: T, token?: string) =>
-      t.mutation(api.sync, { name: "budget", data: { categories: [] }, token }),
-  },
-  {
-    name: "syncBatch",
-    call: (t: T, token?: string) =>
-      t.mutation(api.syncBatch, {
-        files: [{ name: "budget", data: { categories: [] } }],
-        token,
-      }),
-  },
-  {
-    name: "appendTransaction",
-    call: (t: T, token?: string) =>
-      t.mutation(api.appendTransaction, {
-        transaction: {
-          id: "txn-1",
-          date: "2026-07-26",
-          merchant: "Test Merchant",
-          amount: 12,
-          category: "Groceries",
-        },
-        token,
-      }),
-  },
-  {
-    name: "upsertTodo",
-    call: (t: T, token?: string) =>
-      t.mutation(api.upsertTodo, { todo: { id: "todo-1", title: "x" }, token }),
-  },
-  {
-    name: "removeTodo",
-    call: (t: T, token?: string) =>
-      t.mutation(api.removeTodo, { todoId: "todo-1", token }),
-  },
   {
     name: "remove",
     call: (t: T, token?: string) =>
@@ -86,11 +46,13 @@ describe("mutation auth: nothing configured (fail-closed default)", () => {
     });
   }
 
-  it("a rejected write leaves no trace in the database", async () => {
+  it("a rejected delete preserves the existing data", async () => {
+    const data = { categories: [] };
+    await seedDataFile(t, "budget", data);
     await expect(
-      t.mutation(api.sync, { name: "budget", data: { categories: [] } }),
+      t.mutation(api.remove, { name: "budget" }),
     ).rejects.toThrow();
-    await expect(readDataFile(t, "budget")).resolves.toBeNull();
+    await expect(readDataFile(t, "budget")).resolves.toMatchObject({ data });
   });
 });
 
@@ -122,15 +84,16 @@ describe("mutation auth: CONVEX_SYNC_TOKEN configured", () => {
     });
   }
 
-  it("a rejected write leaves no trace in the database", async () => {
+  it("a rejected delete preserves the existing data", async () => {
+    const data = { categories: [] };
+    await seedDataFile(t, "budget", data);
     await expect(
-      t.mutation(api.sync, {
+      t.mutation(api.remove, {
         name: "budget",
-        data: { categories: [] },
         token: freshSecret(),
       }),
     ).rejects.toThrow();
-    await expect(readDataFile(t, "budget")).resolves.toBeNull();
+    await expect(readDataFile(t, "budget")).resolves.toMatchObject({ data });
   });
 });
 
@@ -138,15 +101,15 @@ describe("mutation auth: ALLOW_TOKENLESS_SYNC cutover hatch", () => {
   it("permits tokenless writes while the hatch is on", async () => {
     setDeploymentEnv({ ALLOW_TOKENLESS_SYNC: "true" });
     await expect(
-      t.mutation(api.sync, { name: "budget", data: { categories: [] } }),
-    ).resolves.toEqual({ name: "budget", version: 1 });
+      t.mutation(api.remove, { name: "budget" }),
+    ).resolves.toBeNull();
   });
 
   it("only the exact string \"true\" opens the hatch", async () => {
     for (const value of ["TRUE", "1", "yes", "false"]) {
       setDeploymentEnv({ ALLOW_TOKENLESS_SYNC: value });
       await expect(
-        t.mutation(api.sync, { name: "budget", data: { categories: [] } }),
+        t.mutation(api.remove, { name: "budget" }),
       ).rejects.toThrow(/write auth is not configured/);
     }
   });
@@ -181,20 +144,19 @@ describe("mutation auth: ALLOW_TOKENLESS_SYNC cutover hatch", () => {
       ALLOW_TOKENLESS_SYNC: "true",
     });
     await expect(
-      t.mutation(api.sync, { name: "budget", data: { categories: [] } }),
-    ).resolves.toEqual({ name: "budget", version: 1 });
+      t.mutation(api.remove, { name: "budget" }),
+    ).resolves.toBeNull();
 
     delete process.env.ALLOW_TOKENLESS_SYNC;
     await expect(
-      t.mutation(api.sync, { name: "budget", data: { categories: [] } }),
+      t.mutation(api.remove, { name: "budget" }),
     ).rejects.toThrow(/invalid sync token/);
     await expect(
-      t.mutation(api.sync, {
+      t.mutation(api.remove, {
         name: "budget",
-        data: { categories: [] },
         token: syncToken,
       }),
-    ).resolves.toEqual({ name: "budget", version: 2 });
+    ).resolves.toBeNull();
   });
 
   // ⚠️ A set token is not evidence of enforcement. Say so in the log.
@@ -205,7 +167,7 @@ describe("mutation auth: ALLOW_TOKENLESS_SYNC cutover hatch", () => {
         CONVEX_SYNC_TOKEN: freshSecret(),
         ALLOW_TOKENLESS_SYNC: "true",
       });
-      await t.mutation(api.sync, { name: "budget", data: { categories: [] } });
+      await t.mutation(api.remove, { name: "budget" });
 
       const logged = warn.mock.calls.map((call) => String(call[0])).join("\n");
       expect(logged).toMatch(/PERMISSIVE/);
@@ -220,9 +182,8 @@ describe("mutation auth: ALLOW_TOKENLESS_SYNC cutover hatch", () => {
     setDeploymentEnv({ CONVEX_SYNC_TOKEN: syncToken });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      await t.mutation(api.sync, {
+      await t.mutation(api.remove, {
         name: "budget",
-        data: { categories: [] },
         token: syncToken,
       });
       const logged = warn.mock.calls.map((call) => String(call[0])).join("\n");

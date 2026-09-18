@@ -107,8 +107,8 @@ Convex system of record
 ```
 
 New ledger integrations write rows. A new or reconstructed transaction uses
-`tables:upsertTransaction`, not `dataFiles:appendTransaction` or
-`writeback:createTransaction`. Other row mutations are documented in
+`tables:upsertTransaction`. The uncalled legacy blob writers were retired in
+decision #431. Other row mutations are documented in
 [`docs/HANDOFF.md`](docs/HANDOFF.md#3-the-canonical-write-path).
 
 Routine statement ingestion, canonical income writes, and budget-month advance
