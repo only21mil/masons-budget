@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import { PricePage } from "./index.tsx"
-import { PRICE_PAGE_HISTORY_FIXTURE, PRICE_PAGE_QUOTE_FIXTURE } from "./price.fixture.ts"
+import { PricePage } from "../src/renderer/pages/finance/price/index.tsx"
+import { PRICE_PAGE_HISTORY_FIXTURE, PRICE_PAGE_QUOTE_FIXTURE } from "../src/renderer/pages/finance/price/price.fixture.ts"
 
 function renderPrice(displayUnit: "usd" | "btc" | "sats" = "usd"): string {
   return renderToStaticMarkup(
