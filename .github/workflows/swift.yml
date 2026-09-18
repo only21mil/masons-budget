@@ -293,6 +293,7 @@ jobs:
             ../.github/workflows/scripts/ensure_ios_simulator.py \
             --name "$SIMULATOR_NAME")
           DESTINATIONS=$(xcodebuild -showdestinations \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -project MasonsBudget.xcodeproj -scheme MasonsBudget 2>&1 || true)
           printf '%s\n' "$DESTINATIONS"
 
@@ -330,6 +331,7 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild test \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -project MasonsBudget.xcodeproj \
             -scheme MasonsBudget \
             -destination "platform=iOS Simulator,id=$UDID" \
@@ -354,6 +356,7 @@ jobs:
         run: |
           set -euo pipefail
           xcodebuild build \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -project MasonsBudget.xcodeproj \
             -scheme MasonsBudgetMac \
             -destination "platform=macOS" \
@@ -361,6 +364,15 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM=""
+
+      - name: Shut down the simulator
+        if: always()
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          if [ -n "$UDID" ]; then
+            xcrun simctl shutdown "$UDID"
+          fi
 
       # Only on failure. The xcresult carries the per-test failure detail that
       # the raw xcodebuild log buries, and on a green run it is dead weight
