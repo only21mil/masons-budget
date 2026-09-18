@@ -408,7 +408,7 @@ export const list = query({
       deviceId,
       deviceToken,
     });
-    const docs = await ctx.db.query("dataFiles").collect();
+    const docs = await ctx.db.query("syncVersions").collect();
     const visible = access.viaDevice
       ? docs.filter((d) => dataFileVisibleTo(access.profile, d.name))
       : docs;

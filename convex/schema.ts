@@ -10,16 +10,14 @@ import {
 //
 // TWO STORAGE SHAPES LIVE HERE AT THE SAME TIME, ON PURPOSE.
 //
-//   `dataFiles` (legacy, still authoritative): one document per MC2 JSON file,
-//   whole payload in a v.any() blob. Every shipped client reads it and
-//   production is live, so it is untouched by this change and must stay that
-//   way until the clients have moved.
+//   `dataFiles` (legacy compatibility): one document per historical JSON file,
+//   whole payload in a v.any() blob. Shipped readers and fallbacks still use
+//   these blobs; preserve their decoding contract until those readers retire.
 //
-//   `transactions` / `todos` / `btcBuys` / `btcBillPays` / `btcAccounts` (new):
-//   one document per record. convex/tables.ts is the runtime API and
-//   convex/migrate.ts provides the internal-only blob backfill. They exist
-//   because MC2 died on 2026-07-18 and Convex is now the system of record rather
-//   than a sync target, and the blob shape cannot carry that role:
+//   `transactions` / `todos` / `btcBuys` / `btcBillPays` / `btcAccounts`:
+//   canonical typed records, served by convex/tables.ts. Convex is the system
+//   of record. The internal-only convex/migrate.ts backfill has completed;
+//   it is not a recurring sync route. The legacy blob shape has these limits:
 //
 //     - appendTransaction rewrites all 905 transactions to add one.
 //     - every write bumps a version that forces clients to re-download the
@@ -389,8 +387,8 @@ export default defineSchema({
   }).index("by_symbol", ["symbol"]),
 
   // ══════════════════════════════════════════════════════════════════════════
-  // ROW TABLES — see the banner at the top of this file. Nothing reads these
-  // yet; `dataFiles` above stays authoritative until the clients move.
+  // ROW TABLES — canonical ledger records served by convex/tables.ts.
+  // `dataFiles` above remains a compatibility copy for shipped blob readers.
   // ══════════════════════════════════════════════════════════════════════════
 
   // ── Transactions ──
