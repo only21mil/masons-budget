@@ -73,5 +73,5 @@ if [[ "$actual_checks" != "$sorted_expected" ]]; then
   exit 1
 fi
 
-echo "main protection verified: enforce_admins=true, strict=false, 9 required checks"
+echo "main protection verified: enforce_admins=true, strict=false, $(jq 'length' <<<"$actual_checks") required checks"
 jq -r '.[] | "  \(.context) (app \(.app_id))"' <<<"$actual_checks"
