@@ -166,6 +166,33 @@ GitHub-hosted macOS/Xcode runners.
   retained by the app after recognition
 - Full policy: [`PRIVACY.md`](PRIVACY.md)
 
+## Documentation
+
+- [HANDOFF.md](docs/HANDOFF.md): Architecture, canonical writes, safety invariants, and current handoff.
+- [apple-self-hosted-release.md](docs/apple-self-hosted-release.md): Apple runner setup and manual release signing requirements.
+- [bitcoin-ledger-cutover.md](docs/bitcoin-ledger-cutover.md): Bitcoin ledger activation gates and reconciliation plan.
+- [btc-fiat-availability-investigation.md](docs/btc-fiat-availability-investigation.md): BTC fiat availability investigation and proposed fix.
+- [buzz-ios-release.md](docs/buzz-ios-release.md): Manual Buzz iOS TestFlight release procedure.
+- [buzz-macos-build-supervisor.md](docs/buzz-macos-build-supervisor.md): Unsigned Buzz macOS build isolation and supervisor boundaries.
+- [buzz-macos-release.md](docs/buzz-macos-release.md): Manual Buzz macOS signing, notarization, and artifact procedure.
+- [ci-result-reuse.md](docs/ci-result-reuse.md): Premerge qualification, protected check reuse, and landing evidence.
+- [convex-codegen-safety.md](docs/convex-codegen-safety.md): Offline generated-code checks and approval-gated remote generation.
+- [convex-deploy-hatch-state.md](docs/convex-deploy-hatch-state.md): Recorded production authentication hatch state and evidence limits.
+- [convex-deploy-preflight.md](docs/convex-deploy-preflight.md): Historical production deployment preflight evidence.
+- [convex-migration-runbook.md](docs/convex-migration-runbook.md): Completed row migration record, retained for audit provenance.
+- [convex-query-scalability-audit.md](docs/convex-query-scalability-audit.md): Historical row-query scalability analysis and scan limits.
+- [convex-read-auth-cutover.md](docs/convex-read-auth-cutover.md): Read authentication cutover history and rollback procedure.
+- [dependency-security-audit-2026-07-27.md](docs/dependency-security-audit-2026-07-27.md): Historical dependency security findings as of July 27, 2026.
+- [design/recent-unlock-profile-switch.md](docs/design/recent-unlock-profile-switch.md): Recent-unlock authentication rules for adult profile switching.
+- [finance-share-repair-runbook.md](docs/finance-share-repair-runbook.md): One-time finance share-quantity repair procedure.
+- [linux-apple-build-boundary.md](docs/linux-apple-build-boundary.md): Linux static checks and the boundary around native Apple builds.
+- [linux-device-writeback.md](docs/linux-device-writeback.md): Linux device credentials and approved writeback behavior.
+- [market-quote-boundary.md](docs/market-quote-boundary.md): Market quote storage and its separation from retirement records.
+- [net-worth-snapshot-repair.md](docs/net-worth-snapshot-repair.md): Net-worth snapshot contamination assessment and repair decisions.
+- [production-monthly-import.md](docs/production-monthly-import.md): Admin-only atomic monthly import procedure and approval gates.
+- [transaction-owner-enforcement.md](docs/transaction-owner-enforcement.md): Canonical household and child ownership rules for transactions.
+- [vogel-vault-transaction-contract.md](docs/vogel-vault-transaction-contract.md): Cross-client payment sources, transaction writes, and conformance rules.
+
 ## License
 
 Private — family use only.
