@@ -100,12 +100,12 @@ test("accepts only the exact approved HTTPS household origin", () => {
   for (const unsafe of [
     "http://keen-elephant-452.convex.cloud",
     "https://user@keen-elephant-452.convex.cloud",
-    "https://keen-elephant-452.convex.cloud:443",
-    "https://keen-elephant-452.convex.cloud:444",
-    "https://keen-elephant-452.convex.cloud/not-the-origin",
-    "https://keen-elephant-452.convex.cloud?next=evil",
-    "https://keen-elephant-452.convex.cloud#fragment",
-    "https://keen-elephant-452.convex.cloud.evil.example",
+    "https://framework-desktop.tail69757d.ts.net:443",
+    "https://framework-desktop.tail69757d.ts.net:444",
+    "https://framework-desktop.tail69757d.ts.net/not-the-origin",
+    "https://framework-desktop.tail69757d.ts.net?next=evil",
+    "https://framework-desktop.tail69757d.ts.net#fragment",
+    "https://framework-desktop.tail69757d.ts.net.evil.example",
     "https://evilkeen-elephant-452.convex.cloud",
   ]) {
     assert.throws(() => approvedConvexOrigin(unsafe), /exactly|approved/);

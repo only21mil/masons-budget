@@ -47,7 +47,7 @@ enum ConvexConfig {
     /// The audited production deployment. A mutable preference here allowed a
     /// local setting or stale migration value to redirect authenticated traffic.
     static var deploymentURL: URL {
-        URL(string: "https://keen-elephant-452.convex.cloud")!
+        URL(string: "https://framework-desktop.tail69757d.ts.net")!
     }
 
     // Resolving a token performs Security-framework I/O (and the Wave-1
@@ -1383,7 +1383,9 @@ final class AppWritebackClient: Sendable {
 
     private static func isConvexBaseURL(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
-        return host == "convex.cloud" || host.hasSuffix(".convex.cloud")
+        if host == "convex.cloud" || host.hasSuffix(".convex.cloud") { return true }
+        // Self-hosted backend on the tailnet (household origin, pinned in deploymentURL).
+        return host == "framework-desktop.tail69757d.ts.net"
     }
 
     private static func randomBase64URL(byteCount: Int) throws -> String {

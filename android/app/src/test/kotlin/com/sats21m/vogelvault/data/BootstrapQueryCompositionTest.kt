@@ -132,7 +132,7 @@ private class GoldenQueryPoster : HttpPoster {
     val paths = mutableListOf<String>()
 
     override suspend fun postJson(url: String, body: String): HttpTextResponse {
-        check(url == "https://keen-elephant-452.convex.cloud/api/query")
+        check(url == "https://framework-desktop.tail69757d.ts.net/api/query")
         bodies += body
         val path = Json.parseToJsonElement(body).jsonObject["path"]!!.jsonPrimitive.content
         paths += path

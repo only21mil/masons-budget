@@ -29,7 +29,7 @@ test("installed command aliases and desktop entry use one configured launcher", 
       `#!/usr/bin/env bash
 set -euo pipefail
 [[ "\${VOGEL_VAULT_REMOTE_READ:-}" == "1" ]]
-[[ "\${VOGEL_VAULT_CONVEX_URL:-}" == "https://keen-elephant-452.convex.cloud" ]]
+[[ "\${VOGEL_VAULT_CONVEX_URL:-}" == "https://framework-desktop.tail69757d.ts.net" ]]
 [[ "\${VOGEL_VAULT_DEVICE_WRITES:-}" == "1" ]]
 
 token_file="\${VOGEL_VAULT_CONVEX_READ_TOKEN_FILE:-}"

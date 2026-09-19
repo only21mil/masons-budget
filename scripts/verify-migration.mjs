@@ -36,7 +36,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-export const DEFAULT_URL = "https://keen-elephant-452.convex.cloud";
+export const DEFAULT_URL = "https://framework-desktop.tail69757d.ts.net";
 export const EXPECTED_DATA_FILE_COUNT = 13;
 
 export const EXIT = Object.freeze({

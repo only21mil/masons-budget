@@ -334,7 +334,7 @@ require_(
 const approvedOriginUrls = approvedDeploymentSource.match(/https?:\/\/[A-Za-z0-9._:/-]+/g) ?? []
 require_(
   approvedOriginUrls.length === 1 &&
-    approvedOriginUrls[0] === "https://keen-elephant-452.convex.cloud",
+    approvedOriginUrls[0] === "https://framework-desktop.tail69757d.ts.net",
   "approvedDeployment: exactly the reviewed household origin is pinned",
 )
 require_(
@@ -481,7 +481,7 @@ for (const [input, expected] of fileNameCases) {
 const SAMPLE_CREDENTIAL = "not-a-real-read-credential-0000"
 // The deployment origin is pinned like mutations, so the sample is the
 // household origin itself — it is repo-public, never a secret.
-const SAMPLE_DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+const SAMPLE_DEPLOYMENT = "https://framework-desktop.tail69757d.ts.net"
 
 const enabledEnv = {
   VOGEL_VAULT_REMOTE_READ: "1",

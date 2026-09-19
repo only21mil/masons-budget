@@ -8,7 +8,7 @@ import {
 } from "node:fs/promises"
 import path from "node:path"
 
-export const CAPTURE_ENDPOINT = "https://keen-elephant-452.convex.cloud/api/query"
+export const CAPTURE_ENDPOINT = "https://framework-desktop.tail69757d.ts.net/api/query"
 export const CAPTURE_DEPLOYMENT = "prod:keen-elephant-452"
 export const CAPTURE_FORMATS = Object.freeze(["json", "convex_encoded_json"])
 export const QUERY_SHAPE_ALGORITHM = "typescript-token-query-dependency-closure-v1"

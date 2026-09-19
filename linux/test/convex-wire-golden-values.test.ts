@@ -23,7 +23,7 @@ const QUERY_NAMES = new Map<string, string>([
 ])
 const settings = resolveRemoteReadSettings({
   VOGEL_VAULT_REMOTE_READ: "1",
-  VOGEL_VAULT_CONVEX_URL: "https://keen-elephant-452.convex.cloud",
+  VOGEL_VAULT_CONVEX_URL: "https://framework-desktop.tail69757d.ts.net",
   VOGEL_VAULT_CONVEX_READ_TOKEN: "fixture-only-token",
 })
 

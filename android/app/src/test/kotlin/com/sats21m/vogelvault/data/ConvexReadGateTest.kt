@@ -87,7 +87,7 @@ class ConvexReadGateTest {
     fun `a cleartext deployment url is refused rather than downgraded`() {
         val poster = RecordingPoster()
         val config = ConvexConfig(
-            deploymentUrl = "http://keen-elephant-452.convex.cloud",
+            deploymentUrl = "http://framework-desktop.tail69757d.ts.net",
             readToken = testToken(),
             remoteReadEnabled = true,
         )
@@ -162,6 +162,6 @@ class ConvexReadGateTest {
          * thing standing between anyone and the household's finances. It is not
          * a secret and never was; the token is.
          */
-        const val DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+        const val DEPLOYMENT = "https://framework-desktop.tail69757d.ts.net"
     }
 }
