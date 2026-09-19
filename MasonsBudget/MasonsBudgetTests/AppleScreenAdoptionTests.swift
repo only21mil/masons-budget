@@ -337,3 +337,261 @@ final class AppleScreenAdoptionTests: XCTestCase {
         XCTAssertEqual(CategoryDetailView.monthKey(for: date, calendar: calendar), "2026-01")
     }
 }
+
+#if os(macOS) && MAC_DESIGN_PACKET
+    import AppKit
+    import CoreText
+    import SwiftData
+
+    enum MacPacketDestination: Hashable {
+        case billPay, awards
+    }
+
+    /// Installed on the packet target's Convex sessions, including tokenless reads.
+    final class MacPacketNoNetwork: URLProtocol {
+        override class func canInit(with _: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+        }
+        override func stopLoading() {}
+
+        /// The same transport seam used by CanonicalFinancialSourceStoreTests.
+        /// Known reads receive fixture rows; every other request fails offline.
+        static func response(to request: URLRequest) throws -> (Data, URLResponse) {
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+            let path = try XCTUnwrap(body["path"] as? String)
+            let day = LegacyTransactionDTO.dateString(from: LedgerClock.now, timeZone: TimeZone(secondsFromGMT: 0)!)
+            let month = String(day.prefix(7))
+            let integer = ConvexTaggedInt64Encoder.encode
+            let row: [String: Any]
+            switch path {
+            case "tables:listBtcBalanceDocuments":
+                let fixture = try MacPacketFixture.load(bundle: Bundle(for: AppleScreenAdoptionTests.self))
+                let household = try fixture.sampleAccounts.filter {
+                    try FamilyMember.victor.sharesNetWorth(with: XCTUnwrap(FamilyMember(rawValue: $0.owner)))
+                }
+                let accounts: [[String: Any]] = try household.map { account in
+                    let btc = try XCTUnwrap(Decimal(string: account.btc))
+                    return ["key": account.key, "label": account.label, "custody": account.custody,
+                            "sats": integer(NSDecimalNumber(decimal: btc * 100_000_000).int64Value)]
+                }
+                row = ["owner": "victor", "schemaVersion": integer(1), "asOf": day, "accounts": accounts,
+                       "totals": ["sats": integer(355_000_000), "exchangeSats": integer(0), "selfCustodySats": integer(355_000_000)]]
+            case "tables:listIncome":
+                row = ["incomeId": "packet-income", "owner": "victor", "date": day, "month": month,
+                       "amountCents": integer(500_000), "source": "Fixture paycheck", "updatedAtMs": 1]
+            case "tables:listBtcBillPays":
+                row = ["billPayId": "packet-bill", "owner": "victor", "date": day, "month": month,
+                       "amountUsdCents": integer(10_000), "btcSpentSats": integer(100_000), "btcPriceCents": integer(10_000_000),
+                       "feeUsdCents": integer(100), "budgetEffect": "budget_category", "merchant": "Electric company", "category": "Housing"]
+            case "tables:getBudgetDocument":
+                row = ["owner": "victor", "month": month, "coinbaseOneBalanceCents": integer(0),
+                       "categories": ["Food", "Housing", "Transport"].map { name -> [String: Any] in
+                           ["name": name, "budgetCents": integer(50_000)]
+                       },
+                       "mtdIncomeCents": integer(500_000), "ytdIncomeCents": integer(500_000), "monthlyHistory": [], "updatedAtMs": 1]
+            default:
+                throw URLError(.notConnectedToInternet)
+            }
+            let value: [String: Any] = path == "tables:getBudgetDocument"
+                ? ["complete": true, "document": row] : ["complete": true, "rows": [row]]
+            let data = try JSONSerialization.data(withJSONObject: ["status": "success", "value": value])
+            return (data, try XCTUnwrap(HTTPURLResponse(url: XCTUnwrap(request.url), statusCode: 200,
+                                                      httpVersion: nil, headerFields: nil)))
+        }
+    }
+
+    extension AppleScreenAdoptionTests {
+        /// Review artifacts, not pixel baselines. Runs without MasonsBudgetApp or its lock/sync tasks.
+        @MainActor
+        func testMacDesignPacket() async throws {
+            guard let path = ProcessInfo.processInfo.environment["MAC_DESIGN_PACKET_DIR"],
+                  !path.isEmpty, !path.contains("$(")
+            else { throw XCTSkip("Set MAC_DESIGN_PACKET_DIR to capture macOS fixture screens") }
+            let directory = URL(fileURLWithPath: path, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+            // Override only this test process's preference search domain. Never migrate,
+            // clear, or read host credentials; the packet target compiles those getters empty.
+            let defaults = UserDefaults.standard
+            let previousArguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+            var arguments = previousArguments
+            arguments.merge([
+                "selected_family_member": FamilyMember.victor.rawValue,
+                "display_unit": DisplayUnit.btc.rawValue,
+                "appearance_mode": AppearanceMode.dark.rawValue,
+                "app_lock_enabled": false,
+                "AppleLanguages": ["en"],
+                "AppleLocale": "en_US_POSIX",
+                ConvexSyncService.versionsMemberKey: "victor",
+                ConvexSyncService.lastSyncKey: 0.0,
+                ConvexSyncService.lastSyncErrorKey: "",
+                ConvexSyncService.dataVersionsKey: [String: Double](),
+                MarketQuoteService.cacheKey: Data(),
+                BTCPriceService.updatedAtKey: 0.0,
+                LedgerPreference.reduceMotionKey: true,
+                LedgerPreference.scanlinesKey: false,
+                LedgerPreference.phosphorGlowKey: false,
+            ]) { _, fixture in fixture }
+            defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+            let previousTimeZone = NSTimeZone.default
+            NSTimeZone.default = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+            let application = NSApplication.shared
+            let previousAppearance = application.appearance
+            application.appearance = NSAppearance(named: .darkAqua)
+            defer {
+                application.appearance = previousAppearance
+                NSTimeZone.default = previousTimeZone
+                defaults.setVolatileDomain(previousArguments, forName: UserDefaults.argumentDomain)
+            }
+            XCTAssertFalse(ConvexConfig.hasReadToken)
+            XCTAssertFalse(ConvexConfig.hasSyncToken)
+            XCTAssertFalse(AppWritebackConfig.isConfigured)
+
+            let bundle = Bundle(for: AppleScreenAdoptionTests.self)
+            let fonts = (bundle.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? [])
+                + (bundle.urls(forResourcesWithExtension: "ttf", subdirectory: "Fonts") ?? [])
+            let registeredFonts = Set(fonts).filter { CTFontManagerRegisterFontsForURL($0 as CFURL, .process, nil) }
+            defer {
+                for font in registeredFonts { CTFontManagerUnregisterFontsForURL(font as CFURL, .process, nil) }
+            }
+
+            let schema = Schema([
+                Transaction.self, BudgetCategory.self, MonthlyBudgetSnapshot.self,
+                BTCAccount.self, BTCBuy.self, BTCBillPay.self, HoldingAccount.self,
+                Holding.self, HoldingLot.self, SyncEvent.self, FamilyProfile.self,
+                NetWorthSnapshot.self, TodoItem.self, TodoProject.self, TodoArea.self, CostBasisLot.self,
+            ])
+            let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+            let container = try ModelContainer(for: schema, configurations: [configuration])
+            try seedMacPacket(container.mainContext, bundle: bundle)
+            let authentication = AppAuthenticationSession(defaults: defaults)
+            authentication.transition(to: .active)
+            XCTAssertTrue(authentication.isUnlocked)
+            let financials = CanonicalFinancialSourceStore()
+            await financials.load(viewer: .victor)
+            XCTAssertEqual(financials.btcBalance.value?.totalSats, 355_000_000)
+            XCTAssertNotNil(financials.income.value)
+            XCTAssertEqual(financials.btcBillPays.value?.totalUSDCents, 10_000)
+
+            for tab in AppTab.allCases {
+                try await captureMacPacket(ContentView(packetTab: tab), name: tab.rawValue,
+                                     directory: directory, container: container, authentication: authentication)
+            }
+            try await captureMacPacket(ContentView(packetTab: .home, destination: .billPay), name: "bill-pay",
+                                 directory: directory, container: container, authentication: authentication)
+            try await captureMacPacket(ContentView(packetTab: .home, destination: .awards), name: "awards",
+                                 directory: directory, container: container, authentication: authentication)
+            // A sheet is a separate AppKit window, outside ContentView's cached bitmap.
+            // Capture its actual view separately; bill-pay.png retains the COMPOSE header.
+            try await captureMacPacket(BTCBillPayComposeView(), name: "bill-pay-compose",
+                                 directory: directory, container: container, authentication: authentication)
+        }
+
+        @MainActor
+        private func captureMacPacket(
+            _ content: some View, name: String, directory: URL,
+            container: ModelContainer, authentication: AppAuthenticationSession,
+        ) async throws {
+            let size = NSSize(width: 1000, height: 700)
+            let root = content
+                .modelContainer(container)
+                .environmentObject(authentication)
+                .environmentObject(SyncStatusStore.shared)
+                .environmentObject(TaskUndoStore.shared)
+                .themed()
+                .preferredColorScheme(.dark)
+                .environment(\.colorScheme, .dark)
+                .environment(\.locale, Locale(identifier: "en_US_POSIX"))
+                .environment(\.timeZone, TimeZone(secondsFromGMT: 0)!)
+                .environment(\.accessibilityReduceMotion, true)
+                .transaction { $0.disablesAnimations = true }
+                .frame(width: size.width, height: size.height)
+            let hosting = NSHostingView(rootView: root)
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.contentView = hosting
+            window.orderFront(nil)
+            defer {
+                window.orderOut(nil)
+                window.contentView = nil
+                window.close()
+            }
+            // Release MainActor so the root's asynchronous fixture reads can finish.
+            try await Task.sleep(nanoseconds: 500_000_000)
+            settleMacPacket(hosting)
+            hosting.displayIfNeeded()
+            XCTAssertEqual(hosting.bounds.size, size, name)
+            let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds), name)
+            hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]), name)
+            XCTAssertGreaterThan(png.count, 1000, "Empty capture: \(name)")
+            try png.write(to: directory.appendingPathComponent("\(name).png"), options: .atomic)
+        }
+
+        @MainActor
+        private func settleMacPacket(_ hosting: NSView) {
+            // Drain navigation pushes, @Query delivery and row onAppear.
+            let deadline = Date().addingTimeInterval(0.5)
+            while Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+                hosting.layoutSubtreeIfNeeded()
+            }
+        }
+
+        @MainActor
+        private func seedMacPacket(_ context: ModelContext, bundle: Bundle) throws {
+            let fixture = try MacPacketFixture.load(bundle: bundle)
+            let now = LedgerClock.now
+            for (index, row) in fixture.sampleTransactions.enumerated() {
+                context.insert(Transaction(
+                    id: row.id, date: now.addingTimeInterval(-Double(index)), merchant: row.merchant,
+                    amount: try XCTUnwrap(Decimal(string: row.amount)), category: row.category,
+                    owner: try XCTUnwrap(FamilyMember(rawValue: row.owner)), createdBy: "fixture",
+                ))
+            }
+            for row in fixture.sampleAccounts {
+                context.insert(BTCAccount(
+                    key: row.key, label: row.label, custody: try XCTUnwrap(BTCCustody(rawValue: row.custody)),
+                    btc: try XCTUnwrap(Decimal(string: row.btc)),
+                    owner: try XCTUnwrap(FamilyMember(rawValue: row.owner)), lastUpdated: now,
+                ))
+            }
+            for (index, name) in ["Food", "Housing", "Transport"].enumerated() {
+                context.insert(BudgetCategory(name: name, icon: "creditcard", monthlyBudget: 500,
+                                              sortOrder: index, owner: .victor))
+            }
+            context.insert(TodoItem(id: "packet-today", title: "Review household budget", dueDate: now,
+                                    priority: 2, owner: .victor, createdBy: "fixture", updatedAt: now))
+            context.insert(TodoItem(id: "packet-done", title: "Reconcile receipts", isDone: true,
+                                    owner: .victor, createdBy: "fixture", updatedAt: now, completedAt: now))
+            context.insert(BTCBuy(id: "packet-buy", date: now, source: "River", amountBTC: Decimal(1) / 100,
+                                  amountSats: 1_000_000, priceUSD: 100_000, usd: 1000, owner: .victor))
+            context.insert(BTCBillPay(id: "packet-bill", date: now, merchant: "Electric company", category: "Housing",
+                                      amountUSD: 100, btcSpent: Decimal(1) / 1000, btcPrice: 100_000,
+                                      feeUSD: 1, budgetEffect: .budgetCategory, platform: "River", owner: .victor))
+            try context.save()
+        }
+    }
+
+    /// Same shared fixture consumed by FamilyVisibilityTests; unrelated fields are ignored.
+    private struct MacPacketFixture: Decodable {
+        struct TransactionRow: Decodable {
+            let id, merchant, amount, category, owner: String
+        }
+        struct AccountRow: Decodable {
+            let key, label, custody, btc, owner: String
+        }
+        let sampleTransactions: [TransactionRow]
+        let sampleAccounts: [AccountRow]
+
+        static func load(bundle: Bundle) throws -> Self {
+            let url = bundle.url(forResource: "visibility-cases", withExtension: "json")
+                ?? bundle.url(forResource: "visibility-cases", withExtension: "json", subdirectory: "fixtures")
+            return try JSONDecoder().decode(Self.self, from: Data(contentsOf: XCTUnwrap(url)))
+        }
+    }
+#endif

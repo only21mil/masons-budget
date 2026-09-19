@@ -380,3 +380,15 @@ extension View {
         modifier(GlassCard(padding: padding, radius: radius))
     }
 }
+
+/// Screen-time source. The standalone design-packet target pins time; app builds
+/// always use the wall clock. This flag is never enabled on application targets.
+enum LedgerClock {
+    static var now: Date {
+        #if MAC_DESIGN_PACKET
+            Date(timeIntervalSince1970: 1_800_000_000)
+        #else
+            Date()
+        #endif
+    }
+}

@@ -38,7 +38,7 @@ struct HomeDashboardView: View {
     private var todayTasks: [TodoItem] {
         todos.filter {
             member.canAccessTodo(ownedBy: $0.ownerMember) && !$0.isDone &&
-                SmartListFilter.today.matches($0, now: Date(), calendar: .current)
+                SmartListFilter.today.matches($0, now: LedgerClock.now, calendar: .current)
         }
     }
     private var retirementUSD: Decimal {
@@ -55,7 +55,7 @@ struct HomeDashboardView: View {
             snapshots: snapshots.filter { member.sharesNetWorth(with: $0.ownerMember) }.map {
                 NetWorthHistoryPoint(date: $0.date, total: $0.totalValue, btc: $0.btcValue, holdings: $0.holdingsValue)
             },
-            current: NetWorthHistoryPoint(date: Date(), total: total, btc: total - retirementUSD, holdings: retirementUSD)
+            current: NetWorthHistoryPoint(date: LedgerClock.now, total: total, btc: total - retirementUSD, holdings: retirementUSD)
         )
     }
     private var transactionSource: String { member.hasDedicatedChildFinanceFiles ? "mason-transactions" : "transactions" }
@@ -190,7 +190,7 @@ struct HomeDashboardView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Spent today").ledgerType(.sectionLabel)
                 if hasLoaded(transactionSource) {
-                    let total = HomeDashboardData.spentToday(transactions, viewer: member, now: Date())
+                    let total = HomeDashboardData.spentToday(transactions, viewer: member, now: LedgerClock.now)
                     Text(AppFormatter.formatCurrency(total)).ledgerType(.kpiValue)
                 } else { Text("Unavailable").ledgerType(.rowPrimary) }
             }
@@ -216,7 +216,7 @@ struct HomeDashboardView: View {
                     .listRowInsets(EdgeInsets(top: 0, leading: ledgerTokens.metrics.screenGutter, bottom: 0, trailing: ledgerTokens.metrics.screenGutter))
             }
             if todayTasks.isEmpty { Text("No tasks due today").ledgerType(.rowMeta) }
-            InlineAddTaskBar(defaultDueDate: Date(), isExpanded: $addingTask)
+            InlineAddTaskBar(defaultDueDate: LedgerClock.now, isExpanded: $addingTask)
                 .padding(.bottom, 12)
         }
         .foregroundStyle(theme.text)
@@ -277,22 +277,22 @@ struct HomeDashboardView: View {
 
     private var budgetPreview: some View {
         VStack(alignment: .leading, spacing: 12) {
-            link(Date().formatted(.dateTime.month(.wide).year()) + " budget") { BudgetView() }
-            let currentMonth = CategoryDetailView.monthKey(for: Date(), calendar: Calendar(identifier: .gregorian))
+            link(LedgerClock.now.formatted(.dateTime.month(.wide).year()) + " budget") { BudgetView() }
+            let currentMonth = CategoryDetailView.monthKey(for: LedgerClock.now, calendar: Calendar(identifier: .gregorian))
             let planned = HomeDashboardData.plannedExpenseTotal(budgetPlan?.categories ?? [])
             if budgetPlanViewer == member, let budgetPlan,
                member.sharesNetWorth(with: budgetPlan.owner),
                HomeDashboardData.isCurrentBudgetMonth(budgetPlan.month, currentMonth: currentMonth),
                hasLoaded(transactionSource), planned > 0 {
                 let spent = transactions.filter {
-                    member.sharesNetWorth(with: $0.ownerMember) && Calendar.current.isDate($0.date, equalTo: Date(), toGranularity: .month)
+                    member.sharesNetWorth(with: $0.ownerMember) && Calendar.current.isDate($0.date, equalTo: LedgerClock.now, toGranularity: .month)
                 }.reduce(Decimal(0)) { $0 + $1.spendAmount }
                 Text("\(AppFormatter.formatCurrency(spent)) of \(AppFormatter.formatCurrency(planned)) planned").ledgerType(.rowFigure)
                 LedgerProgressBar(fraction: NSDecimalNumber(decimal: spent / planned).doubleValue, fill: theme.accent, track: theme.border)
             } else {
                 Text("No budget plan available").ledgerType(.rowMeta)
             }
-            BudgetPlanCarryAction(viewer: member, selectedMonth: Date(), onLoaded: { document in
+            BudgetPlanCarryAction(viewer: member, selectedMonth: LedgerClock.now, onLoaded: { document in
                 budgetPlan = document
                 budgetPlanViewer = member
             }) { _ in }

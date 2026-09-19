@@ -30,12 +30,12 @@ enum SmartListFilter: String, CaseIterable, Identifiable {
         }
     }
 
-    static func isDueTodayOrOverdue(_ dueDate: Date?, now: Date = Date(), calendar: Calendar = .current) -> Bool {
+    static func isDueTodayOrOverdue(_ dueDate: Date?, now: Date = LedgerClock.now, calendar: Calendar = .current) -> Bool {
         guard let dueDate else { return false }
         return calendar.startOfDay(for: dueDate) <= calendar.startOfDay(for: now)
     }
 
-    static func wasCompletedToday(_ todo: TodoItem, now: Date = Date(), calendar: Calendar = .current) -> Bool {
+    static func wasCompletedToday(_ todo: TodoItem, now: Date = LedgerClock.now, calendar: Calendar = .current) -> Bool {
         guard todo.isDone else { return false }
         if let completedAt = todo.completedAt {
             return calendar.isDate(completedAt, inSameDayAs: now)
@@ -62,7 +62,7 @@ enum SmartListFilter: String, CaseIterable, Identifiable {
             return Self.isDueTodayOrOverdue(todo.dueDate, now: now, calendar: calendar)
         case .upcoming:
             guard let due = todo.dueDate else { return false }
-            return due > now && !calendar.isDateInToday(due)
+            return due > now && !calendar.isDate(due, inSameDayAs: now)
         case .flagged:
             return todo.isFlagged
         }
@@ -200,13 +200,13 @@ struct TaskRowView: View {
         TaskUndoStore.shared.delete(todo, in: modelContext)
     }
 
-    static func isOverdue(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> Bool {
+    static func isOverdue(_ date: Date, now: Date = LedgerClock.now, calendar: Calendar = .current) -> Bool {
         date < calendar.startOfDay(for: now)
     }
 
-    static func relativeDue(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
-        if calendar.isDateInToday(date) { return "Today" }
-        if calendar.isDateInTomorrow(date) { return "Tomorrow" }
+    static func relativeDue(_ date: Date, now: Date = LedgerClock.now, calendar: Calendar = .current) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return "Today" }
+        if calendar.isDate(date, inSameDayAs: calendar.date(byAdding: .day, value: 1, to: now) ?? now) { return "Tomorrow" }
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day ?? 0
         if days < 0 { return "\(abs(days))d ago" }
         return "\(days)d"

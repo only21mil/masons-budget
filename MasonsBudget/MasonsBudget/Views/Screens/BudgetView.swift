@@ -33,7 +33,7 @@ struct BudgetView: View {
     }
 
     private var selectedMonth: Date {
-        Calendar.current.date(byAdding: .month, value: -selectedMonthOffset, to: Date()) ?? Date()
+        Calendar.current.date(byAdding: .month, value: -selectedMonthOffset, to: LedgerClock.now) ?? LedgerClock.now
     }
 
     private var monthTransactions: [Transaction] {
@@ -58,7 +58,7 @@ struct BudgetView: View {
 
     private func spentForOffset(_ offset: Int) -> Decimal {
         let cal = Calendar.current
-        let date = cal.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
+        let date = cal.date(byAdding: .month, value: -offset, to: LedgerClock.now) ?? LedgerClock.now
         return allTransactions.filter { tx in
             activeMember.sharesNetWorth(with: tx.ownerMember) &&
                 cal.isDate(tx.date, equalTo: date, toGranularity: .month) &&
@@ -76,7 +76,7 @@ struct BudgetView: View {
     private func incomeForOffset(_ offset: Int) -> Decimal? {
         guard let income = incomeSummary else { return nil }
         let cal = Calendar.current
-        let date = cal.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
+        let date = cal.date(byAdding: .month, value: -offset, to: LedgerClock.now) ?? LedgerClock.now
         let df = AppFormatter.monthFormatter(for: "yyyy-MM")
         return income.amount(forMonth: df.string(from: date), emptyLedgerFallback: snapshot(for: date)?.mtdIncome)
     }
@@ -101,7 +101,7 @@ struct BudgetView: View {
                     .padding(.bottom, AppLayout.cardSpacing)
 
                 BudgetPlanCarryAction(viewer: activeMember, selectedMonth: selectedMonth) { targetMonth in
-                    let currentKey = CategoryDetailView.monthKey(for: Date(), calendar: Calendar(identifier: .gregorian))
+                    let currentKey = CategoryDetailView.monthKey(for: LedgerClock.now, calendar: Calendar(identifier: .gregorian))
                     if let current = BudgetPlanCarry.monthIndex(currentKey),
                        let target = BudgetPlanCarry.monthIndex(targetMonth)
                     {
@@ -139,7 +139,7 @@ struct BudgetView: View {
         let summary = incomeSummary
         let snapshot = snapshot(for: selectedMonth)
         let ytd = summary?.yearToDate(
-            forMonth: month, currentMonth: CategoryDetailView.monthKey(for: Date()),
+            forMonth: month, currentMonth: CategoryDetailView.monthKey(for: LedgerClock.now),
             snapshotYTD: snapshot?.ytdIncome,
         )
         return VStack(alignment: .leading, spacing: 12) {
@@ -210,7 +210,7 @@ struct BudgetView: View {
 
     private func monthChip(offset: Int) -> some View {
         let isSelected = offset == selectedMonthOffset
-        let date = Calendar.current.date(byAdding: .month, value: -offset, to: Date()) ?? Date()
+        let date = Calendar.current.date(byAdding: .month, value: -offset, to: LedgerClock.now) ?? LedgerClock.now
         let label = Self.monthChipFormatter.string(from: date)
         let year = Calendar.current.component(.year, from: date)
         let rate = savingsRateForOffset(offset)
@@ -409,7 +409,7 @@ struct BudgetPlanCarryAction: View {
     }
 
     private var currentMonthKey: String {
-        monthKey(Date())
+        monthKey(LedgerClock.now)
     }
 
     private var selectedMonthKey: String {

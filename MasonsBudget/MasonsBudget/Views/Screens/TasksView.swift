@@ -25,28 +25,28 @@ struct TasksView: View {
 
     private func count(_ filter: SmartListFilter) -> Int {
         let cal = Calendar.current
-        let now = Date()
+        let now = LedgerClock.now
         return myTodos.count(where: { filter.matches($0, now: now, calendar: cal) })
     }
 
     private var todayTodos: [TodoItem] {
-        let cal = Calendar.current, now = Date()
+        let cal = Calendar.current, now = LedgerClock.now
         return myTodos.filter { SmartListFilter.today.matches($0, now: now, calendar: cal) }
     }
 
     private var thisWeekTodos: [TodoItem] {
         let cal = Calendar.current
-        let now = Date()
+        let now = LedgerClock.now
         let weekFromNow = cal.date(byAdding: .day, value: 7, to: now) ?? now
         return myTodos.filter { todo in
             guard let due = todo.dueDate else { return false }
-            return due > now && !cal.isDateInToday(due) && due <= weekFromNow
+            return due > now && !cal.isDate(due, inSameDayAs: now) && due <= weekFromNow
         }
     }
 
     private var longTermTodos: [TodoItem] {
         let cal = Calendar.current
-        let now = Date()
+        let now = LedgerClock.now
         let weekFromNow = cal.date(byAdding: .day, value: 7, to: now) ?? now
         return myTodos.filter { todo in
             guard let due = todo.dueDate else { return true }
@@ -159,7 +159,7 @@ struct TasksView: View {
     }()
 
     private var eyebrow: String {
-        Self.eyebrowFormatter.string(from: Date())
+        Self.eyebrowFormatter.string(from: LedgerClock.now)
     }
 
     var body: some View {
