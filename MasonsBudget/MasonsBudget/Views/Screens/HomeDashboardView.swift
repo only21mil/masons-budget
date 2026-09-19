@@ -216,7 +216,7 @@ struct HomeDashboardView: View {
                     .listRowInsets(EdgeInsets(top: 0, leading: ledgerTokens.metrics.screenGutter, bottom: 0, trailing: ledgerTokens.metrics.screenGutter))
             }
             if todayTasks.isEmpty { Text("No tasks due today").ledgerType(.rowMeta) }
-            InlineAddTaskBar(defaultDueDate: LedgerClock.now, isExpanded: $addingTask)
+            InlineAddTaskBar(defaultDueDate: Date(), isExpanded: $addingTask)
                 .padding(.bottom, 12)
         }
         .foregroundStyle(theme.text)

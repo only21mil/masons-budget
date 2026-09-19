@@ -30,12 +30,12 @@ enum SmartListFilter: String, CaseIterable, Identifiable {
         }
     }
 
-    static func isDueTodayOrOverdue(_ dueDate: Date?, now: Date = LedgerClock.now, calendar: Calendar = .current) -> Bool {
+    static func isDueTodayOrOverdue(_ dueDate: Date?, now: Date = Date(), calendar: Calendar = .current) -> Bool {
         guard let dueDate else { return false }
         return calendar.startOfDay(for: dueDate) <= calendar.startOfDay(for: now)
     }
 
-    static func wasCompletedToday(_ todo: TodoItem, now: Date = LedgerClock.now, calendar: Calendar = .current) -> Bool {
+    static func wasCompletedToday(_ todo: TodoItem, now: Date = Date(), calendar: Calendar = .current) -> Bool {
         guard todo.isDone else { return false }
         if let completedAt = todo.completedAt {
             return calendar.isDate(completedAt, inSameDayAs: now)

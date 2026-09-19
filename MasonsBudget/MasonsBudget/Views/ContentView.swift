@@ -166,7 +166,6 @@ struct ContentView: View {
         }
         .onDisappear { cancelReadRetry() }
         #if os(macOS)
-        .safeAreaInset(edge: .top, spacing: 0) { syncBanner }
         .safeAreaInset(edge: .bottom) { undoBanner }
         #endif
         .sheet(isPresented: $showAddTransaction) {
@@ -316,21 +315,24 @@ struct ContentView: View {
 
         private var macDetail: some View {
             let tab = macTabBinding.wrappedValue
-            #if MAC_DESIGN_PACKET
-            return NavigationStack(path: $packetPath) {
-                macRoot(tab)
-                    .navigationDestination(for: MacPacketDestination.self) { destination in
-                        switch destination {
-                        case .billPay: LedgerDrilldown(title: "Bill Pay") { BTCBillPayView() }
-                        case .awards: LedgerDrilldown(title: "Awards") { AwardsView() }
-                        }
+            return VStack(spacing: 0) {
+                syncBanner
+                #if MAC_DESIGN_PACKET
+                    NavigationStack(path: $packetPath) {
+                        macRoot(tab)
+                            .navigationDestination(for: MacPacketDestination.self) { destination in
+                                switch destination {
+                                case .billPay: LedgerDrilldown(title: "Bill Pay") { BTCBillPayView() }
+                                case .awards: LedgerDrilldown(title: "Awards") { AwardsView() }
+                                }
+                            }
                     }
+                    .id(macNav)
+                #else
+                    NavigationStack { macRoot(tab) }
+                        .id(macNav)
+                #endif
             }
-            .id(macNav)
-            #else
-            return NavigationStack { macRoot(tab) }
-                .id(macNav)
-            #endif
         }
 
         private func macRoot(_ tab: AppTab) -> some View {

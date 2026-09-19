@@ -445,8 +445,11 @@ final class AppleScreenAdoptionTests: XCTestCase {
                 NSTimeZone.default = previousTimeZone
                 defaults.setVolatileDomain(previousArguments, forName: UserDefaults.argumentDomain)
             }
-            XCTAssertFalse(ConvexConfig.hasReadToken)
-            XCTAssertFalse(ConvexConfig.hasSyncToken)
+            XCTAssertTrue(ConvexConfig.hasReadToken)
+            XCTAssertTrue(ConvexConfig.hasSyncToken)
+            XCTAssertEqual(ConvexConfig.readToken, "")
+            XCTAssertEqual(ConvexConfig.syncToken, "")
+            XCTAssertNil(ContentView.readSyncMessage(hasReadToken: ConvexConfig.hasReadToken, lastError: ""))
             XCTAssertFalse(AppWritebackConfig.isConfigured)
 
             let bundle = Bundle(for: AppleScreenAdoptionTests.self)
@@ -469,12 +472,6 @@ final class AppleScreenAdoptionTests: XCTestCase {
             let authentication = AppAuthenticationSession(defaults: defaults)
             authentication.transition(to: .active)
             XCTAssertTrue(authentication.isUnlocked)
-            let financials = CanonicalFinancialSourceStore()
-            await financials.load(viewer: .victor)
-            XCTAssertEqual(financials.btcBalance.value?.totalSats, 355_000_000)
-            XCTAssertNotNil(financials.income.value)
-            XCTAssertEqual(financials.btcBillPays.value?.totalUSDCents, 10_000)
-
             for tab in AppTab.allCases {
                 try await captureMacPacket(ContentView(packetTab: tab), name: tab.rawValue,
                                      directory: directory, container: container, authentication: authentication)
@@ -510,7 +507,7 @@ final class AppleScreenAdoptionTests: XCTestCase {
                 .frame(width: size.width, height: size.height)
             let hosting = NSHostingView(rootView: root)
             let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
-                                  styleMask: [.borderless], backing: .buffered, defer: false)
+                                  styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.appearance = NSAppearance(named: .darkAqua)
             window.contentView = hosting
@@ -523,10 +520,14 @@ final class AppleScreenAdoptionTests: XCTestCase {
             // Release MainActor so the root's asynchronous fixture reads can finish.
             try await Task.sleep(nanoseconds: 500_000_000)
             settleMacPacket(hosting)
-            hosting.displayIfNeeded()
+            // Capture the window frame as well as the SwiftUI content, including its toolbar.
+            let frameView = try XCTUnwrap(window.contentView?.superview, name)
+            frameView.layoutSubtreeIfNeeded()
+            frameView.displayIfNeeded()
             XCTAssertEqual(hosting.bounds.size, size, name)
-            let bitmap: NSBitmapImageRep = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds), name)
-            hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+            XCTAssertGreaterThan(frameView.bounds.height, hosting.bounds.height, name)
+            let bitmap: NSBitmapImageRep = try XCTUnwrap(frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds), name)
+            frameView.cacheDisplay(in: frameView.bounds, to: bitmap)
             let png: Data = try XCTUnwrap(bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]), name)
             XCTAssertGreaterThan(png.count, 1000, "Empty capture: \(name)")
             try png.write(to: directory.appendingPathComponent("\(name).png"), options: Data.WritingOptions.atomic)

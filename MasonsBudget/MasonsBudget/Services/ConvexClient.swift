@@ -83,7 +83,12 @@ enum ConvexConfig {
 
     /// Presence-only view for UI status. UI callers must not retain or render the credential.
     static var hasSyncToken: Bool {
-        !syncToken.isEmpty
+        #if MAC_DESIGN_PACKET
+            // Render the connected UI using fixture reads; credentials remain empty.
+            true
+        #else
+            !syncToken.isEmpty
+        #endif
     }
 
     @discardableResult
@@ -132,7 +137,12 @@ enum ConvexConfig {
 
     /// Presence-only view for UI status. UI callers must not retain or render the credential.
     static var hasReadToken: Bool {
-        !readToken.isEmpty
+        #if MAC_DESIGN_PACKET
+            // Render the connected UI using fixture reads; credentials remain empty.
+            true
+        #else
+            !readToken.isEmpty
+        #endif
     }
 
     @discardableResult

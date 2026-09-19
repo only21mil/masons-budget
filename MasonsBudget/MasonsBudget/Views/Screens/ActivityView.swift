@@ -75,7 +75,7 @@ struct ActivityView: View {
         case .onChain: visible.filter { TransactionSourceCatalog.activityRail(forCard: $0.card) == .onChain }
         }
 
-        return scoped.filter { (!todayOnly || Calendar.current.isDate($0.date, inSameDayAs: LedgerClock.now)) && SearchMatcher.matches(transaction: $0, query: searchText) }
+        return scoped.filter { (!todayOnly || Calendar.current.isDateInToday($0.date)) && SearchMatcher.matches(transaction: $0, query: searchText) }
     }
 
     private var grouped: [(Date, [Transaction])] {
@@ -125,7 +125,7 @@ struct ActivityView: View {
             if let summary = canonicalFinancials.income.value {
                 let rows = summary.rows.filter {
                     activeMember.canSee(dataOwnedBy: $0.owner) &&
-                        ActivityDateScope.includesIncomeDate($0.date, todayOnly: todayOnly, now: LedgerClock.now) &&
+                        ActivityDateScope.includesIncomeDate($0.date, todayOnly: todayOnly, now: Date()) &&
                         (searchText.isEmpty || "\($0.source) \($0.note ?? "") \($0.date)".localizedCaseInsensitiveContains(searchText))
                 }
                 if rows.isEmpty {
