@@ -195,9 +195,9 @@ jobs:
           persist-credentials: false
 
       # This is deliberately a prerequisite of the self-hosted Apple job. A stale
-      # committed project fails here before the self-hosted Mac starts. The same
+      # committed project fails here before any Xcode work starts. The same
       # script fixes drift on Linux or macOS and bootstraps the checksummed,
-      # pinned XcodeGen release, so this failure never requires Mac ownership.
+      # pinned XcodeGen release, so fixing drift never requires Mac ownership.
       - name: Require the generated project to be committed
         run: scripts/regenerate-xcode-project.sh --check
 
@@ -211,8 +211,7 @@ jobs:
       github.repository == 'only21mil/masons-budget' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
-      (needs.changes.result != 'success' || needs.changes.outputs.apple != 'false') &&
-      needs.project-consistency.result == 'success'
+      (needs.changes.result != 'success' || needs.changes.outputs.apple != 'false')
     needs: [changes, project-consistency]
     runs-on: >-
       ${{
@@ -231,6 +230,17 @@ jobs:
       checks: read
       pull-requests: read
     steps:
+      # Keep prerequisite failures in this required check. A job-level success
+      # condition would report a skipped check, which cannot block a merge.
+      - name: Require project consistency to have passed
+        env:
+          PROJECT_CONSISTENCY_RESULT: ${{ needs.project-consistency.result }}
+        run: |
+          if [ "$PROJECT_CONSISTENCY_RESULT" != 'success' ]; then
+            echo "::error::Verify committed Xcode project did not succeed ($PROJECT_CONSISTENCY_RESULT)."
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
