@@ -144,7 +144,40 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget.tests
         GENERATE_INFOPLIST_FILE: YES
 
+  MasonsBudgetMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: MasonsBudgetTests/AppleScreenAdoptionTests.swift
+      - path: MasonsBudget
+        excludes:
+          - "App/MasonsBudgetApp.swift"
+          - "Preview Content/**"
+          - "Resources/**"
+          - "**/.DS_Store"
+      - path: ../shared/domain/fixtures
+        group: shared/domain
+        createIntermediateGroups: false
+        buildPhase: resources
+    resources:
+      - path: MasonsBudget/Resources/Fonts
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sats21m.masonsbudget.mac-design-packet-tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) MAC_DESIGN_PACKET"
+
 schemes:
+  MacDesignPacket:
+    build:
+      targets:
+        MasonsBudgetMacTests: [test]
+    test:
+      config: Debug
+      targets:
+        - MasonsBudgetMacTests
+      environmentVariables:
+        MAC_DESIGN_PACKET_DIR: "$(MAC_DESIGN_PACKET_DIR)"
   MasonsBudget:
     build:
       targets:

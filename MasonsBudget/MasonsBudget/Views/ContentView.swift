@@ -112,6 +112,16 @@ struct ContentView: View {
         @State private var macNav: MacNav? = .home
     #endif
 
+    #if MAC_DESIGN_PACKET && os(macOS)
+        @State private var packetPath: [MacPacketDestination] = []
+
+        init(packetTab: AppTab, destination: MacPacketDestination? = nil) {
+            _selectedTab = State(initialValue: packetTab)
+            _macNav = State(initialValue: MacNav(rawValue: packetTab.rawValue))
+            _packetPath = State(initialValue: destination.map { [$0] } ?? [])
+        }
+    #endif
+
     var activeMember: FamilyMember {
         FamilyMember(rawValue: selectedMemberRaw) ?? .victor
     }
@@ -156,7 +166,6 @@ struct ContentView: View {
         }
         .onDisappear { cancelReadRetry() }
         #if os(macOS)
-        .safeAreaInset(edge: .top, spacing: 0) { syncBanner }
         .safeAreaInset(edge: .bottom) { undoBanner }
         #endif
         .sheet(isPresented: $showAddTransaction) {
@@ -306,16 +315,34 @@ struct ContentView: View {
 
         private var macDetail: some View {
             let tab = macTabBinding.wrappedValue
-            return NavigationStack {
-                screenForTab(tab, selection: macTabBinding)
-                    .environment(\.ledgerRootTitle, tab.label)
-                    .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
-                        gearMenuButton
-                        syncStatusGlyph
-                        appearanceToggle
-                    }))
+            return VStack(spacing: 0) {
+                syncBanner
+                #if MAC_DESIGN_PACKET
+                    NavigationStack(path: $packetPath) {
+                        macRoot(tab)
+                            .navigationDestination(for: MacPacketDestination.self) { destination in
+                                switch destination {
+                                case .billPay: LedgerDrilldown(title: "Bill Pay") { BTCBillPayView() }
+                                case .awards: LedgerDrilldown(title: "Awards") { AwardsView() }
+                                }
+                            }
+                    }
+                    .id(macNav)
+                #else
+                    NavigationStack { macRoot(tab) }
+                        .id(macNav)
+                #endif
             }
-            .id(macNav)
+        }
+
+        private func macRoot(_ tab: AppTab) -> some View {
+            screenForTab(tab, selection: macTabBinding)
+                .environment(\.ledgerRootTitle, tab.label)
+                .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
+                    gearMenuButton
+                    syncStatusGlyph
+                    appearanceToggle
+                }))
         }
 
         private var appearanceToggle: some View {

@@ -375,6 +375,21 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM=""
 
+      # Compile the standalone fixture capture target without running captures in CI.
+      - name: macOS design packet build
+        working-directory: MasonsBudget
+        run: |
+          set -euo pipefail
+          xcodebuild build-for-testing \
+            -derivedDataPath "$RUNNER_TEMP/MacDesignPacketDerivedData" \
+            -project MasonsBudget.xcodeproj \
+            -scheme MacDesignPacket \
+            -destination "platform=macOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
       - name: Shut down the simulator
         if: always()
         env:
