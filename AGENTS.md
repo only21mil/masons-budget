@@ -3,7 +3,7 @@
 **If you're an AI agent about to modify this app — read this first.**
 
 MC2 mission-control is gone. It lived only on the wiped DGX Spark, was never
-pushed, and is unrecoverable. **Convex (`keen-elephant-452`) is the system of
+pushed, and is unrecoverable. **Convex (self-hosted on F-D, `https://framework-desktop.tail69757d.ts.net`) is the system of
 record.** Canonical typed rows are the current ledger authority. The surviving
 `dataFiles` JSON blobs are a load-bearing compatibility copy for shipped readers.
 Never describe MC2 as a live upstream or direct work toward a separate MC2 repo.
@@ -33,7 +33,7 @@ canonical rule in `only21mil/buzz:docs/delivery-lifecycle.md`.
 
 Superseded: this file previously mandated mirroring every change into Linear. That rule no longer applies.
 
-This is **The Vogel Vault** (internal repo name still "Mason's Budget App"). SwiftUI iOS + macOS app, multi-profile family Bitcoin + budget dashboard. Convex (`keen-elephant-452.convex.cloud`) is the backend and system of record. Shipped clients still read the legacy JSON blobs through `dataFiles`; the reviewed row-table cutover is tracked in [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
+This is **The Vogel Vault** (internal repo name still "Mason's Budget App"). SwiftUI iOS + macOS app, multi-profile family Bitcoin + budget dashboard. Convex (self-hosted on F-D at `https://framework-desktop.tail69757d.ts.net`, tailnet-only) is the backend and system of record. Shipped clients still read the legacy JSON blobs through `dataFiles`; the reviewed row-table cutover is tracked in [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
 
 - **Repo location: GitHub, `only21mil/masons-budget`.** There is no canonical
   local checkout and nothing is kept on a workstation — clone it where you need
