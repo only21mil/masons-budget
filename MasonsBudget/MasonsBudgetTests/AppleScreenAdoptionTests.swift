@@ -83,6 +83,104 @@ final class AppleScreenAdoptionTests: XCTestCase {
         XCTAssertEqual(HomeDashboardData.spentToday(rows, viewer: .maddox, now: today, calendar: calendar), 0)
     }
 
+    func testHomeSpentTodayConsumesSharedMoneyOutFixtureWithExplicitAppleDifferences() throws {
+        let bundle = Bundle(for: AppleScreenAdoptionTests.self)
+        let name = "money-out-today-cases"
+        let url = bundle.url(forResource: name, withExtension: "json")
+            ?? bundle.url(forResource: name, withExtension: "json", subdirectory: "fixtures")
+        let fixture = try JSONDecoder().decode(
+            MoneyOutTodayFixture.self, from: Data(contentsOf: try XCTUnwrap(url)),
+        )
+        XCTAssertEqual(fixture.contractVersion, 1)
+        XCTAssertEqual(Set(fixture.cases.map(\.activeProfile)), Set(FamilyMember.allCases.map(\.rawValue)))
+
+        let dtos = try fixture.transactions.map { row in
+            LegacyTransactionDTO(
+                id: row.id, date: row.date, merchant: row.id,
+                amount: try fixtureDollars(row.amountCents), category: row.category,
+                card: nil, note: nil, owner: try XCTUnwrap(FamilyMember(rawValue: row.owner)),
+            )
+        }
+        let transactions = LedgerMapper.mapTransactions(dtos)
+        // The production mapper interprets wire days in the current time zone.
+        let calendar = Calendar.current
+        let now = try XCTUnwrap(LegacyTransactionDTO.date(from: fixture.date, timeZone: calendar.timeZone))
+        let expectedHomeCents = ["victor": "3800", "rachel": "3800", "mason": "600", "maddox": "0"]
+
+        for testCase in fixture.cases {
+            let viewer = try XCTUnwrap(FamilyMember(rawValue: testCase.activeProfile))
+            XCTAssertEqual(viewer.ledgerOwner.rawValue, testCase.expectedOwner)
+            let sharedSourceIds = Set(testCase.expectedSourceIds)
+            let sharedTransactions = transactions.filter { sharedSourceIds.contains($0.id) }
+            let sharedBills = fixture.billPays.filter { sharedSourceIds.contains($0.id) }
+            XCTAssertEqual(
+                sharedSourceIds, Set(sharedTransactions.map(\.id) + sharedBills.map(\.id)),
+                testCase.activeProfile,
+            )
+            let excludedBills = try sharedBills.reduce(Decimal(0)) { total, bill in
+                try total + fixtureDollars(bill.principalCents) + fixtureDollars(bill.feeUsdCents)
+            }
+            let sharedTotal = try fixtureDollars(testCase.expectedTotalCents)
+            // The 2026-09-17 audit records Home's transaction-only total:
+            // bill principal AND fees stay out, unlike shared Money Out Today.
+            XCTAssertEqual(
+                HomeDashboardData.spentToday(sharedTransactions, viewer: viewer, now: now, calendar: calendar),
+                sharedTotal - excludedBills, testCase.activeProfile,
+            )
+            XCTAssertEqual(excludedBills, viewer.isAdult ? Decimal(1025) / 100 : (viewer == .mason ? Decimal(205) / 100 : 0))
+
+            // Apple also counts legacy Credit Card Payment transactions as spend,
+            // and canSee gives adults child spending oversight on Home.
+            // Pin both differences explicitly instead of dropping fixture rows.
+            let cardPayment = try XCTUnwrap(transactions.first { $0.id == "adult-card-transfer" })
+            XCTAssertEqual(
+                HomeDashboardData.spentToday([cardPayment], viewer: viewer, now: now, calendar: calendar),
+                viewer.isAdult ? 30 : 0, testCase.activeProfile,
+            )
+            let childSpend = try XCTUnwrap(transactions.first { $0.id == "mason-spend" })
+            XCTAssertEqual(
+                HomeDashboardData.spentToday([childSpend], viewer: viewer, now: now, calendar: calendar),
+                viewer == .maddox ? 0 : 6, testCase.activeProfile,
+            )
+            let actual = HomeDashboardData.spentToday(transactions, viewer: viewer, now: now, calendar: calendar)
+            XCTAssertEqual(actual, sharedTotal - excludedBills + (viewer.isAdult ? 36 : 0), testCase.activeProfile)
+            XCTAssertEqual(actual, try fixtureDollars(XCTUnwrap(expectedHomeCents[testCase.activeProfile])), testCase.activeProfile)
+        }
+    }
+
+    private func fixtureDollars(_ cents: String) throws -> Decimal {
+        try XCTUnwrap(Decimal(string: cents, locale: Locale(identifier: "en_US_POSIX"))) / 100
+    }
+
+    private struct MoneyOutTodayFixture: Decodable {
+        let contractVersion: Int
+        let date: String
+        let transactions: [TransactionRow]
+        let billPays: [BillPayRow]
+        let cases: [ProfileCase]
+
+        struct TransactionRow: Decodable {
+            let id: String
+            let date: String
+            let amountCents: String
+            let category: String
+            let owner: String
+        }
+
+        struct BillPayRow: Decodable {
+            let id: String
+            let principalCents: String
+            let feeUsdCents: String
+        }
+
+        struct ProfileCase: Decodable {
+            let activeProfile: String
+            let expectedOwner: String
+            let expectedTotalCents: String
+            let expectedSourceIds: [String]
+        }
+    }
+
     func testHomeBudgetExcludesIncomeCategoriesRegardlessOfCase() {
         let expenses: [ConvexBudgetDocumentRow.Category] = [
             .init(name: "Housing", icon: nil, budgetCents: 200_000),
