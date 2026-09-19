@@ -505,7 +505,7 @@ final class AppleScreenAdoptionTests: XCTestCase {
                 .environment(\.colorScheme, .dark)
                 .environment(\.locale, Locale(identifier: "en_US_POSIX"))
                 .environment(\.timeZone, TimeZone(secondsFromGMT: 0)!)
-                .environment(\.accessibilityReduceMotion, true)
+                .environment(\._accessibilityReduceMotion, true)
                 .transaction { $0.disablesAnimations = true }
                 .frame(width: size.width, height: size.height)
             let hosting = NSHostingView(rootView: root)
@@ -525,11 +525,11 @@ final class AppleScreenAdoptionTests: XCTestCase {
             settleMacPacket(hosting)
             hosting.displayIfNeeded()
             XCTAssertEqual(hosting.bounds.size, size, name)
-            let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds), name)
+            let bitmap: NSBitmapImageRep = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds), name)
             hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]), name)
+            let png: Data = try XCTUnwrap(bitmap.representation(using: NSBitmapImageRep.FileType.png, properties: [:]), name)
             XCTAssertGreaterThan(png.count, 1000, "Empty capture: \(name)")
-            try png.write(to: directory.appendingPathComponent("\(name).png"), options: .atomic)
+            try png.write(to: directory.appendingPathComponent("\(name).png"), options: Data.WritingOptions.atomic)
         }
 
         @MainActor
