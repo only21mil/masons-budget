@@ -90,19 +90,19 @@ function transactionRequest() {
 describe("paired-device main controller", () => {
   it("pins trusted routing to the one approved production origin", () => {
     expect(resolveApprovedDeploymentOrigin(
-      "https://keen-elephant-452.convex.cloud/",
-    )).toBe("https://keen-elephant-452.convex.cloud")
+      "https://framework-desktop.tail69757d.ts.net/",
+    )).toBe("https://framework-desktop.tail69757d.ts.net")
     expect(resolveApprovedDeploymentOrigin(
-      "  https://keen-elephant-452.convex.cloud/  ",
-    )).toBe("https://keen-elephant-452.convex.cloud")
+      "  https://framework-desktop.tail69757d.ts.net/  ",
+    )).toBe("https://framework-desktop.tail69757d.ts.net")
     expect(resolveApprovedDeploymentOrigin(
       "https://other.convex.cloud/",
     )).toBeNull()
     expect(resolveApprovedDeploymentOrigin(
-      "https://keen-elephant-452.convex.cloud.attacker.test/",
+      "https://framework-desktop.tail69757d.ts.net.attacker.test/",
     )).toBeNull()
     expect(resolveApprovedDeploymentOrigin(
-      "https://keen-elephant-452.convex.cloud/path",
+      "https://framework-desktop.tail69757d.ts.net/path",
     )).toBeNull()
   })
 
@@ -468,7 +468,7 @@ describe("paired-device main controller", () => {
     })
     await expect(invalidController.pair({
       pairingInput:
-        "https://keen-elephant-452.convex.cloud/#pair=pair_identifier.secret_identifier",
+        "https://framework-desktop.tail69757d.ts.net/#pair=pair_identifier.secret_identifier",
       deviceName: "Fedora desktop",
     }, "victor")).resolves.toEqual({ status: "failed", code: "invalid-input" })
   })

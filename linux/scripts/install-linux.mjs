@@ -7,7 +7,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const linuxRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const APPROVED_CONVEX_ORIGIN = "https://keen-elephant-452.convex.cloud"
+const APPROVED_CONVEX_ORIGIN = "https://framework-desktop.tail69757d.ts.net"
 
 function fail(message) {
   throw new Error(message)

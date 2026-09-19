@@ -132,7 +132,7 @@ internal class ProductionReadBootstrapPoster : ReadBootstrapPoster {
 
     private companion object {
         const val BOOTSTRAP_ENDPOINT =
-            "https://keen-elephant-452.convex.cloud/api/mutation"
+            "https://framework-desktop.tail69757d.ts.net/api/mutation"
         const val CONNECT_TIMEOUT_MS = 10_000
         const val READ_TIMEOUT_MS = 20_000
         const val MAX_RESPONSE_BYTES = 64 * 1_024
@@ -434,6 +434,6 @@ private fun ConvexConfig.hasSameReadCredential(other: ConvexConfig): Boolean =
         readTokenOrNull() == other.readTokenOrNull() &&
         remoteReadEnabled == other.remoteReadEnabled
 
-private const val PRODUCTION_DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+private const val PRODUCTION_DEPLOYMENT = "https://framework-desktop.tail69757d.ts.net"
 private const val READ_BOOTSTRAP_DEVICE_ID_BYTES = 16
 private const val READ_BOOTSTRAP_DEVICE_TOKEN_BYTES = 32

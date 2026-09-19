@@ -554,7 +554,7 @@ open class VaultApplication : Application() {
 }
 
 // Public routing configuration, not a credential.
-internal const val PRODUCTION_DEPLOYMENT = "https://keen-elephant-452.convex.cloud"
+internal const val PRODUCTION_DEPLOYMENT = "https://framework-desktop.tail69757d.ts.net"
 
 internal fun bundledReadBootstrapPair(): String =
     BuildConfig.CONVEX_READ_BOOTSTRAP_PAIR

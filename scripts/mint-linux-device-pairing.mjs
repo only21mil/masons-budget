@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const APPROVED_CONVEX_ORIGIN = "https://keen-elephant-452.convex.cloud";
+export const APPROVED_CONVEX_ORIGIN = "https://framework-desktop.tail69757d.ts.net";
 export const RESPONSE_LIMIT_BYTES = 16 * 1024;
 export const REQUEST_TIMEOUT_MS = 10_000;
 export const LINUX_DEVICE_CAPABILITIES = [

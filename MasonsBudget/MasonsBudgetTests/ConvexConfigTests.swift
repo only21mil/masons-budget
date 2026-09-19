@@ -136,7 +136,7 @@ final class ConvexConfigTests: XCTestCase {
 
         XCTAssertEqual(
             ConvexConfig.deploymentURL.absoluteString,
-            "https://keen-elephant-452.convex.cloud",
+            "https://framework-desktop.tail69757d.ts.net",
         )
     }
 

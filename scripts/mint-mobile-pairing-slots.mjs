@@ -28,7 +28,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const defaultConvexUrl = "https://keen-elephant-452.convex.cloud";
+const defaultConvexUrl = "https://framework-desktop.tail69757d.ts.net";
 const deviceProfiles = ["victor", "rachel", "mason", "maddox"];
 
 function parseEnvFile(file) {

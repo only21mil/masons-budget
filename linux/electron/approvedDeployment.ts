@@ -8,7 +8,7 @@
 // their endpoint through this one module, so a configuration that fails the
 // write path cannot secretly keep working for reads.
 
-export const APPROVED_CONVEX_ORIGIN = "https://keen-elephant-452.convex.cloud"
+export const APPROVED_CONVEX_ORIGIN = "https://framework-desktop.tail69757d.ts.net"
 
 /**
  * Resolve the one household deployment the main process approves.
