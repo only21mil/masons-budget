@@ -3,17 +3,14 @@ package com.sats21m.vogelvault
 import androidx.compose.ui.graphics.Color
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
+import com.sats21m.vogelvault.ui.BitcoinSegment
 import com.sats21m.vogelvault.ui.Destination
 import com.sats21m.vogelvault.ui.UNFOLDED_MIN_WIDTH_DP
 import com.sats21m.vogelvault.ui.VaultUiState
 import com.sats21m.vogelvault.ui.VaultViewModel
-import com.sats21m.vogelvault.ui.foldedOverflowDestinations
 import com.sats21m.vogelvault.ui.foldedPrimaryDestinations
-import com.sats21m.vogelvault.ui.RAIL_ITEM_COUNT
 import com.sats21m.vogelvault.ui.RAIL_PRIMARY_ORDER
-import com.sats21m.vogelvault.ui.railOverflowDestinations
 import com.sats21m.vogelvault.ui.railPrimaryDestinations
-import com.sats21m.vogelvault.ui.showsLedgerSidebar
 import com.sats21m.vogelvault.ui.theme.VaultBitcoin
 import com.sats21m.vogelvault.ui.theme.VaultCream
 import com.sats21m.vogelvault.ui.theme.VaultInfo
@@ -61,30 +58,19 @@ class AdaptiveThresholdTest {
 class DestinationVisibilityTest {
 
     @Test
-    fun `retirement and net worth remain separate navigation destinations`() {
-        assertTrue(Destination.RETIREMENT in Destination.entries)
-        assertTrue(Destination.NET_WORTH in Destination.entries)
+    fun `bitcoin segments cover net worth and retirement without top-level destinations`() {
+        assertEquals(
+            listOf("Overview", "Net Worth", "Retirement"),
+            BitcoinSegment.entries.map { it.label },
+        )
     }
 
     @Test
     fun `both postures use the same five primary destinations without More`() {
         val destinations = Destination.entries.toList()
-        val expected = listOf(Destination.DASHBOARD, Destination.ACTIVITY, Destination.BUDGET, Destination.BITCOIN, Destination.TODAY)
+        val expected = listOf(Destination.HOME, Destination.BUDGET, Destination.ACTIVITY, Destination.BITCOIN, Destination.TASKS)
         assertEquals(expected, foldedPrimaryDestinations(destinations))
         assertEquals(expected, railPrimaryDestinations(destinations))
-        assertTrue(foldedOverflowDestinations(destinations).isEmpty())
-        assertTrue(railOverflowDestinations(destinations).isEmpty())
-    }
-
-    @Test
-    fun `detail destinations are Activity Budget and Tasks, unfolded only`() {
-        Destination.entries.forEach { destination ->
-            assertEquals(
-                destination in setOf(Destination.ACTIVITY, Destination.BUDGET, Destination.TASKS),
-                showsLedgerSidebar(destination, unfolded = true),
-            )
-            assertFalse(showsLedgerSidebar(destination, unfolded = false))
-        }
     }
 
     @Test
@@ -92,7 +78,6 @@ class DestinationVisibilityTest {
         val destinations = Destination.entries.take(5)
 
         assertEquals(destinations.filter { it in RAIL_PRIMARY_ORDER }, foldedPrimaryDestinations(destinations))
-        assertTrue(foldedOverflowDestinations(destinations).isEmpty())
     }
 
     @Test
@@ -141,7 +126,7 @@ class DestinationVisibilityTest {
 
         viewModel.switchProfile(FamilyMember.MASON)
 
-        assertEquals(Destination.DASHBOARD, viewModel.state.value.destination)
+        assertEquals(Destination.HOME, viewModel.state.value.destination)
     }
 
     @Test

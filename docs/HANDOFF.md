@@ -59,8 +59,8 @@ fresh evidence is required.
 
 New ledger integrations write the typed tables through the mutations in
 `convex/tables.ts`. For a transaction, use **`tables:upsertTransaction`**.
-Do not use `dataFiles:appendTransaction` or
-`writeback:createTransaction` for new ingestion: those are legacy blob writers.
+The uncalled `dataFiles` ledger/todo mutations and `writeback` module were
+retired by decision #431. Use the typed row routes.
 
 The current row mutation surface is:
 
@@ -104,18 +104,18 @@ silently flips a sign.
 transactions use `transactions`; child transaction files remain isolated.
 Never rely on a default adult source when writing or deleting a child row.
 
-### Why the legacy blob write code still exists
+### Legacy blob compatibility
 
-Shipped clients have not all retired the blob compatibility path. The Swift
-`AppWriteSyncService` still contains approved app-originated blob write routes,
-and `convex/writeback.ts` preserves validating/audited transaction and todo
-operations for that compatibility period. Those functions do not make blobs
-the canonical path for new integrations.
+Decision #431 retired `convex/writeback.ts` and the uncalled `dataFiles`
+mutations `sync`, `syncBatch`, `appendTransaction`, `appendBillPay`, `upsertTodo`,
+`upsertTodoFromMobile`, `completeTodoFromMobile`, `removeTodo`, and
+`removeTodoFromMobile`. The installed builds post-date removal of their last
+client caller on 2026-08-26.
 
-Removing blob writers or changing the JSON shapes now would break compatible
-clients and could make a later blob fallback disagree with rows. Retirement
-requires an explicit convergence design, including row-native tombstones and
-proof that no shipped reader or writer depends on `dataFiles`.
+The `dataFiles` readers, token gates, pairing/bootstrap functions, device
+revocation, tombstone query, and admin `remove` remain. Shipped readers still
+consume the legacy blobs, so preserve their decoding contract. The internal
+migration and its tooling remain for the finance-share repair runbook.
 
 ### Monthly import operator
 
@@ -187,18 +187,18 @@ inspect the actual client path before changing fallback behavior.
 | Row queries and canonical row mutations | `convex/tables.ts` |
 | Internal blob-to-row migration | `convex/migrate.ts` |
 | Legacy blob functions | `convex/dataFiles.ts` |
-| Legacy audited blob writeback | `convex/writeback.ts` |
 | Shared visibility, money, and wire contracts | `shared/domain/` |
 | Swift visibility authority | `MasonsBudget/MasonsBudget/Models/SharedEnums.swift` |
 | Swift Convex transport | `MasonsBudget/MasonsBudget/Services/ConvexClient.swift` |
-| Swift blob compatibility | `MasonsBudget/MasonsBudget/Services/MC2*.swift` |
+| Swift blob compatibility | `MasonsBudget/MasonsBudget/Services/LegacyBlobDTOs.swift`, `LedgerMapper.swift`, `ConvexDataReader.swift`, and `ConvexSyncService.swift` |
 | Android row transport | `android/app/src/main/kotlin/com/sats21m/vogelvault/data/` |
 | Linux main-process row transport | `linux/electron/convexRows.ts` |
 
 ## 7. How to work and verify
 
-- Work on a branch and use a GitHub pull request. Never commit directly to
-  `main`; do not use Linear for this repository.
+- Work on a branch and use a GitHub pull request — the GitHub PR is the
+  authoritative review record (the old relay-side authoritative-PR path is
+  retired). Never commit directly to `main`; do not use Linear for this repository.
 - Check open issues and pull requests before starting so another lane is not
   changing the same boundary.
 - Production Convex mutations, schema deployment, migrations, credential

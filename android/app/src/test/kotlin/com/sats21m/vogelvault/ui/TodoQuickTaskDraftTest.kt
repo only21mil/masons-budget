@@ -1,19 +1,21 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
@@ -58,17 +60,22 @@ class TodoQuickTaskDraftTest {
         compose.runOnUiThread {
             controller.get().setContent {
                 VogelVaultTheme {
-                    TodoScreen(
-                        state = VaultUiState(
-                            activeProfile = FamilyMember.VICTOR,
-                            destination = Destination.TODAY,
-                            data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE),
-                        ),
-                        onWriteSucceeded = { refreshes++ },
-                    )
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        TaskListsScreen(
+                            state = VaultUiState(
+                                activeProfile = FamilyMember.VICTOR,
+                                destination = Destination.TASKS,
+                                data = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE),
+                            ),
+                            todos = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE).todos.value,
+                            onWriteSucceeded = { refreshes++ },
+                        )
+                    }
                 }
             }
         }
+        settle()
+        compose.onNodeWithText("Add task").performScrollTo().performClick()
         settle()
     }
 
@@ -77,9 +84,9 @@ class TodoQuickTaskDraftTest {
     @Test fun `failed create retains draft and permits retry`() {
         submit()
         answer(HttpTextResponse(500, "failed"))
-        field().assertTextEquals("Retain failed task")
+        field().assertTextEquals("Task title", "Retain failed task")
         compose.onNodeWithText("Task not added (http 500)").assertExists()
-        // Invoke the enabled control directly while the snackbar overlays the small test window.
+        // Match the sheet tests: invoke the enabled control through its semantics.
         add().assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick) { it() }
         settle()
         assertEquals(2, application.poster.requestCount)
@@ -90,7 +97,7 @@ class TodoQuickTaskDraftTest {
         submit()
         field().performTextReplacement("Next task")
         answer(HttpTextResponse(500, "failed"))
-        field().assertTextEquals("Next task")
+        field().assertTextEquals("Task title", "Next task")
         add().assertIsEnabled()
         assertEquals(0, refreshes)
     }
@@ -98,48 +105,39 @@ class TodoQuickTaskDraftTest {
     @Test fun `server refusal retains draft`() {
         submit()
         answer(HttpTextResponse(200, """{"status":"error","errorMessage":"refused"}"""))
-        field().assertTextEquals("Retain failed task")
+        field().assertTextEquals("Task title", "Retain failed task")
         add().assertIsEnabled()
         assertEquals(0, refreshes)
     }
 
-    @Test fun `accepted create clears unchanged draft only after response`() {
+    @Test fun `accepted create dismisses the Tasks sheet only after response`() {
         submit()
-        field().assertTextEquals("Retain failed task")
+        field().assertTextEquals("Task title", "Retain failed task")
         succeed()
-        field().assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
-        add().assertIsNotEnabled()
+        field().assertDoesNotExist()
+        add().assertDoesNotExist()
         assertEquals(1, refreshes)
     }
 
-    @Test fun `pending create blocks duplicate taps but preserves later typing`() {
+    @Test fun `pending create blocks duplicate taps while the title remains editable`() {
         submit()
         field().performTextReplacement("Next task")
-        add().assertIsNotEnabled().performClick()
+        compose.onNodeWithText("Saving…").assertIsNotEnabled().performClick()
         assertEquals(1, application.poster.requestCount)
         succeed()
-        field().assertTextEquals("Next task")
-        add().assertIsEnabled()
+        field().assertDoesNotExist()
+        assertEquals(1, refreshes)
         assertEquals(1, application.poster.requestCount)
-    }
-
-    @Test fun `editing away and back while pending remains a new draft`() {
-        submit()
-        field().performTextReplacement("Replacement")
-        field().performTextReplacement("Retain failed task")
-        succeed()
-        field().assertTextEquals("Retain failed task")
-        add().assertIsEnabled()
     }
 
     private fun submit() {
         field().performTextInput("Retain failed task")
-        add().performClick()
+        add().performSemanticsAction(SemanticsActions.OnClick) { it() }
         settle()
         assertEquals(1, application.poster.requestCount)
     }
-    private fun field() = compose.onNode(hasSetTextAction())
-    private fun add() = compose.onNodeWithContentDescription("Add task")
+    private fun field() = compose.onNode(hasSetTextAction() and hasText("Task title"))
+    private fun add() = compose.onNode(hasText("Save task") and hasClickAction())
     private fun answer(response: HttpTextResponse) {
         application.poster.answer(response)
         settle()

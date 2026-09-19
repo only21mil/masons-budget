@@ -33,15 +33,4 @@ actor StockPriceService {
             log.warning("Stock quote refresh unavailable")
         }
     }
-
-    func fetchPrice(_ ticker: String) async throws -> Decimal {
-        guard let symbol = MarketQuote.Symbol(rawValue: ticker.uppercased()), symbol != .btc else {
-            throw MarketQuoteError.unavailable
-        }
-        let snapshot = try await quotes.refresh()
-        guard let quote = try usableMarketQuote(snapshot.quotes, symbol: symbol),
-              quote.effectiveStatus() != .unavailable, let cents = quote.priceCents
-        else { throw MarketQuoteError.unavailable }
-        return decimalMinorUnits(cents, scale: 2)
-    }
 }

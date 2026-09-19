@@ -23,17 +23,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -55,24 +49,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.domain.DisplayUnit
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Freshness
-import com.sats21m.vogelvault.ui.components.Badge
-import com.sats21m.vogelvault.ui.components.FreshnessTag
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
-import com.sats21m.vogelvault.ui.components.LedgerGlyphs
-import com.sats21m.vogelvault.ui.components.StatusBanner
-import com.sats21m.vogelvault.ui.components.VerticalHairline
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
-import com.sats21m.vogelvault.ui.theme.LedgerColors
-import com.sats21m.vogelvault.ui.theme.VaultBitcoin
-import com.sats21m.vogelvault.ui.theme.VaultCream
-import com.sats21m.vogelvault.ui.theme.VaultNavSlate
 import com.sats21m.vogelvault.ui.theme.VaultSpace
 
 /**
@@ -83,9 +66,9 @@ import com.sats21m.vogelvault.ui.theme.VaultSpace
  * not an authorization boundary.
  */
 enum class Destination(val label: String) {
-    DASHBOARD("Dashboard"), ACTIVITY("Activity"), BUDGET("Budget"), BITCOIN("Bitcoin"),
-    BTC_BUYS("BTC Buys"), BTC_BILL_PAYS("BTC Bill Pays"), NET_WORTH("Net Worth"),
-    RETIREMENT("Retirement"), EXPORT("Export"), TODAY("Today"), TASKS("Tasks"),
+    HOME("Home"), BUDGET("Budget"), ACTIVITY("Activity"), BITCOIN("Bitcoin"),
+    BTC_BUYS("BTC Buys"), BTC_BILL_PAYS("BTC Bill Pays"),
+    EXPORT("Export"), TASKS("Tasks"),
     FAMILY("Family"), SETTINGS("Settings");
 }
 
@@ -98,48 +81,29 @@ enum class Destination(val label: String) {
  */
 const val UNFOLDED_MIN_WIDTH_DP = 600
 
-/**
- * The unfolded content cap.
- *
- * Beside the rail, a screen without a sidebar keeps its column at this width and
- * leaves the rest as ground. A ledger row stretched across 1500px puts the figure
- * too far from its label to read as one line.
- */
-const val UNFOLDED_CONTENT_MAX_WIDTH_DP = 560
-
 /** Fable glyph rail width on the inner display. */
 const val RAIL_WIDTH_DP = 72
-internal const val RAIL_ITEM_COUNT = 5
 
 internal const val VAULT_RAIL_TEST_TAG = "vault-navigation-rail"
-internal const val VAULT_RAIL_MORE_TEST_TAG = "vault-navigation-rail-more"
 internal const val VAULT_SCREEN_CONTENT_TEST_TAG = "vault-screen-content"
+internal const val VAULT_TOP_BAR_TEST_TAG = "vault-top-bar"
+internal const val VAULT_GEAR_MENU_TEST_TAG = "vault-gear-menu"
 
 private val RAIL_EDGE_MARKER_WIDTH = 2.dp
 private val RAIL_GLYPH_SIZE = 24.dp
 private val RAIL_ITEM_HEIGHT = 48.dp
 private val RAIL_GLYPH_INSET = 22.dp
-private val RAIL_LABEL_GAP = 10.dp
+
+internal val GEAR_DESTINATIONS = setOf(Destination.FAMILY, Destination.SETTINGS, Destination.EXPORT)
 
 internal val RAIL_PRIMARY_ORDER: List<Destination> = listOf(
-    Destination.DASHBOARD, Destination.ACTIVITY, Destination.BUDGET,
-    Destination.BITCOIN, Destination.TODAY,
+    Destination.HOME, Destination.BUDGET, Destination.ACTIVITY,
+    Destination.BITCOIN, Destination.TASKS,
 )
 internal fun railPrimaryDestinations(destinations: List<Destination>): List<Destination> =
     RAIL_PRIMARY_ORDER.filter { it in destinations }
-internal fun railOverflowDestinations(destinations: List<Destination>): List<Destination> = emptyList()
 internal fun foldedPrimaryDestinations(destinations: List<Destination>): List<Destination> =
     railPrimaryDestinations(destinations)
-internal fun foldedOverflowDestinations(destinations: List<Destination>): List<Destination> = emptyList()
-
-internal fun moreNavigationLabel(count: Int): String = "More ($count)"
-
-internal fun ledgerNavigationSelectedTint(
-    destination: Destination,
-    colors: LedgerColors,
-): Color = if (destination in setOf(Destination.BITCOIN, Destination.BTC_BUYS, Destination.BTC_BILL_PAYS)) colors.bitcoin else colors.foreground
-
-internal fun ledgerNavigationUnselectedTint(colors: LedgerColors): Color = colors.foregroundSecondary
 
 /**
  * @param onRequestProfileSwitchAuthentication the receiver that must authenticate
@@ -180,7 +144,9 @@ fun VaultApp(
     var primaryReset by rememberSaveable(state.activeProfile) { mutableStateOf("") }
     val navigateWithin: (Destination) -> Unit = { target ->
         if (target != state.destination && target in destinationsFor(state.activeProfile)) {
-            routeParents = routeParents + state.destination.name
+            if (state.destination !in GEAR_DESTINATIONS || target !in GEAR_DESTINATIONS) {
+                routeParents = routeParents + state.destination.name
+            }
             onNavigate(target)
         }
     }
@@ -206,7 +172,7 @@ fun VaultApp(
         ).widthSizeClass
         val expanded = widthClass != androidx.compose.material3.windowsizeclass.WindowWidthSizeClass.Compact
         val destinations = destinationsFor(state.activeProfile)
-        val current = state.destination.takeIf { it in destinations } ?: Destination.DASHBOARD
+        val current = state.destination.takeIf { it in destinations } ?: Destination.HOME
         val selectedPrimary = routeParents.firstOrNull()?.let(Destination::valueOf) ?: current
         val hinge = hingeOverride ?: observedHinge
         val sheetRegion = ledgerSheetRegion(maxWidth, maxHeight, hinge)
@@ -245,7 +211,12 @@ fun VaultApp(
                         }
                         Column(Modifier.weight(1f)) {
                             Box(Modifier.width(plan.listWidth)) {
-                                VaultTopBar(state, requestProfileSwitchAuthentication, onSwitchProfile, { navigateWithin(Destination.SETTINGS) }) {
+                                VaultTopBar(
+                                    state,
+                                    requestProfileSwitchAuthentication,
+                                    onSwitchProfile,
+                                    navigateWithin,
+                                ) {
                                     onWriteSucceeded()
                                 }
                             }
@@ -258,6 +229,7 @@ fun VaultApp(
                                 },
                                 current = current,
                                 onNavigate = navigateWithin,
+                                onNavigatePrimary = navigatePrimary,
                                 primaryReset = primaryReset,
                                 onBack = navigateBack.takeIf { routeParents.isNotEmpty() },
                                 onEnableRemoteRows = onEnableRemoteRows,
@@ -294,6 +266,7 @@ private fun VaultScreenContent(
     profileSwitcher: @Composable () -> Unit,
     current: Destination,
     onNavigate: (Destination) -> Unit,
+    onNavigatePrimary: (Destination) -> Unit,
     onBack: (() -> Unit)?,
     primaryReset: String,
     onEnableRemoteRows: (String) -> Unit,
@@ -305,8 +278,6 @@ private fun VaultScreenContent(
     ledgerSettings: LedgerUiSettings,
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit,
     modifier: Modifier = Modifier,
-    /** Null lets the screen fill its column; folded screens do. */
-    contentMaxWidth: Dp? = null,
 ) {
     var quickAddRequested by rememberSaveable(state.activeProfile) { mutableStateOf(false) }
     val panePlan = LocalLedgerPanePlan.current
@@ -321,8 +292,6 @@ private fun VaultScreenContent(
                     shellConditions(state, refusal, onWriteSucceeded),
                 )
             }
-            // The cap goes on the screen, not the notices: a warning banner spans
-            // the column, the ledger column does not.
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 CompositionLocalProvider(LocalLedgerListBottomClearance provides 80.dp) {
                 ScreenHost(
@@ -332,6 +301,7 @@ private fun VaultScreenContent(
                     state = state,
                     profileSwitcher = profileSwitcher,
                     onNavigate = onNavigate,
+                    onNavigatePrimary = onNavigatePrimary,
                     onBack = onBack,
                     primaryReset = primaryReset,
                     onEnableRemoteRows = onEnableRemoteRows,
@@ -344,7 +314,6 @@ private fun VaultScreenContent(
                     onLedgerSettingsChange = onLedgerSettingsChange,
                     modifier = Modifier
                         .fillMaxHeight()
-                        .then(if (contentMaxWidth != null) Modifier.widthIn(max = contentMaxWidth) else Modifier)
                         .testTag(VAULT_SCREEN_CONTENT_TEST_TAG),
                 )
                 }
@@ -412,15 +381,7 @@ internal fun shellConditions(
     return conditions
 }
 
-/**
- * The unfolded rail.
- *
- * 130dp, the six primary destinations plus More, glyph and uppercase label side
- * by side. The active item is bitcoin ink with a 2dp bitcoin edge marker on the
- * left and the soft bitcoin fill behind it; inactive items are tertiary ink. No
- * pill: nothing in this system is fully rounded except the toggle track and the
- * status dots. The list still scrolls so a large-font setting cannot hide More.
- */
+/** The 72dp unfolded rail holds five primary glyphs and scrolls at large font sizes. */
 @Composable
 private fun VaultRail(
     destinations: List<Destination>,
@@ -513,14 +474,13 @@ private fun VaultBottomBar(
     current: Destination,
     onNavigate: (Destination) -> Unit,
 ) {
-    val tokens = LocalLedgerTheme.current
     BoxWithConstraints {
         val compactLabels = maxWidth < 360.dp
         LedgerTabBar(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
             foldedPrimaryDestinations(destinations).forEach { destination ->
                 LedgerTabItem(
                     glyph = destination.ledgerGlyph(),
-                    label = destination.tabLabel(),
+                    label = destination.label,
                     semanticLabel = destination.label,
                     selected = destination == current,
                     showLabel = !compactLabels || destination == current,
@@ -533,56 +493,68 @@ private fun VaultBottomBar(
 }
 
 @Composable
-private fun VaultTopBar(
+internal fun VaultTopBar(
     state: VaultUiState,
     onRequestProfileSwitchAuthentication: (ProfileSwitchRequest) -> Unit,
     onAuthorizedSwitch: (FamilyMember) -> Unit,
-    onSettings: () -> Unit,
+    onNavigate: (Destination) -> Unit,
     onRefresh: () -> Unit,
 ) {
     val tokens = LocalLedgerTheme.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(tokens.colors.panel)
-            .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ProfileSwitcher(
-            activeProfile = state.activeProfile,
-            onAuthenticationRequired = onRequestProfileSwitchAuthentication,
-            onAuthorizedSwitch = onAuthorizedSwitch,
-            onSettings = onSettings,
-        )
-        Spacer(Modifier.weight(1f))
-        if (state.worstStatus == Freshness.LOADING) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                color = tokens.colors.bitcoin,
-                strokeWidth = 2.dp,
+    var gearExpanded by remember(state.activeProfile) { mutableStateOf(false) }
+    val gearDestinations = GEAR_DESTINATIONS.filter { it in destinationsFor(state.activeProfile) }
+    var lastUpdatedAt by rememberSaveable(state.activeProfile) { mutableStateOf<Long?>(null) }
+    val updatedAt = state.worstUpdatedAt ?: lastUpdatedAt.takeIf { state.worstStatus == Freshness.LOADING }
+    androidx.compose.runtime.SideEffect {
+        if (state.worstStatus != Freshness.LOADING) lastUpdatedAt = state.worstUpdatedAt
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth().testTag(VAULT_TOP_BAR_TEST_TAG)) {
+        val compact = maxWidth < 360.dp
+        Row(
+            Modifier.fillMaxWidth().background(tokens.colors.panel)
+                .padding(horizontal = VaultSpace.md, vertical = VaultSpace.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ProfileSwitcher(
+                activeProfile = state.activeProfile,
+                onAuthenticationRequired = onRequestProfileSwitchAuthentication,
+                onAuthorizedSwitch = onAuthorizedSwitch,
+                modifier = Modifier.weight(1f),
+                compact = compact,
             )
-        } else {
-            IconButton(
-                onClick = onRefresh,
-                enabled = state.worstStatus != Freshness.DEMO,
-            ) {
-                Icon(
-                    Icons.Filled.Refresh,
-                    contentDescription = stringResource(
-                        if (state.worstStatus == Freshness.DEMO) {
-                            R.string.refresh_unavailable
-                        } else {
-                            R.string.refresh_data
-                        },
-                    ),
-                    tint = if (state.worstStatus == Freshness.DEMO) tokens.colors.foregroundTertiary else tokens.colors.foreground,
-                )
+            com.sats21m.vogelvault.ui.components.SyncControl(
+                status = state.worstStatus,
+                updatedAt = updatedAt,
+                now = state.now,
+                compact = compact,
+                onRefresh = onRefresh,
+            )
+            if (gearDestinations.isNotEmpty()) {
+                Box(Modifier.testTag(VAULT_GEAR_MENU_TEST_TAG)) {
+                    IconButton(onClick = { gearExpanded = true }, modifier = Modifier.size(48.dp)) {
+                        Icon(
+                            com.sats21m.vogelvault.ui.components.LedgerGlyphs.Cog,
+                            contentDescription = stringResource(R.string.vault_settings),
+                            tint = tokens.colors.foreground,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = gearExpanded,
+                        onDismissRequest = { gearExpanded = false },
+                    ) {
+                        gearDestinations.forEach { destination ->
+                            LedgerMenuItem(
+                                label = destination.label,
+                                onClick = {
+                                    gearExpanded = false
+                                    onNavigate(destination)
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
-        Spacer(Modifier.width(VaultSpace.xs))
-        Text("SYNC", style = tokens.type.tabLabel, color = tokens.colors.foregroundTertiary)
-        Spacer(Modifier.width(VaultSpace.xs))
-        FreshnessTag(state.worstStatus, state.worstUpdatedAt, state.now)
     }
 }
 

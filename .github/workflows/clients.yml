@@ -43,7 +43,6 @@ jobs:
     outputs:
       linux: ${{ steps.filter.outputs.linux }}
       android: ${{ steps.filter.outputs.android }}
-      backend: ${{ steps.filter.outputs.backend }}
       tooling: ${{ steps.filter.outputs.tooling }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -80,7 +79,7 @@ jobs:
 
           verify_all() {
             echo "::notice::$1"
-            for t in linux android backend tooling; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
+            for t in linux android tooling; do echo "$t=true" >> "$GITHUB_OUTPUT"; done
           }
 
           if [ "$VERIFY_ALL" = "true" ]; then
@@ -116,9 +115,6 @@ jobs:
               echo "$t=false" >> "$GITHUB_OUTPUT"
             fi
           done
-          # The contract and Convex suites are cheap and guard the money rules;
-          # they run whenever anything at all changed.
-          echo "backend=true" >> "$GITHUB_OUTPUT"
 
   credential-tooling:
     name: Credential mint tooling
@@ -182,6 +178,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck --workspace @vogel-vault/domain
 
+      - name: Apple payment-source conformance
+        run: python3 scripts/apple_payment_source_conformance.py
+
       - name: Parity tests against the Swift contract
         run: npm run test --workspace @vogel-vault/domain
 
@@ -229,6 +228,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/workflows/scripts/protected_ci_reuse.py --job convex-wire-golden
 
+
+      - name: Wire golden tooling tests
+        run: >-
+          node --test
+          scripts/tests/check-convex-wire-golden-provenance.test.mjs
+          scripts/tests/convex-wire-golden-tooling.test.mjs
 
       - name: Fixture synthetic-content guard
         run: node scripts/check-convex-wire-golden-synthetic.mjs
@@ -320,6 +325,13 @@ jobs:
       - name: Typecheck Convex tests
         run: npx tsc --noEmit -p convex/tsconfig.test.json
 
+      - name: Operator and offline verification tooling tests
+        run: |
+          npm run ledger-batch:test
+          node --test scripts/tests/verify-migration.test.mjs
+          bash scripts/tests/verify-read-auth.test.sh
+          bash scripts/tests/verify-sync-auth.test.sh
+
       - name: Read/mutation auth and todo LWW tests
         run: npm run convex:test
 
@@ -377,6 +389,9 @@ jobs:
       - name: Lint
         run: npx eslint .
         working-directory: linux
+
+      - name: Launcher tests
+        run: npm run test:launcher --workspace @vogel-vault/linux
 
       - name: Preload boundary guard
         run: node scripts/qa-preload-boundary.mjs

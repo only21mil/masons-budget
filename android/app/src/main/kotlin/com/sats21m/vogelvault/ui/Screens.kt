@@ -23,7 +23,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.material3.MaterialTheme
-import com.sats21m.vogelvault.ui.components.LedgerTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,7 +41,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
@@ -131,12 +129,6 @@ private data class BitcoinProjection(
     val selfCustodySats: Long,
 )
 
-private data class NetWorthProjection(
-    val accounts: List<BtcAccount>,
-    val excludedAccounts: List<BtcAccount>,
-    val balance: BtcBalance?,
-)
-
 internal data class BudgetCategoryDrilldownScope(
     val month: String,
     val category: String,
@@ -180,6 +172,7 @@ fun ScreenHost(
     destination: Destination,
     state: VaultUiState,
     onNavigate: (Destination) -> Unit = {},
+    onNavigatePrimary: (Destination) -> Unit = onNavigate,
     onBack: (() -> Unit)? = null,
     primaryReset: String = "",
     quickAddRequested: Boolean = false,
@@ -190,6 +183,7 @@ fun ScreenHost(
     onStartRiverBillPay: (BillPayPrefill) -> Unit = {},
     displayUnit: DisplayUnit = DisplayUnit.BTC,
     onDisplayUnitChange: (DisplayUnit) -> Unit = {},
+    initialBitcoinSegment: BitcoinSegment = BitcoinSegment.OVERVIEW,
     ledgerSettings: LedgerUiSettings = LedgerUiSettings(),
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -204,8 +198,8 @@ fun ScreenHost(
     },
 ) {
     val ledgerTokens = LocalLedgerTheme.current
-    var addingTransaction by rememberSaveable { mutableStateOf(false) }
-    var addingIncome by rememberSaveable { mutableStateOf(false) }
+    var addingTransaction by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var addingIncome by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(quickAddRequested) {
         if (quickAddRequested) {
             addingIncome = false
@@ -264,11 +258,11 @@ fun ScreenHost(
         budgetDrilldownMonth = null
         budgetDrilldownCategory = null
     }
-    var showBitcoinAdd by rememberSaveable { mutableStateOf(false) }
-    var showBtcBuyEditor by rememberSaveable { mutableStateOf(false) }
-    var showBtcBillPayEditor by rememberSaveable { mutableStateOf(false) }
-    var showBtcTransferEditor by rememberSaveable { mutableStateOf(false) }
-    var showBtcAccountEditor by rememberSaveable { mutableStateOf(false) }
+    var showBitcoinAdd by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcBuyEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcBillPayEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcTransferEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
+    var showBtcAccountEditor by rememberProfileSaveable(state.activeProfile) { mutableStateOf(false) }
     var btcBillPayPrefill by remember(state.activeProfile) { mutableStateOf<BillPayPrefill?>(null) }
     // A refresh can retire the picked month. Fall back rather than render a month
     // the ledger no longer contains.
@@ -439,28 +433,13 @@ fun ScreenHost(
         }
     }
     val listState = listStates.getValue(destination)
-
-    // Today is the one destination that edits rows rather than listing them, so it
-    // owns its own scaffold, snackbar and scrolling list, and renders instead of the
-    // shared ledger column rather than inside it. It reaches the write transport
-    // itself; nothing about writing passes through this shell.
-    if (destination == Destination.TODAY) {
-        key(state.activeProfile) {
-            LedgerPanes(
-                plan = LocalLedgerPanePlan.current,
-                showCompactDetail = false,
-                modifier = modifier.fillMaxSize(),
-                detail = {},
-                list = {
-                    Column(Modifier.fillMaxSize()) {
-                        TextButton(onClick = { onNavigate(Destination.TASKS) }) { Text("Task lists") }
-                        TodoScreen(state = state, onWriteSucceeded = onWriteSucceeded, modifier = Modifier.weight(1f), listState = listState)
-                    }
-                },
-            )
-        }
-        return
+    val initialBitcoinSegmentKey = initialBitcoinSegment.name
+    val bitcoinPrimaryReset = primaryReset.takeIf { it.substringBefore(":") == Destination.BITCOIN.name }
+    var bitcoinSegmentName by rememberSaveable(state.activeProfile, initialBitcoinSegmentKey, bitcoinPrimaryReset) {
+        mutableStateOf(initialBitcoinSegmentKey)
     }
+    val bitcoinSegment = BitcoinSegment.entries.firstOrNull { it.name == bitcoinSegmentName }
+        ?: BitcoinSegment.OVERVIEW
 
     if (destination == Destination.TASKS) {
         Column(modifier.fillMaxSize()) {
@@ -555,16 +534,16 @@ fun ScreenHost(
                 ) {
                     vaultContent {
                     item {
-                        ScreenHeader(destination, state, budgetSelectedMonth)
+                        ScreenHeader(destination, state, budgetSelectedMonth, bitcoinSegment)
                     }
                     when (destination) {
-                        Destination.DASHBOARD -> dashboard(state, dashboardProjection, displayUnit, { target ->
+                        Destination.HOME -> dashboard(state, dashboardProjection, displayUnit, { target ->
                             if (target == Destination.BUDGET) {
                                 picked = dashboardMonth
                                 budgetDrilldownMonth = null
                                 budgetDrilldownCategory = null
                             }
-                            onNavigate(target)
+                            onNavigatePrimary(target)
                         }) { selectedTransactionKey = it.selectionKey }
                         Destination.ACTIVITY -> {
                             activity(state, checkNotNull(activitySearch), displayUnit, selectedTransactionKey) {
@@ -592,17 +571,29 @@ fun ScreenHost(
                                 )
 
                         }
-                        Destination.BITCOIN ->
-                            bitcoin(
-                                state,
-                                bitcoinProjection,
-                                displayUnit,
-                                onAdd = { showBitcoinAdd = true },
-                                onNavigate = onNavigate,
-                                capabilities = capabilities,
-                                onAddAccount = { showBtcAccountEditor = true },
-                                onWriteSucceeded = onWriteSucceeded,
-                            )
+                        Destination.BITCOIN -> {
+                            item {
+                                BitcoinSegmentSelector(
+                                    selected = bitcoinSegment,
+                                    onSelect = { bitcoinSegmentName = it.name },
+                                )
+                            }
+                            when (bitcoinSegment) {
+                                BitcoinSegment.OVERVIEW ->
+                                    bitcoin(
+                                        state,
+                                        bitcoinProjection,
+                                        displayUnit,
+                                        onAdd = { showBitcoinAdd = true },
+                                        onNavigate = onNavigate,
+                                        capabilities = capabilities,
+                                        onAddAccount = { showBtcAccountEditor = true },
+                                        onWriteSucceeded = onWriteSucceeded,
+                                    )
+                                BitcoinSegment.NET_WORTH -> netWorth(state, displayUnit)
+                                BitcoinSegment.RETIREMENT -> retirement(state, displayUnit)
+                            }
+                        }
                         Destination.BTC_BUYS -> btcBuysScreen(state, displayUnit, btcBuysTitle, onWriteSucceeded = onWriteSucceeded)
                         Destination.BTC_BILL_PAYS -> btcBillPaysScreen(
                             state,
@@ -614,18 +605,8 @@ fun ScreenHost(
                                 showBtcBillPayEditor = true
                             },
                         )
-                        Destination.NET_WORTH -> netWorth(state, displayUnit)
-                        Destination.RETIREMENT -> retirement(state, displayUnit)
                         Destination.EXPORT -> item { ExportScreen(state) }
-                        // Rendered above, outside the shared ledger column.
-                        Destination.TODAY -> Unit
-                        Destination.TASKS -> item {
-                            // ScreenHost is the privacy boundary: a destination never
-                            // receives rows its active profile cannot see. The refresh
-                            // callback travels with the rows via taskListsContent's
-                            // default, so filtering and refreshing cannot diverge.
-                            taskListsContent(state, collections.visibleTodos)
-                        }
+                        Destination.TASKS -> Unit // Rendered above the scrolling screen host.
                         Destination.FAMILY -> family(state, profileSwitcher)
                         Destination.SETTINGS -> settings(
                             state,
@@ -634,7 +615,6 @@ fun ScreenHost(
                             onEnableRemoteRows,
                             ledgerSettings,
                             onLedgerSettingsChange,
-                            onNavigate,
                             displayUnit,
                             onDisplayUnitChange,
                         )
@@ -669,10 +649,11 @@ private fun ScreenHeader(
     destination: Destination,
     state: VaultUiState,
     budgetMonth: String?,
+    bitcoinSegment: BitcoinSegment = BitcoinSegment.OVERVIEW,
 ) {
     val tokens = LocalLedgerTheme.current
     val subtitle = when (destination) {
-        Destination.DASHBOARD ->
+        Destination.HOME ->
             "${monthLabel(calendarMonth(state.now))} · " +
                 if (state.activeProfile.isAdult) "Household" else state.activeProfile.displayName
         Destination.ACTIVITY -> "Transactions visible to this profile"
@@ -680,14 +661,15 @@ private fun ScreenHeader(
         // earlier month is picked, and the header must not contradict the picker.
         // A profile with no budget file still says so; Maddox has none.
         Destination.BUDGET -> state.data.budget.value?.let { monthLabel(budgetMonth ?: it.month) } ?: "No budget"
-        Destination.BITCOIN -> "Stack and custody"
+        Destination.BITCOIN -> when (bitcoinSegment) {
+            BitcoinSegment.OVERVIEW -> "Stack and custody"
+            BitcoinSegment.NET_WORTH -> "Household for adults; self only for children"
+            BitcoinSegment.RETIREMENT -> "Retirement accounts and long-range scenario"
+        }
         Destination.BTC_BUYS -> "Purchases visible to this profile"
         Destination.BTC_BILL_PAYS -> "Bitcoin spent on bills visible to this profile"
-        Destination.NET_WORTH -> "Household for adults; self only for children"
-        Destination.RETIREMENT -> "Retirement accounts and long-range scenario"
         Destination.EXPORT -> "Share files for this profile"
-        Destination.TODAY -> "Due today or overdue"
-        Destination.TASKS -> "Projects, areas and smart lists"
+        Destination.TASKS -> "Due today, projects, and smart lists"
         Destination.FAMILY -> "Who can see what"
         Destination.SETTINGS -> "Appearance and connection"
     }
@@ -705,13 +687,11 @@ private fun ScreenHeader(
 internal val Destination.supportsFinancialDisplayUnit: Boolean
     get() =
         this in setOf(
-            Destination.DASHBOARD,
+            Destination.HOME,
             Destination.ACTIVITY,
             Destination.BITCOIN,
             Destination.BTC_BUYS,
             Destination.BTC_BILL_PAYS,
-            Destination.NET_WORTH,
-            Destination.RETIREMENT,
         )
 
 @Composable
@@ -822,11 +802,9 @@ private fun VaultLazyListScope.dashboard(
     }
     item {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { onNavigate(Destination.NET_WORTH) }) { Text("Net Worth") }
             TextButton(onClick = { onNavigate(Destination.BUDGET) }) { Text("Budget") }
-            TextButton(onClick = { onNavigate(Destination.TODAY) }) { Text("Today") }
+            TextButton(onClick = { onNavigate(Destination.TASKS) }) { Text("Tasks") }
         }
-        TextButton(onClick = { onNavigate(Destination.RETIREMENT) }) { Text("Retirement") }
         TextButton(onClick = { onNavigate(Destination.ACTIVITY) }) { Text("Recent activity · See all") }
     }
     item { StaleNotice(state.data.transactions.status, state.data.transactions.updatedAt, state.now) }
@@ -1075,10 +1053,10 @@ internal fun formatTransactionAmount(
 }
 
 internal fun calendarDate(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): java.time.LocalDate =
-    java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    ledgerToday(java.time.Clock.fixed(java.time.Instant.ofEpochMilli(now), zone))
 
 internal fun calendarMonth(now: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String =
-    calendarDate(now, zone).toString().take(7)
+    ledgerCurrentMonth(java.time.Clock.fixed(java.time.Instant.ofEpochMilli(now), zone))
 
 private fun VaultLazyListScope.incomeSection(state: VaultUiState, month: String, onAddIncome: () -> Unit) {
     val rows = state.data.dashboardIncomeEntries(state.activeProfile, month)
@@ -1567,8 +1545,6 @@ private fun VaultLazyListScope.bitcoin(
         if (state.activeProfile.isAdult) VaultButton("+ Add", onClick = onAdd, enabled = canWriteBitcoin)
         TextButton(onClick = { onNavigate(Destination.BTC_BUYS) }) { Text("Buys · See all") }
         TextButton(onClick = { onNavigate(Destination.BTC_BILL_PAYS) }) { Text("Bill Pays · See all") }
-        TextButton(onClick = { onNavigate(Destination.NET_WORTH) }) { Text("Net Worth") }
-        TextButton(onClick = { onNavigate(Destination.RETIREMENT) }) { Text("Retirement") }
     }
     if (state.data.btcBuys.suppressFigures) {
         item {
@@ -1832,7 +1808,7 @@ internal fun operationalBitcoinPriceBasis(quote: MarketQuote?, nowMillis: Long? 
 
 internal fun balanceSnapshotBasis(balance: BtcBalance): String = "Balance snapshot · ${balance.asOf}"
 
-// Today lives in TodoScreen.kt: it edits rows, so it owns its own scaffold.
+// Tasks live in TaskListsScreen.kt and own their editing scaffold.
 
 // ── Family ──────────────────────────────────────────────────────────────────
 
@@ -1923,15 +1899,10 @@ private fun VaultLazyListScope.settings(
     onEnableRemoteRows: (String) -> Unit,
     ledgerSettings: LedgerUiSettings,
     onLedgerSettingsChange: (LedgerUiSettings) -> Unit,
-    onNavigate: (Destination) -> Unit,
     displayUnit: DisplayUnit,
     onDisplayUnitChange: (DisplayUnit) -> Unit,
 ) {
     item { Panel("Display unit") { BitcoinUnitToggle(displayUnit, onDisplayUnitChange) } }
-    item {
-        TextButton(onClick = { onNavigate(Destination.FAMILY) }) { Text("Family") }
-        TextButton(onClick = { onNavigate(Destination.EXPORT) }) { Text("Export") }
-    }
     item { LedgerAppearanceSettings(ledgerSettings, onLedgerSettingsChange) }
     item { BudgetNotificationSettings(state) }
     item { com.sats21m.vogelvault.ui.components.SectionLabel("Diagnostics") }
@@ -1977,7 +1948,6 @@ private fun VaultLazyListScope.settings(
             )
         }
     }
-    item { SyncTokenConfiguration() }
     item {
         Panel("Slices") {
             Column {
@@ -2005,113 +1975,6 @@ private fun VaultLazyListScope.settings(
         }
     }
     item { Spacer(Modifier.height(VaultSpace.lg)) }
-}
-
-@Composable
-internal fun SyncTokenConfiguration() {
-    // Deliberately not saveable: the plaintext token must not enter saved
-    // instance state. Submission immediately hands it to encrypted storage.
-    var token by remember { mutableStateOf("") }
-    val context = LocalContext.current
-    val application = context.applicationContext as? VaultApplication
-    var hasStoredToken by remember(application) {
-        mutableStateOf(application?.hasConvexWriteCredential() == true)
-    }
-    var saveFailure by remember { mutableStateOf<String?>(null) }
-    var removalFailure by remember { mutableStateOf<String?>(null) }
-
-    Panel(stringResource(R.string.write_credential_title)) {
-        Column(
-            Modifier.padding(vertical = VaultSpace.md),
-            verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
-        ) {
-            Text(
-                text = stringResource(R.string.write_credential_source),
-                color = LocalLedgerTheme.current.colors.foregroundSecondary,
-                style = MaterialTheme.typography.labelSmall,
-            )
-            Text(
-                text =
-                    stringResource(
-                        if (hasStoredToken) {
-                            R.string.write_credential_configured
-                        } else {
-                            R.string.write_credential_unconfigured
-                        },
-                    ),
-                color = LocalLedgerTheme.current.colors.foregroundSecondary,
-                style = MaterialTheme.typography.bodySmall,
-            )
-            LedgerTextField(
-                value = token,
-                onValueChange = {
-                    token = it
-                    saveFailure = null
-                },
-                label = stringResource(R.string.write_credential_label),
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-            )
-            VaultButton(
-                label = stringResource(R.string.write_credential_save),
-                enabled = token.isNotBlank() && application != null,
-                onClick = {
-                    val app = checkNotNull(application)
-                    app
-                        .saveConvexWriteCredential(token)
-                        .onSuccess {
-                            token = ""
-                            hasStoredToken = app.hasConvexWriteCredential()
-                            saveFailure = null
-                            removalFailure = null
-                        }.onFailure {
-                            saveFailure = credentialSaveFailureMessage(it).resolve(context)
-                        }
-                },
-            )
-            if (hasStoredToken && application != null) {
-                androidx.compose.material3.OutlinedButton(
-                    onClick = {
-                        application
-                            .removeConvexWriteCredential()
-                            .onSuccess {
-                                token = ""
-                                hasStoredToken = application.hasConvexWriteCredential()
-                                saveFailure = null
-                                removalFailure = null
-                            }.onFailure {
-                                removalFailure = credentialRemovalFailureMessage(it).resolve(context)
-                            }
-                    },
-                    border =
-                        androidx.compose.foundation.BorderStroke(
-                            width = 1.dp,
-                            color = LocalLedgerTheme.current.colors.line,
-                        ),
-                    colors =
-                        androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                            contentColor = LocalLedgerTheme.current.colors.foreground,
-                        ),
-                ) {
-                    Text(stringResource(R.string.write_credential_remove))
-                }
-            }
-            saveFailure?.let {
-                Text(
-                    text = it,
-                    color = LocalLedgerTheme.current.colors.loss,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            removalFailure?.let {
-                Text(
-                    text = it,
-                    color = LocalLedgerTheme.current.colors.loss,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
-    }
 }
 
 // ── shared ──────────────────────────────────────────────────────────────────

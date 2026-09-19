@@ -4,6 +4,7 @@ import SwiftUI
 
 struct HomeDashboardView: View {
     let hasReadToken: Bool
+    @Binding var selectedTab: AppTab
 
     @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
@@ -37,7 +38,7 @@ struct HomeDashboardView: View {
     private var todayTasks: [TodoItem] {
         todos.filter {
             member.canAccessTodo(ownedBy: $0.ownerMember) && !$0.isDone &&
-                SmartListFilter.today.matches($0, now: Date(), calendar: .current)
+                SmartListFilter.today.matches($0, now: LedgerClock.now, calendar: .current)
         }
     }
     private var retirementUSD: Decimal {
@@ -54,7 +55,7 @@ struct HomeDashboardView: View {
             snapshots: snapshots.filter { member.sharesNetWorth(with: $0.ownerMember) }.map {
                 NetWorthHistoryPoint(date: $0.date, total: $0.totalValue, btc: $0.btcValue, holdings: $0.holdingsValue)
             },
-            current: NetWorthHistoryPoint(date: Date(), total: total, btc: total - retirementUSD, holdings: retirementUSD)
+            current: NetWorthHistoryPoint(date: LedgerClock.now, total: total, btc: total - retirementUSD, holdings: retirementUSD)
         )
     }
     private var transactionSource: String { member.hasDedicatedChildFinanceFiles ? "mason-transactions" : "transactions" }
@@ -107,43 +108,34 @@ struct HomeDashboardView: View {
                     UnitToggleView(unit: unitBinding, size: .sm)
                 }
             }
-            NavigationLink {
-                LedgerDrilldown(title: "Net Worth") { NetWorthView() }
-            } label: {
-                VStack(alignment: .leading, spacing: 10) {
-                    if let total = netWorthUSD, let price = BTCPriceService.storedPrice {
-                        AmountView(sats: total / price * 100_000_000, unit: unit, role: .heroNumeral, btcPrice: price)
-                            .lineLimit(1).minimumScaleFactor(0.7)
-                        if history.count > 1 {
-                            Chart(history, id: \.date) { point in
-                                LineMark(x: .value("Date", point.date), y: .value("USD", NSDecimalNumber(decimal: point.total).doubleValue))
-                                    .foregroundStyle(theme.accent)
-                            }
-                            .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 64)
-                            Text("Recorded USD history · \(NetWorthHistory.spanLabel(history))").ledgerType(.rowMeta)
+            VStack(alignment: .leading, spacing: 10) {
+                if let total = netWorthUSD, let price = BTCPriceService.storedPrice {
+                    AmountView(sats: total / price * 100_000_000, unit: unit, role: .heroNumeral, btcPrice: price)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    if history.count > 1 {
+                        Chart(history, id: \.date) { point in
+                            LineMark(x: .value("Date", point.date), y: .value("USD", NSDecimalNumber(decimal: point.total).doubleValue))
+                                .foregroundStyle(theme.accent)
                         }
-                    } else {
-                        Text("Net worth unavailable").ledgerType(.kpiValue)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(HomeDashboardData.netWorthUnavailableHint(hasReadToken: hasReadToken))
-                            .ledgerType(.rowMeta)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
+                        .chartXAxis(.hidden).chartYAxis(.hidden).frame(height: 64)
+                        Text("Recorded USD history · \(NetWorthHistory.spanLabel(history))").ledgerType(.rowMeta)
                     }
+                } else {
+                    Text("Net worth unavailable").ledgerType(.kpiValue)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(HomeDashboardData.netWorthUnavailableHint(hasReadToken: hasReadToken))
+                        .ledgerType(.rowMeta)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
             if let quote = MarketQuoteService.quote(.btc) {
                 Text("BTC · \(quote.source) · \(quote.effectiveStatus().rawValue)").ledgerType(.rowMeta)
             }
             Text("Retirement includes recorded values when a market quote is unavailable.")
                 .ledgerType(.rowMeta).foregroundStyle(theme.textMuted)
-            HStack(spacing: 16) {
-                link("Price") { BitcoinPriceView() }
-                link("Retirement") { RetirementView() }
-            }
         }
         .foregroundStyle(theme.text)
         .glassCard(padding: 16, radius: 4)
@@ -184,7 +176,9 @@ struct HomeDashboardView: View {
         .padding(.horizontal, ledgerTokens.metrics.screenGutter)
     }
     @ViewBuilder private var bitcoinLinks: some View {
-        link("Accounts") { BitcoinOverviewView() }
+        Button { selectedTab = .bitcoin } label: {
+            Text("Accounts").ledgerType(.button).frame(minHeight: 44)
+        }.foregroundStyle(theme.accent)
         link("Buys") { BTCBuysView() }
         link("Bill Pay") { BTCBillPayView() }
     }
@@ -196,7 +190,7 @@ struct HomeDashboardView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Spent today").ledgerType(.sectionLabel)
                 if hasLoaded(transactionSource) {
-                    let total = HomeDashboardData.spentToday(transactions, viewer: member, now: Date())
+                    let total = HomeDashboardData.spentToday(transactions, viewer: member, now: LedgerClock.now)
                     Text(AppFormatter.formatCurrency(total)).ledgerType(.kpiValue)
                 } else { Text("Unavailable").ledgerType(.rowPrimary) }
             }
@@ -239,11 +233,8 @@ struct HomeDashboardView: View {
     }
     private var recentEntries: [RecentEntry] {
         var entries = visibleTransactions.map { RecentEntry(id: "tx:" + $0.id, date: $0.date, transaction: $0, income: nil) }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
         entries += (financials.income.value?.rows ?? []).filter { member.canSee(dataOwnedBy: $0.owner) }.compactMap {
-            guard let date = formatter.date(from: String($0.date.prefix(10))) else { return nil }
+            guard let date = LegacyTransactionDTO.date(from: String($0.date.prefix(10))) else { return nil }
             return RecentEntry(id: "income:" + $0.incomeId, date: date, transaction: nil, income: $0)
         }
         return Array(entries.sorted { $0.date > $1.date }.prefix(4))
@@ -286,22 +277,22 @@ struct HomeDashboardView: View {
 
     private var budgetPreview: some View {
         VStack(alignment: .leading, spacing: 12) {
-            link(Date().formatted(.dateTime.month(.wide).year()) + " budget") { BudgetView() }
-            let currentMonth = CategoryDetailView.monthKey(for: Date(), calendar: Calendar(identifier: .gregorian))
+            link(LedgerClock.now.formatted(.dateTime.month(.wide).year()) + " budget") { BudgetView() }
+            let currentMonth = CategoryDetailView.monthKey(for: LedgerClock.now, calendar: Calendar(identifier: .gregorian))
             let planned = HomeDashboardData.plannedExpenseTotal(budgetPlan?.categories ?? [])
             if budgetPlanViewer == member, let budgetPlan,
                member.sharesNetWorth(with: budgetPlan.owner),
                HomeDashboardData.isCurrentBudgetMonth(budgetPlan.month, currentMonth: currentMonth),
                hasLoaded(transactionSource), planned > 0 {
                 let spent = transactions.filter {
-                    member.sharesNetWorth(with: $0.ownerMember) && Calendar.current.isDate($0.date, equalTo: Date(), toGranularity: .month)
+                    member.sharesNetWorth(with: $0.ownerMember) && Calendar.current.isDate($0.date, equalTo: LedgerClock.now, toGranularity: .month)
                 }.reduce(Decimal(0)) { $0 + $1.spendAmount }
                 Text("\(AppFormatter.formatCurrency(spent)) of \(AppFormatter.formatCurrency(planned)) planned").ledgerType(.rowFigure)
                 LedgerProgressBar(fraction: NSDecimalNumber(decimal: spent / planned).doubleValue, fill: theme.accent, track: theme.border)
             } else {
                 Text("No budget plan available").ledgerType(.rowMeta)
             }
-            BudgetPlanCarryAction(viewer: member, selectedMonth: Date(), onLoaded: { document in
+            BudgetPlanCarryAction(viewer: member, selectedMonth: LedgerClock.now, onLoaded: { document in
                 budgetPlan = document
                 budgetPlanViewer = member
             }) { _ in }

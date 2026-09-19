@@ -1,5 +1,11 @@
 # Convex production deploy preflight
 
+Historical deployment packet. Decision #431 retired `convex/writeback.ts` and
+nine uncalled `dataFiles` ledger/todo mutations on 2026-09-18. The function
+inventory and rollback revisions below describe that earlier candidate, not
+the current deployable API. Use `docs/HANDOFF.md` for the current write routes.
+
+
 Target: `prod:keen-elephant-452`  
 Reviewed source: `build/finish-vogel-vault` at `e2d0781`  
 Recorded production evidence date: 2026-07-26  

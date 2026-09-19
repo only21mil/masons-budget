@@ -223,6 +223,25 @@ describe("device-credential reads", () => {
     ).rejects.toThrow(/Unauthorized mobile device/);
   });
 
+  it("lists sync metadata without loading legacy blob payloads", async () => {
+    const metadata = { name: "finances", version: 7, updatedAt: 1234 };
+    await t.run(async (ctx) => {
+      await ctx.db.insert("syncVersions", metadata);
+      await ctx.db.insert("dataFiles", {
+        name: "legacy-only",
+        data: { ignored: true },
+        version: 1,
+        updatedAt: 1,
+      });
+    });
+
+    await expect(t.query(api.list, { token: readToken })).resolves.toEqual([
+      metadata,
+    ]);
+    await expect(t.query(api.list, {})).rejects.toThrow();
+    await expect(t.query(api.list, { token: freshSecret() })).rejects.toThrow();
+  });
+
   it("filters household-wide metadata lists for child credentials", async () => {
     await seedDataFile(t, "finances", { household: true });
     await seedDataFile(t, "mason-transactions", [{ id: "m-1" }]);

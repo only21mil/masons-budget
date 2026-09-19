@@ -55,6 +55,10 @@ import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.components.HorizontalHairline
+import com.sats21m.vogelvault.ui.components.ledgerColor
+import com.sats21m.vogelvault.ui.theme.VaultSurface
+import com.sats21m.vogelvault.ui.theme.VaultCream
+import com.sats21m.vogelvault.ui.theme.VaultTextDim
 import com.sats21m.vogelvault.ui.components.StateBlock
 import com.sats21m.vogelvault.ui.components.ledgerRowReveal
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
@@ -633,4 +637,23 @@ private fun TaskSmartList.icon(): ImageVector = when (this) {
     TaskSmartList.TODAY -> Icons.Filled.Today
     TaskSmartList.UPCOMING -> Icons.Filled.Upcoming
     TaskSmartList.FLAGGED -> Icons.Filled.Flag
+}
+
+/** Directs task reprovisioning through the backend-attested bootstrap flow. */
+@Composable
+internal fun TodoWriteReprovisionCard() {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(ledgerColor(VaultSurface))
+            .padding(VaultSpace.md),
+        verticalArrangement = Arrangement.spacedBy(VaultSpace.sm),
+    ) {
+        Text(stringResource(R.string.todo_write_access_title), color = ledgerColor(VaultCream))
+        Text(
+            stringResource(R.string.todo_write_access_detail),
+            style = MaterialTheme.typography.bodySmall,
+            color = ledgerColor(VaultTextDim),
+        )
+    }
 }

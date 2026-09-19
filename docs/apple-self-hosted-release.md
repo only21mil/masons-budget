@@ -60,10 +60,10 @@ remains a skip and never becomes a passing build. Apple changes still require
 successful project consistency and Apple execution in the source qualification.
 The explicit release archive compiles and signs in its fresh release context.
 
-Before dispatch, retain fresh canonical Budget relay main and authoritative PR
-readback, the tested base and landing parents, GitHub mirror equality, and the
-subsequent complete no-op mirror cycle. The hosted verifier checks GitHub
-provider authority; it cannot replace that canonical delivery evidence.
+Before dispatch, retain fresh GitHub `main` and GitHub PR
+readback, the tested base and landing parents, and required-checks green. The hosted verifier checks GitHub
+provider authority; Buzz-mirror convergence is informational and never replaces
+that GitHub delivery evidence.
 
 See [CI result reuse](ci-result-reuse.md) for bootstrap and refusal handling.
 Do not use a manual all-platform main run to manufacture a second qualification.

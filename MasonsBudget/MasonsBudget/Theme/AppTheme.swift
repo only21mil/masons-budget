@@ -284,18 +284,19 @@ enum AppFormatter {
     private static let monthFormatterLock = NSLock()
     private static var monthFormatters: [String: DateFormatter] = [:]
 
-    /// Cached per format string. View-only (MainActor) callers plus the lock
+    /// Cached per format string and locale. View-only (MainActor) callers plus the lock
     /// keep this safe; DateFormatter construction is too expensive to repeat.
-    private static func monthFormatter(for format: String) -> DateFormatter {
+    static func monthFormatter(for format: String, locale: Locale = Locale(identifier: "en_US_POSIX")) -> DateFormatter {
         monthFormatterLock.lock()
         defer { monthFormatterLock.unlock() }
-        if let cached = monthFormatters[format] { return cached }
+        let key = locale.identifier + ":" + format
+        if let cached = monthFormatters[key] { return cached }
         let f = DateFormatter()
-        f.calendar = Calendar(identifier: .gregorian)
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = .current
+        f.locale = locale
+        f.calendar = locale.calendar
+        f.timeZone = .autoupdatingCurrent
         f.dateFormat = format
-        monthFormatters[format] = f
+        monthFormatters[key] = f
         return f
     }
 
@@ -377,5 +378,17 @@ extension View {
         radius: CGFloat = AppLayout.radiusLarge,
     ) -> some View {
         modifier(GlassCard(padding: padding, radius: radius))
+    }
+}
+
+/// Screen-time source. The standalone design-packet target pins time; app builds
+/// always use the wall clock. This flag is never enabled on application targets.
+enum LedgerClock {
+    static var now: Date {
+        #if MAC_DESIGN_PACKET
+            Date(timeIntervalSince1970: 1_800_000_000)
+        #else
+            Date()
+        #endif
     }
 }

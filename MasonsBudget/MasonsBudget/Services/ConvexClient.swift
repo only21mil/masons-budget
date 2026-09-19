@@ -68,17 +68,27 @@ enum ConvexConfig {
     /// present. A failed Keychain write discards that cleartext value and leaves writes
     /// unauthorized instead of authenticating from insecure storage.
     static var syncToken: String {
-        tokenCacheLock.lock()
-        defer { tokenCacheLock.unlock() }
-        if let cached = cachedSyncToken { return cached }
-        let resolved = syncTokenStore.token
-        cachedSyncToken = resolved
-        return resolved
+        #if MAC_DESIGN_PACKET
+            // Fixture captures must never resolve or migrate host credentials.
+            return ""
+        #else
+            tokenCacheLock.lock()
+            defer { tokenCacheLock.unlock() }
+            if let cached = cachedSyncToken { return cached }
+            let resolved = syncTokenStore.token
+            cachedSyncToken = resolved
+            return resolved
+        #endif
     }
 
     /// Presence-only view for UI status. UI callers must not retain or render the credential.
     static var hasSyncToken: Bool {
-        !syncToken.isEmpty
+        #if MAC_DESIGN_PACKET
+            // Render the connected UI using fixture reads; credentials remain empty.
+            true
+        #else
+            !syncToken.isEmpty
+        #endif
     }
 
     @discardableResult
@@ -112,17 +122,27 @@ enum ConvexConfig {
     /// instead of authenticating from insecure storage. Resolution is memoized;
     /// see the cache note above `syncToken`.
     static var readToken: String {
-        tokenCacheLock.lock()
-        defer { tokenCacheLock.unlock() }
-        if let cached = cachedReadToken { return cached }
-        let resolved = readTokenStore.token
-        cachedReadToken = resolved
-        return resolved
+        #if MAC_DESIGN_PACKET
+            // Fixture captures must never resolve or migrate host credentials.
+            return ""
+        #else
+            tokenCacheLock.lock()
+            defer { tokenCacheLock.unlock() }
+            if let cached = cachedReadToken { return cached }
+            let resolved = readTokenStore.token
+            cachedReadToken = resolved
+            return resolved
+        #endif
     }
 
     /// Presence-only view for UI status. UI callers must not retain or render the credential.
     static var hasReadToken: Bool {
-        !readToken.isEmpty
+        #if MAC_DESIGN_PACKET
+            // Render the connected UI using fixture reads; credentials remain empty.
+            true
+        #else
+            !readToken.isEmpty
+        #endif
     }
 
     @discardableResult
@@ -418,26 +438,31 @@ enum AppWritebackConfig {
     private static var cachedDeviceToken: String?
 
     static var deviceToken: String {
-        deviceTokenCacheLock.lock()
-        defer { deviceTokenCacheLock.unlock() }
-        if let cached = cachedDeviceToken { return cached }
-        var resolved = ""
-        if let token = AppWritebackDeviceTokenStore.store.read(), !token.isEmpty {
-            resolved = token
-        } else {
-            let legacyToken = UserDefaults.standard.string(forKey: deviceTokenKey)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !legacyToken.isEmpty {
-                guard AppWritebackDeviceTokenStore.store.save(legacyToken) else {
-                    return ""
+        #if MAC_DESIGN_PACKET
+            // Fixture captures must never resolve or migrate host credentials.
+            return ""
+        #else
+            deviceTokenCacheLock.lock()
+            defer { deviceTokenCacheLock.unlock() }
+            if let cached = cachedDeviceToken { return cached }
+            var resolved = ""
+            if let token = AppWritebackDeviceTokenStore.store.read(), !token.isEmpty {
+                resolved = token
+            } else {
+                let legacyToken = UserDefaults.standard.string(forKey: deviceTokenKey)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !legacyToken.isEmpty {
+                    guard AppWritebackDeviceTokenStore.store.save(legacyToken) else {
+                        return ""
+                    }
+                    // The protected store verifies its own read before returning true.
+                    UserDefaults.standard.removeObject(forKey: deviceTokenKey)
                 }
-                // The protected store verifies its own read before returning true.
-                UserDefaults.standard.removeObject(forKey: deviceTokenKey)
+                resolved = legacyToken
             }
-            resolved = legacyToken
-        }
-        cachedDeviceToken = resolved
-        return resolved
+            cachedDeviceToken = resolved
+            return resolved
+        #endif
     }
 
     /// Presence-only view of the credential for UI status. Callers that do not
@@ -1581,12 +1606,20 @@ final class ConvexClient: Sendable {
         ledgerExecutor: LedgerExecutor? = nil,
     ) {
         self.deploymentURL = deploymentURL
-        self.requestExecutor = requestExecutor
+        #if MAC_DESIGN_PACKET
+            self.requestExecutor = requestExecutor ?? { try MacPacketNoNetwork.response(to: $0) }
+        #else
+            self.requestExecutor = requestExecutor
+        #endif
         self.ledgerExecutor = ledgerExecutor
         if let session {
             self.session = session
         } else {
             let config = URLSessionConfiguration.default
+            #if MAC_DESIGN_PACKET
+                // Block even tokenless queries before they can leave the process.
+                config.protocolClasses = [MacPacketNoNetwork.self]
+            #endif
             config.timeoutIntervalForRequest = 30
             config.timeoutIntervalForResource = 60
             self.session = URLSession(configuration: config)

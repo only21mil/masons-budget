@@ -1,19 +1,20 @@
 package com.sats21m.vogelvault.ui
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertHasClickAction
-import androidx.compose.ui.test.hasScrollToIndexAction
-import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.assertIsSelected
@@ -79,39 +80,14 @@ class TaskStateProfileSwitchTest {
     }
 
     @Test
-    fun `Today draft is discarded by a real profile switch`() {
-        navigateTo(Destination.TODAY)
-        showScreenHost()
-
-        val victorDraft = "Victor private appointment"
-        compose.onNode(
-            hasSetTextAction() and hasText(context.getString(R.string.todo_new_task)),
-        ).performTextInput(victorDraft)
-        settle()
-        assertEquals(1, nodesWithText(victorDraft), "The production Today field did not accept text.")
-
-        switchTo(FamilyMember.RACHEL)
-
-        assertEquals(FamilyMember.RACHEL, model.state.value.activeProfile)
-        assertEquals(
-            0,
-            nodesWithText(victorDraft),
-            "Victor's Today draft remained visible after switching to Rachel.",
-        )
-    }
-
-    @Test
     fun `profile switch disables task controls until explicit reprovisioning`() {
-        navigateTo(Destination.TODAY)
-        showScreenHost()
+        navigateTo(Destination.TASKS)
+        showTaskListsScreen()
 
         switchTo(FamilyMember.RACHEL)
 
-        compose.onNode(hasScrollToIndexAction())
-            .performScrollToNode(hasText(context.getString(R.string.todo_new_task)))
-        compose.onNode(
-            hasText(context.getString(R.string.todo_new_task)),
-        ).assertIsNotEnabled()
+        compose.onNodeWithText(context.getString(R.string.tasks_add))
+            .performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText(context.getString(R.string.todo_write_access_title))
             .fetchSemanticsNode()
         compose.onNodeWithText(context.getString(R.string.todo_write_access_detail))
@@ -212,6 +188,22 @@ class TaskStateProfileSwitchTest {
                     Box(Modifier.size(width = 411.dp, height = 900.dp)) {
                         val state by model.state.collectAsState()
                         ScreenHost(destination = state.destination, state = state)
+                    }
+                }
+            }
+        }
+        settle()
+    }
+
+    private fun showTaskListsScreen() {
+        compose.runOnUiThread {
+            activityController.get().setContent {
+                VogelVaultTheme {
+                    Box(Modifier.size(width = 411.dp, height = 900.dp)) {
+                        val state by model.state.collectAsState()
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                            TaskListsScreen(state = state, todos = state.data.todos.value, onWriteSucceeded = {})
+                        }
                     }
                 }
             }

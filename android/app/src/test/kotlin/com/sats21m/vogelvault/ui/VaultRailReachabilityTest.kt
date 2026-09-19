@@ -69,7 +69,7 @@ class VaultRailReachabilityTest {
     @Test
     fun `every primary destination is displayed and navigates from the Fold viewport`() {
         var navigatedTo: Destination? = null
-        render(Destination.DASHBOARD, onNavigate = { navigatedTo = it })
+        render(Destination.HOME, onNavigate = { navigatedTo = it })
 
         val primary = railPrimaryDestinations(Destination.entries.toList())
         assertEquals(RAIL_PRIMARY_ORDER, primary)
@@ -84,38 +84,57 @@ class VaultRailReachabilityTest {
         val routes = listOf(
             Triple(Destination.BITCOIN, "Buys · See all", Destination.BTC_BUYS),
             Triple(Destination.BITCOIN, "Bill Pays · See all", Destination.BTC_BILL_PAYS),
-            Triple(Destination.BITCOIN, "Net Worth", Destination.NET_WORTH),
-            Triple(Destination.BITCOIN, "Retirement", Destination.RETIREMENT),
-            Triple(Destination.TODAY, "Task lists", Destination.TASKS),
-            Triple(Destination.SETTINGS, "Family", Destination.FAMILY),
-            Triple(Destination.SETTINGS, "Export", Destination.EXPORT),
         )
         assertEquals(
-            Destination.entries.toSet() - RAIL_PRIMARY_ORDER.toSet() - Destination.SETTINGS,
+            Destination.entries.toSet() - RAIL_PRIMARY_ORDER.toSet() -
+                setOf(Destination.FAMILY, Destination.SETTINGS, Destination.EXPORT),
             routes.map { it.third }.toSet(),
         )
         routes.forEach { (parent, label, destination) ->
             var navigatedTo: Destination? = null
             render(parent, onNavigate = { navigatedTo = it })
             val link = hasText(label) and hasClickAction()
-            if (destination != Destination.TASKS) {
-                compose.onNode(hasScrollToIndexAction() and
-                    hasAnyAncestor(hasTestTag(VAULT_SCREEN_CONTENT_TEST_TAG))).performScrollToNode(link)
-            }
+            compose.onNode(hasScrollToIndexAction() and
+                hasAnyAncestor(hasTestTag(VAULT_SCREEN_CONTENT_TEST_TAG))).performScrollToNode(link)
             compose.onNode(link).assertIsDisplayed().performClick()
             assertEquals(destination, navigatedTo)
         }
     }
 
     @Test
-    fun `Settings opens from the profile menu and keeps its originating tab selected`() {
+    fun `bitcoin segments switch in place without leaving the Bitcoin tab`() {
         var navigatedTo: Destination? = null
-        render(Destination.DASHBOARD, onNavigate = { navigatedTo = it })
-        compose.onNode(hasText("Victor") and hasClickAction()).performClick()
+        render(Destination.BITCOIN, onNavigate = { navigatedTo = it })
+        compose.onNodeWithText("Net Worth").performClick()
+        assertEquals(null, navigatedTo)
+        compose.onNodeWithText("Retirement").performClick()
+        assertEquals(null, navigatedTo)
+        railDestination(Destination.BITCOIN).assertIsDisplayed().assertIsSelected()
+    }
+
+    @Test
+    fun `gear menu opens settings and keeps the originating tab selected`() {
+        var navigatedTo: Destination? = null
+        render(Destination.HOME, onNavigate = { navigatedTo = it })
+        compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).performClick()
         compose.onNodeWithText("Settings").assertIsDisplayed().performClick()
         assertEquals(Destination.SETTINGS, navigatedTo)
-        railDestination(Destination.DASHBOARD).assertIsDisplayed().assertIsSelected()
-        compose.onNodeWithTag(VAULT_RAIL_MORE_TEST_TAG).assertDoesNotExist()
+        railDestination(Destination.HOME).assertIsDisplayed().assertIsSelected()
+    }
+
+    @Test
+    fun `gear menu reaches family and export`() {
+        val routes = listOf(
+            "Family" to Destination.FAMILY,
+            "Export" to Destination.EXPORT,
+        )
+        routes.forEach { (label, destination) ->
+            var navigatedTo: Destination? = null
+            render(Destination.HOME, onNavigate = { navigatedTo = it })
+            compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).performClick()
+            compose.onNodeWithText(label).assertIsDisplayed().performClick()
+            assertEquals(destination, navigatedTo)
+        }
     }
 
     private fun render(

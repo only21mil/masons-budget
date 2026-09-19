@@ -197,13 +197,11 @@ class FinancialDisplayTest {
     @Test
     fun `only financial destinations expose the global selector and budget stays usd`() {
         val financial = setOf(
-            Destination.DASHBOARD,
+            Destination.HOME,
             Destination.ACTIVITY,
             Destination.BITCOIN,
             Destination.BTC_BUYS,
             Destination.BTC_BILL_PAYS,
-            Destination.NET_WORTH,
-            Destination.RETIREMENT,
         )
 
         Destination.entries.forEach { destination ->

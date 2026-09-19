@@ -5,8 +5,7 @@ import SwiftUI
 /// Exists so a view can consume a `ConvexWriteResult` callback without the
 /// callback capturing the view. `AppWriteSyncService`'s `onResult` is
 /// `@MainActor @Sendable`, and a SwiftUI `View` struct holding a `ModelContext`
-/// is not `Sendable`; a `@MainActor` class is. That is also why `TodayView` had
-/// to route its callback through a `static` function.
+/// is not `Sendable`; a `@MainActor` class is.
 ///
 /// The behaviour it standardises: hold the sheet open while the write is in
 /// flight, then show the CAUSE of a rejection instead of closing as if the save
@@ -119,7 +118,6 @@ final class WriteBatchTally: ObservableObject {
 
     var failed: Int { localFailure == nil ? completed - succeeded : expected }
     var isFinished: Bool { expected > 0 && (localFailure != nil || completed >= expected) }
-    var isRunning: Bool { expected > 0 && localFailure == nil && completed < expected }
 
     func start(expected count: Int) {
         expected = count

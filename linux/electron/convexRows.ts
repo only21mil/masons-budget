@@ -49,7 +49,7 @@ import type {
 } from "./convexRead.ts"
 
 /** Isolated here so integration can adjust a provisional backend name in one edit. */
-export const ROW_QUERY_PATHS = {
+const ROW_QUERY_PATHS = {
   rowCounts: "tables:rowCounts",
   transactions: "tables:listTransactions",
   income: "tables:listIncome",

@@ -8,23 +8,25 @@ record.** Canonical typed rows are the current ledger authority. The surviving
 `dataFiles` JSON blobs are a load-bearing compatibility copy for shipped readers.
 Never describe MC2 as a live upstream or direct work toward a separate MC2 repo.
 
-## Tracking — Buzz relay first (2026-09-05)
+## Tracking — GitHub primary (2026-09-15)
 
-**Do not use Linear for this repo.** The Buzz relay is authoritative for branches,
-issues, pull requests, review, and history. GitHub is the CI mirror. Follow the
-canonical rule in `only21mil/buzz:docs/delivery-lifecycle.md`.
+**Do not use Linear for this repo.** GitHub is authoritative for branches,
+issues, pull requests, review, and history. The Buzz relay is a read mirror.
+This section is the normative delivery rule until the rewritten
+`only21mil/buzz:docs/delivery-lifecycle.md` lands; the retired 2026-09-05
+Buzz-first block is kept below as history, not guidance.
 
-- Seed every feature branch on the Budget relay before GitHub. Open and update
-  its authoritative pull request through the maintained Buzz CLI. Never commit
-  to `main`, and never create a durable pull request from a GitHub-only push.
-- Before relying on the mirror, compare the full feature and current `main` refs
-  on both endpoints. Keep the authoritative pull request's full head, base, and
-  status current, then require a later complete no-op mirror cycle with equal ref
-  counts.
+- Seed every feature branch on GitHub. Open and update its pull request on
+  GitHub. Never commit to `main`, and never treat a relay-only branch as
+  landed.
+- Landing is the GitHub merge: GitHub PR readback (number, state, head, base
+  and merge commits, ordered parents, tree) plus required checks green, with
+  GitHub `main` at the merge commit. Buzz-mirror convergence is informational
+  lag, not a landing gate.
 - Preserve every other branch and its owner when reconciling refs. Never delete,
   overwrite, or adopt another lane's branch.
-- File a Buzz issue for a bug or follow-up rather than batching it silently into
-  the current change. Check open issues and pull requests before starting so
+- File a GitHub issue for a bug or follow-up rather than batching it silently into
+  the current change. Check open GitHub issues and pull requests before starting so
   lanes do not duplicate work.
 - Routine verification runs in GitHub Actions. Linux/Android work uses hosted
   Ubuntu; Apple work uses the registered MacBook Pro, with the Mac mini only as
@@ -32,6 +34,13 @@ canonical rule in `only21mil/buzz:docs/delivery-lifecycle.md`.
   development and Linux-preflight machine.
 
 Superseded: this file previously mandated mirroring every change into Linear. That rule no longer applies.
+
+Superseded (2026-09-15): the 2026-09-05 "Buzz relay first" block is retired.
+The Buzz relay was authoritative for branches, issues, pull requests, review,
+and history with GitHub as the CI mirror; lanes seeded branches on the Budget
+relay via the Buzz CLI and gated landing on dual-endpoint comparison plus a
+later complete no-op mirror cycle. That direction no longer applies — GitHub
+is primary and the relay is the mirror.
 
 This is **The Vogel Vault** (internal repo name still "Mason's Budget App"). SwiftUI iOS + macOS app, multi-profile family Bitcoin + budget dashboard. Convex (self-hosted on F-D at `https://framework-desktop.tail69757d.ts.net`, tailnet-only) is the backend and system of record. Shipped clients still read the legacy JSON blobs through `dataFiles`; the reviewed row-table cutover is tracked in [umbrella issue #46](https://github.com/only21mil/masons-budget/issues/46).
 
@@ -84,7 +93,7 @@ extension FamilyMember {
 
 Records persisted to SwiftData are tagged with the **canonical** owner from the JSON (adults → `.victor`, mason_401k → `.mason`). Visibility is then resolved at query time via `canSee`. Don't tag records with the active member just because that member triggered the sync.
 
-Profile switching is in `Views/Screens/ProfileSwitcherView.swift`. Kids cannot switch into adult profiles; the picker uses `FamilyMember.allowedSwitchTargets` (returns `[self]` for kids). Adults switching profiles must pass Face ID via `LocalAuthentication` — see `requiresAuthToSwitch`.
+Profile switching is in `Views/Screens/ProfileSwitcherView.swift`. Kids cannot switch into adult profiles; the picker uses `FamilyMember.allowedSwitchTargets` (returns `[self]` for kids). Profile selection goes through `AppAuthenticationSession.select`: it requires an active, unlocked session and an allowed target. `reuseUnlock` reuses a valid unlock; otherwise selection authenticates through `LocalAuthentication`.
 
 ---
 
@@ -132,7 +141,7 @@ behavior.
 This app is often worked by Codex, OpenCode, Claude, and Sats lanes. All of them may keep fixing bugs, filing GitHub issues, moving to the next item, editing code, and running static/non-app-artifact checks automatically.
 
 The unsigned Apple verification automatically routed by `.github/workflows/swift.yml`
-to the registered MacBook Pro is pre-authorized for affected PRs and main pushes.
+to the registered MacBook Pro is pre-authorized for affected PRs and merge groups.
 It creates no distributable artifact. The Mac mini route requires an explicit
 manual fallback dispatch.
 

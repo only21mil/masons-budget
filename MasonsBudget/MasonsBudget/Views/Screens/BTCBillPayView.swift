@@ -203,7 +203,7 @@ struct BTCBillPayComposeView: View {
     @State private var category = ""
     @State private var sats = ""
     @State private var price = ""
-    @State private var date = Date.now
+    @State private var date = LedgerClock.now
     @State private var id = UUID().uuidString
     @State private var isSaving = false
     @State private var writeMessage: String?

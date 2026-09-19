@@ -69,14 +69,6 @@ actor ConvexDataReader {
         )
     }
 
-    /// Read the BTC balance snapshot from Convex.
-    func readBTCSnapshot(viewer: FamilyMember = .victor) async throws -> LegacyBTCSnapshotDTO {
-        try await rowOrBlob(
-            { try await balanceDocument(viewer: viewer).legacySnapshot() },
-            blob: { try await client.fetchFile("btc-balance-snapshot", as: LegacyBTCSnapshotDTO.self) },
-        )
-    }
-
     private func balanceDocument(viewer: FamilyMember, owner: FamilyMember? = nil) async throws -> ConvexBTCBalanceDocumentRow {
         if let owner, !viewer.canSee(dataOwnedBy: owner) { throw ConvexRowDecodeError.ownerOutOfScope }
         let scope: ConvexRowScope = owner == nil ? .netWorth : .visible
@@ -185,11 +177,6 @@ actor ConvexDataReader {
             },
             blob: { try await client.fetchFile("finances", as: LegacyFinancesDTO.self) },
         )
-    }
-
-    /// Read Mason's BTC balances from Convex.
-    func readSonBalances() async throws -> LegacySonBalancesDTO {
-        try await client.fetchFile("son-balances", as: LegacySonBalancesDTO.self)
     }
 
     /// Read Mason's budget from Convex.

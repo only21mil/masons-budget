@@ -154,7 +154,7 @@ class AndroidFinanceRegressionTest {
             ),
         )
 
-        show(Destination.NET_WORTH, state, DisplayUnit.USD)
+        show(Destination.BITCOIN, state, DisplayUnit.USD, BitcoinSegment.NET_WORTH)
 
         compose.onNode(hasContentDescription("\$26,000.00", substring = true))
             .fetchSemanticsNode()
@@ -207,7 +207,7 @@ class AndroidFinanceRegressionTest {
             ),
         )
 
-        show(Destination.NET_WORTH, state, DisplayUnit.BTC)
+        show(Destination.BITCOIN, state, DisplayUnit.BTC, BitcoinSegment.NET_WORTH)
 
         contentList().performScrollToNode(hasContentDescription("Retirement Provider", substring = true))
         compose.onNodeWithContentDescription("Retirement Provider", substring = true)
@@ -220,7 +220,7 @@ class AndroidFinanceRegressionTest {
             "holding detail belongs on the separate Retirement tab",
         )
 
-        show(Destination.RETIREMENT, state, DisplayUnit.BTC)
+        show(Destination.BITCOIN, state, DisplayUnit.BTC, BitcoinSegment.RETIREMENT)
 
         contentList().performScrollToNode(hasContentDescription("Index holding", substring = true))
         compose.onNodeWithContentDescription("Index holding", substring = true)
@@ -249,7 +249,7 @@ class AndroidFinanceRegressionTest {
             ),
         )
 
-        show(Destination.NET_WORTH, state, DisplayUnit.USD)
+        show(Destination.BITCOIN, state, DisplayUnit.USD, BitcoinSegment.NET_WORTH)
         contentList().performScrollToNode(hasText("10 years"))
 
         compose.onNodeWithText("HORIZON")
@@ -280,7 +280,7 @@ class AndroidFinanceRegressionTest {
             ),
         )
 
-        show(Destination.RETIREMENT, state, DisplayUnit.USD)
+        show(Destination.BITCOIN, state, DisplayUnit.USD, BitcoinSegment.RETIREMENT)
         contentList().performScrollToNode(hasText("10 years"))
 
         compose.onNodeWithText("HORIZON")
@@ -337,7 +337,7 @@ class AndroidFinanceRegressionTest {
         compose.onNodeWithContentDescription("Total stack, 100 000 000 sats")
             .fetchSemanticsNode()
 
-        compose.runOnUiThread { destination.value = Destination.NET_WORTH }
+        compose.onNodeWithText("Net Worth").performClick()
         settle()
         contentList().performScrollToNode(hasContentDescription("Bitcoin stack, 100 000 000 sats, estimated figure"))
         compose.onNodeWithContentDescription("Bitcoin stack, 100 000 000 sats, estimated figure")
@@ -349,7 +349,12 @@ class AndroidFinanceRegressionTest {
         compose.onNodeWithContentDescription("SATS display unit").assertIsSelected()
     }
 
-    private fun show(destination: Destination, state: VaultUiState, displayUnit: DisplayUnit) {
+    private fun show(
+        destination: Destination,
+        state: VaultUiState,
+        displayUnit: DisplayUnit,
+        bitcoinSegment: BitcoinSegment = BitcoinSegment.OVERVIEW,
+    ) {
         compose.runOnUiThread {
             activityController.get().setContent {
                 VogelVaultTheme {
@@ -358,6 +363,7 @@ class AndroidFinanceRegressionTest {
                             destination = destination,
                             state = state.copy(destination = destination),
                             displayUnit = displayUnit,
+                            initialBitcoinSegment = bitcoinSegment,
                         )
                     }
                 }

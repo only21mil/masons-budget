@@ -37,24 +37,23 @@ const COMPACT = { name: "1366", width: 1366, height: 900 }
 const WIDE = { name: "1920", width: 1920, height: 1200 }
 
 const ALL_PAGES = [
-  "dashboard", "budget", "activity", "bitcoin", "bitcoin-buys", "bills",
-  "net-worth",
-  "today", "tasks", "inbox", "upcoming", "flagged", "projects",
-  "family", "sync-health", "export", "settings", "awards", "more", "onboarding", "lock",
+  "home", "budget", "activity", "bitcoin", "bitcoin-buys", "bills",
+  "tasks",
+  "family", "sync-health", "export", "settings", "awards", "onboarding", "lock",
 ]
 
-const ROUTE_ONLY_PAGES = ["price"]
+const ROUTE_ONLY_PAGES = ["price", "net-worth", "retirement"]
 
 // Pages a child profile can reach (adult-only ones are excluded by the router).
 const CHILD_PAGES = [
-  "dashboard", "budget", "activity", "bitcoin", "net-worth", "today", "tasks",
-  "family", "awards", "more",
+  "home", "budget", "activity", "bitcoin", "tasks",
+  "family", "awards",
 ]
 
 // Pages that read synced data, so the four non-normal states are meaningful.
-const STATE_SAMPLE = ["dashboard", "budget", "activity", "net-worth", "today"]
+const STATE_SAMPLE = ["home", "budget", "activity", "bitcoin", "tasks"]
 const NON_NORMAL_STATES = ["stale", "error", "empty", "loading"]
-const LIGHT_SAMPLE = ["dashboard", "family", "settings"]
+const LIGHT_SAMPLE = ["home", "family", "settings"]
 
 function buildTargets() {
   const targets = []

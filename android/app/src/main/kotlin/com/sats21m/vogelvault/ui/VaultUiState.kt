@@ -41,7 +41,7 @@ import kotlinx.coroutines.withContext
  */
 data class VaultUiState(
     val activeProfile: FamilyMember = FamilyMember.VICTOR,
-    val destination: Destination = Destination.DASHBOARD,
+    val destination: Destination = Destination.HOME,
     val data: ReadModel = Fixtures.envelope(FamilyMember.VICTOR),
     val now: Long = Fixtures.NOW_MILLIS,
     /**
@@ -194,7 +194,7 @@ data class VaultUiState(
         /** Build state for a profile and slice status. Used by tests and previews. */
         fun of(
             profile: FamilyMember,
-            destination: Destination = Destination.DASHBOARD,
+            destination: Destination = Destination.HOME,
             status: Freshness = Freshness.LIVE,
             selectedMonth: String? = null,
         ): VaultUiState = VaultUiState(
@@ -275,7 +275,7 @@ class VaultViewModel(
 
             current.copy(
                 activeProfile = next,
-                destination = current.destination.takeIf { it in destinationsFor(next) } ?: Destination.DASHBOARD,
+                destination = current.destination.takeIf { it in RAIL_PRIMARY_ORDER } ?: Destination.HOME,
                 data = if (!readReady.value) Fixtures.envelope(next) else loadingModel(next),
                 financeDocument = null,
                 financeStatus = if (readReady.value) Freshness.LOADING else Freshness.EMPTY,
@@ -311,15 +311,6 @@ class VaultViewModel(
     fun refreshActiveProfile() {
         if (!readReady.value || (rowSource == null && financeSource == null)) return
         connectRows(_state.value.activeProfile)
-    }
-
-    fun simulate(status: Freshness) {
-        _state.update {
-            it.copy(
-                data = Fixtures.envelope(it.activeProfile, status),
-                rowReadDiagnostics = emptySet(),
-            )
-        }
     }
 
     fun enableRemoteRows(readToken: String) {

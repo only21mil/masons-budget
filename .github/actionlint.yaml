@@ -11,3 +11,6 @@ self-hosted-runner:
     - ARM64
     - xcode
     - macbook-pro-m5
+    - mason-mbp
+    - mason-mini
+    - mbp-primary

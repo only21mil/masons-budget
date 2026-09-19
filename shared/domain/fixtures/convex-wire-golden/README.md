@@ -35,10 +35,8 @@ accept `updatedAtMs` as a plain safe integer in both formats.
   serialisation path is covered.
 
 No credential appears in any fixture, and no capture from a live deployment is
-committed. `scripts/capture-convex-wire-golden.mjs` still exists for local wire
-debugging against a real deployment; never commit its output here — the
-synthetic-content guard will fail CI if production-shaped values land in these
-files.
+committed. Use the synthetic generator below to refresh fixtures. The
+synthetic-content guard rejects production-shaped values in these files.
 
 ## Provenance gate
 

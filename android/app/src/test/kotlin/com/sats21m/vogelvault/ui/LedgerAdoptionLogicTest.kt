@@ -1,7 +1,7 @@
 package com.sats21m.vogelvault.ui
 
-import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.BillPayBudgetEffect
+import com.sats21m.vogelvault.domain.BtcBillPay
 import com.sats21m.vogelvault.domain.FamilyMember
 import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
@@ -9,10 +9,8 @@ import com.sats21m.vogelvault.domain.MarketQuote
 import com.sats21m.vogelvault.domain.MarketQuoteStatus
 import com.sats21m.vogelvault.domain.MarketSymbol
 import com.sats21m.vogelvault.domain.Money
-import com.sats21m.vogelvault.ui.theme.LedgerPalettes
 import com.sats21m.vogelvault.ui.theme.LedgerTreatment
 import com.sats21m.vogelvault.ui.theme.resolve
-import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -20,21 +18,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class LedgerAdoptionLogicTest {
-
-    @Test
-    fun `navigation uses fg2 at rest and treatment-aware selected ink`() {
-        listOf(LedgerPalettes.TerminalDark, LedgerPalettes.DaylightLight).forEach { colors ->
-            assertEquals(colors.foregroundSecondary, ledgerNavigationUnselectedTint(colors))
-            assertEquals(
-                colors.foreground,
-                ledgerNavigationSelectedTint(Destination.DASHBOARD, colors),
-            )
-            assertEquals(
-                colors.bitcoin,
-                ledgerNavigationSelectedTint(Destination.BITCOIN, colors),
-            )
-        }
-    }
 
     @Test
     fun `price hero uses only the operational quote and names its basis`() {
@@ -140,7 +123,7 @@ class LedgerAdoptionLogicTest {
     }
 
     @Test
-    fun `Today money out includes adult rows and bill pay fees while completed tasks remain in list`() {
+    fun `shared money out includes adult rows and fees while Tasks retains completed rows`() {
         val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
         val billPay = BtcBillPay(
             id = "today-bill",
@@ -163,7 +146,12 @@ class LedgerAdoptionLogicTest {
             now = Fixtures.NOW_MILLIS,
         )
 
-        val summary = moneyOutToday(state, ZoneOffset.UTC)
+        val summary = com.sats21m.vogelvault.domain.deriveMoneyOutToday(
+            state.activeProfile,
+            "2026-07-26",
+            state.data.transactions.value,
+            state.data.btcBillPays.value,
+        )
         assertEquals(24_918L, summary?.totalCents)
         assertEquals(listOf("tx-0001", "tx-0002", "today-bill"), summary?.sourceIds)
 
@@ -173,21 +161,13 @@ class LedgerAdoptionLogicTest {
             done = true,
         )
         assertTrue(
-            todosForToday(fixture.todos.value + completed, FamilyMember.VICTOR, "2026-07-26")
+            TaskListModel.build(
+                fixture.todos.value + completed,
+                FamilyMember.VICTOR,
+                java.time.LocalDate.parse("2026-07-26"),
+            ).visibleTasks
                 .any { it.id == completed.id && it.done },
         )
-    }
-
-    @Test
-    fun `Today money out fails closed when either ledger projection is unavailable`() {
-        val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
-        val state = VaultUiState(
-            data = fixture.copy(
-                btcBillPays = fixture.btcBillPays.copy(status = Freshness.ERROR),
-            ),
-        )
-
-        assertNull(moneyOutToday(state, ZoneOffset.UTC))
     }
 
     @Test
@@ -213,8 +193,6 @@ class LedgerAdoptionLogicTest {
         assertEquals(3, OnboardingStep.entries.size)
         assertEquals("Step 1 of 3", onboardingProgressLabel(0))
         assertEquals("Step 3 of 3", onboardingProgressLabel(2))
-        val overflow = foldedOverflowDestinations(Destination.entries.toList())
-        assertEquals(0, overflow.size)
         assertEquals(5, foldedPrimaryDestinations(Destination.entries.toList()).size)
     }
 }

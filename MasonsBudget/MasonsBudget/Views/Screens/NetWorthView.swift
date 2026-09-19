@@ -88,8 +88,6 @@ struct NetWorthView: View {
         TimelineView(.periodic(from: .now, by: 60)) { _ in
             ScrollView {
                 VStack(spacing: 0) {
-                    ScreenHeader(title: "Net Worth", eyebrow: "Recorded history")
-
                     quoteStatus
                         .padding(.horizontal, ledgerTokens.metrics.screenGutter)
                         .padding(.bottom, 12)

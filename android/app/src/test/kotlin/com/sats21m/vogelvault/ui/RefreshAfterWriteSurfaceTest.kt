@@ -1,14 +1,15 @@
 package com.sats21m.vogelvault.ui
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasScrollToIndexAction
-import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -24,8 +25,6 @@ import com.sats21m.vogelvault.R
 import com.sats21m.vogelvault.VaultApplication
 import com.sats21m.vogelvault.data.BudgetCategoryDeletionGateway
 import com.sats21m.vogelvault.data.ConvexConfig
-import com.sats21m.vogelvault.data.ConvexMutationClient
-import com.sats21m.vogelvault.data.ConvexSyncTokenSource
 import com.sats21m.vogelvault.data.ConvexDeviceCredential
 import com.sats21m.vogelvault.data.ConvexDeviceCredentialSource
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
@@ -41,7 +40,6 @@ import com.sats21m.vogelvault.domain.Fixtures
 import com.sats21m.vogelvault.domain.Freshness
 import com.sats21m.vogelvault.domain.TodoItem
 import com.sats21m.vogelvault.ui.theme.VogelVaultTheme
-import java.util.UUID
 import kotlin.test.assertEquals
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -256,25 +254,29 @@ class RefreshAfterWriteSurfaceTest {
     }
 
     @Test
-    fun `Today add refreshes after success and not after rejection`() {
+    fun `Tasks add refreshes after success and not after rejection`() {
         val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
         val state =
             VaultUiState(
                 activeProfile = FamilyMember.VICTOR,
-                destination = Destination.TODAY,
+                destination = Destination.TASKS,
                 data = base.copy(todos = base.todos.copy(value = emptyList())),
             )
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
-            TodoScreen(
-                state = state,
-                onWriteSucceeded = onWriteSucceeded,
-            )
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                TaskListsScreen(
+                    state = state,
+                    todos = state.data.todos.value,
+                    onWriteSucceeded = onWriteSucceeded,
+                )
+            }
         }
         val interact = {
-            compose.onNodeWithText(application.getString(R.string.todo_new_task))
+            compose.onNodeWithText(application.getString(R.string.tasks_add)).performScrollTo().performClick()
+            compose.onNodeWithText(application.getString(R.string.tasks_task_title))
                 .performTextInput("Reconcile receipts")
-            compose.onNodeWithContentDescription(application.getString(R.string.todo_add))
-                .performClick()
+            compose.onNodeWithText(application.getString(R.string.tasks_save))
+                .performSemanticsAction(SemanticsActions.OnClick) { it() }
             Unit
         }
 
@@ -291,7 +293,7 @@ class RefreshAfterWriteSurfaceTest {
     }
 
     @Test
-    fun `Today edit refreshes after success and not after rejection`() {
+    fun `Tasks edit refreshes after success and not after rejection`() {
         val todo =
             TodoItem(
                 id = "today-refresh-edit",
@@ -303,18 +305,21 @@ class RefreshAfterWriteSurfaceTest {
         val state =
             VaultUiState(
                 activeProfile = FamilyMember.VICTOR,
-                destination = Destination.TODAY,
+                destination = Destination.TASKS,
                 data = base.copy(todos = base.todos.copy(value = listOf(todo))),
             )
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
-            TodoScreen(
-                state = state,
-                onWriteSucceeded = onWriteSucceeded,
-            )
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                TaskListsScreen(
+                    state = state,
+                    todos = state.data.todos.value,
+                    onWriteSucceeded = onWriteSucceeded,
+                )
+            }
         }
         val interact = {
             val editDescription = application.getString(R.string.todo_edit_named, todo.title)
-            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription(editDescription))
+            compose.onNodeWithContentDescription(editDescription).performScrollTo()
             compose.onNodeWithContentDescription(editDescription).performClick()
             compose.onNodeWithText(application.getString(R.string.todo_title))
                 .performTextReplacement("Reconcile all receipts")
@@ -413,21 +418,22 @@ class RefreshAfterWriteSurfaceTest {
         val base = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
         val state = VaultUiState(
             activeProfile = FamilyMember.VICTOR,
-            destination = Destination.TODAY,
+            destination = Destination.TASKS,
             data = base.copy(todos = base.todos.copy(value = emptyList())),
         )
         val content: @Composable (() -> Unit) -> Unit = { onWriteSucceeded ->
             ScreenHost(
-                destination = Destination.TODAY,
+                destination = Destination.TASKS,
                 state = state,
                 onWriteSucceeded = onWriteSucceeded,
             )
         }
         val interact = {
-            compose.onNodeWithText(application.getString(R.string.todo_new_task))
-                .performTextInput("Production shell task")
-            compose.onNodeWithContentDescription(application.getString(R.string.todo_add))
-                .performClick()
+            compose.onNodeWithText("Add task").performScrollTo().performClick()
+            settle()
+            compose.onNodeWithText("Task title").performTextInput("Production shell task")
+            compose.onNode(hasText("Save task") and hasClickAction()).assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.OnClick)
             Unit
         }
 
@@ -683,7 +689,6 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
         super.noteAcceptedWrite()
     }
 
-    override fun hasConvexWriteCredential(): Boolean = true
     override fun hasTodoWriteCredential(): Boolean = true
 
     @Volatile
@@ -758,15 +763,4 @@ internal class RefreshAfterWriteApplication : VaultApplication() {
         )
     }
 
-    override val convexMutationClient: ConvexMutationClient by lazy(
-        LazyThreadSafetyMode.SYNCHRONIZED,
-    ) {
-        ConvexMutationClient(
-            configSource = MutableConvexConfigSource(
-                ConvexConfig(deploymentUrl = "https://refresh-after-write-test.convex.cloud"),
-            ),
-            syncTokenSource = ConvexSyncTokenSource { "vv-test-" + UUID.randomUUID() },
-            http = poster,
-        )
-    }
 }

@@ -1,7 +1,6 @@
 package com.sats21m.vogelvault.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Icon
@@ -10,12 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -88,57 +82,3 @@ fun LedgerRule(
         )
     }
 }
-
-/** Draw-only layer for full-bleed texture. It cannot add input handlers or semantics. */
-@Composable
-fun LedgerDecorativeLayer(
-    modifier: Modifier = Modifier,
-    draw: DrawScope.() -> Unit,
-) {
-    Box(modifier.clearAndSetSemantics { }) {
-        Canvas(Modifier.matchParentSize(), onDraw = draw)
-    }
-}
-
-/** Exact 24-unit proposal paths from the inert handoff prototype. */
-object LedgerCategoryGlyphs {
-    val Car: ImageVector by lazy {
-        strokedGlyph(
-            name = "LedgerCar",
-            paths = listOf(
-                "M3 13.5 5 8h14l2 5.5v3.5h-2.6M3 13.5V17h2.6m0 0h11.8M5 13.5h14",
-                "M5.6 17a1.7 1.7 0 1 0 3.4 0 1.7 1.7 0 1 0-3.4 0M15 17a1.7 1.7 0 1 0 3.4 0 1.7 1.7 0 1 0-3.4 0",
-            ),
-        )
-    }
-
-    val Paw: ImageVector by lazy {
-        strokedGlyph(
-            name = "LedgerPaw",
-            paths = listOf(
-                "M5.4 9.6a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0M10.4 7.6a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0M15.4 9.6a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0",
-                "M8.2 15.4c0-2.1 1.7-3.4 3.8-3.4s3.8 1.3 3.8 3.4c0 2.3-1.7 3.5-3.8 3.5s-3.8-1.2-3.8-3.5z",
-            ),
-        )
-    }
-}
-
-private fun strokedGlyph(name: String, paths: List<String>): ImageVector =
-    ImageVector.Builder(
-        name = name,
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f,
-    ).apply {
-        paths.forEach { pathData ->
-            addPath(
-                pathData = PathParser().parsePathString(pathData).toNodes(),
-                fill = null,
-                stroke = SolidColor(Color.Black),
-                strokeLineWidth = 1.6f,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round,
-            )
-        }
-    }.build()

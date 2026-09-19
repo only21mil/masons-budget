@@ -31,6 +31,9 @@ import java.time.ZoneOffset
 
 internal fun ledgerToday(clock: Clock = Clock.system(ZoneId.systemDefault())): LocalDate = LocalDate.now(clock)
 
+internal fun ledgerCurrentMonth(clock: Clock = Clock.systemDefaultZone()): String =
+    java.time.YearMonth.from(ledgerToday(clock)).toString()
+
 // Material's millis encode a calendar date at UTC midnight, not a local instant.
 internal fun ledgerPickerMillis(date: LocalDate): Long = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
 internal fun ledgerPickerDate(millis: Long): LocalDate = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()

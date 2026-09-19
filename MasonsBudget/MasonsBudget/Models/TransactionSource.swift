@@ -20,16 +20,6 @@ enum TransactionActivityType: String, CaseIterable, Identifiable {
         case .transfer: "Transfer"
         }
     }
-
-    var noteLabel: String {
-        switch self {
-        case .spend: "Spend"
-        case .btcBillPay: "BTC Bill Pay"
-        case .btcBuy: "BTC Buy"
-        case .income: "Income"
-        case .transfer: "Transfer"
-        }
-    }
 }
 
 // MARK: - Payment-source catalogue

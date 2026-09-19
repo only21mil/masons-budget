@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Vogel Vault</string>
     <string name="launcher_label">The Vogel Vault</string>
     <string name="convex_read_error_title">The ledger could not be read</string>
     <string name="convex_read_error_detail">Check the connection in Settings, then retry.</string>
@@ -33,34 +32,23 @@
     <string name="convex_read_stale_title">Showing stale data</string>
     <string name="convex_read_stale_detail">The last successful read is old. Treat these figures as out of date.</string>
     <string name="convex_read_loading_title">Loading the ledger</string>
-    <string name="convex_read_loading_detail">Reading the household ledger.</string>
     <string name="convex_read_empty_title">Nothing recorded yet</string>
     <string name="convex_read_empty_detail">The ledger has nothing for this view on this profile.</string>
     <string name="convex_auth_error_title">Connection was not accepted</string>
     <string name="convex_auth_error_detail">Reconnect this phone in Settings. Saved financial figures are hidden.</string>
     <string name="convex_rows_inactive_title">Household sync is not active</string>
     <string name="convex_rows_inactive_detail">Connect this phone or enable sync in Settings. These figures are sample data.</string>
-    <string name="convex_read_token_configured">Read access is stored securely.</string>
-    <string name="convex_read_token_unconfigured">No read access is stored. Connect this phone in Settings.</string>
-    <string name="convex_read_token_remove">Remove stored token</string>
-    <string name="convex_read_token_remove_failed">The stored read token could not be removed.</string>
-    <string name="convex_sync_token_save_failed">The sync token could not be stored securely. Writes remain unconfigured.</string>
     <string name="convex_sync_token_remove_failed">The stored sync token could not be removed.</string>
     <string name="convex_budget_period_mismatch_detail">The saved targets are for %1$s. Actuals were re-derived from %2$s transactions; the targets were not.</string>
     <string name="convex_uncategorized_spend_detail">These transactions match no budget category, so this spend is counted on Activity only.</string>
-    <string name="navigation_more">More</string>
     <string name="btc_buys_screen_title">BTC Buys</string>
     <string name="btc_bill_pays_screen_title">BTC Bill Pays</string>
-    <string name="refresh_data">Refresh live data</string>
-    <string name="refresh_unavailable">Refresh unavailable while live reads are disabled</string>
     <string name="refresh_failed_title">Refresh failed</string>
     <string name="refresh_failed_detail">Check the connection in Settings, then try again.</string>
-    <string name="add_transaction_action">+ Add</string>
     <string name="add_transaction_title">New transaction</string>
     <string name="add_transaction_merchant">Merchant or destination</string>
     <string name="add_transaction_category">Category</string>
     <string name="add_transaction_amount">Amount</string>
-    <string name="add_transaction_card">Card or method</string>
     <string name="add_transaction_date">Date</string>
     <string name="add_transaction_note">Note</string>
     <string name="add_transaction_cancel">Cancel</string>
@@ -72,7 +60,6 @@
     <string name="horizon_years">%1$d years</string>
     <string name="horizon_action">Show %1$d-year horizon</string>
     <string name="retirement_projected_bitcoin_label">Bitcoin at %1$d years</string>
-    <string name="retirement_starting_bitcoin_label">Starting Bitcoin</string>
     <string name="retirement_balance_as_of_hint">balance as of %1$s</string>
     <string name="retirement_scenario_hint">scenario, not a forecast</string>
     <string name="retirement_monthly_inputs_title">Monthly Bitcoin inputs</string>
@@ -120,7 +107,6 @@
     <string name="tasks_project">Project (optional)</string>
     <string name="tasks_area">Area (optional)</string>
     <string name="tasks_due_date">Due date (optional)</string>
-    <string name="tasks_due_date_hint">YYYY-MM-DD</string>
     <string name="tasks_flag_task">Flag this task</string>
     <string name="tasks_cancel">Cancel</string>
     <string name="tasks_save">Save task</string>
@@ -158,8 +144,6 @@
     <string name="vault_profile_prompt_subtitle">Authenticate before opening another family member’s profile</string>
     <string name="vault_auth_error">Authentication did not complete. The vault remains locked.</string>
     <string name="onboarding_title">Connect Vogel Vault</string>
-    <string name="onboarding_detail">Connect once to load household data securely on this device.</string>
-    <string name="onboarding_token_help">Setup grants only the access approved for this installation. Credentials are never displayed or entered here.</string>
     <string name="read_bootstrap_title">Secure connection</string>
     <string name="read_bootstrap_connected_read_only">Connected for household data. Todo changes are not enabled.</string>
     <string name="read_bootstrap_connected_full">Connected for household data. Tasks can be changed only for the paired profile.</string>
@@ -199,20 +183,12 @@
     <string name="budget_plan_copy_failed">Plan not copied</string>
     <string name="budget_income_add_as_bitcoin_buy">Add as Bitcoin buy</string>
     <string name="budget_income_add_as_bitcoin_buy_detail">Record this income and buy Bitcoin in one atomic write. The income amount is locked to the Bitcoin purchase amount.</string>
-    <string name="btc_buy_add_action">Add Bitcoin buy</string>
     <string name="btc_buy_editor_title">Add Bitcoin buy</string>
     <string name="btc_buy_date_label">Date (yyyy-MM-dd)</string>
     <string name="btc_buy_source_label">Source</string>
     <string name="btc_buy_sats_label">Sats</string>
     <string name="btc_buy_price_label">BTC price (USD)</string>
     <string name="btc_buy_purchase_amount_label">Purchase amount (USD)</string>
-    <string name="btc_buy_note_label">Buy note (optional)</string>
-    <string name="btc_buy_independent_amounts_detail">Sats, BTC price, and purchase dollars are stored independently. Check all three before saving.</string>
-    <string name="btc_income_buy_editor_title">Add income as Bitcoin buy</string>
-    <string name="btc_income_buy_income_label">Income amount (locked)</string>
-    <string name="btc_income_buy_detail">One atomic write records the income and credits Bitcoin once. Retry safely if the network is uncertain.</string>
-    <string name="btc_income_buy_save">Save income + Bitcoin buy</string>
-    <string name="btc_transfer_add_action">Transfer between accounts</string>
     <string name="btc_transfer_editor_title">Transfer Bitcoin between accounts</string>
     <string name="btc_transfer_editor_detail">Move exact sats between two visible household accounts. A fee reduces the total stack; it is not income or spending.</string>
     <string name="btc_transfer_date_label">Date (yyyy-MM-dd)</string>
@@ -225,16 +201,6 @@
     <string name="btc_transfer_accounts_unavailable">At least two Bitcoin accounts owned by this household ledger are required.</string>
     <string name="write_cancel">Cancel</string>
     <string name="write_save">Save</string>
-    <string name="write_credential_title">Financial write sync credential</string>
-    <string name="write_credential_source">AndroidKeyStore encrypted</string>
-    <string name="write_credential_configured">A sync credential for transaction, budget, and Bitcoin writes is stored securely on this device. Todo writes use a separate paired-device credential.</string>
-    <string name="write_credential_unconfigured">No sync credential is configured. Transaction, budget, and Bitcoin writes will fail closed. Todo writes use a separate paired-device credential.</string>
-    <string name="write_credential_label">Sync credential</string>
-    <string name="write_credential_save">Save securely</string>
-    <string name="write_credential_remove">Remove</string>
-    <string name="write_credential_blank">Enter the write credential before saving.</string>
-    <string name="write_credential_save_readback_failed">The credential was written but could not be read back.</string>
-    <string name="write_credential_save_unexpected">The credential was not saved (%1$s).</string>
     <string name="write_credential_remove_readback_failed">The credential was removed but remained readable.</string>
     <string name="write_credential_remove_unexpected">The credential was not removed (%1$s).</string>
     <string name="transaction_detail_title">Transaction detail</string>
@@ -245,7 +211,6 @@
     <string name="transaction_amount_sign_help">Purchases stay positive; refunds stay negative.</string>
     <string name="transaction_method">Method</string>
     <string name="transaction_date">Date</string>
-    <string name="transaction_date_help">YYYY-MM-DD</string>
     <string name="transaction_note">Note</string>
     <string name="transaction_cancel">Cancel</string>
     <string name="transaction_save">Save</string>
@@ -253,16 +218,7 @@
     <string name="transaction_delete_confirm_title">Delete this transaction?</string>
     <string name="transaction_delete_confirm_detail">This cannot be undone. There is no transaction tombstone.</string>
     <string name="transaction_delete_confirm_action">Delete permanently</string>
-    <string name="todo_today_subtitle">Due today or overdue, including completed tasks</string>
-    <string name="todo_new_task">New task</string>
-    <string name="todo_add">Add task</string>
-    <string name="todo_empty">Nothing is due today.</string>
-    <string name="todo_mark_complete">Mark task complete</string>
-    <string name="todo_mark_open">Mark task open</string>
-    <string name="todo_add_flag">Flag task</string>
-    <string name="todo_remove_flag">Remove task flag</string>
     <string name="todo_edit">Edit task</string>
-    <string name="todo_delete">Delete task</string>
     <string name="todo_mark_complete_named">Mark “%1$s” complete</string>
     <string name="todo_mark_open_named">Mark “%1$s” open</string>
     <string name="todo_add_flag_named">Flag “%1$s”</string>
@@ -316,4 +272,32 @@
     <string name="read_bootstrap_read_token">Read access token</string>
     <string name="read_bootstrap_save_read">Restore read access</string>
     <string name="convex_projection_bitcoin_transfers">Bitcoin transfers</string>
+    <string name="vault_settings">Settings</string>
+    <string name="profile_switcher_child">Child</string>
+    <string name="sync_loading">Syncing</string>
+    <string name="sync_failed_retry">Sync failed. Retry</string>
+    <string name="sync_demo_unavailable">Sync unavailable in demo</string>
+    <string name="sync_not_yet_refresh">Not synced yet. Refresh</string>
+    <string name="sync_refresh">Synced %1$s. Refresh</string>
+    <string name="sync_stale_refresh">Stale. Synced %1$s. Refresh</string>
+    <string name="sync_error_label">ERR</string>
+    <string name="sync_demo_label">DEMO</string>
+    <string name="sync_age_never">never</string>
+    <string name="sync_age_now">now</string>
+    <string name="sync_age_just_now">just now</string>
+    <string name="sync_age_minutes">%1$dm</string>
+    <string name="sync_age_hours">%1$dh</string>
+    <string name="sync_age_days">%1$dd</string>
+    <plurals name="sync_minutes_ago">
+        <item quantity="one">%d minute ago</item>
+        <item quantity="other">%d minutes ago</item>
+    </plurals>
+    <plurals name="sync_hours_ago">
+        <item quantity="one">%d hour ago</item>
+        <item quantity="other">%d hours ago</item>
+    </plurals>
+    <plurals name="sync_days_ago">
+        <item quantity="one">%d day ago</item>
+        <item quantity="other">%d days ago</item>
+    </plurals>
 </resources>

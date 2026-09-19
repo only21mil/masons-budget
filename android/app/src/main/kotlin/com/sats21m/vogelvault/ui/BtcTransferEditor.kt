@@ -36,20 +36,7 @@ import com.sats21m.vogelvault.domain.Money
 import com.sats21m.vogelvault.ui.theme.LocalLedgerTheme
 import java.util.UUID
 
-internal const val BTC_TRANSFER_ACTION_TEST_TAG = "btc-transfer-action"
 internal const val BTC_TRANSFER_SAVE_TEST_TAG = "btc-transfer-save"
-
-@Composable
-internal fun BtcTransferEntryAction(onClick: () -> Unit, enabled: Boolean = true) {
-    VaultButton(
-        label = stringResource(R.string.btc_transfer_add_action),
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag(BTC_TRANSFER_ACTION_TEST_TAG),
-    )
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

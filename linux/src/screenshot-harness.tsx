@@ -9,7 +9,7 @@
 // index.html, and the harness carries no data of its own: it renders the same
 // sanitized fixtures the app does.
 //
-//   screenshots.html?page=dashboard&profile=victor&state=normal
+//   screenshots.html?page=home&profile=victor&state=normal
 
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
@@ -25,7 +25,7 @@ const VALID_STATES: StateOverride[] = ["normal", "stale", "error", "empty", "loa
 function readParams(): { page: string; profile: FamilyMember; state: StateOverride } {
   const params = new URLSearchParams(window.location.search)
 
-  const page = params.get("page") ?? "dashboard"
+  const page = params.get("page") ?? "home"
 
   const rawProfile = params.get("profile")
   const profile = (FAMILY_MEMBERS as readonly string[]).includes(rawProfile ?? "")

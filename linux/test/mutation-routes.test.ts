@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
 import { AppStateProvider } from "../src/renderer/app/AppState.tsx"
-import { ALL_PAGES } from "../src/renderer/pages/index.ts"
+import { ALL_PAGES, resolvePage } from "../src/renderer/pages/index.ts"
 import { TaskClockProvider } from "../src/renderer/pages/tasks/taskClock.tsx"
 import {
   adapter,
@@ -20,7 +20,7 @@ describe("renderer CRUD routes", () => {
     ["bitcoin-buys", "Add buy"],
     ["bills", "Add bill payment"],
     ["bitcoin", "Add BTC account"],
-    ["today", "Add task"],
+    ["tasks", "Add task"],
     ["inbox", "Add task"],
     ["upcoming", "Add task"],
     ["flagged", "Add task"],
@@ -31,7 +31,7 @@ describe("renderer CRUD routes", () => {
     expect(markup).toContain("<dialog")
   })
 
-  it.each(["tasks", "inbox", "upcoming", "flagged", "projects"])(
+  it.each(["projects", "inbox", "upcoming", "flagged"])(
     "%s keeps completion, edit, and delete controls in a sticky task-action column",
     (route) => {
       const markup = renderRoute(route)
@@ -85,7 +85,7 @@ describe("renderer CRUD routes", () => {
   })
 
   it("keeps derived-only routes free of create and delete controls", () => {
-    for (const route of ["dashboard", "net-worth"]) {
+    for (const route of ["home", "net-worth"]) {
       const markup = renderRoute(route)
       expect(markup).not.toMatch(/Add (transaction|category|buy|bill payment|BTC account|task)/)
       expect(markup).not.toContain(">Delete<")
@@ -132,7 +132,7 @@ describe("renderer CRUD routes", () => {
       ["bills", "Add bill payment"],
       ["bitcoin-buys", "Add buy"],
       ["bitcoin", "Add BTC account"],
-      ["today", "Add task"],
+      ["tasks", "Add task"],
     ] as const) {
       const markup = renderRoute(route, "victor", empty)
       expect(markup).toContain(label)
@@ -191,9 +191,11 @@ describe("renderer CRUD routes", () => {
   })
 
   it("visibly explains why task edit and delete actions are disabled", () => {
-    const page = ALL_PAGES.find((candidate) => candidate.id === "projects")!
+    const page = resolvePage("projects", "victor")
+    expect(page).toBeTruthy()
     const markup = renderToStaticMarkup(
       createElement(AppStateProvider, {
+        initialRoute: "projects",
         initialData: liveEnvelope(),
         initialDataOrigin: "fixture",
         initialMutationCapabilities: capabilities,
@@ -201,7 +203,7 @@ describe("renderer CRUD routes", () => {
         children: createElement(
           TaskClockProvider,
           { now: fixtureNow },
-          createElement(page.Component),
+          createElement(page!.Component),
         ),
       }),
     )

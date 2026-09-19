@@ -40,10 +40,10 @@ final class LegacyBlobCompatibilityTests: XCTestCase {
         let today = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 6, hour: 23)))
         let tomorrow = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 6, day: 7, hour: 8)))
 
-        XCTAssertTrue(TodayView.isDueTodayOrOverdue(overdue, now: now, calendar: calendar))
-        XCTAssertTrue(TodayView.isDueTodayOrOverdue(today, now: now, calendar: calendar))
-        XCTAssertFalse(TodayView.isDueTodayOrOverdue(tomorrow, now: now, calendar: calendar))
-        XCTAssertFalse(TodayView.isDueTodayOrOverdue(nil, now: now, calendar: calendar))
+        XCTAssertTrue(SmartListFilter.isDueTodayOrOverdue(overdue, now: now, calendar: calendar))
+        XCTAssertTrue(SmartListFilter.isDueTodayOrOverdue(today, now: now, calendar: calendar))
+        XCTAssertFalse(SmartListFilter.isDueTodayOrOverdue(tomorrow, now: now, calendar: calendar))
+        XCTAssertFalse(SmartListFilter.isDueTodayOrOverdue(nil, now: now, calendar: calendar))
     }
 
     @MainActor

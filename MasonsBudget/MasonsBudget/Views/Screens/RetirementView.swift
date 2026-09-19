@@ -101,8 +101,6 @@ struct RetirementView: View {
         TimelineView(.periodic(from: .now, by: 60)) { _ in
             ScrollView {
                 VStack(spacing: 0) {
-                    ScreenHeader(title: "Retirement", eyebrow: "The Long Stack")
-
                     VStack(alignment: .leading, spacing: 3) {
                         ForEach(MarketQuote.Symbol.allCases, id: \.rawValue) { symbol in
                             Text(MarketQuoteService.label(symbol))
@@ -410,12 +408,6 @@ struct RetirementView: View {
 
     private var weekly401kContribution: Decimal {
         visibleHoldings.reduce(Decimal(0)) { $0 + $1.weeklyContribution }
-    }
-
-    private var currentHoldingsBalance: Decimal {
-        let vooPrice = StockPriceService.vooPrice
-        let ibitPrice = StockPriceService.ibitPrice
-        return visibleHoldings.reduce(Decimal(0)) { $0 + $1.liveValue(vooPrice: vooPrice, ibitPrice: ibitPrice) }
     }
 
     private var monthlyBudgetTotal: Decimal {

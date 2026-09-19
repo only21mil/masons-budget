@@ -121,35 +121,6 @@ internal class SecureConvexConfigSource internal constructor(
             readBootstrapLocked()
         }
 
-    /**
-     * Returns only whether a write credential is available.
-     *
-     * UI code must never receive the token value. The dedicated
-     * [SecureConvexSyncTokenSource] is the only production reader.
-     */
-    fun hasSyncToken(): Boolean =
-        synchronized(lock) {
-            readSyncTokenLocked() != null
-        }
-
-    /** Encrypt and persist a replacement write credential. */
-    fun updateSyncToken(syncToken: String) =
-        synchronized(lock) {
-            val normalized = syncToken.trim().takeIf { it.isNotEmpty() }
-                ?: throw IllegalArgumentException("sync token must not be blank")
-            val editor = preferences.edit()
-            putOrRemove(editor, KEY_SYNC_TOKEN, normalized)
-            if (!editor.commit()) throw IOException("encrypted Convex sync token was not persisted")
-        }
-
-    /** Remove only the write credential, leaving row-read configuration intact. */
-    fun clearSyncToken() =
-        synchronized(lock) {
-            val editor = preferences.edit()
-            editor.remove(KEY_SYNC_TOKEN)
-            if (!editor.commit()) throw IOException("encrypted Convex sync token was not cleared")
-        }
-
     internal fun hasDeviceCredential(): Boolean =
         synchronized(lock) {
             readDeviceCredentialLocked() != null
@@ -226,20 +197,10 @@ internal class SecureConvexConfigSource internal constructor(
             deviceCredential = readDeviceCredentialLocked(),
         )
 
-    internal fun currentSyncToken(): String? =
-        synchronized(lock) {
-            readSyncTokenLocked()
-        }
-
     internal fun currentDeviceCredential(): ConvexDeviceCredential? =
         synchronized(lock) {
             readDeviceCredentialLocked()
         }
-
-    private fun readSyncTokenLocked(): String? =
-        runCatching {
-            read(KEY_SYNC_TOKEN)?.trim()?.takeIf { it.isNotEmpty() }
-        }.getOrNull()
 
     private fun readDeviceCredentialLocked(): ConvexDeviceCredential? =
         runCatching {
@@ -285,7 +246,6 @@ internal class SecureConvexConfigSource internal constructor(
         const val KEY_DEPLOYMENT_URL = "deployment_url"
         const val KEY_READ_TOKEN = "read_token"
         const val KEY_REMOTE_READ_ENABLED = "remote_read_enabled"
-        const val KEY_SYNC_TOKEN = "sync_token"
         const val KEY_DEVICE_ID = "device_id"
         const val KEY_DEVICE_TOKEN = "device_token"
         const val KEY_DEVICE_PROFILE = "device_profile"
@@ -297,20 +257,6 @@ internal class SecureConvexDeviceCredentialSource(
     private val stored: SecureConvexConfigSource,
 ) : ConvexDeviceCredentialSource {
     override fun currentDeviceCredential(): ConvexDeviceCredential? = stored.currentDeviceCredential()
-}
-
-/**
- * Admin mutation credential source backed by AndroidKeyStore encryption.
- *
- * Keeping this adapter internal prevents UI and logging code from gaining
- * access to the credential while still allowing [ConvexMutationClient] to read
- * the latest saved value for every request. Interactive task writes must use
- * [SecureConvexDeviceCredentialSource], never this shared sync-token source.
- */
-internal class SecureConvexSyncTokenSource(
-    private val stored: SecureConvexConfigSource,
-) : ConvexSyncTokenSource {
-    override fun currentSyncToken(): String? = stored.currentSyncToken()
 }
 
 internal interface ConfigCipher {

@@ -49,12 +49,11 @@ the splash treatment.
 The authoritative archive is outside this repository:
 
 ```text
-/home/victor/work/bitcoin-budget-redesign-intake/Bitcoin app redesign.zip
+Bitcoin app redesign.zip
 SHA-256 b3ed6b9bc452bee62fa48e92e14ab0bf4bfa85a88fca036697dc14c41710ec30
 ```
 
-The inspected extraction was
-`/home/victor/work/bitcoin-budget-redesign-intake/extracted/design_handoff_vogel_vault_redesign/`.
+The inspected archive directory was `design_handoff_vogel_vault_redesign/`.
 These hashes tie this reference to the archive contents:
 
 | Handoff file | SHA-256 | Role |

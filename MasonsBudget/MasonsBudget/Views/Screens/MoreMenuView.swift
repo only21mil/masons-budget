@@ -1,38 +1,6 @@
 import SwiftData
 import SwiftUI
 
-/// Account destinations presented from the tab header avatar.
-struct MoreMenuView: View {
-    @Environment(\.theme) private var theme
-    @Environment(\.dismiss) private var dismiss
-    @State private var showProfileSwitcher = false
-
-    var body: some View {
-        List {
-            Button("Switch profile", systemImage: "person.crop.circle") { showProfileSwitcher = true }
-            destination("Settings", icon: "gearshape") { SettingsView() }
-            destination("Family", icon: "person.3.fill") { FamilyView() }
-            destination("Awards", icon: "medal.fill") { AwardsView() }
-            destination("Sync Setup", icon: "arrow.triangle.2.circlepath") { SyncSetupView() }
-            destination("Export", icon: "square.and.arrow.up") { ExportView() }
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(theme.bg)
-        .foregroundStyle(theme.text)
-        .navigationTitle("Profile and settings")
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
-        .sheet(isPresented: $showProfileSwitcher) { ProfileSwitcherView() }
-    }
-
-    private func destination(_ title: String, icon: String, @ViewBuilder content: @escaping () -> some View) -> some View {
-        NavigationLink {
-            LedgerDrilldown(title: title, content: content)
-        } label: { Label(title, systemImage: icon) }
-        .listRowBackground(theme.surface)
-    }
-}
-
 struct SyncSetupView: View {
     @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) var theme

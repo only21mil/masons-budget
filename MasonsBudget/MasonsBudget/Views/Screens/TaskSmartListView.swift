@@ -30,17 +30,39 @@ enum SmartListFilter: String, CaseIterable, Identifiable {
         }
     }
 
+    static func isDueTodayOrOverdue(_ dueDate: Date?, now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        guard let dueDate else { return false }
+        return calendar.startOfDay(for: dueDate) <= calendar.startOfDay(for: now)
+    }
+
+    static func wasCompletedToday(_ todo: TodoItem, now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        guard todo.isDone else { return false }
+        if let completedAt = todo.completedAt {
+            return calendar.isDate(completedAt, inSameDayAs: now)
+        }
+        return todo.dueDate.map { calendar.isDate($0, inSameDayAs: now) } ?? false
+    }
+
+    func completedTodayItems(
+        _ todos: [TodoItem], viewer: FamilyMember, now: Date, calendar: Calendar
+    ) -> [TodoItem] {
+        guard self == .today else { return [] }
+        return todos.filter {
+            viewer.canAccessTodo(ownedBy: $0.ownerMember) &&
+                Self.wasCompletedToday($0, now: now, calendar: calendar)
+        }
+    }
+
     /// Predicate for an open (not-done) todo the active member can see.
     func matches(_ todo: TodoItem, now: Date, calendar: Calendar) -> Bool {
         switch self {
         case .inbox:
             return todo.project == nil && todo.area == nil
         case .today:
-            guard let due = todo.dueDate else { return false }
-            return calendar.isDateInToday(due) || due < calendar.startOfDay(for: now)
+            return Self.isDueTodayOrOverdue(todo.dueDate, now: now, calendar: calendar)
         case .upcoming:
             guard let due = todo.dueDate else { return false }
-            return due > now && !calendar.isDateInToday(due)
+            return due > now && !calendar.isDate(due, inSameDayAs: now)
         case .flagged:
             return todo.isFlagged
         }
@@ -178,13 +200,13 @@ struct TaskRowView: View {
         TaskUndoStore.shared.delete(todo, in: modelContext)
     }
 
-    static func isOverdue(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> Bool {
+    static func isOverdue(_ date: Date, now: Date = LedgerClock.now, calendar: Calendar = .current) -> Bool {
         date < calendar.startOfDay(for: now)
     }
 
-    static func relativeDue(_ date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
-        if calendar.isDateInToday(date) { return "Today" }
-        if calendar.isDateInTomorrow(date) { return "Tomorrow" }
+    static func relativeDue(_ date: Date, now: Date = LedgerClock.now, calendar: Calendar = .current) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return "Today" }
+        if calendar.isDate(date, inSameDayAs: calendar.date(byAdding: .day, value: 1, to: now) ?? now) { return "Tomorrow" }
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day ?? 0
         if days < 0 { return "\(abs(days))d ago" }
         return "\(days)d"
@@ -221,6 +243,10 @@ struct TaskSmartListView: View {
         }
     }
 
+    private var completedToday: [TodoItem] {
+        filter.completedTodayItems(allTodos, viewer: activeMember, now: Date(), calendar: .current)
+    }
+
     private var defaultDueDate: Date? {
         let calendar = Calendar.current
         switch filter {
@@ -252,6 +278,15 @@ struct TaskSmartListView: View {
                 TaskRowView(todo: todo)
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(theme.surface)
+            }
+            if !completedToday.isEmpty {
+                Section("Completed today") {
+                    ForEach(completedToday) { todo in
+                        TaskRowView(todo: todo)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(theme.surface)
+                    }
+                }
             }
         }
         .listStyle(.plain)

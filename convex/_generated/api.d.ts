@@ -23,7 +23,6 @@ import type * as operatorImportValidation from "../operatorImportValidation.js";
 import type * as readCanary from "../readCanary.js";
 import type * as tables from "../tables.js";
 import type * as todoNormalize from "../todoNormalize.js";
-import type * as writeback from "../writeback.js";
 
 import type {
   ApiFromModules,
@@ -47,7 +46,6 @@ declare const fullApi: ApiFromModules<{
   readCanary: typeof readCanary;
   tables: typeof tables;
   todoNormalize: typeof todoNormalize;
-  writeback: typeof writeback;
 }>;
 
 /**

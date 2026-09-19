@@ -305,7 +305,6 @@ function useInteractiveTodoColumns(): ReadonlyArray<Column<TodoItem>> {
 /** Shared list page — the five task views differ only by filter and copy. */
 function TodoListPage({
   title,
-  subtitle,
   filter,
   emptyTitle,
   emptyDetail,
@@ -314,7 +313,6 @@ function TodoListPage({
   after,
 }: {
   title: string
-  subtitle?: string
   filter: (todo: TodoItem) => boolean
   emptyTitle: string
   emptyDetail: string
@@ -360,29 +358,27 @@ function TodoListPage({
     }
   }
 
+  const addTaskControl = (
+    <>
+      <Button
+        variant="primary"
+        onClick={() => setAdding(true)}
+        disabled={!addGate.allowed}
+        title={addGate.reason ?? undefined}
+      >
+        Add task
+      </Button>
+      <FreshnessTag
+        status={data.todos.status}
+        updatedAt={data.todos.updatedAt}
+        checkedAt={data.checkedAt}
+      />
+    </>
+  )
+
   return (
     <>
-      <PageHeader
-        title={title}
-        subtitle={subtitle}
-        actions={
-          <>
-            <Button
-              variant="primary"
-              onClick={() => setAdding(true)}
-              disabled={!addGate.allowed}
-              title={addGate.reason ?? undefined}
-            >
-              Add task
-            </Button>
-            <FreshnessTag
-              status={data.todos.status}
-              updatedAt={data.todos.updatedAt}
-              checkedAt={data.checkedAt}
-            />
-          </>
-        }
-      />
+      <Toolbar>{addTaskControl}</Toolbar>
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <TaskWriteStatus />
       {showComposer ? (
@@ -428,13 +424,68 @@ function TodoListPage({
   )
 }
 
+function TasksHubPage() {
+  const { data, taskSegment, setTaskSegment } = useAppState()
+  const today = useTaskToday()
+  const filters = useMemo(() => taskFiltersFor(today), [today])
+  const todos = useVisibleTodos()
+  const open = todos.filter((todo) => !todo.done)
+  const dueToday = open.filter(filters.today).length
+  const loading = data.todos.status === "loading"
+
+  return (
+    <>
+      <PageHeader
+        title="Tasks"
+        subtitle={loading ? "Loading tasks" : `${open.length} open · ${dueToday} due today`}
+      />
+      {loading ? null : (
+        <div className="vv-task-buckets" aria-label="Task buckets">
+          {[
+            ["Inbox", open.filter(filters.inbox).length],
+            ["Today", dueToday],
+            ["Upcoming", open.filter(filters.upcoming).length],
+            ["Flagged", open.filter(filters.flagged).length],
+          ].map(([label, count]) => (
+            <Panel key={label} title={label} className="vv-task-bucket">
+              <strong className="vv-task-bucket__count vv-num">{count}</strong>
+            </Panel>
+          ))}
+        </div>
+      )}
+      <div className="vv-filter-chips vv-task-segments" role="group" aria-label="Task views">
+        {([
+          ["today", "Today"],
+          ["inbox", "Inbox"],
+          ["upcoming", "Upcoming"],
+          ["flagged", "Flagged"],
+          ["projects", "Projects"],
+        ] as const).map(([id, label]) => (
+          <Button
+            key={id}
+            variant={taskSegment === id ? "primary" : "secondary"}
+            aria-pressed={taskSegment === id}
+            onClick={() => setTaskSegment(id)}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+      {taskSegment === "today" ? <TodayPage /> : null}
+      {taskSegment === "inbox" ? <InboxPage /> : null}
+      {taskSegment === "upcoming" ? <UpcomingPage /> : null}
+      {taskSegment === "flagged" ? <FlaggedPage /> : null}
+      {taskSegment === "projects" ? <ProjectsPage /> : null}
+    </>
+  )
+}
+
 function TodayPage() {
   const today = useTaskToday()
   const filter = useMemo(() => todayLedgerTaskFilter(today), [today])
   return (
     <TodoListPage
       title="Today"
-      subtitle="Due today or overdue, including completed tasks"
       filter={filter}
       emptyTitle="Nothing due today"
       emptyDetail="Nothing is due today."
@@ -485,54 +536,12 @@ function TodayMoneyOut({ today }: { readonly today: string }) {
   )
 }
 
-function TasksPage() {
-  const { data } = useAppState()
-  const today = useTaskToday()
-  const filters = useMemo(() => taskFiltersFor(today), [today])
-  const todos = useVisibleTodos()
-  const open = todos.filter((todo) => !todo.done)
-  const dueToday = open.filter(filters.today).length
-  const loading = data.todos.status === "loading"
-
-  return (
-    <>
-      <PageHeader
-        title="Tasks"
-        subtitle={loading ? "Loading tasks" : `${open.length} open · ${dueToday} due today`}
-      />
-      {loading ? null : (
-        <div className="vv-task-buckets" aria-label="Task buckets">
-          {[
-            ["Inbox", open.filter(filters.inbox).length],
-            ["Today", dueToday],
-            ["Upcoming", open.filter(filters.upcoming).length],
-            ["Flagged", open.filter(filters.flagged).length],
-          ].map(([label, count]) => (
-            <Panel key={label} title={label} className="vv-task-bucket">
-              <strong className="vv-task-bucket__count vv-num">{count}</strong>
-            </Panel>
-          ))}
-        </div>
-      )}
-      <TodoListPage
-        title="Open ledger"
-        subtitle="All open tasks for this profile"
-        filter={(todo) => !todo.done}
-        emptyTitle="Nothing here. Clear."
-        emptyDetail="This profile has no open tasks."
-        showComposer
-      />
-    </>
-  )
-}
-
 function InboxPage() {
   const today = useTaskToday()
   const filters = useMemo(() => taskFiltersFor(today), [today])
   return (
     <TodoListPage
       title="Inbox"
-      subtitle="Unsorted — still in the default Inbox"
       filter={filters.inbox}
       emptyTitle="Inbox is clear"
       emptyDetail="Every open task has been filed under a project or area."
@@ -547,7 +556,6 @@ function UpcomingPage() {
   return (
     <TodoListPage
       title="Upcoming"
-      subtitle="Scheduled beyond today"
       filter={filters.upcoming}
       emptyTitle="Nothing scheduled"
       emptyDetail="No open tasks have a due date after today."
@@ -561,7 +569,6 @@ function FlaggedPage() {
   return (
     <TodoListPage
       title="Flagged"
-      subtitle="Marked for attention"
       filter={filters.flagged}
       emptyTitle="Nothing flagged"
       emptyDetail="No open tasks are currently flagged for this profile."
@@ -596,10 +603,9 @@ function ProjectsPage() {
   if (data.todos.status === "loading") {
     return (
       <>
-        <PageHeader
-          title="Projects"
-          actions={<Button disabled title={addGate.reason ?? undefined}>Add task</Button>}
-        />
+        <Toolbar>
+          <Button disabled title={addGate.reason ?? undefined}>Add task</Button>
+        </Toolbar>
         <TaskWriteStatus />
         <StateBlock state="loading" />
       </>
@@ -609,19 +615,16 @@ function ProjectsPage() {
   if (groups.length === 0) {
     return (
       <>
-        <PageHeader
-          title="Projects"
-          actions={
-            <Button
-              variant="primary"
-              onClick={() => setAdding(true)}
-              disabled={!addGate.allowed}
-              title={addGate.reason ?? undefined}
-            >
-              Add task
-            </Button>
-          }
-        />
+        <Toolbar>
+          <Button
+            variant="primary"
+            onClick={() => setAdding(true)}
+            disabled={!addGate.allowed}
+            title={addGate.reason ?? undefined}
+          >
+            Add task
+          </Button>
+        </Toolbar>
         <TaskWriteStatus />
         <StateBlock
           state={data.todos.status === "error" ? "error" : "empty"}
@@ -635,27 +638,21 @@ function ProjectsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Projects"
-        subtitle="Grouped by project, then area"
-        actions={
-          <>
-            <Button
-              variant="primary"
-              onClick={() => setAdding(true)}
-              disabled={!addGate.allowed}
-              title={addGate.reason ?? undefined}
-            >
-              Add task
-            </Button>
-            <FreshnessTag
-              status={data.todos.status}
-              updatedAt={data.todos.updatedAt}
-              checkedAt={data.checkedAt}
-            />
-          </>
-        }
-      />
+      <Toolbar>
+        <Button
+          variant="primary"
+          onClick={() => setAdding(true)}
+          disabled={!addGate.allowed}
+          title={addGate.reason ?? undefined}
+        >
+          Add task
+        </Button>
+        <FreshnessTag
+          status={data.todos.status}
+          updatedAt={data.todos.updatedAt}
+          checkedAt={data.checkedAt}
+        />
+      </Toolbar>
       <MutationNotice notice={mutationNotice} onRetry={() => void refresh()} />
       <TaskWriteStatus />
       <div className="vv-stack">
@@ -689,11 +686,6 @@ export const tasksPageManifest: PageManifest = {
   id: "tasks",
   label: "Tasks",
   pages: [
-    { id: "today", label: "Today", icon: "today", Component: TodayPage },
-    { id: "tasks", label: "Tasks", icon: "check", Component: TasksPage },
-    { id: "inbox", label: "Inbox", icon: "inbox", Component: InboxPage },
-    { id: "upcoming", label: "Upcoming", icon: "calendar", Component: UpcomingPage },
-    { id: "flagged", label: "Flagged", icon: "flag", Component: FlaggedPage },
-    { id: "projects", label: "Projects", icon: "projects", Component: ProjectsPage },
+    { id: "tasks", label: "Tasks", icon: "check", Component: TasksHubPage },
   ],
 }

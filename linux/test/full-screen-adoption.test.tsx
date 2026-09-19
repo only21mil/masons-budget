@@ -13,7 +13,6 @@ import { AppShell } from "../src/renderer/components/AppShell.tsx"
 import { PaymentRailGlyph } from "../src/renderer/components/LedgerFoundations.tsx"
 import {
   ledgerAwards,
-  moreCountLabel,
 } from "../src/renderer/pages/admin/index.tsx"
 import {
   activityMatchesFilter,
@@ -116,22 +115,22 @@ test("Today retains completed due rows and joins them with scoped money out", ()
     date: "2026-07-26",
     merchant: "Today proof merchant",
   }
-  const markup = renderRoute("today", "victor", {
+  const markup = renderRoute("tasks", "victor", {
     ...data,
     todos: { ...data.todos, value: [completed] },
     transactions: { ...data.transactions, value: [todaySpend] },
   })
 
   assert.ok(todayLedgerTaskFilter("2026-07-26")(completed))
-  assert.match(markup, /Due today or overdue, including completed tasks/)
+  assert.match(markup, /Today tasks with task actions/)
   assert.match(markup, /Completed today proof/)
   assert.match(markup, /vv-task-complete/)
   assert.match(markup, /Money out today/)
   assert.match(markup, /Today proof merchant/)
 })
 
-test("Family, Settings, onboarding, Awards, Tasks, and More close the packet gaps", () => {
-  for (const route of ["tasks", "awards", "more"]) {
+test("Family, Settings, onboarding, Awards, and Tasks close the packet gaps", () => {
+  for (const route of ["tasks", "awards"]) {
     assert.ok(ALL_PAGES.some((page) => page.id === route), `${route} route is missing`)
   }
 
@@ -163,16 +162,6 @@ test("Family, Settings, onboarding, Awards, Tasks, and More close the packet gap
   assert.match(onboarding, /Everything in BTC, sats, or dollars/)
   assert.match(onboarding, /aria-label="Step 1 of 3"/)
   assert.equal((onboarding.match(/vv-onboarding__progress/g) ?? []).length, 1)
-
-  const more = renderRoute("more")
-  for (const copy of ["BTC Buys", "BTC Bill Pays", "Net Worth", "Retirement", "Today", "Tasks", "Family", "Settings", "Awards"]) {
-    assert.match(more, new RegExp(copy))
-  }
-  assert.doesNotMatch(more, /Export/)
-
-  assert.equal(moreCountLabel(0), "")
-  assert.equal(moreCountLabel(8), "8")
-  assert.equal(moreCountLabel(1_000), "999+")
 
   const awards = ledgerAwards(1, 1, 1)
   assert.deepEqual(

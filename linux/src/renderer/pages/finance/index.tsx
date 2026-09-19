@@ -982,7 +982,7 @@ function DashboardPage() {
   return (
     <>
       <PageHeader
-        title="Dashboard"
+        title="Home"
         showDisplayUnit
         subtitle={`${isAdult(activeProfile) ? "Household command center" : `${displayName(activeProfile)}'s money`} · ${monthLabel(month)}`}
         actions={
@@ -2437,7 +2437,6 @@ function NetWorthPage() {
           />
         </Panel>
       </PageGrid>
-      <RetirementAccountsPanel accounts={accounts} />
       <Panel title="Market quote snapshot" source="Operational prices · never inferred from buys" flush>
         {overrideState ? (
           <StateBlock state={overrideState} detail="No QA fixture is presented as a market quote." />
@@ -2453,20 +2452,98 @@ function NetWorthPage() {
   )
 }
 
+// ── Bitcoin hub (Overview | Net Worth | Retirement) ─────────────────────────
+
+const BITCOIN_SEGMENTS = [
+  { id: "overview", label: "Overview" },
+  { id: "net-worth", label: "Net Worth" },
+  { id: "retirement", label: "Retirement" },
+] as const
+
+function BitcoinSegmentNav() {
+  const { bitcoinSegment, setBitcoinSegment } = useAppState()
+
+  return (
+    <div className="vv-filter-chips vv-bitcoin-segments" role="group" aria-label="Bitcoin views">
+      {BITCOIN_SEGMENTS.map((segment) => (
+        <Button
+          key={segment.id}
+          variant={bitcoinSegment === segment.id ? "primary" : "secondary"}
+          aria-pressed={bitcoinSegment === segment.id}
+          onClick={() => setBitcoinSegment(segment.id)}
+        >
+          {segment.label}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+function BitcoinMoreLinks() {
+  const { navigate } = useAppState()
+
+  return (
+    <Panel title="More Bitcoin" source="Buys, bill pays, and price stay one click away">
+      <div className="vv-row">
+        <Button variant="secondary" onClick={() => navigate("bitcoin-buys")}>
+          Bitcoin Buys
+        </Button>
+        <Button variant="secondary" onClick={() => navigate("bills")}>
+          Bill Pays
+        </Button>
+        <Button variant="secondary" onClick={() => navigate("price")}>
+          Price
+        </Button>
+      </div>
+    </Panel>
+  )
+}
+
+function RetirementSegmentPage() {
+  const { activeProfile, financeModel } = useAppState()
+  const accounts = financeAccounts(activeProfile, financeModel)
+
+  return (
+    <>
+      <PageHeader
+        title="Retirement"
+        showDisplayUnit
+        subtitle="Net-worth-scoped retirement accounts for this profile"
+      />
+      <RetirementAccountsPanel accounts={accounts} />
+    </>
+  )
+}
+
+function BitcoinPage() {
+  const { bitcoinSegment } = useAppState()
+
+  return (
+    <>
+      <BitcoinSegmentNav />
+      {bitcoinSegment === "overview" ? (
+        <>
+          <BitcoinOverviewPage />
+          <BitcoinMoreLinks />
+        </>
+      ) : null}
+      {bitcoinSegment === "net-worth" ? <NetWorthPage /> : null}
+      {bitcoinSegment === "retirement" ? <RetirementSegmentPage /> : null}
+    </>
+  )
+}
+
 // ── Manifest ────────────────────────────────────────────────────────────────
 
 export const financePageManifest: PageManifest = {
   id: "finance",
   label: "Finance",
   pages: [
-    { id: "dashboard", label: "Dashboard", icon: "dashboard", Component: DashboardPage },
+    { id: "home", label: "Home", icon: "home", Component: DashboardPage },
     { id: "budget", label: "Budget", icon: "banknote", Component: BudgetPage },
     { id: "activity", label: "Activity", icon: "activity", Component: ActivityPage },
-    { id: "bitcoin", label: "Bitcoin Overview", icon: "bitcoin", Component: BitcoinOverviewPage },
+    { id: "bitcoin", label: "Bitcoin", icon: "bitcoin", Component: BitcoinPage },
     { id: "bitcoin-buys", label: "Bitcoin Buys", icon: "wallet", Component: BitcoinBuysPage },
     { id: "bills", label: "Bills", icon: "receipt", Component: BillsPage },
-    // Retirement has no tab of its own: its accounts and total live on Net
-    // Worth, which is the only page that already combines both scopes.
-    { id: "net-worth", label: "Net Worth", icon: "bank", Component: NetWorthPage },
   ],
 }

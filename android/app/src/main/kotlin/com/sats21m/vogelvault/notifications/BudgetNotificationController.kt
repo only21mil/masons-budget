@@ -133,7 +133,6 @@ internal class AndroidBudgetAlertPublisher(
     }
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,

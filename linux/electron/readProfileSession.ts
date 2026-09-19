@@ -25,7 +25,6 @@ function isMember(value: unknown): value is VogelVaultMember {
 export interface ReadProfileSessions<Key extends object> {
   activate(key: Key, profile: unknown): VogelVaultReadProfileResult
   current(key: Key): VogelVaultMember
-  forget(key: Key): void
 }
 
 export function createReadProfileSessions<Key extends object>(
@@ -44,10 +43,6 @@ export function createReadProfileSessions<Key extends object>(
 
     current(key): VogelVaultMember {
       return sessions.get(key) ?? initialProfile
-    },
-
-    forget(key): void {
-      sessions.delete(key)
     },
   }
 }

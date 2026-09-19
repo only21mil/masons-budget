@@ -1,11 +1,36 @@
 import SwiftUI
 
+enum BitcoinSegment: String, CaseIterable, Identifiable {
+    case overview, netWorth, retirement
+
+    var id: String {
+        rawValue
+    }
+
+    var label: String {
+        switch self {
+        case .overview: "Overview"
+        case .netWorth: "Net Worth"
+        case .retirement: "Retirement"
+        }
+    }
+
+    var eyebrow: String {
+        switch self {
+        case .overview: "Overview"
+        case .netWorth: "Recorded history"
+        case .retirement: "The Long Stack"
+        }
+    }
+}
+
 struct BitcoinOverviewView: View {
     @Environment(\.ledgerTokens) private var ledgerTokens
     @Environment(\.theme) private var theme
     @Environment(CanonicalFinancialSourceStore.self) private var canonicalFinancials
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
 
+    @State private var segment: BitcoinSegment = .overview
     @State private var compose: BitcoinComposeRoute?
     @AppStorage("selected_family_member") private var memberRaw = FamilyMember.victor.rawValue
     private var isAdult: Bool { FamilyMember(rawValue: memberRaw)?.isAdult == true }
@@ -23,10 +48,44 @@ struct BitcoinOverviewView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            ScreenHeader(title: "Bitcoin", eyebrow: segment.eyebrow)
+            segmentPicker
+                .padding(.horizontal, ledgerTokens.metrics.screenGutter)
+                .padding(.bottom, 12)
+
+            switch segment {
+            case .overview:
+                overviewContent
+            case .netWorth:
+                NetWorthView()
+            case .retirement:
+                RetirementView()
+            }
+        }
+        .background(theme.bg)
+        .safeAreaInset(edge: .bottom) {
+            if segment == .overview {
+                actionFooter
+            }
+        }
+        .sheet(item: $compose) { route in
+            switch route {
+            case .buy:
+                AddTransactionView(initialType: .btcBuy)
+            case .billPay:
+                BTCBillPayComposeView()
+            case .transfer:
+                NavigationStack { BitcoinTransferView() }
+            case .account:
+                AddBitcoinAccountView()
+            }
+        }
+    }
+
+    private var overviewContent: some View {
         ScrollView {
             VStack(spacing: 0) {
-                ScreenHeader(title: "Bitcoin", eyebrow: "Overview")
-
                 if let balance {
                     stackCard(balance)
                         .padding(.horizontal, ledgerTokens.metrics.screenGutter)
@@ -61,22 +120,18 @@ struct BitcoinOverviewView: View {
             }
             .padding(.bottom, 112)
         }
-        .background(theme.bg)
-        .safeAreaInset(edge: .bottom) {
-            actionFooter
-        }
-        .sheet(item: $compose) { route in
-            switch route {
-            case .buy:
-                AddTransactionView(initialType: .btcBuy)
-            case .billPay:
-                BTCBillPayComposeView()
-            case .transfer:
-                NavigationStack { BitcoinTransferView() }
-            case .account:
-                AddBitcoinAccountView()
+    }
+
+    private var segmentPicker: some View {
+        HStack(spacing: LedgerMetrics.siblingChipSpacing) {
+            ForEach(BitcoinSegment.allCases) { item in
+                PillButton(label: item.label, isActive: segment == item, accent: true) {
+                    segment = item
+                }
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Bitcoin section")
     }
 
     private func stackCard(_ balance: CanonicalBTCBalance) -> some View {
@@ -690,11 +745,7 @@ struct AddBitcoinAccountView: View {
     }
 
     static func defaultAsOf(date: Date = .now) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date) + "T00:00:00.000Z"
+        LegacyTransactionDTO.dateString(from: date) + "T00:00:00.000Z"
     }
 }
 

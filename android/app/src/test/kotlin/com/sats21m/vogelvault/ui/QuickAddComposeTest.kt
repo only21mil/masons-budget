@@ -70,7 +70,7 @@ class QuickAddComposeTest {
         controller.get().setTheme(R.style.Theme_VogelVault)
         controller.setup()
         try {
-            val state = mutableStateOf(VaultUiState(destination = Destination.TODAY))
+            val state = mutableStateOf(VaultUiState(destination = Destination.TASKS))
             controller.get().setContent {
                 VogelVaultTheme { VaultApp(state.value, {}, {}) }
             }

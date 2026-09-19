@@ -40,32 +40,6 @@ export type TestConvexInstance = ReturnType<typeof testConvex>;
 // `anyApi` is untyped by design; spelling the argument shapes out here keeps the
 // tests type-checked against the real signatures without needing codegen.
 
-type TodoPayload = Record<string, unknown>;
-type DeviceTodoPayload = {
-  id: string;
-  owner: DeviceProfile;
-  title: string;
-  done: boolean;
-  flagged: boolean;
-  lane?: string;
-  project?: string;
-  area?: string;
-  due?: string;
-  notes?: string;
-  priority?: bigint;
-  createdAt?: string;
-  updatedAt?: string;
-  completedAt?: string;
-};
-
-type DeviceTodoAuthority = {
-  deviceId: string;
-  deviceToken: string;
-  activeProfile?: DeviceProfile;
-  owner: DeviceProfile;
-  sourceFile: "todos";
-};
-
 export const api = {
   get: "dataFiles:get" as unknown as FunctionReference<
     "query",
@@ -115,47 +89,6 @@ export const api = {
         complete: true;
       }
     >,
-  sync: "dataFiles:sync" as unknown as FunctionReference<
-    "mutation",
-    "public",
-    { name: string; data: unknown; token?: string },
-    { name: string; version: number }
-  >,
-  syncBatch: "dataFiles:syncBatch" as unknown as FunctionReference<
-    "mutation",
-    "public",
-    { files: { name: string; data: unknown }[]; token?: string },
-    { name: string; version: number }[]
-  >,
-  appendTransaction:
-    "dataFiles:appendTransaction" as unknown as FunctionReference<
-      "mutation",
-      "public",
-      {
-        name?: "transactions" | "mason-transactions";
-        transaction: {
-          id: string;
-          date: string;
-          merchant: string;
-          amount: number;
-          category: string;
-        };
-        token?: string;
-      },
-      { name: string; version: number; id: string }
-    >,
-  upsertTodo: "dataFiles:upsertTodo" as unknown as FunctionReference<
-    "mutation",
-    "public",
-    { name?: "todos"; todo: TodoPayload; token?: string },
-    { name: string; version: number; id: string; applied: boolean }
-  >,
-  removeTodo: "dataFiles:removeTodo" as unknown as FunctionReference<
-    "mutation",
-    "public",
-    { todoId: string; token?: string },
-    { name: string; version: number; removed: boolean }
-  >,
   remove: "dataFiles:remove" as unknown as FunctionReference<
     "mutation",
     "public",
@@ -194,37 +127,6 @@ export const api = {
         pairedAt: number;
         capabilities: DeviceCapability[];
       }
-    >,
-  upsertTodoFromMobile:
-    "dataFiles:upsertTodoFromMobile" as unknown as FunctionReference<
-      "mutation",
-      "public",
-      DeviceTodoAuthority & {
-        operation?: "create" | "update";
-        baseUpdatedAtMs?: number;
-        todo: DeviceTodoPayload;
-      },
-      { ok: true; entityId: string; outcome: "inserted" | "updated" }
-    >,
-  completeTodoFromMobile:
-    "dataFiles:completeTodoFromMobile" as unknown as FunctionReference<
-      "mutation",
-      "public",
-      DeviceTodoAuthority & {
-        baseUpdatedAtMs?: number;
-        todo: DeviceTodoPayload;
-      },
-      { ok: true; entityId: string; outcome: "inserted" | "updated" }
-    >,
-  removeTodoFromMobile:
-    "dataFiles:removeTodoFromMobile" as unknown as FunctionReference<
-      "mutation",
-      "public",
-      DeviceTodoAuthority & {
-        entityId: string;
-        baseUpdatedAtMs?: number;
-      },
-      { ok: true; entityId: string; removed: boolean }
     >,
   revokeMobileDevice:
     "dataFiles:revokeMobileDevice" as unknown as FunctionReference<

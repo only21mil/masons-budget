@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -19,6 +20,7 @@ import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -37,7 +39,6 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
-import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 
 @RunWith(RobolectricTestRunner::class)
@@ -45,16 +46,16 @@ import kotlin.test.assertEquals
 class NavigationBackTest {
     @get:Rule val compose = createEmptyComposeRule()
     private lateinit var controller: ActivityController<ComponentActivity>
-    private var destination by mutableStateOf(Destination.DASHBOARD)
+    private var destination by mutableStateOf(Destination.HOME)
     @Before fun start() {
         controller = Robolectric.buildActivity(ComponentActivity::class.java)
         controller.get().setTheme(R.style.Theme_VogelVault)
         controller.setup()
     }
     @After fun stop() { controller.pause().stop().destroy() }
-    private fun render(initial: Destination, longToday: Boolean = false) {
+    private fun render(initial: Destination, longTasks: Boolean = false) {
         val fixture = Fixtures.envelope(FamilyMember.VICTOR, Freshness.LIVE)
-        val data = if (longToday) fixture.copy(todos = fixture.todos.copy(value = (1..40).map {
+        val data = if (longTasks) fixture.copy(todos = fixture.todos.copy(value = (1..40).map {
             com.sats21m.vogelvault.domain.TodoItem(id = "task-$it", title = "Task $it",
                 owner = FamilyMember.VICTOR, due = "2026-07-26")
         })) else fixture
@@ -76,33 +77,27 @@ class NavigationBackTest {
         compose.runOnIdle { controller.get().onBackPressedDispatcher.onBackPressed() }
         compose.waitForIdle()
     }
-    @Test fun `dashboard Budget link replaces a previous month selection`() {
+    @Test fun `home Budget link replaces a previous month selection`() {
         render(Destination.BUDGET)
         compose.onNodeWithContentDescription("Jun 2026 budget month").performClick().assertIsSelected()
-        compose.onNode(hasText("Dashboard") and hasClickAction()).performClick()
+        compose.onNode(hasText("Home") and hasClickAction()).performClick()
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Budget") and hasClickAction())
-        // The dashboard link is inside the scrolling content, unlike the primary tab.
+        // The home link is inside the scrolling content, unlike the primary tab.
         compose.onNode(hasText("Budget") and hasClickAction() and androidx.compose.ui.test.hasAnyAncestor(hasScrollToIndexAction())).performClick()
         compose.onNodeWithContentDescription("Jul 2026 budget month").assertIsSelected()
-        back()
-        assertEquals(Destination.DASHBOARD, destination)
+        compose.onNode(hasText("Budget") and hasClickAction() and
+            androidx.compose.ui.test.SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Tab)).assertIsSelected()
+        compose.onNodeWithText("Back").assertDoesNotExist()
     }
-    @Test fun `Today offset survives task list detail and both Back steps`() {
-        render(Destination.TODAY, longToday = true)
-        val list = compose.onNode(hasScrollToIndexAction())
-        list.performScrollToIndex(12).performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 27f) }
-        compose.waitForIdle()
-        val before = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
-        assertTrue(before > 0f)
-        compose.onNodeWithText("Task lists").performClick()
+    @Test fun `tasks hub survives smart list detail and Back`() {
+        render(Destination.TASKS, longTasks = true)
         compose.onNode(hasText("Inbox") and hasClickAction()).performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("All task lists").fetchSemanticsNode()
         back()
         assertEquals(Destination.TASKS, destination)
-        back()
-        assertEquals(Destination.TODAY, destination)
-        val after = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode()
-            .config[SemanticsProperties.VerticalScrollAxisRange].value()
-        assertEquals(before, after)
+        compose.onNode(hasText("Inbox") and hasClickAction()).assertExists()
+        compose.onNodeWithText("All task lists").assertDoesNotExist()
     }
     @Test fun `Bitcoin drilldown returns to the originating Bitcoin screen`() {
         render(Destination.BITCOIN)
@@ -114,33 +109,83 @@ class NavigationBackTest {
         assertEquals(Destination.BITCOIN, destination)
         compose.onNodeWithText("Buys · See all").fetchSemanticsNode()
     }
-    @Test fun `Settings Family Back walks both levels to Dashboard`() {
-        render(Destination.DASHBOARD)
-        compose.onNode(hasText("Victor") and hasClickAction()).performClick()
+    @Test fun `gear menu Family Back walks both levels to Home`() {
+        render(Destination.HOME)
+        compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).performClick()
         compose.onNodeWithText("Settings").performClick()
         compose.waitForIdle()
         assertEquals(Destination.SETTINGS, destination)
-        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Family") and hasClickAction())
-        compose.onNode(hasText("Family") and hasClickAction()).performScrollTo().performClick()
+        back()
+        assertEquals(Destination.HOME, destination)
+        compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).performClick()
+        compose.onNodeWithText("Family").performClick()
         compose.waitForIdle()
         assertEquals(Destination.FAMILY, destination)
         back()
-        assertEquals(Destination.SETTINGS, destination)
-        back()
-        assertEquals(Destination.DASHBOARD, destination)
+        assertEquals(Destination.HOME, destination)
     }
-    @Test fun `selected task list consumes Back before its parent route`() {
-        render(Destination.TODAY)
-        compose.onNodeWithText("Task lists").performClick()
+    @Test fun `switching adult profiles from Family returns to highlighted Home`() {
+        val viewModel = VaultViewModel(remoteInitiallyEnabled = false)
+        controller.get().setContent {
+            val state by viewModel.state.collectAsState()
+            LedgerTheme {
+                VaultApp(state = state, onNavigate = viewModel::navigate,
+                    onSwitchProfile = { viewModel.switchProfile(it) })
+            }
+        }
+        compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).performClick()
+        compose.onNodeWithText("Family").performClick()
+        // The top bar and Family body both expose a switcher. Exercise the
+        // authorized model callback shared by both, then inspect shell selection.
+        compose.runOnIdle { viewModel.switchProfile(FamilyMember.RACHEL) }
         compose.waitForIdle()
-        assertEquals(Destination.TASKS, destination)
+        assertEquals(Destination.HOME, viewModel.state.value.destination)
+        compose.onNode(hasText("Home") and hasClickAction()).assertIsSelected()
+        compose.onNodeWithText("Back").assertDoesNotExist()
+    }
+    @Test fun `Bitcoin segment survives gear Back and tab retap resets it`() {
+        render(Destination.BITCOIN)
+        compose.onNodeWithText("Net Worth").performClick().assertIsSelected()
+        compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).performClick()
+        compose.onNodeWithText("Settings").performClick()
+        back()
+        compose.onNodeWithText("Net Worth").assertIsSelected()
+        compose.onNode(hasText("Bitcoin") and hasClickAction()).performClick()
+        compose.onNodeWithText("Overview").assertIsSelected()
+    }
+    @Test fun `Bitcoin segment resets when the active profile changes`() {
+        val viewModel = VaultViewModel(remoteInitiallyEnabled = false)
+        viewModel.navigate(Destination.BITCOIN)
+        controller.get().setContent {
+            val state by viewModel.state.collectAsState()
+            LedgerTheme {
+                VaultApp(state = state, onNavigate = viewModel::navigate,
+                    onSwitchProfile = { viewModel.switchProfile(it) })
+            }
+        }
+        compose.onNodeWithText("Net Worth").performClick().assertIsSelected()
+        compose.runOnIdle { viewModel.switchProfile(FamilyMember.RACHEL) }
+        compose.onNodeWithText("Overview").assertIsSelected()
+    }
+    @Test fun `gear hops replace the secondary destination above the primary tab`() {
+        render(Destination.BITCOIN)
+        for (label in listOf("Settings", "Family", "Export")) {
+            compose.onNodeWithTag(VAULT_GEAR_MENU_TEST_TAG).performClick()
+            compose.onNodeWithText(label).performClick()
+            compose.waitForIdle()
+        }
+        back()
+        assertEquals(Destination.BITCOIN, destination)
+        compose.onNode(hasText("Bitcoin") and hasClickAction()).assertIsSelected()
+        compose.onNodeWithText("Back").assertDoesNotExist()
+    }
+    @Test fun `selected task list consumes Back before leaving Tasks`() {
+        render(Destination.TASKS)
         compose.onNode(hasText("Inbox") and hasClickAction()).performScrollTo().performClick()
         compose.waitForIdle()
         compose.onNodeWithText("All task lists").fetchSemanticsNode()
         back()
         assertEquals(Destination.TASKS, destination)
         compose.onNodeWithText("All task lists").assertDoesNotExist()
-        back()
-        assertEquals(Destination.TODAY, destination)
     }
 }

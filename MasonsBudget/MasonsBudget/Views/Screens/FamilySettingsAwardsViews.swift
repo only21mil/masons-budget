@@ -219,6 +219,8 @@ struct SettingsView: View {
                 VStack(spacing: 0) {
                     settingsLink("FAMILY", icon: "person.3.fill", destination: FamilyView())
                     Hairline(indent: 54)
+                    settingsLink("AWARDS", icon: "medal.fill", destination: AwardsView())
+                    Hairline(indent: 54)
                     settingsLink("SYNC SETUP", icon: "arrow.triangle.2.circlepath", destination: SyncSetupView())
                     Hairline(indent: 54)
                     settingsLink("EXPORT", icon: "square.and.arrow.up", destination: ExportView())

@@ -22,40 +22,24 @@ Boundary shape, in one line:
 
     raw legacy map -> Todo.normalize(raw, nowMillis) -> CanonicalTodo -> toTodoItem() -> TodoItem -> UI
 
-## Status, 2026-07-26
+## Status, 2026-09-18
 
-- **`ui/TodoScreen.kt`, the Today screen** — adopted. It filters on the single
-  canonical `due` spelling and knows nothing about field aliases. (`ui/TodayLogic.kt`
-  filters the same rows with `isDueBy`, the contract's own open-and-due rule, for
-  read-only surfaces; the editable screen is deliberately wider, because a
-  completed task has to stay visible to be reopened.) The one thing the screen
-  interprets is `UNFILED_TODO_PROJECT`: the
-  normaliser fills `project` with `"Inbox"` for an unfiled todo rather than
-  leaving it unset, so the row treats that value as "not filed" and falls through
-  to the area. The Linux client's Tasks page carries the identical rule
-  (`filingOf` in `linux/src/renderer/pages/tasks/index.tsx`), and its dialect
-  suite pins it.
-- **`domain/Fixtures.kt`** — not yet. It hand-builds `TodoItem`s, so the sample
-  data never exercises the normaliser. The Linux fixtures now author raw legacy
-  dialects and route them through `normalizeTodoRecord`; this is the same change
-  in Kotlin, and it belongs to whoever owns `android/domain` next.
-- **The legacy Convex blob path** — still raw. A todo map decoded from the
-  `dataFiles` blob must go through `Todo.normalize(...).toTodoItem()` and
-  nothing else. Do not add a second alias reader in a repository or view model.
-- **The public Convex row path (`tables:listTodos`)** — adopted by the transport.
-  The server projects the already-canonical row schema (`todoId`, `title`,
-  `done`, and the single canonical spelling of every optional field), so
-  `RowQueryRepository` validates that projection directly and maps it to
-  `TodoItem`. It must not run the canonical row back through the raw legacy alias
-  normalizer. Unknown owners or any malformed row reject the whole envelope;
-  the transport never drops a bad todo and presents a plausible partial list.
-- **Writeback (`ui/TodoMutationGateway.kt`)** — partly adopted. `toMutationJson`
-  emits the same dual-spelling wire record as `Todo.wireRecord` and carries every
-  metadata field the row arrived with, so an edit cannot erase notes, priority,
-  lane or timestamps. It is not yet routed through `Todo.normalizeWire(...)`, which
-  is where it belongs, and single-row writes here do not merge: the server's own
-  `>=` last-write-wins decides. Multi-row convergence still owes
-  `mergeTodos`/`reconcileTodos`.
+- **`ui/TaskListsScreen.kt`** is the live task destination. It consumes canonical
+  `TodoItem` rows, including completed tasks that can be reopened. The retired
+  Today screen and its money-out projection have been removed.
+- **`domain/Fixtures.kt`** builds `TodoItem` samples directly. Legacy normalization
+  is covered separately by the shared parity fixtures.
+- **The legacy Convex blob reader** remains compatibility code with no live
+  Android caller. If a legacy todo blob is consumed, its maps must pass through
+  `Todo.normalize(...).toTodoItem()`; do not introduce another alias reader.
+- **The public Convex row path (`tables:listTodos`)** serves live Android reads.
+  `RowQueryRepository` validates the canonical server projection and maps it to
+  `TodoItem` without running it through the legacy alias normalizer. Unknown
+  owners or malformed rows reject the envelope rather than hide missing tasks.
+- **Writeback (`ui/TodoMutationGateway.kt`)** uses the paired-device mutation
+  client. Its retained `toMutationJson` compatibility helper is test-only; it is
+  not the live task write path. Shared parity tests continue to pin legacy wire
+  normalization and merge rules.
 
 ## Why the fixture, not the unit test, is the contract
 

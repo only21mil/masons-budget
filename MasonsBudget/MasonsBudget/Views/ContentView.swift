@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - iOS Tabs
 
 enum AppTab: String, CaseIterable, Identifiable {
-    case home, activity, budget, tasks
+    case home, budget, activity, bitcoin, tasks
 
     var id: String {
         rawValue
@@ -15,6 +15,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .home: "Home"
         case .budget: "Budget"
         case .activity: "Activity"
+        case .bitcoin: "Bitcoin"
         case .tasks: "Tasks"
         }
     }
@@ -24,6 +25,7 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .home: "house.fill"
         case .budget: "chart.bar.fill"
         case .activity: "bolt.fill"
+        case .bitcoin: "bitcoinsign.circle.fill"
         case .tasks: "checkmark.circle.fill"
         }
     }
@@ -38,8 +40,7 @@ enum AppTab: String, CaseIterable, Identifiable {
 // MARK: - macOS Sidebar Navigation
 
 enum MacNav: String, CaseIterable, Identifiable {
-    case dashboard, price, budget, activity, btcBuys, billPay, transfer, retirement, netWorth
-    case today, inbox, upcoming, flagged, tasks, family, awards, settings, syncSetup, export
+    case home, budget, activity, bitcoin, tasks
 
     var id: String {
         rawValue
@@ -47,55 +48,33 @@ enum MacNav: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .dashboard: "Bitcoin"
-        case .price: "Price"
+        case .home: "Home"
         case .budget: "Budget"
         case .activity: "Activity"
-        case .btcBuys: "Bitcoin Buys"
-        case .billPay: "Bill Pay"
-        case .transfer: "Transfer"
-        case .retirement: "Retirement"
-        case .netWorth: "Net Worth"
-        case .today: "Today"
-        case .inbox: "Inbox"
-        case .upcoming: "Upcoming"
-        case .flagged: "Flagged"
+        case .bitcoin: "Bitcoin"
         case .tasks: "Tasks"
-        case .family: "Family"
-        case .awards: "Awards"
-        case .settings: "Settings"
-        case .syncSetup: "Sync Setup"
-        case .export: "Export"
         }
     }
 
     var icon: String {
         switch self {
-        case .dashboard: "bitcoinsign.circle"
-        case .price: "chart.xyaxis.line"
+        case .home: "house.fill"
         case .budget: "chart.bar.fill"
         case .activity: "bolt.fill"
-        case .btcBuys: "bitcoinsign.circle.fill"
-        case .billPay: "banknote.fill"
-        case .transfer: "arrow.left.arrow.right"
-        case .retirement: "lock.shield.fill"
-        case .netWorth: "target"
-        case .today: "checkmark.circle"
-        case .inbox: "tray"
-        case .upcoming: "calendar"
-        case .flagged: "flag.fill"
-        case .tasks: "tray.fill"
-        case .family: "person.3.fill"
-        case .awards: "medal.fill"
-        case .settings: "gearshape"
-        case .syncSetup: "arrow.triangle.2.circlepath"
-        case .export: "square.and.arrow.up"
+        case .bitcoin: "bitcoinsign.circle.fill"
+        case .tasks: "checkmark.circle.fill"
         }
     }
 
-    static let moneyItems: [MacNav] = [.dashboard, .price, .budget, .activity, .btcBuys, .billPay, .transfer, .retirement, .netWorth]
-    static let taskItems: [MacNav] = [.today, .inbox, .upcoming, .flagged, .tasks]
-    static let toolItems: [MacNav] = [.family, .awards, .settings, .syncSetup, .export]
+    static let primaryItems = allCases
+}
+
+enum GearDestination: String, CaseIterable, Identifiable {
+    case family, settings, export
+
+    var id: String {
+        rawValue
+    }
 }
 
 // MARK: - Content View
@@ -122,7 +101,7 @@ struct ContentView: View {
     @State private var readRetryTask: Task<Void, Never>?
     @State private var showAddTransaction = false
     @State private var showProfileSwitcher = false
-    @State private var showAccountMenu = false
+    @State private var gearDestination: GearDestination?
     @State private var showTaskEntry = false
     @State private var showAddChoices = false
     @State private var entryUnavailable = false
@@ -130,7 +109,17 @@ struct ContentView: View {
     @State private var addType: TransactionActivityType = .spend
 
     #if os(macOS)
-        @State private var macNav: MacNav? = .dashboard
+        @State private var macNav: MacNav? = .home
+    #endif
+
+    #if MAC_DESIGN_PACKET && os(macOS)
+        @State private var packetPath: [MacPacketDestination] = []
+
+        init(packetTab: AppTab, destination: MacPacketDestination? = nil) {
+            _selectedTab = State(initialValue: packetTab)
+            _macNav = State(initialValue: MacNav(rawValue: packetTab.rawValue))
+            _packetPath = State(initialValue: destination.map { [$0] } ?? [])
+        }
     #endif
 
     var activeMember: FamilyMember {
@@ -177,7 +166,6 @@ struct ContentView: View {
         }
         .onDisappear { cancelReadRetry() }
         #if os(macOS)
-        .safeAreaInset(edge: .top, spacing: 0) { syncBanner }
         .safeAreaInset(edge: .bottom) { undoBanner }
         #endif
         .sheet(isPresented: $showAddTransaction) {
@@ -189,8 +177,15 @@ struct ContentView: View {
         .sheet(isPresented: $showProfileSwitcher) {
             ProfileSwitcherView()
         }
-        .sheet(isPresented: $showAccountMenu) {
-            NavigationStack { MoreMenuView() }
+        .sheet(item: $gearDestination) { destination in
+            NavigationStack {
+                gearDestinationView(destination)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { gearDestination = nil }
+                        }
+                    }
+            }
         }
         .sheet(isPresented: $showTaskEntry) {
             NavigationStack {
@@ -225,10 +220,11 @@ struct ContentView: View {
                         // NavigationStack to forward a safe-area inset to its scroll content.
                         syncBanner
                         NavigationStack {
-                            screenForTab(tab)
+                            screenForTab(tab, selection: $selectedTab)
                                 .environment(\.ledgerRootTitle, tab.label)
                                 .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
-                                    avatarButton
+                                    profileButton
+                                    gearMenuButton
                                     syncStatusGlyph
                                     addButton
                                 }))
@@ -270,10 +266,10 @@ struct ContentView: View {
                     .padding(.bottom, 12)
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        macSidebarSection("Money", items: MacNav.moneyItems)
-                        macSidebarSection("Tasks", items: MacNav.taskItems)
-                        macSidebarSection("Tools", items: MacNav.toolItems)
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(MacNav.primaryItems) { item in
+                            macSidebarRow(item)
+                        }
                     }
                     .padding(.horizontal, 8)
                 }
@@ -283,24 +279,8 @@ struct ContentView: View {
             .background(theme.bg)
         }
 
-        /// Sidebar rows drawn with ledger roles and tokens instead of the
-        /// system sidebar list: tier ink at rest, accent glyph on a soft fill
-        /// when selected.
-        private func macSidebarSection(_ title: String, items: [MacNav]) -> some View {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .ledgerType(.sectionLabel)
-                    .foregroundStyle(theme.textMuted)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 4)
-                ForEach(items) { item in
-                    macSidebarRow(item)
-                }
-            }
-        }
-
         private func macSidebarRow(_ item: MacNav) -> some View {
-            let isSelected = (macNav ?? .dashboard) == item
+            let isSelected = (macNav ?? .home) == item
             return Button {
                 macNav = item
             } label: {
@@ -326,39 +306,43 @@ struct ContentView: View {
             .accessibilityAddTraits(isSelected ? .isSelected : [])
         }
 
+        private var macTabBinding: Binding<AppTab> {
+            Binding(
+                get: { AppTab(rawValue: (macNav ?? .home).rawValue) ?? .home },
+                set: { macNav = MacNav(rawValue: $0.rawValue) ?? .home },
+            )
+        }
+
         private var macDetail: some View {
-            NavigationStack {
-                switch macNav ?? .dashboard {
-                case .dashboard: BitcoinOverviewView()
-                case .price: BitcoinPriceView()
-                case .budget: BudgetView()
-                case .activity: ActivityView()
-                case .btcBuys: BTCBuysView()
-                case .billPay: BTCBillPayView()
-                case .transfer: BitcoinTransferView()
-                case .retirement: RetirementView()
-                case .netWorth: NetWorthView()
-                case .today: TodayView()
-                case .inbox: TaskSmartListView(filter: .inbox)
-                case .upcoming: TaskSmartListView(filter: .upcoming)
-                case .flagged: TaskSmartListView(filter: .flagged)
-                case .tasks: TasksView()
-                case .family: FamilyView()
-                case .awards: AwardsView()
-                case .settings: SettingsView()
-                case .syncSetup: SyncSetupView()
-                case .export: ExportView()
-                }
+            let tab = macTabBinding.wrappedValue
+            return VStack(spacing: 0) {
+                syncBanner
+                #if MAC_DESIGN_PACKET
+                    NavigationStack(path: $packetPath) {
+                        macRoot(tab)
+                            .navigationDestination(for: MacPacketDestination.self) { destination in
+                                switch destination {
+                                case .billPay: LedgerDrilldown(title: "Bill Pay") { BTCBillPayView() }
+                                case .awards: LedgerDrilldown(title: "Awards") { AwardsView() }
+                                }
+                            }
+                    }
+                    .id(macNav)
+                #else
+                    NavigationStack { macRoot(tab) }
+                        .id(macNav)
+                #endif
             }
-            .id(macNav)
-            .overlay(alignment: .topTrailing) {
-                HStack(spacing: 8) {
+        }
+
+        private func macRoot(_ tab: AppTab) -> some View {
+            screenForTab(tab, selection: macTabBinding)
+                .environment(\.ledgerRootTitle, tab.label)
+                .environment(\.ledgerRootAccessory, AnyView(HStack(spacing: 8) {
+                    gearMenuButton
                     syncStatusGlyph
                     appearanceToggle
-                }
-                .padding(.top, 12)
-                .padding(.trailing, 20)
-            }
+                }))
         }
 
         private var appearanceToggle: some View {
@@ -503,9 +487,9 @@ struct ContentView: View {
 
     // MARK: - Shared Components
 
-    private var avatarButton: some View {
+    private var profileButton: some View {
         Button {
-            showAccountMenu = true
+            showProfileSwitcher = true
         } label: {
             RoundedRectangle(cornerRadius: 10)
                 .fill(theme.accentFill)
@@ -520,7 +504,37 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .frame(minWidth: LedgerMetrics.minimumHitTarget, minHeight: LedgerMetrics.minimumHitTarget)
-        .accessibilityLabel("Profile and settings")
+        .accessibilityLabel("Switch profile")
+    }
+
+    private var gearMenuButton: some View {
+        Menu {
+            Button("Family", systemImage: "person.3.fill") { gearDestination = .family }
+            Button("Settings", systemImage: "gearshape") { gearDestination = .settings }
+            Button("Export", systemImage: "square.and.arrow.up") { gearDestination = .export }
+        } label: {
+            Image(systemName: "gearshape")
+                .font(AppFont.icon(size: 14, weight: .semibold))
+                .foregroundStyle(theme.textMuted)
+                .frame(width: 32, height: 32)
+                .background(theme.surface2)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .frame(minWidth: LedgerMetrics.minimumHitTarget, minHeight: LedgerMetrics.minimumHitTarget)
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Family, settings, and export")
+    }
+
+    @ViewBuilder
+    private func gearDestinationView(_ destination: GearDestination) -> some View {
+        switch destination {
+        case .family:
+            LedgerDrilldown(title: "Family") { FamilyView() }
+        case .settings:
+            LedgerDrilldown(title: "Settings") { SettingsView() }
+        case .export:
+            LedgerDrilldown(title: "Export") { ExportView() }
+        }
     }
 
     private var addButton: some View {
@@ -739,11 +753,12 @@ struct ContentView: View {
     // MARK: - Screen Routing
 
     @ViewBuilder
-    private func screenForTab(_ tab: AppTab) -> some View {
+    private func screenForTab(_ tab: AppTab, selection: Binding<AppTab>) -> some View {
         switch tab {
-        case .home: HomeDashboardView(hasReadToken: ConvexConfig.hasReadToken)
+        case .home: HomeDashboardView(hasReadToken: ConvexConfig.hasReadToken, selectedTab: selection)
         case .budget: BudgetView()
         case .activity: ActivityView()
+        case .bitcoin: BitcoinOverviewView()
         case .tasks: TasksView()
         }
     }
