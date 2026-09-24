@@ -50,6 +50,25 @@ This path never invokes the one-shot blob-to-row migration, writes legacy
 The retained migration runbook is provenance, not a monthly synchronization
 tool.
 
+## Corrections
+
+A wrong row is fixed by a `transaction` op that carries the full corrected
+row plus `supersedes_record_id` — the `record_id` of the wrong row it
+replaces. The operator inserts the corrected row under a new stable ID, then
+deletes the wrong row and tombstones its natural key, so the wrong row can
+never be re-imported and the charge is never double-counted. The manifest
+digest binds the supersede link, so a reviewed plan cannot be redirected at a
+different row.
+
+- The target must exist (or already be tombstoned, for idempotent replay).
+- A correction that changes nothing but the row identity is rejected; so is a
+  self-supersede and a correction of a posted balance transaction.
+- The superseded row is excluded from the semantic duplicate scan, so a
+  note-only correction does not false-positive; corrected content that
+  duplicates any other live row is still rejected.
+- Live category validation applies to corrections exactly as it does to new
+  rows.
+
 ## Dry run, apply, and readback
 
 1. **Dry run:** validate target, manifest schema, privacy boundary, stable-ID

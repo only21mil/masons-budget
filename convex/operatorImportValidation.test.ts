@@ -153,3 +153,44 @@ describe("operatorImportValidation", () => {
     ))).toThrowError(OperatorImportValidationError);
   });
 });
+
+describe("transaction corrections (validation)", () => {
+  it("accepts a correction op and carries the supersede link into canonical JSON", async () => {
+    const op = transaction({
+      op_id: "correct-op",
+      record_id: "tx-1-corrected",
+      source_locator: "receipt/1c",
+      supersedes_record_id: "tx-1",
+    });
+    const parsed = parseOperatorImportEnvelope(batch([op]));
+    expect(parsed.ops[0]?.kind === "transaction" && parsed.ops[0].supersedes_record_id).toBe("tx-1");
+    const canonical = await canonicalizeOperatorImportEnvelope(batch([op]));
+    expect(canonical.canonical_json).toContain('"supersedes_record_id":"tx-1"');
+  });
+
+  it("rejects a self-supersede without echoing row contents", () => {
+    try {
+      parseOperatorImportEnvelope(batch([transaction({ supersedes_record_id: "tx-1" })]));
+      throw new Error("expected validation failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(OperatorImportValidationError);
+      expect((error as OperatorImportValidationError).code).toBe("CORRECTION_SELF_REFERENCE");
+      expect(String(error)).not.toContain("Costco");
+    }
+  });
+
+  it("rejects the supersede link on non-transaction kinds", () => {
+    expect(() => parseOperatorImportEnvelope(batch([{
+      kind: "income", op_id: "in-op", record_id: "in-1",
+      source_locator: "payroll/1", owner: "victor",
+      source_file: "income", date: "2026-07-31",
+      amount_cents: "100", source: "Employer",
+      supersedes_record_id: "in-0",
+    }]))).toThrowError(OperatorImportValidationError);
+  });
+
+  it("leaves non-correction transactions untouched", async () => {
+    const canonical = await canonicalizeOperatorImportEnvelope(batch([transaction()]));
+    expect(canonical.canonical_json).not.toContain("supersedes_record_id");
+  });
+});

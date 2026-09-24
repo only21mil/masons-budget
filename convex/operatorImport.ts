@@ -63,6 +63,16 @@ type ExpectedRow = {
   readonly sourceFile: string;
   readonly content: Readonly<Record<string, StableValue | undefined>>;
   readonly existing: LedgerDoc | undefined;
+  // Set for a transaction correction op: the wrong row this op replaces.
+  // targetRow is undefined when the target is already gone and tombstoned
+  // (a replay, or a device-side delete) — then only the corrected row is inserted.
+  readonly correction:
+    | {
+        readonly targetKey: string;
+        readonly targetRecordId: string;
+        readonly targetRow: LedgerDoc | undefined;
+      }
+    | undefined;
 };
 type BudgetPlan = {
   readonly document: Doc<"budgetDocuments">;
@@ -310,6 +320,31 @@ function naturalKeyForStored(row: LedgerDoc): string {
   return `btc_bill_pay\u0000${row.sourceFile}\u0000${row.billPayId}`;
 }
 
+// True when the corrected content differs from the superseded row in anything
+// but the row identity: a correction that changes nothing is a no-op re-key
+// and is rejected rather than churning the ledger.
+function correctionChangesRow(
+  targetRow: LedgerDoc,
+  content: Readonly<Record<string, StableValue | undefined>>,
+): boolean {
+  const expected = { ...content };
+  const stored = { ...storedContent(targetRow) };
+  delete expected.txId;
+  delete stored.txId;
+  return !sameStableContent(stored, expected);
+}
+
+// The natural key of the wrong row a transaction correction op replaces.
+// Corrections always target transactions, so the key carries the
+// transaction prefix regardless of the corrected row's own key.
+function correctionTargetKey(
+  op: CanonicalOperatorImportOp,
+): string | undefined {
+  return op.kind === "transaction" && op.supersedes_record_id !== undefined
+    ? `transaction\u0000${op.source_file}\u0000${op.supersedes_record_id}`
+    : undefined;
+}
+
 function entityType(kind: ImportKind) {
   if (kind === "transaction") return "transaction" as const;
   if (kind === "btc_buy") return "btcBuy" as const;
@@ -488,10 +523,14 @@ function storedMonthIndex(value: string): number {
 async function assertNoProductionDuplicates(
   ops: readonly CanonicalOperatorImportOp[],
   ledgerRows: readonly LedgerDoc[],
+  skipKeys: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   const targetKeys = new Set(ops.map((op) => op.natural_key));
   const targetFingerprints = new Set(ops.map((op) => op.semantic_fingerprint));
   for (const row of ledgerRows) {
+    // Superseded targets are excluded: the corrected row replaces them, so
+    // their fingerprint must not trip the production duplicate guard.
+    if (skipKeys.has(naturalKeyForStored(row))) continue;
     if (targetKeys.has(naturalKeyForStored(row))) continue;
     const liveFingerprint = await semanticFingerprintForOperatorImportOp(
       semanticOpForStored(row),
@@ -615,13 +654,23 @@ async function untouchedFingerprintFor(
   tombstones: readonly Doc<"rowTombstones">[],
   budgets: readonly Doc<"budgetDocuments">[],
   targetKeys: ReadonlySet<string>,
+  skipTombstoneKeys: ReadonlySet<string> = new Set(),
   budgetSource: string | undefined,
 ): Promise<string> {
   return await fingerprint({
     rows: stateRows(
       ledgerRows.filter((row) => !targetKeys.has(naturalKeyForStored(row))),
     ),
-    tombstones: stateTombstones(tombstones),
+    // A correction's tombstone is part of the intended change, not untouched
+    // state: exclude supersede-target tombstones on both sides of the apply.
+    tombstones: stateTombstones(
+      tombstones.filter(
+        (row) =>
+          !skipTombstoneKeys.has(
+            `${row.entityType}\u0000${row.sourceFile}\u0000${row.entityId}`,
+          ),
+      ),
+    ),
     budgets: stateBudgets(
       budgets.filter((budget) => budget.sourceFile !== budgetSource),
     ),
@@ -640,6 +689,7 @@ async function buildAnalysis(ctx: ReadCtx, input: unknown): Promise<Analysis> {
     ),
   );
   const rows: ExpectedRow[] = [];
+  const correctionTargetKeys = new Set<string>();
   for (const op of canonical.ops) {
     const tombstoneType = entityType(op.kind);
     if (
@@ -666,23 +716,54 @@ async function buildAnalysis(ctx: ReadCtx, input: unknown): Promise<Analysis> {
     if (existing && !sameStableContent(storedContent(existing), content)) {
       reject("EXISTING_CONTENT_CONFLICT");
     }
+    // A correction op carries the full corrected row plus a pointer at the
+    // wrong row it replaces. The wrong row must exist (or already be
+    // tombstoned, for idempotent replay); posted rows are refused because the
+    // operator cannot unwind their balance legs.
+    let correction: ExpectedRow["correction"];
+    if (op.kind === "transaction" && op.supersedes_record_id !== undefined) {
+      const targetKey = correctionTargetKey(op) as string;
+      const targetRecordId = op.supersedes_record_id;
+      correctionTargetKeys.add(targetKey);
+      const targetRow = state.byNaturalKey.get(targetKey);
+      if (targetRow === undefined) {
+        if (!tombstoneKeys.has(targetKey)) reject("CORRECTION_TARGET_MISSING");
+        correction = { targetKey, targetRecordId, targetRow: undefined };
+      } else {
+        if (
+          "balancePostingVersion" in targetRow &&
+          targetRow.balancePostingVersion === 1n
+        )
+          reject("CORRECTION_POSTED_TRANSACTION");
+        if (!correctionChangesRow(targetRow, content))
+          reject("CORRECTION_NO_CHANGE");
+        correction = { targetKey, targetRecordId, targetRow };
+      }
+    }
     rows.push({
       op,
       naturalKey: op.natural_key,
       sourceFile: op.source_file,
       content,
       existing,
+      correction,
     });
   }
-  await assertNoProductionDuplicates(canonical.ops, state.ledgerRows);
+  await assertNoProductionDuplicates(
+    canonical.ops,
+    state.ledgerRows,
+    correctionTargetKeys,
+  );
   const budget = await buildBudgetPlan(canonical, state.budgets);
   const counts = countsFor(canonical);
   const targetKeys = new Set(rows.map((row) => row.naturalKey));
+  for (const key of correctionTargetKeys) targetKeys.add(key);
   const untouchedFingerprint = await untouchedFingerprintFor(
     state.ledgerRows,
     state.tombstones,
     state.budgets,
     targetKeys,
+    correctionTargetKeys,
     budget?.document.sourceFile,
   );
   const stateFingerprint = await stateFingerprintFor(
@@ -781,6 +862,14 @@ async function verifyApplied(
   const state = await loadLedgerState(ctx);
   validateLiveCategories(canonical.ops, state.budgets);
   const targetKeys = new Set(canonical.ops.map((op) => op.natural_key));
+  const correctionTargetKeys = new Set<string>();
+  for (const op of canonical.ops) {
+    const targetKey = correctionTargetKey(op);
+    if (targetKey !== undefined) {
+      correctionTargetKeys.add(targetKey);
+      targetKeys.add(targetKey);
+    }
+  }
   const tombstoneKeys = new Set(
     state.tombstones.map(
       (row) => `${row.entityType}\u0000${row.sourceFile}\u0000${row.entityId}`,
@@ -800,8 +889,21 @@ async function verifyApplied(
     ) {
       reject("READBACK_TOMBSTONE_CONFLICT");
     }
+    // The superseded row must be gone and tombstoned — otherwise the charge
+    // would be double-counted.
+    const targetKey = correctionTargetKey(op);
+    if (targetKey !== undefined) {
+      if (state.byNaturalKey.has(targetKey))
+        reject("READBACK_CORRECTION_TARGET_LIVE");
+      if (!tombstoneKeys.has(targetKey))
+        reject("READBACK_CORRECTION_TOMBSTONE_MISSING");
+    }
   }
-  await assertNoProductionDuplicates(canonical.ops, state.ledgerRows);
+  await assertNoProductionDuplicates(
+    canonical.ops,
+    state.ledgerRows,
+    correctionTargetKeys,
+  );
 
   const advance = canonical.envelope.budget_advance;
   if (advance) {
@@ -832,6 +934,7 @@ async function verifyApplied(
     state.tombstones,
     state.budgets,
     targetKeys,
+    correctionTargetKeys,
     advance?.source_file,
   );
   if (untouched !== receipt.untouchedFingerprint) {
@@ -1030,6 +1133,24 @@ export const applyBatch = internalMutation({
     }
     for (const row of analysis.rows) {
       if (!row.existing) await insertExpectedRow(ctx, row, now);
+    }
+    // Corrections retire the wrong row once the corrected row has landed: the
+    // row is deleted (runtime readers do not filter tombstones, so the delete
+    // is what prevents double-counting) and its natural key is tombstoned so
+    // it can never be re-imported — the deleteTransaction semantics.
+    for (const row of analysis.rows) {
+      const correction = row.correction;
+      const target = correction?.targetRow;
+      if (correction && target) {
+        await ctx.db.delete(target._id);
+        await ctx.db.insert("rowTombstones", {
+          entityType: "transaction",
+          sourceFile: row.sourceFile,
+          entityId: correction.targetRecordId,
+          owner: target.owner,
+          deletedAtMs: now,
+        });
+      }
     }
 
     let budgetAppliedUpdatedAtMs: number | undefined;
