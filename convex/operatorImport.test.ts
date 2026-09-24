@@ -723,3 +723,195 @@ describe("operator import internal backend", () => {
     );
   });
 });
+
+describe("transaction corrections", () => {
+  let t: Harness;
+
+  beforeEach(async () => {
+    t = convexTest(schema, modules);
+    await seedBudgets(t);
+  });
+
+  function correction(index: number, overrides: Record<string, unknown> = {}) {
+    return transaction(index, {
+      op_id: `correct-op-${index}`,
+      record_id: `tx-record-${index}-correction`,
+      source_locator: `PRIVATE-LOCATOR-${index}-correction`,
+      supersedes_record_id: `tx-record-${index}`,
+      ...overrides,
+    });
+  }
+
+  async function seedWrongRow(index = 0) {
+    const seed = smallManifest([transaction(index)], `seed-batch-${index}`);
+    await apply(t, seed, await preflight(t, seed));
+  }
+
+  async function tombstones() {
+    return await t.run(async (ctx) => ctx.db.query("rowTombstones").collect());
+  }
+
+  it("applies a category+amount correction: corrected row lands, target is deleted and tombstoned", async () => {
+    await seedWrongRow(0);
+
+    const manifest = smallManifest(
+      [correction(0, { category: "Utilities", amount_cents: "1096" })],
+      "correction-happy-path",
+    );
+    const plan = await preflight(t, manifest);
+    const applied = await apply(t, manifest, plan);
+    expect(applied).toMatchObject({
+      outcome: "applied",
+      counts: { transactions: 1, income: 0, btc_buys: 0, btc_bill_pays: 0 },
+    });
+
+    const state = await world(t);
+    expect(state.transactions).toHaveLength(1);
+    expect(state.transactions[0]).toMatchObject({
+      txId: "tx-record-0-correction",
+      owner: "victor",
+      date: "2026-08-01",
+      month: "2026-08",
+      merchant: "PRIVATE-MERCHANT-0",
+      amountCents: 1096n,
+      category: "Utilities",
+      card: "Card",
+      note: "PRIVATE-NOTE-0",
+      sourceFile: "transactions",
+    });
+
+    const stones = await tombstones();
+    expect(stones).toHaveLength(1);
+    expect(stones[0]).toMatchObject({
+      entityType: "transaction",
+      sourceFile: "transactions",
+      entityId: "tx-record-0",
+      owner: "victor",
+    });
+
+    const verified = await t.query(fn.readback, {
+      manifest,
+      expected_plan_fingerprint: plan.plan_fingerprint,
+    });
+    expect(verified).toMatchObject({ outcome: "verified" });
+  });
+
+  it("rejects a correction whose target is missing and not tombstoned", async () => {
+    await expectCode(
+      preflight(
+        t,
+        smallManifest(
+          [correction(0, { category: "Utilities" })],
+          "correction-missing-target",
+        ),
+      ),
+      "CORRECTION_TARGET_MISSING",
+    );
+  });
+
+  it("rejects a correction that changes nothing", async () => {
+    await seedWrongRow(0);
+    await expectCode(
+      preflight(t, smallManifest([correction(0)], "correction-no-change")),
+      "CORRECTION_NO_CHANGE",
+    );
+  });
+
+  it("rejects a self-supersede", async () => {
+    await expectCode(
+      preflight(
+        t,
+        smallManifest(
+          [transaction(0, { supersedes_record_id: "tx-record-0" })],
+          "correction-self",
+        ),
+      ),
+      "CORRECTION_SELF_REFERENCE",
+    );
+  });
+
+  it("rejects a correction to an unknown live category", async () => {
+    await seedWrongRow(0);
+    await expectCode(
+      preflight(
+        t,
+        smallManifest([correction(0, { category: "Nope" })], "correction-bad-cat"),
+      ),
+      "UNKNOWN_LIVE_CATEGORY",
+    );
+  });
+
+  it("rejects a correction of a posted transaction", async () => {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("transactions", {
+        txId: "tx-record-0",
+        owner: "victor",
+        date: "2026-08-01",
+        month: "2026-08",
+        merchant: "PRIVATE-MERCHANT-0",
+        amountCents: 8200n,
+        category: "Groceries",
+        card: "Card",
+        note: "PRIVATE-NOTE-0",
+        sourceFile: "transactions",
+        balancePostingVersion: 1n,
+        updatedAtMs: 1,
+      });
+    });
+    await expectCode(
+      preflight(
+        t,
+        smallManifest(
+          [correction(0, { category: "Utilities" })],
+          "correction-posted",
+        ),
+      ),
+      "CORRECTION_POSTED_TRANSACTION",
+    );
+  });
+
+  it("still rejects a corrected row that duplicates another live row", async () => {
+    const seed = smallManifest(
+      [transaction(0), transaction(1)],
+      "seed-two-rows",
+    );
+    await apply(t, seed, await preflight(t, seed));
+    // transaction(1): merchant PRIVATE-MERCHANT-1, 8201c, Utilities, 2026-08-02.
+    // Correcting tx-record-0 onto exactly that fingerprint must trip the guard.
+    await expectCode(
+      preflight(
+        t,
+        smallManifest(
+          [
+            correction(0, {
+              merchant: "PRIVATE-MERCHANT-1",
+              amount_cents: "8201",
+              category: "Utilities",
+              date: "2026-08-02",
+            }),
+          ],
+          "correction-dup-guard",
+        ),
+      ),
+      "SEMANTIC_PRODUCTION_DUPLICATE",
+    );
+  });
+
+  it("replays a correction idempotently", async () => {
+    await seedWrongRow(0);
+    const manifest = smallManifest(
+      [correction(0, { category: "Utilities" })],
+      "correction-replay",
+    );
+    const plan = await preflight(t, manifest);
+    await apply(t, manifest, plan);
+    const before = await world(t);
+
+    const retry = await apply(t, manifest, plan);
+    const after = await world(t);
+    expect(retry.outcome).toBe("already_applied");
+    expect(after).toEqual(before);
+    expect(after.transactions).toHaveLength(1);
+    expect(after.transactions[0]?.txId).toBe("tx-record-0-correction");
+  });
+});
