@@ -167,8 +167,26 @@ final class ConvexSyncService {
         }
     }
 
-    /// Polling respects persisted backoff because the app creates a new service
-    /// each tick. Explicit syncAll calls still run immediately for setup/retry.
+    /// Subscription-driven variant: compares a pushed versions snapshot
+    /// instead of fetching one over HTTP. Shares the backoff/member guards
+    /// with the event-driven `hasUpdates()`.
+    func hasUpdates(remote: [String: Double]) async -> Bool {
+        let now = Date().timeIntervalSince1970
+        let sameMember = metadataStore.string(forKey: Self.versionsMemberKey) == currentMember.rawValue
+        let nextRetry = metadataStore.object(forKey: Self.nextRetryKey) as? Double ?? 0
+        guard !sameMember || now >= nextRetry else { return false }
+        polledVersions = remote
+        let saved = metadataStore.dictionary(forKey: Self.dataVersionsKey) as? [String: Double] ?? [:]
+        let files = Self.files(for: currentMember)
+        return !sameMember || metadataStore.string(forKey: Self.lastSyncErrorKey) != nil
+            || files.contains { remote[$0] != saved[$0] }
+    }
+
+    /// Event-driven one-shot check (foreground/profile switches) that
+    /// fetches the versions over HTTP, then compares like the
+    /// subscription path. Backoff is persisted because the app creates a
+    /// new service per check. Explicit syncAll calls still run immediately
+    /// for setup/retry.
     func hasUpdates() async -> Bool {
         let now = Date().timeIntervalSince1970
         let sameMember = metadataStore.string(forKey: Self.versionsMemberKey) == currentMember.rawValue
@@ -176,11 +194,7 @@ final class ConvexSyncService {
         guard !sameMember || now >= nextRetry else { return false }
         do {
             let remote = try await reader.checkVersions()
-            polledVersions = remote
-            let saved = metadataStore.dictionary(forKey: Self.dataVersionsKey) as? [String: Double] ?? [:]
-            let files = Self.files(for: currentMember)
-            return !sameMember || metadataStore.string(forKey: Self.lastSyncErrorKey) != nil
-                || files.contains { remote[$0] != saved[$0] }
+            return await hasUpdates(remote: remote)
         } catch {
             if !sameMember { metadataStore.removeObject(forKey: Self.dataVersionsKey) }
             metadataStore.set(currentMember.rawValue, forKey: Self.versionsMemberKey)

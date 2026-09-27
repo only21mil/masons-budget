@@ -77,7 +77,6 @@ struct MasonsBudgetApp: App {
     @StateObject private var taskUndoStore = TaskUndoStore.shared
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var authentication = AppAuthenticationSession()
-    @State private var syncTimer: Timer?
     @State private var priceTimer: Timer?
 
     private var appearanceMode: AppearanceMode {
@@ -97,7 +96,8 @@ struct MasonsBudgetApp: App {
                     ContentView()
                         .task {
                             await syncFromConvex()
-                            startPeriodicSync()
+                            startPriceRefresh()
+                            await subscribeToVersions()
                         }
                 } else {
                     LockScreenView()
@@ -183,10 +183,11 @@ struct MasonsBudgetApp: App {
 
     /// Check if data has changed on Convex, and sync if so.
     ///
-    /// The poll loop must stay a single lightweight versions query: refreshing
-    /// prices here ran the full BTC + stock price chains ~5,760 times per day
-    /// even with zero data changes. Prices refresh on their own 5-minute
-    /// cadence (and on foreground/profile switches via `syncFromConvex`).
+    /// Event-driven one-shot check for foreground/profile switches. The
+    /// continuous watch is the versions subscription (see
+    /// `subscribeToVersions`) — there is no poll loop anymore. Prices
+    /// refresh on their own 5-minute cadence (and on foreground/profile
+    /// switches via `syncFromConvex`).
     @MainActor
     private func syncIfChanged() async {
         let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
@@ -202,16 +203,36 @@ struct MasonsBudgetApp: App {
         await StockPriceService.shared.refreshAndStore()
     }
 
-    /// Poll the versions endpoint every 15 seconds while the app is in the
-    /// foreground so ledger changes stay near-real-time; refresh prices on a
-    /// separate, much longer cadence to keep the radio/CPU cost bounded.
-    private func startPeriodicSync() {
-        syncTimer?.invalidate()
-        syncTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
-            Task { @MainActor in
-                await syncIfChanged()
+    /// Subscribe to the Convex versions query over the sync-protocol
+    /// WebSocket. This replaces the old 15-second poll: the server pushes
+    /// a new versions snapshot only when data actually changes, and each
+    /// push runs the same changed-versions → syncAll() path the poll used.
+    /// The `.task` above cancels this when the view disappears (app lock),
+    /// which tears down the socket through the cancellation handler.
+    @MainActor
+    private func subscribeToVersions() async {
+        let client = ConvexSubscriptionClient()
+        let args = ConvexClient.authenticatedArguments(
+            endpoint: "api/query",
+            args: [:],
+            syncToken: ConvexConfig.syncToken,
+            readToken: ConvexConfig.readToken
+        )
+        await withTaskCancellationHandler {
+            for await versions in client.subscribeVersions(authArgs: args) {
+                let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
+                if await sync.hasUpdates(remote: versions) {
+                    await sync.syncAll()
+                }
             }
+        } onCancel: {
+            client.cancel()
         }
+    }
+
+    /// Refresh prices on a long cadence to keep the radio/CPU cost
+    /// bounded. Ledger data no longer polls — see `subscribeToVersions`.
+    private func startPriceRefresh() {
         priceTimer?.invalidate()
         priceTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
             Task { @MainActor in
