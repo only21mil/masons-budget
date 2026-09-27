@@ -124,7 +124,7 @@ private final class Gate: @unchecked Sendable {
     private var waiter: CheckedContinuation<Void, Error>?
 
     func wait() async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             lock.lock()
             if isOpen {
                 lock.unlock()

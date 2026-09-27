@@ -411,6 +411,7 @@
 		FA279FF3CF3184F3CDBD6328 /* SourceCodePro-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A93F8520856CF28341FA9711 /* SourceCodePro-Medium.ttf */; };
 		FA90D5A4D1289CB12303D86A /* TasksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DBCCD025DF53FB5AB826594 /* TasksView.swift */; };
 		FBB4AE269CCCEC5D4EEABC02 /* MonthlyBudgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2D2A739D76D88CF2D981C6 /* MonthlyBudgetSnapshot.swift */; };
+		FF06C0A6CC9ACEDBD684EA4A /* ConvexSubscriptionClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 270B1EDF3FF87A35A90D0803 /* ConvexSubscriptionClientTests.swift */; };
 		FF258DF4502036BA0FF85FF6 /* StockPriceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F721A6FC17530024B35A0C6 /* StockPriceService.swift */; };
 		FF53E751B802F5EFB8382F76 /* BudgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941AE83F8125080834B45397 /* BudgetView.swift */; };
 		FF848533C741DC91C85E63A6 /* MC2DTOs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 130D186945E2F17AE4A79132 /* MC2DTOs.swift */; };
@@ -442,6 +443,7 @@
 		230D932174FB25E1E6FA335C /* WriteFeedbackStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WriteFeedbackStore.swift; sourceTree = "<group>"; };
 		24D0567CEA50C9D8FB8CC4E1 /* OptimisticSaveFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptimisticSaveFlow.swift; sourceTree = "<group>"; };
 		25CE52C2D21FE78FC3334E5D /* btc-fiat-availability-cases.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "btc-fiat-availability-cases.json"; sourceTree = "<group>"; };
+		270B1EDF3FF87A35A90D0803 /* ConvexSubscriptionClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexSubscriptionClientTests.swift; sourceTree = "<group>"; };
 		273950057898C808021DD99E /* BTCBillPayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTCBillPayView.swift; sourceTree = "<group>"; };
 		28C9AC48788F6BD75F27ADC1 /* Transaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transaction.swift; sourceTree = "<group>"; };
 		28F5FBFEE8DF5EF5202AD35E /* FamilySettingsAwardsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilySettingsAwardsViews.swift; sourceTree = "<group>"; };
@@ -650,6 +652,7 @@
 				08E8E973EE7F78352B998034 /* ConvexConfigTests.swift */,
 				3250E7396C07FAB87774D194 /* ConvexInt64WireTests.swift */,
 				AC71D565300376FE836CAA75 /* ConvexRowsTests.swift */,
+				270B1EDF3FF87A35A90D0803 /* ConvexSubscriptionClientTests.swift */,
 				8442D5C22B6167F76BFFBE9E /* ConvexSyncServiceTests.swift */,
 				52C46378C139A774E785542A /* DeviceLedgerWriteTests.swift */,
 				2AC58C7449FBDB08006CFC23 /* FamilyVisibilityTests.swift */,
@@ -1373,6 +1376,7 @@
 				B754C97FC84C831388A66151 /* ConvexRows.swift in Sources */,
 				99422FD652B7511E916F0164 /* ConvexRowsTests.swift in Sources */,
 				4EA033654DC66961D1E2C294 /* ConvexSubscriptionClient.swift in Sources */,
+				FF06C0A6CC9ACEDBD684EA4A /* ConvexSubscriptionClientTests.swift in Sources */,
 				C467725DD84089198DA37B58 /* ConvexSyncService.swift in Sources */,
 				E118CB2B87FCF5A38191F7A5 /* ConvexSyncServiceTests.swift in Sources */,
 				C7C1D96BF10E5EF407DBF988 /* ConvexWriteResult.swift in Sources */,
