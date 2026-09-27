@@ -25,14 +25,18 @@
 // The client yields the decoded versions dictionary on subscribe and on
 // every server push, so the query re-runs only when its data changes.
 // There is no timer in this file. A dropped socket reconnects with
-// capped exponential backoff, and a 60s receive watchdog (the same
-// threshold convex-js uses) guards against a hung socket.
+// capped exponential backoff (reset once a connection has received a
+// Transition), and a 60s receive watchdog (the same threshold convex-js
+// uses) cancels a hung socket. Auth failures, server fatal errors and
+// query failures are terminal: the loop logs them and ends the stream.
 
 import Foundation
 import os
 
-/// Failures the reconnect loop cannot heal on its own. Transport drops
-/// never surface — they trigger a reconnect with backoff.
+/// Subscription failures. Transport drops, timeouts, version mismatches
+/// and decode failures trigger a reconnect with backoff. `authFailed`,
+/// `fatalError` and `queryFailed` are terminal (see `isTerminal`): the
+/// loop logs them and finishes the stream instead of retrying.
 enum ConvexSubscriptionError: LocalizedError {
     case invalidDeploymentURL
     case queryFailed(path: String, message: String)
@@ -66,8 +70,8 @@ enum ConvexSubscriptionError: LocalizedError {
 ///
 /// Yields the query's latest value every time the server pushes an
 /// update. The socket reconnects automatically with capped exponential
-/// backoff; callers just iterate the stream until their task is
-/// cancelled.
+/// backoff; callers iterate the stream until their task is cancelled or
+/// a terminal error (auth, fatal, query failure) finishes it.
 final class ConvexSubscriptionClient: Sendable {
     private let deploymentURL: URL
     private let protocolVersion: String
@@ -92,7 +96,7 @@ final class ConvexSubscriptionClient: Sendable {
     /// Subscribes to `dataFiles:getVersions` with the given auth args.
     /// Yields the decoded versions immediately on subscribe and again on
     /// every server push. The stream ends when the consuming task is
-    /// cancelled.
+    /// cancelled or the server reports a terminal error.
     func subscribeVersions(authArgs: [String: Any]) -> AsyncStream<[String: Double]> {
         AsyncStream { continuation in
             let task = Task {
@@ -133,40 +137,66 @@ final class ConvexSubscriptionClient: Sendable {
     ) async {
         var connectionCount = 0
         var lastCloseReason: String?
-        var backoff: TimeInterval = 1
+        var backoff = ReconnectBackoff()
         while !Task.isCancelled {
             connectionCount += 1
+            var healthy = false
             do {
                 try await serve(
                     connectionCount: connectionCount,
                     lastCloseReason: lastCloseReason,
                     authArgs: authArgs,
+                    healthy: &healthy,
                     continuation: continuation
                 )
                 break // serve returns only on cancellation
             } catch is CancellationError {
                 break
             } catch {
+                if Self.isTerminal(error) {
+                    log.error(
+                        "Convex subscription ended on terminal error: \(error.localizedDescription, privacy: .public)"
+                    )
+                    break
+                }
+                if healthy {
+                    // The connection worked before it dropped; start over at 1s.
+                    backoff.reset()
+                }
                 lastCloseReason = error.localizedDescription
+                let delay = backoff.next()
                 log.warning(
-                    "Convex subscription dropped (\(error.localizedDescription, privacy: .public)); reconnecting in \(Int(backoff), privacy: .public)s"
+                    "Convex subscription dropped (\(error.localizedDescription, privacy: .public)); reconnecting in \(Int(delay), privacy: .public)s"
                 )
                 do {
-                    let jittered = backoff * Double.random(in: 0.8 ... 1.2)
+                    let jittered = delay * Double.random(in: 0.8 ... 1.2)
                     try await Task.sleep(nanoseconds: UInt64(jittered * 1_000_000_000))
                 } catch {
                     break
                 }
-                backoff = min(backoff * 2, 30)
             }
         }
         continuation.finish()
+    }
+
+    /// Errors the reconnect loop must not retry: the server rejected the
+    /// credentials, hit a fatal error, or failed/removed the query.
+    /// Reconnecting would repeat the same failure forever.
+    static func isTerminal(_ error: Error) -> Bool {
+        guard let error = error as? ConvexSubscriptionError else { return false }
+        switch error {
+        case .authFailed, .fatalError, .queryFailed:
+            return true
+        case .invalidDeploymentURL, .versionMismatch, .receiveTimeout, .decodeFailed:
+            return false
+        }
     }
 
     private func serve(
         connectionCount: Int,
         lastCloseReason: String?,
         authArgs: [String: Any],
+        healthy: inout Bool,
         continuation: AsyncStream<[String: Double]>.Continuation
     ) async throws {
         guard let wsURL = Self.syncURL(for: deploymentURL, protocolVersion: protocolVersion) else {
@@ -214,6 +244,11 @@ final class ConvexSubscriptionClient: Sendable {
                     chunkBuffer: &chunkBuffer,
                     continuation: continuation
                 )
+                // The first applied Transition moves the version off
+                // `.initial`; from then on the connection counts as healthy.
+                if version != .initial {
+                    healthy = true
+                }
             case .data:
                 // The sync protocol only sends text frames.
                 continue
@@ -236,17 +271,47 @@ final class ConvexSubscriptionClient: Sendable {
     /// Receives one message, giving up after 60s of server silence —
     /// the same inactivity threshold convex-js reconnects on.
     private func receive(_ socket: URLSessionWebSocketTask) async throws -> URLSessionWebSocketTask.Message {
-        try await withThrowingTaskGroup(of: URLSessionWebSocketTask.Message.self) { group in
-            group.addTask { try await socket.receive() }
+        try await Self.withTimeout(
+            seconds: 60,
+            onTimeout: {
+                // `socket.receive()` ignores task cancellation, so the task
+                // group would wait on it forever. Cancelling the socket makes
+                // the pending receive return with an error.
+                socket.cancel(with: .goingAway, reason: nil)
+            },
+            operation: { try await socket.receive() }
+        )
+    }
+
+    /// Races `operation` against a timer. On timeout it calls `onTimeout`
+    /// (which must unblock `operation` if it ignores cancellation), then
+    /// throws `ConvexSubscriptionError.receiveTimeout`.
+    static func withTimeout<T: Sendable>(
+        seconds: TimeInterval = 60,
+        onTimeout: @escaping @Sendable () -> Void,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        let timedOut = TimeoutFlag()
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
             group.addTask {
-                try await Task.sleep(nanoseconds: 60_000_000_000)
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                timedOut.set()
+                onTimeout()
                 throw ConvexSubscriptionError.receiveTimeout
             }
-            guard let message = try await group.next() else {
-                throw ConvexSubscriptionError.receiveTimeout
+            defer { group.cancelAll() }
+            do {
+                guard let value = try await group.next() else {
+                    throw ConvexSubscriptionError.receiveTimeout
+                }
+                return value
+            } catch {
+                // After `onTimeout` the operation may fail first (for
+                // example with URLError.cancelled); report the timeout.
+                if timedOut.isSet { throw ConvexSubscriptionError.receiveTimeout }
+                throw error
             }
-            group.cancelAll()
-            return message
         }
     }
 
@@ -398,24 +463,88 @@ final class ConvexSubscriptionClient: Sendable {
     }
 }
 
+/// Set once by the watchdog timer, read by the racing receive.
+private final class TimeoutFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    var isSet: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func set() {
+        lock.lock()
+        value = true
+        lock.unlock()
+    }
+}
+
+// MARK: - Reconnect backoff
+
+/// Capped exponential reconnect delay: 1, 2, 4, … 30 seconds.
+struct ReconnectBackoff: Equatable {
+    static let initialDelay: TimeInterval = 1
+    static let maxDelay: TimeInterval = 30
+
+    private(set) var current: TimeInterval = Self.initialDelay
+
+    /// Returns the delay to wait now and doubles the next one, up to the cap.
+    mutating func next() -> TimeInterval {
+        let delay = current
+        current = min(current * 2, Self.maxDelay)
+        return delay
+    }
+
+    /// Back to the initial delay after a healthy connection.
+    mutating func reset() {
+        current = Self.initialDelay
+    }
+}
+
 // MARK: - Protocol value types
 
 /// The `{querySet, ts, identity}` state version carried by Transitions.
-/// `ts` is a u64 rendered as a decimal string on the wire; comparing the
-/// strings is exact.
-private struct StateVersion: Equatable {
+/// On the wire `ts` is a u64 encoded as base64 of its 8 little-endian
+/// bytes (the first Transition carries `"AAAAAAAAAAA="`, i.e. 0). It is
+/// decoded to `UInt64` on parse so comparisons are numeric, and encoded
+/// back to the same base64 form when sent.
+struct StateVersion: Equatable, Comparable {
     var querySet: Int
-    var ts: String
+    var ts: UInt64
     var identity: Int
 
-    static let initial = StateVersion(querySet: 0, ts: "0", identity: 0)
+    static let initial = StateVersion(querySet: 0, ts: 0, identity: 0)
+
+    static func < (lhs: StateVersion, rhs: StateVersion) -> Bool {
+        (lhs.querySet, lhs.ts, lhs.identity) < (rhs.querySet, rhs.ts, rhs.identity)
+    }
+
+    /// Decodes a base64 little-endian u64. Nil unless exactly 8 bytes.
+    static func decodeTs(_ base64: String) -> UInt64? {
+        guard let data = Data(base64Encoded: base64), data.count == 8 else { return nil }
+        return data.enumerated().reduce(UInt64(0)) { $0 | (UInt64($1.element) << (8 * UInt64($1.offset))) }
+    }
+
+    /// Encodes a u64 as base64 of its 8 little-endian bytes.
+    static func encodeTs(_ ts: UInt64) -> String {
+        var bits = ts.littleEndian
+        return withUnsafeBytes(of: &bits) { Data($0) }.base64EncodedString()
+    }
+
+    /// Wire form, for any client message that carries a state version.
+    var wireObject: [String: Any] {
+        ["querySet": querySet, "ts": Self.encodeTs(ts), "identity": identity]
+    }
 }
 
 // Declared in an extension so the synthesized memberwise init stays available.
 extension StateVersion {
     init?(object: [String: Any]) {
         guard let querySet = object["querySet"] as? Int,
-              let ts = object["ts"] as? String,
+              let tsString = object["ts"] as? String,
+              let ts = Self.decodeTs(tsString),
               let identity = object["identity"] as? Int
         else { return nil }
         self.querySet = querySet
