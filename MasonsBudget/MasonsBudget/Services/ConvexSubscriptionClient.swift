@@ -27,16 +27,19 @@
 // There is no timer in this file. A dropped socket reconnects with
 // capped exponential backoff (reset once a connection has received a
 // Transition), and a 60s receive watchdog (the same threshold convex-js
-// uses) cancels a hung socket. Auth failures, server fatal errors and
-// query failures are terminal: the loop logs them and ends the stream.
+// uses) cancels a hung socket. Auth failures and server fatal errors are
+// terminal: the loop logs them and ends the stream. A QueryFailed update
+// is logged and the socket stays open; like convex-js
+// `remote_query_set.ts`, the query stays subscribed and recovers on a
+// later QueryUpdated.
 
 import Foundation
 import os
 
-/// Subscription failures. Transport drops, timeouts, version mismatches
-/// and decode failures trigger a reconnect with backoff. `authFailed`,
-/// `fatalError` and `queryFailed` are terminal (see `isTerminal`): the
-/// loop logs them and finishes the stream instead of retrying.
+/// Subscription failures. Transport drops, timeouts, version mismatches,
+/// decode failures and a server-removed query trigger a reconnect with
+/// backoff. `authFailed` and `fatalError` are terminal (see `isTerminal`):
+/// the loop logs them and finishes the stream instead of retrying.
 enum ConvexSubscriptionError: LocalizedError {
     case invalidDeploymentURL
     case queryFailed(path: String, message: String)
@@ -71,7 +74,8 @@ enum ConvexSubscriptionError: LocalizedError {
 /// Yields the query's latest value every time the server pushes an
 /// update. The socket reconnects automatically with capped exponential
 /// backoff; callers iterate the stream until their task is cancelled or
-/// a terminal error (auth, fatal, query failure) finishes it.
+/// a terminal error (auth or fatal) finishes it. A failed query run
+/// keeps the subscription open and yields again on the next success.
 final class ConvexSubscriptionClient: Sendable {
     private let deploymentURL: URL
     private let protocolVersion: String
@@ -180,14 +184,16 @@ final class ConvexSubscriptionClient: Sendable {
     }
 
     /// Errors the reconnect loop must not retry: the server rejected the
-    /// credentials, hit a fatal error, or failed/removed the query.
-    /// Reconnecting would repeat the same failure forever.
+    /// credentials or hit a fatal error. Reconnecting would repeat the
+    /// same failure forever. A QueryFailed update never reaches here
+    /// (`handleTransition` logs it and keeps the socket open), and a
+    /// removed query reconnects, which resubscribes it.
     static func isTerminal(_ error: Error) -> Bool {
         guard let error = error as? ConvexSubscriptionError else { return false }
         switch error {
-        case .authFailed, .fatalError, .queryFailed:
+        case .authFailed, .fatalError:
             return true
-        case .invalidDeploymentURL, .versionMismatch, .receiveTimeout, .decodeFailed:
+        case .invalidDeploymentURL, .queryFailed, .versionMismatch, .receiveTimeout, .decodeFailed:
             return false
         }
     }
@@ -359,7 +365,8 @@ final class ConvexSubscriptionClient: Sendable {
         }
     }
 
-    private func handleTransition(
+    /// Applies one Transition. Internal (not private) so tests can drive it.
+    func handleTransition(
         _ object: [String: Any],
         version: inout StateVersion,
         continuation: AsyncStream<[String: Double]>.Continuation
@@ -380,9 +387,12 @@ final class ConvexSubscriptionClient: Sendable {
                 let decoded = try ConvexTaggedInt64Decoder.decode(modification["value"] ?? NSNull())
                 continuation.yield(Self.versions(from: decoded))
             case "QueryFailed":
-                throw ConvexSubscriptionError.queryFailed(
-                    path: "dataFiles:getVersions",
-                    message: modification["errorMessage"] as? String ?? "unknown"
+                // Transient server failure: convex-js keeps the query
+                // subscribed and recovers on a later QueryUpdated, so log,
+                // emit nothing for it, and keep the socket open.
+                let message = modification["errorMessage"] as? String ?? "unknown"
+                log.warning(
+                    "Convex query dataFiles:getVersions failed; keeping subscription open: \(message, privacy: .public)"
                 )
             case "QueryRemoved":
                 throw ConvexSubscriptionError.queryFailed(

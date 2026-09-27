@@ -63,14 +63,56 @@ final class ConvexSubscriptionClientTests: XCTestCase {
     func testTerminalErrorClassification() {
         XCTAssertTrue(ConvexSubscriptionClient.isTerminal(ConvexSubscriptionError.authFailed(message: "x")))
         XCTAssertTrue(ConvexSubscriptionClient.isTerminal(ConvexSubscriptionError.fatalError(message: "x")))
-        XCTAssertTrue(
+
+        XCTAssertFalse(
             ConvexSubscriptionClient.isTerminal(ConvexSubscriptionError.queryFailed(path: "p", message: "x")),
         )
-
         XCTAssertFalse(ConvexSubscriptionClient.isTerminal(ConvexSubscriptionError.receiveTimeout))
         XCTAssertFalse(ConvexSubscriptionClient.isTerminal(ConvexSubscriptionError.versionMismatch))
         XCTAssertFalse(ConvexSubscriptionClient.isTerminal(ConvexSubscriptionError.decodeFailed("x")))
         XCTAssertFalse(ConvexSubscriptionClient.isTerminal(URLError(.networkConnectionLost)))
+    }
+
+    // MARK: - QueryFailed recovery
+
+    func testQueryFailedKeepsSubscriptionAndLaterUpdateEmits() async throws {
+        let client = try ConvexSubscriptionClient(
+            deploymentURL: XCTUnwrap(URL(string: "https://example.convex.cloud")),
+        )
+        let (start, middle) = try versions()
+        let end = StateVersion(querySet: 1, ts: middle.ts + 1, identity: 0)
+        let (stream, continuation) = AsyncStream<[String: Double]>.makeStream()
+        var version = start
+
+        let failed: [String: Any] = [
+            "type": "Transition",
+            "startVersion": start.wireObject,
+            "endVersion": middle.wireObject,
+            "modifications": [
+                ["type": "QueryFailed", "queryId": 0, "errorMessage": "transient", "logLines": [String]()],
+            ],
+        ]
+        XCTAssertNoThrow(try client.handleTransition(failed, version: &version, continuation: continuation))
+        XCTAssertEqual(version, middle)
+
+        let updated: [String: Any] = [
+            "type": "Transition",
+            "startVersion": middle.wireObject,
+            "endVersion": end.wireObject,
+            "modifications": [
+                ["type": "QueryUpdated", "queryId": 0, "value": ["budget": 3], "logLines": [String]()],
+            ],
+        ]
+        try client.handleTransition(updated, version: &version, continuation: continuation)
+        XCTAssertEqual(version, end)
+        continuation.finish()
+
+        var emitted: [[String: Double]] = []
+        for await value in stream {
+            emitted.append(value)
+        }
+        // The failure emitted nothing; the later update emitted once.
+        XCTAssertEqual(emitted, [["budget": 3]])
     }
 
     // MARK: - Backoff
