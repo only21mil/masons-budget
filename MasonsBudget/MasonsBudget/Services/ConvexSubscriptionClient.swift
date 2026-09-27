@@ -285,9 +285,9 @@ final class ConvexSubscriptionClient: Sendable {
             }
             try handleTransition(object, version: &version, continuation: continuation)
         case "AuthError":
-            throw ConvexSubscriptionError.authFailed(object["error"] as? String ?? "unknown")
+            throw ConvexSubscriptionError.authFailed(message: object["error"] as? String ?? "unknown")
         case "FatalError":
-            throw ConvexSubscriptionError.fatalError(object["error"] as? String ?? "unknown")
+            throw ConvexSubscriptionError.fatalError(message: object["error"] as? String ?? "unknown")
         default:
             // MutationResponse / ActionResponse: this client never requests any.
             log.warning("Ignoring unexpected Convex sync message type: \(type, privacy: .public)")
@@ -409,7 +409,10 @@ private struct StateVersion: Equatable {
     var identity: Int
 
     static let initial = StateVersion(querySet: 0, ts: "0", identity: 0)
+}
 
+// Declared in an extension so the synthesized memberwise init stays available.
+extension StateVersion {
     init?(object: [String: Any]) {
         guard let querySet = object["querySet"] as? Int,
               let ts = object["ts"] as? String,
