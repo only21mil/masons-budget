@@ -241,6 +241,26 @@ jobs:
           security set-keychain-settings -lut 3600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
+          # Explicit keychains need Apple's public intermediates locally. Keep
+          # these certificates in the temporary keychain without trust overrides.
+          import_apple_intermediate() {
+            local generation="$1" expected_sha256="$2"
+            local certificate_path="$SIGNING_ROOT/AppleWWDRCA${generation}.cer"
+            curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+              --max-time 30 \
+              "https://www.apple.com/certificateauthority/AppleWWDRCA${generation}.cer" \
+              -o "$certificate_path"
+            local actual_sha256
+            actual_sha256="$(shasum -a 256 "$certificate_path" | awk '{print $1}')"
+            if [ "$actual_sha256" != "$expected_sha256" ]; then
+              echo "::error::Apple's $generation intermediate did not match its pinned digest."
+              exit 1
+            fi
+            security import "$certificate_path" -k "$KEYCHAIN_PATH" -t cert
+          }
+          import_apple_intermediate G3 dcf21878c77f4198e4b4614f03d696d89c66c66008d4244e1b99161aac91601f
+          import_apple_intermediate G6 bdd4ed6e74691f0c2bfd01be0296197af1379e0418e2d300efa9c3bef642ca30
+
           DISTRIBUTION_P12="$SIGNING_ROOT/apple-distribution.p12"
           printf '%s' "$APPLE_DISTRIBUTION_CERTIFICATE_P12" |
             /usr/bin/base64 -D > "$DISTRIBUTION_P12"
