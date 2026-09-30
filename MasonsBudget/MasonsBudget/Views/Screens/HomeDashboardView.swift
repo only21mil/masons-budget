@@ -342,7 +342,11 @@ enum HomeDashboardData {
     }
 
     static func spentToday(_ transactions: [Transaction], viewer: FamilyMember, now: Date, calendar: Calendar = .current) -> Decimal {
-        transactions.filter { viewer.canSee(dataOwnedBy: $0.ownerMember) && calendar.isDate($0.date, inSameDayAs: now) }
-            .reduce(Decimal(0)) { $0 + $1.spendAmount }
+        transactions.filter {
+            viewer.canSee(dataOwnedBy: $0.ownerMember) &&
+                calendar.isDate($0.date, inSameDayAs: now) &&
+                $0.category.caseInsensitiveCompare(BTCBillPayBudgetEffect.creditCardPaymentCategory) != .orderedSame
+        }
+        .reduce(Decimal(0)) { $0 + $1.spendAmount }
     }
 }

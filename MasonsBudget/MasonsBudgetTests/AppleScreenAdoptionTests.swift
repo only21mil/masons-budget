@@ -66,7 +66,7 @@ final class AppleScreenAdoptionTests: XCTestCase {
         XCTAssertTrue(MacNav.primaryItems.contains(.tasks))
     }
 
-    func testHomeTodayMatchesActivityVisibilityAndLocalDay() throws {
+    func testHomeTodayRespectsActivityVisibilityAndLocalDay() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: -6 * 3600))
         let today = Date(timeIntervalSince1970: 1_800_000_000)
@@ -83,7 +83,7 @@ final class AppleScreenAdoptionTests: XCTestCase {
         XCTAssertEqual(HomeDashboardData.spentToday(rows, viewer: .maddox, now: today, calendar: calendar), 0)
     }
 
-    func testHomeSpentTodayConsumesSharedMoneyOutFixtureWithExplicitAppleDifferences() throws {
+    func testHomeSpentTodayConsumesSharedMoneyOutFixture() throws {
         let bundle = Bundle(for: AppleScreenAdoptionTests.self)
         let name = "money-out-today-cases"
         let url = bundle.url(forResource: name, withExtension: "json")
@@ -105,7 +105,7 @@ final class AppleScreenAdoptionTests: XCTestCase {
         // The production mapper interprets wire days in the current time zone.
         let calendar = Calendar.current
         let now = try XCTUnwrap(LegacyTransactionDTO.date(from: fixture.date, timeZone: calendar.timeZone))
-        let expectedHomeCents = ["victor": "3800", "rachel": "3800", "mason": "600", "maddox": "0"]
+        let expectedHomeCents = ["victor": "800", "rachel": "800", "mason": "600", "maddox": "0"]
 
         for testCase in fixture.cases {
             let viewer = try XCTUnwrap(FamilyMember(rawValue: testCase.activeProfile))
@@ -129,13 +129,12 @@ final class AppleScreenAdoptionTests: XCTestCase {
             )
             XCTAssertEqual(excludedBills, viewer.isAdult ? Decimal(1025) / 100 : (viewer == .mason ? Decimal(205) / 100 : 0))
 
-            // Apple also counts legacy Credit Card Payment transactions as spend,
-            // and canSee gives adults child spending oversight on Home.
-            // Pin both differences explicitly instead of dropping fixture rows.
+            // The shared contract excludes legacy card payments regardless of case.
+            // Home still gives adults child spending oversight through canSee.
             let cardPayment = try XCTUnwrap(transactions.first { $0.id == "adult-card-transfer" })
             XCTAssertEqual(
                 HomeDashboardData.spentToday([cardPayment], viewer: viewer, now: now, calendar: calendar),
-                viewer.isAdult ? 30 : 0, testCase.activeProfile,
+                0, testCase.activeProfile,
             )
             let childSpend = try XCTUnwrap(transactions.first { $0.id == "mason-spend" })
             XCTAssertEqual(
@@ -143,7 +142,7 @@ final class AppleScreenAdoptionTests: XCTestCase {
                 viewer == .maddox ? 0 : 6, testCase.activeProfile,
             )
             let actual = HomeDashboardData.spentToday(transactions, viewer: viewer, now: now, calendar: calendar)
-            XCTAssertEqual(actual, sharedTotal - excludedBills + (viewer.isAdult ? 36 : 0), testCase.activeProfile)
+            XCTAssertEqual(actual, sharedTotal - excludedBills + (viewer.isAdult ? 6 : 0), testCase.activeProfile)
             XCTAssertEqual(actual, try fixtureDollars(XCTUnwrap(expectedHomeCents[testCase.activeProfile])), testCase.activeProfile)
         }
     }
