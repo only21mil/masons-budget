@@ -79,23 +79,33 @@ def cleanup(root, run=run_security):
     if not owned_file(marker) or marker.read_text() != MAGIC:
         raise ProbeError("unowned-cleanup-root")
     state_path = root / "original-state.json"
-    keychain = root / "public-only.keychain-db"
     if not owned_file(state_path):
         # State is saved before any security mutation. Never guess it later.
-        if keychain.exists() or keychain.is_symlink():
-            raise ProbeError("missing-cleanup-state")
         if set(p.name for p in root.iterdir()) != {"owner"}:
             raise ProbeError("unexpected-incomplete-root")
         shutil.rmtree(root)
         return {"no_security_mutation": True, "owned_fixture_absent": True}
-    state = json.loads(state_path.read_text())
-    if set(state) != {"user", "dynamic", "default"} or any(
+    saved = json.loads(state_path.read_text())
+    if not isinstance(saved, dict) or set(saved) != {"state", "temporary_root"} or not isinstance(saved["temporary_root"], str):
+        raise ProbeError("malformed-cleanup-state")
+    temporary_root = Path(saved["temporary_root"])
+    if not temporary_root.is_absolute() or temporary_root.name != root.name or temporary_root == root:
+        raise ProbeError("unsafe-temporary-root-record")
+    state = saved["state"]
+    if not isinstance(state, dict) or set(state) != {"user", "dynamic", "default"} or any(
         not isinstance(v, list) or not all(isinstance(p, str) and p.startswith("/") for p in v)
         for v in state.values()
     ) or len(state["default"]) > 1:
         raise ProbeError("malformed-cleanup-state")
-    if keychain.is_symlink() or (keychain.exists() and not owned_file(keychain)):
-        raise ProbeError("unsafe-fixture-keychain")
+    keychain = temporary_root / "public-only.keychain-db"
+    if temporary_root.exists() or temporary_root.is_symlink():
+        temporary_marker = temporary_root / "owner"
+        if temporary_root.is_symlink() or not temporary_root.is_dir() or (
+            temporary_root.stat().st_uid != os.getuid()) or not owned_file(temporary_marker) or (
+            temporary_marker.read_text() != MAGIC):
+            raise ProbeError("unowned-temporary-root")
+        if keychain.is_symlink() or (keychain.exists() and not owned_file(keychain)):
+            raise ProbeError("unsafe-fixture-keychain")
     checked(run, ["list-keychains", "-d", "user", "-s", *state["user"]], "restore-search-list")
     if keychain.exists():
         checked(run, ["delete-keychain", str(keychain)], "delete-public-keychain")
@@ -103,6 +113,8 @@ def cleanup(root, run=run_security):
     if restored != state or keychain.exists() or keychain.is_symlink():
         # Keep the original state/marker for the always() recovery step.
         raise ProbeError("cleanup-state-mismatch")
+    if temporary_root.exists():
+        shutil.rmtree(temporary_root)
     shutil.rmtree(root)
     return {"search_list_restored": True, "dynamic_unchanged": True,
             "default_unchanged": True, "owned_fixture_absent": True,
@@ -120,8 +132,8 @@ def find_g3(run, keychain=None):
             "certificate_count": len(hashes)}
 
 
-def verify_leaf(run, name, policy, keychain=None):
-    args = ["verify-cert", "-L", "-p", policy, "-c", str(FIXTURES / name)]
+def verify_leaf(run, name, policy, keychain=None, fixtures=FIXTURES):
+    args = ["verify-cert", "-L", "-p", policy, "-c", str(fixtures / name)]
     if keychain is not None:
         args += ["-k", str(keychain)]
     result = run(args)
@@ -135,10 +147,10 @@ def verify_leaf(run, name, policy, keychain=None):
                 ("not trusted", "untrusted"), ("no error", "nonzero-no-error-text"),
                 ("policy creation failed", "unsupported-policy"),
                 ("errsecinternalcomponent", "errSecInternalComponent"))
-                if text in result.stderr.lower()]}
+                if text in result.stderr.lower() and (label != "nonzero-no-error-text" or result.returncode != 0)]}
 
 
-def probe(root, run=run_security):
+def probe(root, temporary_root, fixtures, run=run_security):
     result = {"observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "pid": os.getpid(), "ppid": os.getppid(), "uid": os.getuid(),
               "public_only": True, "private_keys": False, "trust_overrides": False,
@@ -151,17 +163,26 @@ def probe(root, run=run_security):
         state_path = root / "original-state.json"
         fd = os.open(state_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as out:
-            json.dump(state, out)
+            json.dump({"state": state, "temporary_root": str(temporary_root)}, out)
+        # Read the already hash-verified bytes only once; use owned copies.
+        for name, data in fixtures.items():
+            path = root / "fixtures" / name
+            path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+            path.write_bytes(data)
+            path.chmod(0o600)
         result["before_state_sha256"] = digest(state)
         result["before_search_counts"] = {k: len(state[k]) for k in ("user", "dynamic")}
         result["before_default_present"] = bool(state["default"])
         result["before_default_g3"] = find_g3(run)
-        keychain = root / "public-only.keychain-db"
+        temporary_root.mkdir(mode=0o700)
+        (temporary_root / "owner").write_text(MAGIC)
+        (temporary_root / "owner").chmod(0o600)
+        keychain = temporary_root / "public-only.keychain-db"
         password = secrets.token_urlsafe(24)
         checked(run, ["create-keychain", "-p", password, str(keychain)], "create-public-keychain")
         checked(run, ["set-keychain-settings", "-lut", "3600", str(keychain)], "keychain-settings")
         checked(run, ["unlock-keychain", "-p", password, str(keychain)], "unlock-public-keychain")
-        checked(run, ["import", str(FIXTURES / "ios48-cert1"), "-k", str(keychain), "-t", "cert"], "import-public-g3")
+        checked(run, ["import", str(root / "fixtures/ios48-cert1"), "-k", str(keychain), "-t", "cert"], "import-public-g3")
         del password
         result["explicit_g3"] = find_g3(run, keychain)
         if not result["explicit_g3"]["g3_found"] or result["explicit_g3"]["certificate_count"] != 1:
@@ -177,7 +198,7 @@ def probe(root, run=run_security):
         for label, name, policy in (("ios", "ios48-cert0", "codeSign"),
                                     ("installer", "mac47-certs/certificate0.der", "basic")):
             for lookup, path in (("implicit", None), ("explicit", keychain)):
-                result["checks"][label + "_" + lookup] = verify_leaf(run, name, policy, path)
+                result["checks"][label + "_" + lookup] = verify_leaf(run, name, policy, path, root / "fixtures")
         result["test_completed"] = all((result["search_list_readback_matches"],
                                          result["dynamic_unchanged"], result["default_unchanged"]))
     except (ProbeError, OSError, ValueError) as error:
@@ -206,21 +227,38 @@ def main():
     temp = Path(os.environ["RUNNER_TEMP"])
     if not temp.is_absolute() or temp.is_symlink() or not temp.is_dir():
         raise ProbeError("unsafe-runner-temp")
-    root = temp / ("vogel-vault-public-keychain-" + run_id + "-" + attempt)
+    home = Path(os.environ["HOME"])
+    if not home.is_absolute() or home.is_symlink() or home.stat().st_uid != os.getuid():
+        raise ProbeError("unsafe-home")
+    recovery = home / ".local/state/vogel-vault-public-keychain"
+    for path in (home / ".local", home / ".local/state", recovery):
+        if path.is_symlink():
+            raise ProbeError("unsafe-recovery-parent")
+        path.mkdir(mode=0o700, exist_ok=True)
+        if not path.is_dir() or path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o022:
+            raise ProbeError("unsafe-recovery-parent")
+    name = "vogel-vault-public-keychain-" + run_id + "-" + attempt
+    root, temporary_root = recovery / name, temp / name
     if sys.argv[1] == "cleanup":
         print(json.dumps({"public_keychain_cleanup": cleanup(root)}, indent=2))
         return 0
-    if root.exists() or root.is_symlink():
+    if root.exists() or root.is_symlink() or temporary_root.exists() or temporary_root.is_symlink():
         raise ProbeError("fixture-already-exists")
+    # A new run must never supersede unfinished rollback state from an old one.
+    if any(recovery.iterdir()):
+        raise ProbeError("prior-recovery-pending")
+    fixtures = {}
     for name, expected in EXPECTED.items():
         path = FIXTURES / name
-        if path.is_symlink() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+        data = path.read_bytes()
+        if path.is_symlink() or hashlib.sha256(data).hexdigest() != expected:
             raise ProbeError("public-fixture-hash-mismatch")
+        fixtures[name] = data
     def stop(signum, frame):
         raise ProbeError("process-terminated")
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    result = probe(root)
+    result = probe(root, temporary_root, fixtures)
     print(json.dumps({"public_keychain_result": result}, indent=2))
     return 0 if result["test_completed"] and not result.get("cleanup", {}).get("failed") else 1
 

@@ -4,12 +4,13 @@ on:
     inputs:
       probe:
         type: choice
-        description: Approved public diagnostic scope
+        description: Approved public scope; dispatch only when release queue is idle
         default: context
         options: [context, keychain]
 permissions: {}
 concurrency:
   # The keychain probe must not overlap the release's search-list changes.
+  # Dispatch with no running/pending release: GitHub replaces pending group runs.
   group: deploy-testflight-only21mil-masons-budget
   cancel-in-progress: false
 jobs:

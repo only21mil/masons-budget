@@ -57,7 +57,9 @@ class PublicKeychainProbeTests(unittest.TestCase):
     def execute(self, fake):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "owned-public-fixture"
-            result = probe.probe(root, fake)
+            temp = Path(directory) / "runner-temp/owned-public-fixture"
+            temp.parent.mkdir()
+            result = probe.probe(root, temp, {}, fake)
             return result, root.exists()
 
     def test_exact_order_empty_and_nonempty_search_lists_restored(self):
@@ -96,13 +98,34 @@ class PublicKeychainProbeTests(unittest.TestCase):
     def test_failed_restore_retains_state_for_always_recovery(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "owned-public-fixture"
+            temp = Path(directory) / "runner-temp/owned-public-fixture"
+            temp.parent.mkdir()
             fake = FakeSecurity(["/public/original.keychain"])
             fake.fail_restore = True
-            result = probe.probe(root, fake)
+            result = probe.probe(root, temp, {}, fake)
             self.assertTrue(result["cleanup"]["failed"])
             self.assertTrue((root / "original-state.json").is_file())
             fake.fail_restore = False
             self.assertTrue(probe.cleanup(root, fake)["search_list_restored"])
+            self.assertFalse(root.exists())
+
+    def test_runner_temp_wipe_cannot_erase_failed_rollback_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "recovery/owned-public-fixture"
+            root.parent.mkdir()
+            temp = Path(directory) / "runner-temp/owned-public-fixture"
+            temp.parent.mkdir()
+            original = ["/public/original.keychain"]
+            fake = FakeSecurity(original)
+            fake.fail_restore = True
+            result = probe.probe(root, temp, {}, fake)
+            self.assertTrue(result["cleanup"]["failed"])
+            import shutil
+            shutil.rmtree(temp.parent)  # Model the GitHub runner end-of-job wipe.
+            self.assertTrue((root / "original-state.json").is_file())
+            fake.fail_restore = False
+            self.assertTrue(probe.cleanup(root, fake)["search_list_restored"])
+            self.assertEqual(fake.user, original)
             self.assertFalse(root.exists())
 
     def test_unowned_and_symlink_roots_preserved(self):
