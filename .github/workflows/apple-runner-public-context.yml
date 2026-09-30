@@ -58,10 +58,15 @@ jobs:
               print(json.dumps(result, indent=2))
               sys.exit(1)
           pid = os.getpid()
-          for _ in range(4):
-              p = subprocess.run(
-                  ["/bin/ps", "-o", "pid=,ppid=,uid=,gid=,comm=", "-p", str(pid)],
-                  capture_output=True, text=True, timeout=5)
+          for _ in range(8):
+              try:
+                  p = subprocess.run(
+                      ["/bin/ps", "-o", "pid=,ppid=,uid=,gid=,comm=", "-p", str(pid)],
+                      capture_output=True, text=True, timeout=5)
+              except (OSError, subprocess.TimeoutExpired) as error:
+                  result["ancestry_selected"].append({"error_class": type(error).__name__})
+                  result["ancestry_coverage_gap"] = True
+                  break
               result["ancestry_selected"].append({
                   "exit_code": p.returncode,
                   "stdout": p.stdout.strip(), "stderr": p.stderr.strip()
@@ -92,6 +97,21 @@ jobs:
                   }
               except subprocess.TimeoutExpired:
                   result["checks"][name] = {"timeout_seconds": 15}
+              except OSError:
+                  result["checks"][name] = {"spawn_failed": True}
+          failures = {}
+          for name, check in result["checks"].items():
+              if "timeout_seconds" in check:
+                  failures[name] = "timeout: evidence gap"
+              elif check.get("spawn_failed"):
+                  failures[name] = "spawn failure: evidence gap"
+              elif check["exit_code"] != 0:
+                  failures[name] = "probe exited nonzero"
+              elif name == "name" and check["stdout"] != "ghrunner":
+                  failures[name] = "unexpected resolved name"
+              elif name == "directory" and check["stdout"] != "UniqueID: 502":
+                  failures[name] = "unexpected DirectoryServices result"
+          result["probe_failure_classes"] = failures
           passed = (
               all(v.get("exit_code") == 0 for v in result["checks"].values())
               and result["checks"]["name"].get("stdout") == "ghrunner"
