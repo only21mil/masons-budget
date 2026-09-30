@@ -10,6 +10,95 @@ protocol SyncMetadataStoring: AnyObject {
     func removeObject(forKey defaultName: String)
 }
 
+/// Serializes every app-initiated Convex version check and file sync.
+/// Callers keep their own task, so cancelling a view's manual refresh does
+/// not cancel an unrelated push that owns the next slot.
+@MainActor
+final class ConvexSyncExecutionGate {
+    static let shared = ConvexSyncExecutionGate()
+
+    private final class Request {
+        let id: UUID
+        let operation: @MainActor () async -> Void
+        private var completion: CheckedContinuation<Void, Never>?
+
+        init(id: UUID, operation: @escaping @MainActor () async -> Void, completion: CheckedContinuation<Void, Never>) {
+            self.id = id
+            self.operation = operation
+            self.completion = completion
+        }
+
+        func resumeCaller() {
+            completion?.resume()
+            completion = nil
+        }
+    }
+
+    private var active: Request?
+    private var activeTask: Task<Void, Never>?
+    private var queued: [Request] = []
+    private(set) var sessionEpoch = 0
+    var queuedCount: Int { queued.count }
+
+    func withSlot(expectedEpoch: Int? = nil, _ operation: @escaping @MainActor () async -> Void) async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled, expectedEpoch.map({ $0 == sessionEpoch }) ?? true else {
+                    continuation.resume()
+                    return
+                }
+                let request = Request(id: id, operation: operation, completion: continuation)
+                if active == nil {
+                    start(request)
+                } else {
+                    queued.append(request)
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.cancelRequest(id: id) }
+        }
+    }
+
+    private func start(_ request: Request) {
+        active = request
+        activeTask = Task { @MainActor in
+            if !Task.isCancelled { await request.operation() }
+            finish(id: request.id)
+        }
+    }
+
+    private func cancelRequest(id: UUID) {
+        if let index = queued.firstIndex(where: { $0.id == id }) {
+            queued.remove(at: index).resumeCaller()
+        } else if active?.id == id {
+            activeTask?.cancel()
+            active?.resumeCaller()
+        }
+    }
+
+    /// Lock and profile changes invalidate every app sync request, including
+    /// manual refreshes whose view task may not have been cancelled yet.
+    func invalidateSession() {
+        sessionEpoch += 1
+        activeTask?.cancel()
+        active?.resumeCaller()
+        for request in queued { request.resumeCaller() }
+        queued.removeAll()
+        // Keep the active slot until even a cancellation-ignoring read exits.
+    }
+
+    private func finish(id: UUID) {
+        guard active?.id == id else { return }
+        active?.resumeCaller()
+        active = nil
+        activeTask = nil
+        if !queued.isEmpty {
+            start(queued.removeFirst())
+        }
+    }
+}
+
 /// Owns one cancellable retry timer for the unlocked subscription lifetime.
 /// A pushed snapshot replaces the previous one even during backoff, so the
 /// due retry uses the newest server versions without another HTTP poll.
@@ -31,6 +120,8 @@ final class ConvexSyncRetryController {
     private var actionTask: Task<Void, Never>?
     private var queuedRetry: RetryRequest?
     private var queuedPush: PushRequest?
+    private var idleWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+    var idleWaiterCount: Int { idleWaiters.count }
     private let now: () -> TimeInterval
     private let sleep: @Sendable (TimeInterval) async throws -> Void
 
@@ -112,14 +203,32 @@ final class ConvexSyncRetryController {
             self.queuedRetry = nil
             arm(queuedRetry)
         }
+        if actionTask == nil { resumeIdleWaiters() }
     }
 
     /// Let an already emitted version finish applying if the stream ends
-    /// normally. Lock cancellation skips this wait and cancels the action.
+    /// normally. Cancelling the caller releases this wait immediately and
+    /// cancels the owned action, even though Task.value itself is not cancellable.
     func waitForActiveSync() async {
-        while let actionTask {
-            await actionTask.value
+        guard !Task.isCancelled, actionTask != nil else { return }
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled || actionTask == nil {
+                    continuation.resume()
+                } else {
+                    idleWaiters[id] = continuation
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.cancel() }
         }
+    }
+
+    private func resumeIdleWaiters() {
+        let waiters = Array(idleWaiters.values)
+        idleWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
     }
 
     func cancelTimer() {
@@ -133,6 +242,7 @@ final class ConvexSyncRetryController {
         actionTask?.cancel()
         queuedPush = nil
         latestVersions = nil
+        resumeIdleWaiters()
     }
 }
 
@@ -313,6 +423,7 @@ final class ConvexSyncService {
     /// instead of fetching one over HTTP. Shares the backoff/member guards
     /// with the event-driven `hasUpdates()`.
     func hasUpdates(remote: [String: Double]) async -> Bool {
+        guard !Task.isCancelled else { return false }
         let now = now()
         let sameMember = metadataStore.string(forKey: Self.versionsMemberKey) == currentMember.rawValue
         let nextRetry = metadataStore.object(forKey: Self.nextRetryKey) as? Double ?? 0
@@ -331,15 +442,18 @@ final class ConvexSyncService {
     /// for setup/retry.
     func hasUpdates() async -> Bool {
         let now = now()
-        let sameMember = metadataStore.string(forKey: Self.versionsMemberKey) == currentMember.rawValue
+        let member = selectedMember
+        let sameMember = metadataStore.string(forKey: Self.versionsMemberKey) == member.rawValue
         let nextRetry = metadataStore.object(forKey: Self.nextRetryKey) as? Double ?? 0
         guard !sameMember || now >= nextRetry else { return false }
         do {
             let remote = try await reader.checkVersions()
+            guard !Task.isCancelled, selectedMember == member else { return false }
             return await hasUpdates(remote: remote)
         } catch {
+            guard !Task.isCancelled, selectedMember == member else { return false }
             if !sameMember { metadataStore.removeObject(forKey: Self.dataVersionsKey) }
-            metadataStore.set(currentMember.rawValue, forKey: Self.versionsMemberKey)
+            metadataStore.set(member.rawValue, forKey: Self.versionsMemberKey)
             Self.recordFailure("Could not check for updates", at: now, to: metadataStore)
             return false
         }

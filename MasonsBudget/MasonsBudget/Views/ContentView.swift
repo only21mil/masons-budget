@@ -80,6 +80,7 @@ enum GearDestination: String, CaseIterable, Identifiable {
 // MARK: - Content View
 
 struct ContentView: View {
+    @EnvironmentObject private var authentication: AppAuthenticationSession
     @AppStorage("selected_family_member") private var selectedMemberRaw = FamilyMember.victor.rawValue
     @AppStorage("display_unit") private var displayUnitRaw = DisplayUnit.btc.rawValue
     @AppStorage("appearance_mode") private var appearanceModeRaw = AppearanceMode.system.rawValue
@@ -725,11 +726,17 @@ struct ContentView: View {
 
     private func retryRead() {
         cancelReadRetry()
+        guard authentication.isUnlocked else { return }
         let viewer = activeMember
+        let epoch = ConvexSyncExecutionGate.shared.sessionEpoch
         retryingRead = true
         readRetryTask = Task {
-            await ConvexSyncService(context: modelContext).syncAll()
-            guard !Task.isCancelled, activeMember == viewer else { return }
+            await ConvexSyncExecutionGate.shared.withSlot(expectedEpoch: epoch) {
+                guard authentication.isUnlocked, !Task.isCancelled, activeMember == viewer else { return }
+                await ConvexSyncService(context: modelContext).syncAll()
+            }
+            guard authentication.isUnlocked, !Task.isCancelled, activeMember == viewer,
+                  ConvexSyncExecutionGate.shared.sessionEpoch == epoch else { return }
             // A failed download still gets a canonical retry. A successful
             // download also reloads through the lastReadSuccess task identity.
             canonicalFinancials.requestReload()

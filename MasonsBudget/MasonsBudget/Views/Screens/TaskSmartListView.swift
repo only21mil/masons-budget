@@ -326,18 +326,24 @@ private enum LedgerListRefreshGate {
 }
 
 struct LedgerListRefresh: ViewModifier {
+    @EnvironmentObject private var authentication: AppAuthenticationSession
     @Environment(\.modelContext) private var context
     @Environment(CanonicalFinancialSourceStore.self) private var financials
     @AppStorage("selected_family_member") private var memberRaw = FamilyMember.victor.rawValue
 
     func body(content: Content) -> some View {
         content.refreshable {
-            guard !LedgerListRefreshGate.isRefreshing else { return }
+            guard authentication.isUnlocked, !LedgerListRefreshGate.isRefreshing else { return }
             LedgerListRefreshGate.isRefreshing = true
             defer { LedgerListRefreshGate.isRefreshing = false }
             let viewer = memberRaw
-            await ConvexSyncService(context: context).syncAll()
-            guard !Task.isCancelled, memberRaw == viewer else { return }
+            let epoch = ConvexSyncExecutionGate.shared.sessionEpoch
+            await ConvexSyncExecutionGate.shared.withSlot(expectedEpoch: epoch) {
+                guard authentication.isUnlocked, !Task.isCancelled, memberRaw == viewer else { return }
+                await ConvexSyncService(context: context).syncAll()
+            }
+            guard authentication.isUnlocked, !Task.isCancelled, memberRaw == viewer,
+                  ConvexSyncExecutionGate.shared.sessionEpoch == epoch else { return }
             financials.requestReload()
         }
     }
@@ -345,8 +351,24 @@ struct LedgerListRefresh: ViewModifier {
 
 struct LedgerRefreshButton: View {
     @Environment(\.refresh) private var refresh
+    @EnvironmentObject private var authentication: AppAuthenticationSession
+    @State private var refreshTask: Task<Void, Never>?
+    @State private var refreshID = UUID()
     var body: some View {
-        Button("Retry") { Task { await refresh?() } }
+        Button("Retry") {
+            guard authentication.isUnlocked else { return }
+            let epoch = ConvexSyncExecutionGate.shared.sessionEpoch
+            refreshTask?.cancel()
+            let id = UUID()
+            refreshID = id
+            refreshTask = Task { @MainActor in
+                defer { if refreshID == id { refreshTask = nil } }
+                guard authentication.isUnlocked, !Task.isCancelled,
+                      ConvexSyncExecutionGate.shared.sessionEpoch == epoch else { return }
+                await refresh?()
+            }
+        }
             .disabled(refresh == nil)
+            .onDisappear { refreshTask?.cancel(); refreshTask = nil; refreshID = UUID() }
     }
 }

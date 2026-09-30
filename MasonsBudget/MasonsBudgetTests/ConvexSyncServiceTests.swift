@@ -3,6 +3,209 @@ import XCTest
 
 final class ConvexSyncServiceTests: XCTestCase {
     @MainActor
+    func testExecutionGateSerializesEveryManualEntryAgainstPushAndRetryInBothOrders() async {
+        for manual in ["startup", "foreground", "profile", "read-retry", "list-refresh"] {
+          for automatic in ["push", "retry"] {
+           for manualFirst in [true, false] {
+            let firstName = manualFirst ? manual : automatic
+            let secondName = manualFirst ? automatic : manual
+            let gate = ConvexSyncExecutionGate()
+            let releaseFirst = RetryActionGate()
+            let firstEntered = expectation(description: "\(firstName) entered")
+            let secondSubmitted = expectation(description: "\(secondName) submitted")
+            let secondEntered = expectation(description: "\(secondName) entered")
+            var active = 0
+            var order: [String] = []
+            let first = Task { @MainActor in
+                await gate.withSlot {
+                    active += 1
+                    order.append("\(firstName)-start")
+                    firstEntered.fulfill()
+                    await releaseFirst.wait()
+                    active -= 1
+                    order.append("\(firstName)-end")
+                }
+            }
+            await fulfillment(of: [firstEntered], timeout: 1)
+            let second = Task { @MainActor in
+                secondSubmitted.fulfill()
+                await gate.withSlot {
+                    XCTAssertEqual(active, 0)
+                    active += 1
+                    order.append(secondName)
+                    active -= 1
+                    secondEntered.fulfill()
+                }
+            }
+            await fulfillment(of: [secondSubmitted], timeout: 1)
+            for _ in 0 ..< 100 where gate.queuedCount == 0 { await Task.yield() }
+            XCTAssertEqual(gate.queuedCount, 1)
+            releaseFirst.open()
+            await fulfillment(of: [secondEntered], timeout: 1)
+            await first.value
+            await second.value
+            XCTAssertEqual(order, ["\(firstName)-start", "\(firstName)-end", secondName])
+           }
+          }
+        }
+    }
+
+    @MainActor
+    func testExecutionGateSessionInvalidationCancelsActiveAndQueuedAndFencesReentry() async {
+        let gate = ConvexSyncExecutionGate()
+        let oldEpoch = gate.sessionEpoch
+        let releaseOld = RetryActionGate()
+        let oldEntered = expectation(description: "old read entered")
+        let nextEntered = expectation(description: "new session read entered")
+        var oldSawCancellation = false
+        var oldQueuedRuns = 0
+        let old = Task { @MainActor in
+            await gate.withSlot(expectedEpoch: oldEpoch) {
+                oldEntered.fulfill()
+                await releaseOld.wait() // transport ignores cancellation
+                oldSawCancellation = Task.isCancelled
+            }
+        }
+        await fulfillment(of: [oldEntered], timeout: 1)
+        let queued = Task { @MainActor in
+            await gate.withSlot(expectedEpoch: oldEpoch) { oldQueuedRuns += 1 }
+        }
+        for _ in 0 ..< 100 where gate.queuedCount == 0 { await Task.yield() }
+        XCTAssertEqual(gate.queuedCount, 1)
+        gate.invalidateSession() // profile away or lock
+        await old.value // Caller returns before the transport does.
+        await queued.value
+        XCTAssertEqual(oldQueuedRuns, 0)
+        let lateOld = Task { @MainActor in
+            await gate.withSlot(expectedEpoch: oldEpoch) { oldQueuedRuns += 1 }
+        }
+        await lateOld.value // Same profile can be selected again; epoch still fences old work.
+        let next = Task { @MainActor in
+            await gate.withSlot(expectedEpoch: gate.sessionEpoch) { nextEntered.fulfill() }
+        }
+        for _ in 0 ..< 100 where gate.queuedCount == 0 { await Task.yield() }
+        XCTAssertEqual(gate.queuedCount, 1)
+        releaseOld.open()
+        await fulfillment(of: [nextEntered], timeout: 1)
+        await next.value
+        XCTAssertTrue(oldSawCancellation)
+        XCTAssertEqual(oldQueuedRuns, 0)
+    }
+
+    @MainActor
+    func testExecutionGateCancelsQueuedManualWithoutCancellingActivePush() async {
+        let gate = ConvexSyncExecutionGate()
+        let releasePush = RetryActionGate()
+        let pushEntered = expectation(description: "push entered")
+        let manualReturned = expectation(description: "queued manual task returned on cancellation")
+        let manualEntered = expectation(description: "cancelled manual task did not run")
+        manualEntered.isInverted = true
+        var pushWasCancelled = false
+        let push = Task { @MainActor in
+            await gate.withSlot {
+                pushEntered.fulfill()
+                await releasePush.wait()
+                pushWasCancelled = Task.isCancelled
+            }
+        }
+        await fulfillment(of: [pushEntered], timeout: 1)
+        let manual = Task { @MainActor in
+            await gate.withSlot { manualEntered.fulfill() }
+            manualReturned.fulfill()
+        }
+        for _ in 0 ..< 100 where gate.queuedCount == 0 { await Task.yield() }
+        XCTAssertEqual(gate.queuedCount, 1)
+        manual.cancel()
+        await fulfillment(of: [manualReturned], timeout: 1)
+        XCTAssertFalse(pushWasCancelled)
+        releasePush.open()
+        await push.value
+        await fulfillment(of: [manualEntered], timeout: 0.1)
+        XCTAssertFalse(pushWasCancelled)
+    }
+
+    @MainActor
+    func testExecutionGateCancelsActiveManualWithoutCancellingQueuedPush() async {
+        let gate = ConvexSyncExecutionGate()
+        let releaseManual = RetryActionGate()
+        let manualEntered = expectation(description: "manual read entered")
+        let pushEntered = expectation(description: "queued push entered")
+        var manualSawCancellation = false
+        var pushSawCancellation = true
+        let manual = Task { @MainActor in
+            await gate.withSlot {
+                manualEntered.fulfill()
+                await releaseManual.wait() // ignores cancellation
+                manualSawCancellation = Task.isCancelled
+            }
+        }
+        await fulfillment(of: [manualEntered], timeout: 1)
+        let push = Task { @MainActor in
+            await gate.withSlot {
+                pushSawCancellation = Task.isCancelled
+                pushEntered.fulfill()
+            }
+        }
+        for _ in 0 ..< 100 where gate.queuedCount == 0 { await Task.yield() }
+        XCTAssertEqual(gate.queuedCount, 1)
+        manual.cancel()
+        await manual.value // The disappearing view returns promptly.
+        XCTAssertEqual(gate.queuedCount, 1) // Still serializes the late manual read.
+        releaseManual.open()
+        await fulfillment(of: [pushEntered], timeout: 1)
+        await push.value
+        XCTAssertTrue(manualSawCancellation)
+        XCTAssertFalse(pushSawCancellation)
+    }
+
+    @MainActor
+    func testProfileSwitchDiscardsLateForegroundVersionsResponse() async throws {
+        let entered = expectation(description: "foreground versions read started")
+        let finished = expectation(description: "late foreground response exited")
+        let transport = RetryActionGate()
+        let execution = ConvexSyncExecutionGate()
+        let store = RecordingSyncMetadataStore()
+        store.set("victor", forKey: ConvexSyncService.selectedMemberKey)
+        store.set("victor", forKey: ConvexSyncService.versionsMemberKey)
+        store.set(["todos": 1.0], forKey: ConvexSyncService.dataVersionsKey)
+        let client = ConvexClient(
+            deploymentURL: try XCTUnwrap(URL(string: "https://example.invalid")),
+            requestExecutor: { request in
+                entered.fulfill()
+                await transport.wait() // completes after the profile changes
+                let data = try JSONSerialization.data(withJSONObject: [
+                    "status": "success", "value": ["todos": 42],
+                ])
+                let response = try XCTUnwrap(HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil,
+                ))
+                return (data, response)
+            },
+        )
+        let schema = Schema([TodoItem.self, TodoProject.self, TodoArea.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let reader = ConvexDataReader(client: client, rowReadsEnabled: { false })
+        let sync = ConvexSyncService(reader: reader, context: ModelContext(container), metadataStore: store)
+        var changed = true
+        let check = Task { @MainActor in
+            await execution.withSlot(expectedEpoch: execution.sessionEpoch) {
+                changed = await sync.hasUpdates()
+                finished.fulfill()
+            }
+        }
+        await fulfillment(of: [entered], timeout: 1)
+        store.set("mason", forKey: ConvexSyncService.selectedMemberKey)
+        execution.invalidateSession()
+        store.set("victor", forKey: ConvexSyncService.selectedMemberKey) // switch back before stale response
+        await check.value
+        transport.open()
+        await fulfillment(of: [finished], timeout: 1)
+        XCTAssertFalse(changed)
+        XCTAssertEqual(store.string(forKey: ConvexSyncService.versionsMemberKey), "victor")
+        XCTAssertNil(store.object(forKey: ConvexSyncService.nextRetryKey))
+    }
+
+    @MainActor
     func testSuccessfulSyncPublishesVersionsAsFinalCompletionMarker() {
         let store = RecordingSyncMetadataStore()
 
@@ -319,6 +522,37 @@ final class ConvexSyncServiceTests: XCTestCase {
         await fulfillment(of: [finished], timeout: 1)
         XCTAssertTrue(sawCancellation)
         XCTAssertFalse(controller.isSyncRunning)
+    }
+
+    @MainActor
+    func testCancellingStreamWaitReleasesCallerAndActivePush() async {
+        let entered = expectation(description: "owned push entered")
+        let pushDone = expectation(description: "cancelled push exited")
+        let waitReturned = expectation(description: "stream wait returned on cancellation")
+        let gate = RetryActionGate()
+        let controller = ConvexSyncRetryController(now: { 100 }, sleep: { _ in })
+        var pushWasCancelled = false
+        controller.submitPush(["todos": 42], member: "victor") { _, _ in
+            entered.fulfill()
+            await gate.wait()
+            pushWasCancelled = Task.isCancelled
+            pushDone.fulfill()
+        }
+        await fulfillment(of: [entered], timeout: 1)
+        let waiter = Task { @MainActor in
+            await controller.waitForActiveSync()
+            waitReturned.fulfill()
+        }
+        for _ in 0 ..< 100 where controller.idleWaiterCount == 0 { await Task.yield() }
+        XCTAssertEqual(controller.idleWaiterCount, 1)
+        waiter.cancel()
+        await fulfillment(of: [waitReturned], timeout: 1)
+        XCTAssertTrue(controller.isSyncRunning)
+        gate.open()
+        // A cancelled outer window task must cancel the separately owned
+        // push before its late response can be applied.
+        await fulfillment(of: [pushDone], timeout: 1)
+        XCTAssertTrue(pushWasCancelled)
     }
 
     @MainActor

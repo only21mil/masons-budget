@@ -72,6 +72,7 @@ struct MasonsBudgetApp: App {
     @AppStorage("has_completed_onboarding") private var hasCompletedOnboarding = false
     @AppStorage("app_lock_enabled") private var appLockEnabled = true
     @AppStorage("selected_family_member") private var selectedMember: String = FamilyMember.victor.rawValue
+    @AppStorage(ConvexSyncService.nextRetryKey) private var nextSyncRetryDeadline = 0.0
     @AppStorage("appearance_mode") private var appearanceModeRaw = AppearanceMode.system.rawValue
     @StateObject private var syncStatus = SyncStatusStore.shared
     @StateObject private var taskUndoStore = TaskUndoStore.shared
@@ -79,6 +80,10 @@ struct MasonsBudgetApp: App {
     @StateObject private var authentication = AppAuthenticationSession()
     @State private var priceTimer: Timer?
     @State private var syncRetry = ConvexSyncRetryController()
+    @State private var foregroundSyncTask: Task<Void, Never>?
+    @State private var profileSyncTask: Task<Void, Never>?
+    @State private var foregroundSyncID = UUID()
+    @State private var profileSyncID = UUID()
 
     private var appearanceMode: AppearanceMode {
         AppearanceMode(rawValue: appearanceModeRaw) ?? .system
@@ -97,6 +102,7 @@ struct MasonsBudgetApp: App {
                     ContentView()
                         .task {
                             await syncFromConvex()
+                            guard authentication.isUnlocked, !Task.isCancelled else { return }
                             startPriceRefresh()
                             await subscribeToVersions()
                         }
@@ -134,7 +140,7 @@ struct MasonsBudgetApp: App {
             }
             #if os(iOS)
             .onReceive(NotificationCenter.default.publisher(for: UIScene.willEnterForegroundNotification)) { _ in
-                Task { await syncIfChanged() }
+                startForegroundSync()
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
                 authentication.suspend(for: .protectedData)
@@ -157,14 +163,27 @@ struct MasonsBudgetApp: App {
             }
             #endif
             .onChange(of: selectedMember) { _, member in
+                ConvexSyncExecutionGate.shared.invalidateSession()
                 authentication.profileChanged(to: member)
                 syncRetry.cancel()
+                cancelAppSyncTasks()
                 if authentication.isUnlocked {
-                    Task { await syncFromConvex() }
+                    startProfileSync()
                 }
             }
             .onChange(of: authentication.isUnlocked) { _, unlocked in
-                if !unlocked { syncRetry.cancel() }
+                if !unlocked {
+                    ConvexSyncExecutionGate.shared.invalidateSession()
+                    syncRetry.cancel()
+                    cancelAppSyncTasks()
+                }
+            }
+            .onChange(of: nextSyncRetryDeadline) { _, _ in
+                // Manual Retry and pull-to-refresh also publish the persisted
+                // deadline. Reconcile their one-shot timer without polling.
+                guard authentication.isUnlocked else { return }
+                let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
+                scheduleSyncRetry(using: sync, member: selectedMember)
             }
             .environmentObject(authentication)
             .environmentObject(syncStatus)
@@ -181,15 +200,51 @@ struct MasonsBudgetApp: App {
     // MARK: - Convex Sync
 
     @MainActor
+    private func startForegroundSync() {
+        foregroundSyncTask?.cancel()
+        let id = UUID()
+        foregroundSyncID = id
+        foregroundSyncTask = Task { @MainActor in
+            defer { if foregroundSyncID == id { foregroundSyncTask = nil } }
+            await syncIfChanged()
+        }
+    }
+
+    @MainActor
+    private func startProfileSync() {
+        profileSyncTask?.cancel()
+        let id = UUID()
+        profileSyncID = id
+        profileSyncTask = Task { @MainActor in
+            defer { if profileSyncID == id { profileSyncTask = nil } }
+            await syncFromConvex()
+        }
+    }
+
+    @MainActor
+    private func cancelAppSyncTasks() {
+        foregroundSyncTask?.cancel()
+        foregroundSyncTask = nil
+        foregroundSyncID = UUID()
+        profileSyncTask?.cancel()
+        profileSyncTask = nil
+        profileSyncID = UUID()
+    }
+
+    @MainActor
     private func syncFromConvex() async {
         guard authentication.isUnlocked, !Task.isCancelled else { return }
         let member = selectedMember
+        let epoch = ConvexSyncExecutionGate.shared.sessionEpoch
         await BTCPriceService.shared.refreshAndStore()
         await StockPriceService.shared.refreshAndStore()
         guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
-        let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
-        await sync.syncAll()
-        scheduleSyncRetry(using: sync, member: member)
+        await ConvexSyncExecutionGate.shared.withSlot(expectedEpoch: epoch) {
+            guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
+            let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
+            await sync.syncAll()
+            scheduleSyncRetry(using: sync, member: member)
+        }
     }
 
     /// Check if data has changed on Convex, and sync if so.
@@ -203,53 +258,62 @@ struct MasonsBudgetApp: App {
     private func syncIfChanged() async {
         guard authentication.isUnlocked else { return }
         let member = selectedMember
-        let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
-        let changed = await sync.hasUpdates()
-        guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
-        if changed {
-            await sync.syncAll()
+        let epoch = ConvexSyncExecutionGate.shared.sessionEpoch
+        await ConvexSyncExecutionGate.shared.withSlot(expectedEpoch: epoch) {
+            guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
+            let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
+            let changed = await sync.hasUpdates()
+            guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
+            if changed {
+                await sync.syncAll()
+            }
+            scheduleSyncRetry(using: sync, member: member)
         }
-        scheduleSyncRetry(using: sync, member: member)
     }
 
     @MainActor
     private func scheduleSyncRetry(using sync: ConvexSyncService, member: String) {
         guard !Task.isCancelled, authentication.isUnlocked, selectedMember == member else { return }
+        let epoch = ConvexSyncExecutionGate.shared.sessionEpoch
         guard let deadline = sync.retryDeadline else {
             syncRetry.cancelTimer()
             return
         }
         syncRetry.schedule(deadline: deadline, member: member) { versions, member in
-            await retryFailedSync(versions: versions, member: member)
+            await retryFailedSync(versions: versions, member: member, epoch: epoch)
         }
     }
 
     @MainActor
-    private func retryFailedSync(versions: [String: Double]?, member: String) async {
-        guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
-        let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
-        let changed: Bool
-        if let versions {
-            changed = await sync.hasUpdates(remote: versions)
-        } else {
-            changed = await sync.hasUpdates()
-        }
-        guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
-        if changed {
-            await sync.syncAll()
-        }
-        scheduleSyncRetry(using: sync, member: member)
-    }
-
-    @MainActor
-    private func syncPushedVersions(_ versions: [String: Double], member: String) async {
-        guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
-        let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
-        if await sync.hasUpdates(remote: versions) {
+    private func retryFailedSync(versions: [String: Double]?, member: String, epoch: Int) async {
+        await ConvexSyncExecutionGate.shared.withSlot(expectedEpoch: epoch) {
             guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
-            await sync.syncAll()
+            let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
+            let changed: Bool
+            if let versions {
+                changed = await sync.hasUpdates(remote: versions)
+            } else {
+                changed = await sync.hasUpdates()
+            }
+            guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
+            if changed {
+                await sync.syncAll()
+            }
+            scheduleSyncRetry(using: sync, member: member)
         }
-        scheduleSyncRetry(using: sync, member: member)
+    }
+
+    @MainActor
+    private func syncPushedVersions(_ versions: [String: Double], member: String, epoch: Int) async {
+        await ConvexSyncExecutionGate.shared.withSlot(expectedEpoch: epoch) {
+            guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
+            let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
+            if await sync.hasUpdates(remote: versions) {
+                guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
+                await sync.syncAll()
+            }
+            scheduleSyncRetry(using: sync, member: member)
+        }
     }
 
     @MainActor
@@ -267,6 +331,7 @@ struct MasonsBudgetApp: App {
     @MainActor
     private func subscribeToVersions() async {
         let client = ConvexSubscriptionClient()
+        let retryController = syncRetry
         defer { syncRetry.cancel() }
         let args = ConvexClient.authenticatedArguments(
             endpoint: "api/query",
@@ -277,8 +342,9 @@ struct MasonsBudgetApp: App {
         await withTaskCancellationHandler {
             for await versions in client.subscribeVersions(authArgs: args) {
                 guard authentication.isUnlocked, !Task.isCancelled else { break }
+                let epoch = ConvexSyncExecutionGate.shared.sessionEpoch
                 syncRetry.submitPush(versions, member: selectedMember) { latest, member in
-                    await syncPushedVersions(latest, member: member)
+                    await syncPushedVersions(latest, member: member, epoch: epoch)
                 }
             }
             if authentication.isUnlocked, !Task.isCancelled {
@@ -286,6 +352,7 @@ struct MasonsBudgetApp: App {
             }
         } onCancel: {
             client.cancel()
+            Task { @MainActor in retryController.cancel() }
         }
     }
 
