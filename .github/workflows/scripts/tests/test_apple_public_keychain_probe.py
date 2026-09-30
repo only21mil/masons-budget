@@ -19,6 +19,7 @@ class FakeSecurity:
         self.fail_restore = False
         self.implicit_pass = True
         self.operations = []
+        self.created_keychains = []
 
     def __call__(self, args):
         command = args[0]
@@ -36,7 +37,8 @@ class FakeSecurity:
         elif command == "default-keychain":
             code, stderr = 1, "A default keychain could not be found."
         elif command == "create-keychain":
-            Path(args[-1]).touch()
+            Path(args[-1]).write_bytes(b"kych\x00\x01\x00\x00public fixture")
+            self.created_keychains.append(args[-1])
         elif command == "find-certificate":
             explicit = args[-1].endswith("public-only.keychain-db")
             visible = explicit or any("public-only" in p for p in self.user)
@@ -183,6 +185,73 @@ class PublicKeychainProbeTests(unittest.TestCase):
         self.assertTrue(result["owned_public_copies_removed"])
         self.assertTrue(all(not Path(args[i + 1]).exists() for args in calls
                             for i, value in enumerate(args) if value == "-c"))
+
+    def test_locations_restore_after_each_owned_phase(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "recovery/fixture"
+            temp, standard = base / "runner-temp", base / "Library/Keychains"
+            for parent in (root.parent, temp, standard):
+                parent.mkdir(parents=True)
+            original = ["/public/b.keychain", "/public/a keychain"]
+            fake = FakeSecurity(original)
+            result = probe.location_probe(root, temp, standard, {}, fake)
+            self.assertTrue(result["test_completed"])
+            self.assertEqual(list(result["locations"]), ["runner-temp", "standard"])
+            self.assertEqual(fake.user, original)
+            self.assertEqual(len(fake.created_keychains), 2)
+            self.assertTrue(fake.created_keychains[0].startswith(str(temp) + "/"))
+            self.assertTrue(fake.created_keychains[1].startswith(str(standard) + "/"))
+            self.assertFalse(result["locations"]["runner-temp"]["apple_standard_path_rule_matches"])
+            self.assertTrue(result["locations"]["standard"]["apple_standard_path_rule_matches"])
+            self.assertEqual(result["locations"]["standard"]["keychain_header_prefix_hex"],
+                             b"kych\x00\x01\x00\x00".hex())
+            self.assertGreater(result["locations"]["standard"]["keychain_file_size_bytes"], 8)
+            self.assertEqual(result["before_state_sha256"], result["final_state_sha256"])
+            self.assertTrue(all(phase["cleanup"]["search_list_restored"]
+                                for phase in result["locations"].values()))
+            self.assertFalse(list(root.parent.iterdir()))
+            self.assertFalse(list(temp.iterdir()))
+            self.assertFalse(list(standard.iterdir()))
+
+    def test_locations_stop_before_second_phase_when_restore_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "recovery/fixture"
+            temp, standard = base / "runner-temp", base / "Library/Keychains"
+            for parent in (root.parent, temp, standard):
+                parent.mkdir(parents=True)
+            fake = FakeSecurity(["/public/original.keychain"])
+            fake.fail_restore = True
+            result = probe.location_probe(root, temp, standard, {}, fake)
+            self.assertFalse(result["test_completed"])
+            self.assertEqual(list(result["locations"]), ["runner-temp"])
+            self.assertEqual(len(fake.created_keychains), 1)
+            self.assertFalse(list(standard.iterdir()))
+            fake.fail_restore = False
+            for _, owned, _ in probe.location_paths(root, temp, standard):
+                probe.cleanup(owned, fake)
+            self.assertEqual(fake.user, ["/public/original.keychain"])
+
+    def test_locations_preserve_preexisting_or_symlink_fixture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "recovery/fixture"
+            temp, standard = base / "runner-temp", base / "Library/Keychains"
+            for parent in (root.parent, temp, standard):
+                parent.mkdir(parents=True)
+            existing = standard / "fixture-standard"
+            existing.mkdir()
+            fake = FakeSecurity()
+            with self.assertRaises(probe.ProbeError):
+                probe.location_probe(root, temp, standard, {}, fake)
+            self.assertFalse(fake.operations)
+            self.assertTrue(existing.exists())
+            existing.rmdir()
+            existing.symlink_to(temp, target_is_directory=True)
+            with self.assertRaises(probe.ProbeError):
+                probe.location_probe(root, temp, standard, {}, fake)
+            self.assertTrue(existing.is_symlink())
 
 
 if __name__ == "__main__":

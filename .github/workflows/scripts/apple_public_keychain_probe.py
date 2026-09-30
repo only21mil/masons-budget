@@ -208,6 +208,16 @@ def probe(root, temporary_root, fixtures, run=run_security):
         keychain = temporary_root / "public-only.keychain-db"
         password = secrets.token_urlsafe(24)
         checked(run, ["create-keychain", "-p", password, str(keychain)], "create-public-keychain")
+        # Public-only fixture metadata. Apple selects keychain formats using
+        # this path rule; retain the header indicator without claiming a
+        # decoded blob version from it.
+        path_text = str(keychain)
+        result["apple_standard_path_rule_matches"] = (
+            "/Library/Keychains" in path_text and not path_text.startswith(
+                ("/Library/Keychains", "/System/Library/Keychains")))
+        with keychain.open("rb") as created:
+            result["keychain_header_prefix_hex"] = created.read(8).hex()
+        result["keychain_file_size_bytes"] = keychain.stat().st_size
         checked(run, ["set-keychain-settings", "-lut", "3600", str(keychain)], "keychain-settings")
         checked(run, ["unlock-keychain", "-p", password, str(keychain)], "unlock-public-keychain")
         checked(run, ["import", str(root / "fixtures/ios48-cert1"), "-k", str(keychain), "-t", "cert"], "import-public-g3")
@@ -243,8 +253,36 @@ def probe(root, temporary_root, fixtures, run=run_security):
     return result
 
 
+def location_paths(root, temp, standard):
+    return [(label, root.with_name(root.name + "-" + label), directory / (root.name + "-" + label))
+            for label, directory in (("runner-temp", temp), ("standard", standard))]
+
+
+def location_probe(root, temp, standard, fixtures, run=run_security):
+    """Compare public stores sequentially; each phase must restore before next."""
+    paths = location_paths(root, temp, standard)
+    if any(path.exists() or path.is_symlink() for _, recovery, store in paths
+           for path in (recovery, store)):
+        raise ProbeError("location-fixture-already-exists")
+    before = snapshot(run)
+    result = {"public_only": True, "private_keys": False, "trust_overrides": False,
+              "before_state_sha256": digest(before), "locations": {}, "test_completed": False}
+    for label, recovery, store in paths:
+        phase = probe(recovery, store, fixtures, run)
+        result["locations"][label] = phase
+        if not phase["test_completed"] or phase.get("cleanup", {}).get("failed"):
+            # Never start a second mutation while rollback needs recovery.
+            return result
+        if snapshot(run) != before:
+            raise ProbeError("between-location-state-mismatch")
+    result["final_state_sha256"] = digest(snapshot(run))
+    result["test_completed"] = result["final_state_sha256"] == result["before_state_sha256"]
+    return result
+
+
 def main():
-    if len(sys.argv) != 2 or sys.argv[1] not in ("probe", "cleanup", "certificates"):
+    if len(sys.argv) != 2 or sys.argv[1] not in (
+        "probe", "cleanup", "certificates", "locations", "locations-cleanup"):
         raise ProbeError("invalid-mode")
     if os.environ.get("RUNNER_NAME") != "macbook-pro-m5-ghrunner" or (
         os.getuid(), os.geteuid(), os.getgid()) != (502, 502, 502):
@@ -277,6 +315,19 @@ def main():
             raise ProbeError("unsafe-recovery-parent")
     name = "vogel-vault-public-keychain-" + run_id + "-" + attempt
     root, temporary_root = recovery / name, temp / name
+    if sys.argv[1] in ("locations", "locations-cleanup"):
+        # Use only existing, runner-owned, non-writable standard parents.
+        # The fixture is a unique 0700 child, never login/System/default.
+        standard = home / "Library/Keychains"
+        for parent in (home / "Library", standard):
+            if parent.is_symlink() or not parent.is_dir() or (
+                parent.stat().st_uid != os.getuid() or parent.stat().st_mode & 0o022):
+                raise ProbeError("unsafe-standard-keychain-parent")
+        if sys.argv[1] == "locations-cleanup":
+            print(json.dumps({"public_locations_cleanup": {
+                label: cleanup(owned) for label, owned, _ in location_paths(root, temp, standard)
+            }}, indent=2))
+            return 0
     if sys.argv[1] == "cleanup":
         print(json.dumps({"public_keychain_cleanup": cleanup(root)}, indent=2))
         return 0
@@ -296,8 +347,12 @@ def main():
         raise ProbeError("process-terminated")
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    result = probe(root, temporary_root, fixtures)
-    print(json.dumps({"public_keychain_result": result}, indent=2))
+    if sys.argv[1] == "locations":
+        result = location_probe(root, temp, standard, fixtures)
+        print(json.dumps({"public_locations_result": result}, indent=2))
+    else:
+        result = probe(root, temporary_root, fixtures)
+        print(json.dumps({"public_keychain_result": result}, indent=2))
     return 0 if result["test_completed"] and not result.get("cleanup", {}).get("failed") else 1
 
 
