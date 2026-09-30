@@ -129,6 +129,7 @@ final class ConvexSyncServiceTests: XCTestCase {
 
     @MainActor
     func testPartialFailurePublishesSuccessfulFileAndSkipsItOnRetry() async throws {
+        var now: TimeInterval = 100
         let store = RecordingSyncMetadataStore()
         store.set("victor", forKey: ConvexSyncService.selectedMemberKey)
         store.set("victor", forKey: ConvexSyncService.versionsMemberKey)
@@ -166,20 +167,34 @@ final class ConvexSyncServiceTests: XCTestCase {
         let container = try ModelContainer(for: schema, configurations: [configuration])
         let reader = ConvexDataReader(client: client, rowReadsEnabled: { false })
         let context = ModelContext(container)
-        await ConvexSyncService(reader: reader, context: context, metadataStore: store).syncAll()
+        await ConvexSyncService(reader: reader, context: context, metadataStore: store, now: { now }).syncAll()
         XCTAssertEqual(store.dictionary(forKey: ConvexSyncService.dataVersionsKey) as? [String: Double], ["todos": 42, "transactions": 7])
         XCTAssertNil(store.object(forKey: ConvexSyncService.lastSyncKey))
         XCTAssertNotNil(store.string(forKey: ConvexSyncService.lastSyncErrorKey))
 
-        // Backoff survives the new instance created by each polling tick.
-        let retry = ConvexSyncService(reader: reader, context: context, metadataStore: store)
-        let blocked = await retry.hasUpdates()
+        // The pushed version stays unchanged. The one-shot timer must replay
+        // that snapshot when backoff expires, without waiting for a new push
+        // or fetching versions over HTTP.
+        let retry = ConvexSyncService(reader: reader, context: context, metadataStore: store, now: { now })
+        let remote = ["todos": 42.0, "transactions": 7.0]
+        let blocked = await retry.hasUpdates(remote: remote)
         XCTAssertFalse(blocked)
-        store.set(0.0, forKey: ConvexSyncService.nextRetryKey)
-        let changed = await retry.hasUpdates()
-        XCTAssertTrue(changed)
-        await retry.syncAll()
+        let fired = expectation(description: "unchanged-version retry fired")
+        let controller = ConvexSyncRetryController(now: { now }, sleep: { seconds in
+            XCTAssertEqual(seconds, 15)
+        })
+        controller.noteSnapshot(remote)
+        controller.schedule(deadline: try XCTUnwrap(retry.retryDeadline), member: "victor") { versions, member in
+            XCTAssertEqual(member, "victor")
+            let changed = await retry.hasUpdates(remote: versions ?? [:])
+            XCTAssertTrue(changed)
+            await retry.syncAll()
+            fired.fulfill()
+        }
+        now = 115
+        await fulfillment(of: [fired], timeout: 1)
         let counts = await requests.counts
+        XCTAssertEqual(counts["versions"], 1)
         XCTAssertEqual(counts["todos"], 1)
         XCTAssertEqual(counts["transactions"], 2)
     }
@@ -256,6 +271,29 @@ final class ConvexSyncServiceTests: XCTestCase {
         ConvexSyncService.recordFailure("Offline", at: 100, to: store)
         ConvexSyncService.recordFailure("Offline", at: 115, to: store)
         XCTAssertEqual(store.object(forKey: ConvexSyncService.nextRetryKey) as? Double, 145)
+    }
+
+    @MainActor
+    func testRetryUsesLatestPushAndCancelsOnLock() async {
+        let updated = expectation(description: "latest pushed versions used")
+        let controller = ConvexSyncRetryController(now: { 100 }, sleep: { seconds in
+            XCTAssertEqual(seconds, 15)
+        })
+        controller.noteSnapshot(["todos": 42])
+        controller.schedule(deadline: 115, member: "victor") { versions, _ in
+            XCTAssertEqual(versions, ["todos": 43])
+            updated.fulfill()
+        }
+        controller.noteSnapshot(["todos": 43])
+        await fulfillment(of: [updated], timeout: 1)
+
+        let cancelled = expectation(description: "cancelled timer does not retry")
+        cancelled.isInverted = true
+        controller.schedule(deadline: 115, member: "victor") { _, _ in
+            cancelled.fulfill()
+        }
+        controller.cancel() // app lock tears down the subscription and timer
+        await fulfillment(of: [cancelled], timeout: 0.1)
     }
 
     @MainActor

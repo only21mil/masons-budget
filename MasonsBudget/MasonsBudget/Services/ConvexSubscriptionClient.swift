@@ -157,6 +157,7 @@ final class ConvexSubscriptionClient: Sendable {
             } catch is CancellationError {
                 break
             } catch {
+                if Task.isCancelled { break }
                 if Self.isTerminal(error) {
                     log.error(
                         "Convex subscription ended on terminal error: \(error.localizedDescription, privacy: .public)"
@@ -285,6 +286,12 @@ final class ConvexSubscriptionClient: Sendable {
                 // the pending receive return with an error.
                 socket.cancel(with: .goingAway, reason: nil)
             },
+            onCancel: {
+                // The driver can be cancelled before the watchdog fires.
+                // Closing the socket also releases a receive that ignores
+                // task cancellation, allowing the task group to finish.
+                socket.cancel(with: .goingAway, reason: nil)
+            },
             operation: { try await socket.receive() }
         )
     }
@@ -295,29 +302,34 @@ final class ConvexSubscriptionClient: Sendable {
     static func withTimeout<T: Sendable>(
         seconds: TimeInterval = 60,
         onTimeout: @escaping @Sendable () -> Void,
+        onCancel: @escaping @Sendable () -> Void = {},
         operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
         let timedOut = TimeoutFlag()
-        return try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask { try await operation() }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                timedOut.set()
-                onTimeout()
-                throw ConvexSubscriptionError.receiveTimeout
-            }
-            defer { group.cancelAll() }
-            do {
-                guard let value = try await group.next() else {
+        return try await withTaskCancellationHandler {
+            try await withThrowingTaskGroup(of: T.self) { group in
+                group.addTask { try await operation() }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                    timedOut.set()
+                    onTimeout()
                     throw ConvexSubscriptionError.receiveTimeout
                 }
-                return value
-            } catch {
-                // After `onTimeout` the operation may fail first (for
-                // example with URLError.cancelled); report the timeout.
-                if timedOut.isSet { throw ConvexSubscriptionError.receiveTimeout }
-                throw error
+                defer { group.cancelAll() }
+                do {
+                    guard let value = try await group.next() else {
+                        throw ConvexSubscriptionError.receiveTimeout
+                    }
+                    return value
+                } catch {
+                    // After `onTimeout` the operation may fail first (for
+                    // example with URLError.cancelled); report the timeout.
+                    if timedOut.isSet { throw ConvexSubscriptionError.receiveTimeout }
+                    throw error
+                }
             }
+        } onCancel: {
+            onCancel()
         }
     }
 

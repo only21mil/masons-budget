@@ -10,6 +10,60 @@ protocol SyncMetadataStoring: AnyObject {
     func removeObject(forKey defaultName: String)
 }
 
+/// Owns one cancellable retry timer for the unlocked subscription lifetime.
+/// A pushed snapshot replaces the previous one even during backoff, so the
+/// due retry uses the newest server versions without another HTTP poll.
+@MainActor
+final class ConvexSyncRetryController {
+    private var latestVersions: [String: Double]?
+    private var retryTask: Task<Void, Never>?
+    private let now: () -> TimeInterval
+    private let sleep: @Sendable (TimeInterval) async throws -> Void
+
+    init(
+        now: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 },
+        sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+        }
+    ) {
+        self.now = now
+        self.sleep = sleep
+    }
+
+    func noteSnapshot(_ versions: [String: Double]) {
+        latestVersions = versions
+    }
+
+    func schedule(
+        deadline: TimeInterval,
+        member: String,
+        action: @escaping @MainActor ([String: Double]?, String) async -> Void
+    ) {
+        cancelTimer()
+        let delay = max(0, deadline - now())
+        retryTask = Task { @MainActor in
+            do {
+                try await sleep(delay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            retryTask = nil
+            await action(latestVersions, member)
+        }
+    }
+
+    func cancelTimer() {
+        retryTask?.cancel()
+        retryTask = nil
+    }
+
+    func cancel() {
+        cancelTimer()
+        latestVersions = nil
+    }
+}
+
 extension UserDefaults: SyncMetadataStoring {}
 
 @MainActor
@@ -17,6 +71,7 @@ final class ConvexSyncService {
     private let reader: ConvexDataReader
     private let context: ModelContext
     private let metadataStore: any SyncMetadataStoring
+    private let now: () -> TimeInterval
     private let log = Logger(subsystem: "com.sats21m.masonsbudget", category: "ConvexSync")
 
     static let lastSyncKey = "mc2_last_sync"
@@ -31,6 +86,12 @@ final class ConvexSyncService {
     static let failedFilesKey = "mc2_sync_failed_files"
     private var polledVersions: [String: Double]?
 
+    /// Persisted deadline for a failed read. The subscription caller uses
+    /// this to arm one retry even when the server version stays unchanged.
+    var retryDeadline: TimeInterval? {
+        metadataStore.object(forKey: Self.nextRetryKey) as? Double
+    }
+
     private var syncingMember: FamilyMember?
 
     private var currentMember: FamilyMember { syncingMember ?? selectedMember }
@@ -43,21 +104,25 @@ final class ConvexSyncService {
     init(
         reader: ConvexDataReader,
         context: ModelContext,
-        metadataStore: any SyncMetadataStoring = UserDefaults.standard
+        metadataStore: any SyncMetadataStoring = UserDefaults.standard,
+        now: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 }
     ) {
         self.reader = reader
         self.context = context
         self.metadataStore = metadataStore
+        self.now = now
     }
 
     /// Convenience init using the default Convex client.
     init(
         context: ModelContext,
-        metadataStore: any SyncMetadataStoring = UserDefaults.standard
+        metadataStore: any SyncMetadataStoring = UserDefaults.standard,
+        now: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 }
     ) {
         reader = ConvexDataReader()
         self.context = context
         self.metadataStore = metadataStore
+        self.now = now
     }
 
     func syncAll() async {
@@ -157,11 +222,11 @@ final class ConvexSyncService {
             Self.publishSuccessfulSync(
                 versions: published,
                 totalEntities: totalEntities,
-                timestamp: Date().timeIntervalSince1970,
+                timestamp: now(),
                 to: metadataStore,
             )
         } else {
-            Self.recordFailure(errors.joined(separator: "; "), at: Date().timeIntervalSince1970, to: metadataStore)
+            Self.recordFailure(errors.joined(separator: "; "), at: now(), to: metadataStore)
             // Successful files survive a sibling failure. Publish only after save.
             metadataStore.set(published, forKey: Self.dataVersionsKey)
         }
@@ -171,7 +236,7 @@ final class ConvexSyncService {
     /// instead of fetching one over HTTP. Shares the backoff/member guards
     /// with the event-driven `hasUpdates()`.
     func hasUpdates(remote: [String: Double]) async -> Bool {
-        let now = Date().timeIntervalSince1970
+        let now = now()
         let sameMember = metadataStore.string(forKey: Self.versionsMemberKey) == currentMember.rawValue
         let nextRetry = metadataStore.object(forKey: Self.nextRetryKey) as? Double ?? 0
         guard !sameMember || now >= nextRetry else { return false }
@@ -188,7 +253,7 @@ final class ConvexSyncService {
     /// new service per check. Explicit syncAll calls still run immediately
     /// for setup/retry.
     func hasUpdates() async -> Bool {
-        let now = Date().timeIntervalSince1970
+        let now = now()
         let sameMember = metadataStore.string(forKey: Self.versionsMemberKey) == currentMember.rawValue
         let nextRetry = metadataStore.object(forKey: Self.nextRetryKey) as? Double ?? 0
         guard !sameMember || now >= nextRetry else { return false }
