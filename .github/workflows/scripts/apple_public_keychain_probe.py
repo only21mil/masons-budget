@@ -14,6 +14,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 
 MAGIC = "vogel-vault-public-keychain-v1"
 FIXTURES = Path("/tmp/vv-public-chain-rca-20260930")
@@ -132,22 +133,49 @@ def find_g3(run, keychain=None):
             "certificate_count": len(hashes)}
 
 
-def verify_leaf(run, name, policy, keychain=None, fixtures=FIXTURES):
+def verify_leaf(run, name, policy, keychain=None, fixtures=FIXTURES, intermediate=None):
     args = ["verify-cert", "-L", "-p", policy, "-c", str(fixtures / name)]
+    if intermediate is not None:
+        args += ["-c", str(fixtures / intermediate)]
     if keychain is not None:
         args += ["-k", str(keychain)]
     result = run(args)
     # Some unsupported policies print an error but still exit zero.
-    policy_valid = "policy creation failed" not in result.stderr.lower()
+    diagnostic = result.stdout + "\n" + result.stderr
+    policy_valid = "policy creation failed" not in diagnostic.lower()
     return {"exit_code": result.returncode, "policy": policy,
             "policy_valid": policy_valid,
             "passed": result.returncode == 0 and policy_valid,
+            # This command accepts hash-pinned public certificates only. Keep
+            # both streams: security can report validation failures on stdout.
+            "public_validation_message": diagnostic.strip()[:4096],
             "stderr_classes": [label for text, label in (
                 ("unable to build chain", "missing-chain"),
                 ("not trusted", "untrusted"), ("no error", "nonzero-no-error-text"),
                 ("policy creation failed", "unsupported-policy"),
                 ("errsecinternalcomponent", "errSecInternalComponent"))
-                if text in result.stderr.lower() and (label != "nonzero-no-error-text" or result.returncode != 0)]}
+                if text in diagnostic.lower() and (label != "nonzero-no-error-text" or result.returncode != 0)]}
+
+
+def certificate_probe(fixtures, run=run_security):
+    """Read-only chain comparison: no keychain or security-state operations."""
+    result = {"observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "uid": os.getuid(), "public_only": True, "private_keys": False,
+              "trust_overrides": False, "security_state_changes": False, "checks": {}}
+    with tempfile.TemporaryDirectory(prefix="vogel-vault-public-certificates-") as directory:
+        root = Path(directory)
+        for name, data in fixtures.items():
+            path = root / name
+            path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+            path.write_bytes(data)
+            path.chmod(0o600)
+        for label, name, policy in (("ios", "ios48-cert0", "codeSign"),
+                                    ("installer", "mac47-certs/certificate0.der", "basic")):
+            for chain, issuer in (("leaf", None), ("supplied_g3", "ios48-cert1")):
+                result["checks"][label + "_" + chain] = verify_leaf(
+                    run, name, policy, fixtures=root, intermediate=issuer)
+    result["owned_public_copies_removed"] = True
+    return result
 
 
 def probe(root, temporary_root, fixtures, run=run_security):
@@ -216,11 +244,21 @@ def probe(root, temporary_root, fixtures, run=run_security):
 
 
 def main():
-    if len(sys.argv) != 2 or sys.argv[1] not in ("probe", "cleanup"):
+    if len(sys.argv) != 2 or sys.argv[1] not in ("probe", "cleanup", "certificates"):
         raise ProbeError("invalid-mode")
     if os.environ.get("RUNNER_NAME") != "macbook-pro-m5-ghrunner" or (
         os.getuid(), os.geteuid(), os.getgid()) != (502, 502, 502):
         raise ProbeError("wrong-runner")
+    if sys.argv[1] == "certificates":
+        fixtures = {}
+        for name, expected in EXPECTED.items():
+            path = FIXTURES / name
+            data = path.read_bytes()
+            if path.is_symlink() or hashlib.sha256(data).hexdigest() != expected:
+                raise ProbeError("public-fixture-hash-mismatch")
+            fixtures[name] = data
+        print(json.dumps({"public_certificate_result": certificate_probe(fixtures)}, indent=2))
+        return 0  # A recorded trust failure is diagnostic data, not job failure.
     run_id, attempt = os.environ.get("GITHUB_RUN_ID", ""), os.environ.get("GITHUB_RUN_ATTEMPT", "")
     if not run_id.isdigit() or not attempt.isdigit():
         raise ProbeError("invalid-run-id")
