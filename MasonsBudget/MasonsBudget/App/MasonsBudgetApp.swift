@@ -163,6 +163,9 @@ struct MasonsBudgetApp: App {
                     Task { await syncFromConvex() }
                 }
             }
+            .onChange(of: authentication.isUnlocked) { _, unlocked in
+                if !unlocked { syncRetry.cancel() }
+            }
             .environmentObject(authentication)
             .environmentObject(syncStatus)
             .environmentObject(taskUndoStore)
@@ -180,12 +183,13 @@ struct MasonsBudgetApp: App {
     @MainActor
     private func syncFromConvex() async {
         guard authentication.isUnlocked, !Task.isCancelled else { return }
+        let member = selectedMember
         await BTCPriceService.shared.refreshAndStore()
         await StockPriceService.shared.refreshAndStore()
-        guard authentication.isUnlocked, !Task.isCancelled else { return }
+        guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
         let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
         await sync.syncAll()
-        scheduleSyncRetry(using: sync)
+        scheduleSyncRetry(using: sync, member: member)
     }
 
     /// Check if data has changed on Convex, and sync if so.
@@ -198,22 +202,24 @@ struct MasonsBudgetApp: App {
     @MainActor
     private func syncIfChanged() async {
         guard authentication.isUnlocked else { return }
+        let member = selectedMember
         let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
         let changed = await sync.hasUpdates()
+        guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
         if changed {
             await sync.syncAll()
         }
-        scheduleSyncRetry(using: sync)
+        scheduleSyncRetry(using: sync, member: member)
     }
 
     @MainActor
-    private func scheduleSyncRetry(using sync: ConvexSyncService) {
-        guard !Task.isCancelled else { return }
-        guard authentication.isUnlocked, let deadline = sync.retryDeadline else {
+    private func scheduleSyncRetry(using sync: ConvexSyncService, member: String) {
+        guard !Task.isCancelled, authentication.isUnlocked, selectedMember == member else { return }
+        guard let deadline = sync.retryDeadline else {
             syncRetry.cancelTimer()
             return
         }
-        syncRetry.schedule(deadline: deadline, member: selectedMember) { versions, member in
+        syncRetry.schedule(deadline: deadline, member: member) { versions, member in
             await retryFailedSync(versions: versions, member: member)
         }
     }
@@ -232,7 +238,7 @@ struct MasonsBudgetApp: App {
         if changed {
             await sync.syncAll()
         }
-        scheduleSyncRetry(using: sync)
+        scheduleSyncRetry(using: sync, member: member)
     }
 
     @MainActor
@@ -243,7 +249,7 @@ struct MasonsBudgetApp: App {
             guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
             await sync.syncAll()
         }
-        scheduleSyncRetry(using: sync)
+        scheduleSyncRetry(using: sync, member: member)
     }
 
     @MainActor
@@ -271,15 +277,12 @@ struct MasonsBudgetApp: App {
         await withTaskCancellationHandler {
             for await versions in client.subscribeVersions(authArgs: args) {
                 guard authentication.isUnlocked, !Task.isCancelled else { break }
-                syncRetry.noteSnapshot(versions)
-                let member = selectedMember
-                if syncRetry.isRetryRunning {
-                    syncRetry.deferPush { latest in
-                        await syncPushedVersions(latest, member: member)
-                    }
-                    continue
+                syncRetry.submitPush(versions, member: selectedMember) { latest, member in
+                    await syncPushedVersions(latest, member: member)
                 }
-                await syncPushedVersions(versions, member: member)
+            }
+            if authentication.isUnlocked, !Task.isCancelled {
+                await syncRetry.waitForActiveSync()
             }
         } onCancel: {
             client.cancel()

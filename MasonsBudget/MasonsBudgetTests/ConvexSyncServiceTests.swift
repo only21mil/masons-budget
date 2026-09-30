@@ -310,15 +310,15 @@ final class ConvexSyncServiceTests: XCTestCase {
             finished.fulfill()
         }
         await fulfillment(of: [entered], timeout: 1)
-        XCTAssertTrue(controller.isRetryRunning)
+        XCTAssertTrue(controller.isSyncRunning)
         controller.cancel()
         // The handle stays live until the action exits, so a new push can
         // still be queued instead of starting a concurrent read.
-        XCTAssertTrue(controller.isRetryRunning)
+        XCTAssertTrue(controller.isSyncRunning)
         gate.open()
         await fulfillment(of: [finished], timeout: 1)
         XCTAssertTrue(sawCancellation)
-        XCTAssertFalse(controller.isRetryRunning)
+        XCTAssertFalse(controller.isSyncRunning)
     }
 
     @MainActor
@@ -339,16 +339,16 @@ final class ConvexSyncServiceTests: XCTestCase {
             readFinished = true
         }
         await fulfillment(of: [entered], timeout: 1)
-        controller.noteSnapshot(["todos": 43])
-        controller.deferPush { versions in
+        controller.submitPush(["todos": 43], member: "victor") { versions, member in
             pushCount += 1
+            XCTAssertEqual(member, "victor")
             XCTAssertTrue(readFinished)
             XCTAssertEqual(versions, ["todos": 43])
             replayed.fulfill()
         }
-        controller.noteSnapshot(["todos": 44])
-        controller.deferPush { versions in
+        controller.submitPush(["todos": 44], member: "victor") { versions, member in
             pushCount += 1
+            XCTAssertEqual(member, "victor")
             XCTAssertTrue(readFinished)
             XCTAssertEqual(versions, ["todos": 44])
             replayed.fulfill()
@@ -357,6 +357,59 @@ final class ConvexSyncServiceTests: XCTestCase {
         await fulfillment(of: [replayed], timeout: 1)
         XCTAssertEqual(retryCount, 1)
         XCTAssertEqual(pushCount, 1)
+    }
+
+    @MainActor
+    func testPushClaimsSlotBeforeDueTimerAndRearmsOnlyAfterRead() async {
+        let timerDue = RetryActionGate()
+        let pushGate = RetryActionGate()
+        let entered = expectation(description: "push read started")
+        let oldTimer = expectation(description: "superseded timer did not read")
+        oldTimer.isInverted = true
+        let nextRetry = expectation(description: "new backoff timer ran")
+        let controller = ConvexSyncRetryController(now: { 100 }, sleep: { _ in await timerDue.wait() })
+        var pushFinished = false
+        controller.schedule(deadline: 115, member: "victor") { _, _ in oldTimer.fulfill() }
+        controller.submitPush(["todos": 43], member: "victor") { _, _ in
+            entered.fulfill()
+            await pushGate.wait()
+            pushFinished = true
+            controller.schedule(deadline: 130, member: "victor") { versions, _ in
+                XCTAssertTrue(pushFinished)
+                XCTAssertEqual(versions, ["todos": 43])
+                nextRetry.fulfill()
+            }
+        }
+        await fulfillment(of: [entered], timeout: 1)
+        XCTAssertTrue(controller.isSyncRunning)
+        timerDue.open()
+        await fulfillment(of: [oldTimer], timeout: 0.1)
+        pushGate.open()
+        await fulfillment(of: [nextRetry], timeout: 1)
+    }
+
+    @MainActor
+    func testProfileSwitchCancelsOldPushAndReplaysNewProfile() async {
+        let oldEntered = expectation(description: "old profile read started")
+        let newEntered = expectation(description: "new profile push checked")
+        let gate = RetryActionGate()
+        let controller = ConvexSyncRetryController(now: { 100 }, sleep: { _ in })
+        var oldWasCancelled = false
+        controller.submitPush(["todos": 42], member: "victor") { _, _ in
+            oldEntered.fulfill()
+            await gate.wait()
+            oldWasCancelled = Task.isCancelled
+        }
+        await fulfillment(of: [oldEntered], timeout: 1)
+        controller.cancel()
+        controller.submitPush(["todos": 43], member: "mason") { versions, member in
+            XCTAssertEqual(member, "mason")
+            XCTAssertEqual(versions, ["todos": 43])
+            newEntered.fulfill()
+        }
+        gate.open()
+        await fulfillment(of: [newEntered], timeout: 1)
+        XCTAssertTrue(oldWasCancelled)
     }
 
     @MainActor

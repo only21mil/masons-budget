@@ -21,15 +21,20 @@ final class ConvexSyncRetryController {
         let action: @MainActor ([String: Double]?, String) async -> Void
     }
 
+    private struct PushRequest {
+        let member: String
+        let action: @MainActor ([String: Double], String) async -> Void
+    }
+
     private var latestVersions: [String: Double]?
     private var timerTask: Task<Void, Never>?
     private var actionTask: Task<Void, Never>?
     private var queuedRetry: RetryRequest?
-    private var queuedPush: (@MainActor ([String: Double]) async -> Void)?
+    private var queuedPush: PushRequest?
     private let now: () -> TimeInterval
     private let sleep: @Sendable (TimeInterval) async throws -> Void
 
-    var isRetryRunning: Bool { actionTask != nil }
+    var isSyncRunning: Bool { actionTask != nil }
 
     init(
         now: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 },
@@ -45,10 +50,22 @@ final class ConvexSyncRetryController {
         latestVersions = versions
     }
 
-    /// Coalesce pushes received while a retry is reading. The newest
-    /// snapshot is checked once the active read finishes.
-    func deferPush(_ action: @escaping @MainActor ([String: Double]) async -> Void) {
-        queuedPush = action
+    /// Claim the same sync slot as a retry before the caller can suspend.
+    /// A push cancels a waiting timer; pushes received during an active read
+    /// coalesce to the latest snapshot and run after that read completes.
+    func submitPush(
+        _ versions: [String: Double],
+        member: String,
+        action: @escaping @MainActor ([String: Double], String) async -> Void
+    ) {
+        latestVersions = versions
+        let request = PushRequest(member: member, action: action)
+        if isSyncRunning {
+            queuedPush = request
+            return
+        }
+        cancelTimer()
+        runAction { await request.action(versions, request.member) }
     }
 
     func schedule(
@@ -57,7 +74,7 @@ final class ConvexSyncRetryController {
         action: @escaping @MainActor ([String: Double]?, String) async -> Void
     ) {
         let request = RetryRequest(deadline: deadline, member: member, action: action)
-        if isRetryRunning {
+        if isSyncRunning {
             queuedRetry = request
             return
         }
@@ -90,10 +107,18 @@ final class ConvexSyncRetryController {
         actionTask = nil
         if let queuedPush, let latestVersions {
             self.queuedPush = nil
-            runAction { await queuedPush(latestVersions) }
+            runAction { await queuedPush.action(latestVersions, queuedPush.member) }
         } else if let queuedRetry {
             self.queuedRetry = nil
             arm(queuedRetry)
+        }
+    }
+
+    /// Let an already emitted version finish applying if the stream ends
+    /// normally. Lock cancellation skips this wait and cancels the action.
+    func waitForActiveSync() async {
+        while let actionTask {
+            await actionTask.value
         }
     }
 
