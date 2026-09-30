@@ -208,6 +208,16 @@ def probe(root, temporary_root, fixtures, run=run_security):
         keychain = temporary_root / "public-only.keychain-db"
         password = secrets.token_urlsafe(24)
         checked(run, ["create-keychain", "-p", password, str(keychain)], "create-public-keychain")
+        # Public-only fixture metadata. Apple selects keychain formats using
+        # this path rule; retain the header indicator without claiming a
+        # decoded blob version from it.
+        path_text = str(keychain)
+        result["apple_standard_path_rule_matches"] = (
+            "/Library/Keychains" in path_text and not path_text.startswith(
+                ("/Library/Keychains", "/System/Library/Keychains")))
+        with keychain.open("rb") as created:
+            result["keychain_header_prefix_hex"] = created.read(8).hex()
+        result["keychain_file_size_bytes"] = keychain.stat().st_size
         checked(run, ["set-keychain-settings", "-lut", "3600", str(keychain)], "keychain-settings")
         checked(run, ["unlock-keychain", "-p", password, str(keychain)], "unlock-public-keychain")
         checked(run, ["import", str(root / "fixtures/ios48-cert1"), "-k", str(keychain), "-t", "cert"], "import-public-g3")

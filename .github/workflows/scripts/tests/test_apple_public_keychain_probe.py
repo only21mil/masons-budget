@@ -37,7 +37,7 @@ class FakeSecurity:
         elif command == "default-keychain":
             code, stderr = 1, "A default keychain could not be found."
         elif command == "create-keychain":
-            Path(args[-1]).touch()
+            Path(args[-1]).write_bytes(b"kych\x00\x01\x00\x00public fixture")
             self.created_keychains.append(args[-1])
         elif command == "find-certificate":
             explicit = args[-1].endswith("public-only.keychain-db")
@@ -202,6 +202,11 @@ class PublicKeychainProbeTests(unittest.TestCase):
             self.assertEqual(len(fake.created_keychains), 2)
             self.assertTrue(fake.created_keychains[0].startswith(str(temp) + "/"))
             self.assertTrue(fake.created_keychains[1].startswith(str(standard) + "/"))
+            self.assertFalse(result["locations"]["runner-temp"]["apple_standard_path_rule_matches"])
+            self.assertTrue(result["locations"]["standard"]["apple_standard_path_rule_matches"])
+            self.assertEqual(result["locations"]["standard"]["keychain_header_prefix_hex"],
+                             b"kych\x00\x01\x00\x00".hex())
+            self.assertGreater(result["locations"]["standard"]["keychain_file_size_bytes"], 8)
             self.assertEqual(result["before_state_sha256"], result["final_state_sha256"])
             self.assertTrue(all(phase["cleanup"]["search_list_restored"]
                                 for phase in result["locations"].values()))
