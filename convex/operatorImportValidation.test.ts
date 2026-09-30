@@ -155,6 +155,27 @@ describe("operatorImportValidation", () => {
 });
 
 describe("transaction corrections (validation)", () => {
+  it("rejects correction chains within one batch", async () => {
+    await expect(canonicalizeOperatorImportEnvelope(batch([
+      transaction({ supersedes_record_id: "old-tx" }),
+      transaction({
+        op_id: "op-2", record_id: "tx-2", source_locator: "receipt/2",
+        amount_cents: "100", supersedes_record_id: "tx-1",
+      }),
+    ]))).rejects.toMatchObject({ code: "CORRECTION_TARGET_IN_BATCH", path: "batch.ops" });
+  });
+
+  it("permits a destination matching a correction target id in another source", async () => {
+    const canonical = await canonicalizeOperatorImportEnvelope(batch([
+      transaction({ supersedes_record_id: "old-tx" }),
+      transaction({
+        op_id: "op-2", record_id: "old-tx", source_locator: "receipt/2",
+        owner: "mason", source_file: "mason-transactions",
+      }),
+    ]));
+    expect(canonical.counts.transaction).toBe(2);
+  });
+
   it("rejects repeated correction targets before semantic duplicate attestations", async () => {
     const first = transaction({ supersedes_record_id: "old-tx" });
     const second = transaction({

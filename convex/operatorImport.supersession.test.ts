@@ -250,6 +250,15 @@ describe("transaction supersession regressions", () => {
     await expectCode(t.mutation(fn.apply, { manifest: m, expected_plan_fingerprint: FP_A, expected_state_fingerprint: FP_A }), "DUPLICATE_CORRECTION_TARGET");
     expect(await world(t)).toEqual(before);
   });
+  it.each([false, true])("rejects reasserting and retiring the same row in either operation order (reverse: %s)", async (reverse) => {
+    await seed();
+    const before = await world(t);
+    const ops = [transaction(0), correction("replacement-a", "1000")];
+    const m = smallManifest(reverse ? ops.reverse() : ops, "audit-reassert-target");
+    await expectCode(preflight(t, m), "CORRECTION_TARGET_IN_BATCH");
+    await expectCode(t.mutation(fn.apply, { manifest: m, expected_plan_fingerprint: FP_A, expected_state_fingerprint: FP_A }), "CORRECTION_TARGET_IN_BATCH");
+    expect(await world(t)).toEqual(before);
+  });
   it.each([false, true])("rejects a device tombstone as correction provenance (live target: %s)", async (live) => {
     await seed();
     await t.run(async ctx => {
