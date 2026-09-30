@@ -77,6 +77,51 @@ final class ConvexSyncServiceTests: XCTestCase {
         await fulfillment(of: [tapped, staleRead], timeout: 0.2)
         XCTAssertFalse(model.hasRows)
     }
+
+    @MainActor
+    func testSecondActivityRetryTapKeepsFirstSyncThroughVersions() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        defaults.set(false, forKey: "app_lock_enabled")
+        let authentication = AppAuthenticationSession(defaults: defaults)
+        let financials = CanonicalFinancialSourceStore()
+        let model = PartialRowsRefreshModel()
+        let firstEntered = expectation(description: "first Retry read entered")
+        let completed = expectation(description: "first Retry completed versions")
+        let release = RetryActionGate()
+        var starts = 0
+        let schema = Schema([TodoItem.self])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)],
+        )
+        let root = PartialRowsRefreshHarness(model: model, buttonGone: {})
+            .modifier(LedgerListRefresh(syncOperation: { _ in
+                starts += 1
+                firstEntered.fulfill()
+                await release.wait()
+                if !Task.isCancelled {
+                    model.applied.append(contentsOf: ["transactions", "budget", "versions"])
+                    completed.fulfill()
+                }
+            }))
+            .environmentObject(authentication)
+            .environment(financials)
+            .modelContainer(container)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = UIHostingController(rootView: root)
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        await fulfillment(of: [firstEntered], timeout: 3)
+        // This is the same environment action the visible production button
+        // invokes. A second tap must not cancel the in-flight owner Task.
+        try XCTUnwrap(model.retryAction)()
+        for _ in 0 ..< 10 { await Task.yield() }
+        XCTAssertEqual(starts, 1)
+        release.open()
+        await fulfillment(of: [completed], timeout: 3)
+        XCTAssertEqual(starts, 1)
+        XCTAssertEqual(model.applied, ["transactions", "budget", "versions"])
+    }
     #endif
 
     @MainActor
@@ -1009,6 +1054,7 @@ private final class PartialRowsRefreshModel: ObservableObject {
     @Published var hasRows = false
     var applied: [String] = []
     var started = false
+    var retryAction: (@MainActor () -> Void)?
 }
 
 private struct PartialRowsRefreshHarness: View {
@@ -1029,6 +1075,7 @@ private struct PartialRowsRefreshHarness: View {
         .onAppear {
             guard !model.started else { return }
             model.started = true
+            model.retryAction = retryAction
             retryAction?()
             if invalidateAfterStart { ConvexSyncExecutionGate.shared.invalidateSession() }
             actionSubmitted?()

@@ -373,7 +373,7 @@ struct LedgerListRefresh: ViewModifier {
             await performRefresh(viewer: memberRaw, epoch: ConvexSyncExecutionGate.shared.sessionEpoch)
         }
         .environment(\.ledgerRetryAction) {
-            guard authentication.isUnlocked else { return }
+            guard authentication.isUnlocked, !retryOwner.isRunning else { return }
             let viewer = memberRaw
             let epoch = ConvexSyncExecutionGate.shared.sessionEpoch
             retryOwner.start { await performRefresh(viewer: viewer, epoch: epoch) }
