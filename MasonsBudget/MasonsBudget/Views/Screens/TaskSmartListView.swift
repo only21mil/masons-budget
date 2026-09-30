@@ -325,28 +325,91 @@ private enum LedgerListRefreshGate {
     static var isRefreshing = false
 }
 
+@MainActor
+final class LedgerRefreshTaskOwner {
+    private var task: Task<Void, Never>?
+    private var taskID = UUID()
+    var isRunning: Bool { task != nil }
+
+    func start(_ operation: @escaping @MainActor () async -> Void) {
+        task?.cancel()
+        let id = UUID()
+        taskID = id
+        task = Task { @MainActor in
+            defer { if taskID == id { task = nil } }
+            guard !Task.isCancelled else { return }
+            await operation()
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+        taskID = UUID()
+    }
+}
+
+private struct LedgerRetryActionKey: EnvironmentKey {
+    static let defaultValue: (@MainActor () -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var ledgerRetryAction: (@MainActor () -> Void)? {
+        get { self[LedgerRetryActionKey.self] }
+        set { self[LedgerRetryActionKey.self] = newValue }
+    }
+}
+
 struct LedgerListRefresh: ViewModifier {
+    @EnvironmentObject private var authentication: AppAuthenticationSession
     @Environment(\.modelContext) private var context
     @Environment(CanonicalFinancialSourceStore.self) private var financials
     @AppStorage("selected_family_member") private var memberRaw = FamilyMember.victor.rawValue
+    @State private var retryOwner = LedgerRefreshTaskOwner()
+    var syncOperation: (@MainActor (ModelContext) async -> Void)? = nil
 
     func body(content: Content) -> some View {
         content.refreshable {
-            guard !LedgerListRefreshGate.isRefreshing else { return }
-            LedgerListRefreshGate.isRefreshing = true
-            defer { LedgerListRefreshGate.isRefreshing = false }
-            let viewer = memberRaw
-            await ConvexSyncService(context: context).syncAll()
-            guard !Task.isCancelled, memberRaw == viewer else { return }
-            financials.requestReload()
+            await performRefresh(viewer: memberRaw, epoch: ConvexSyncExecutionGate.shared.sessionEpoch)
         }
+        .environment(\.ledgerRetryAction) {
+            guard authentication.isUnlocked, !retryOwner.isRunning else { return }
+            let viewer = memberRaw
+            let epoch = ConvexSyncExecutionGate.shared.sessionEpoch
+            retryOwner.start { await performRefresh(viewer: viewer, epoch: epoch) }
+        }
+        .onDisappear { retryOwner.cancel() }
+    }
+
+    @MainActor
+    private func performRefresh(viewer: String, epoch: Int) async {
+        guard authentication.isUnlocked, memberRaw == viewer,
+              ConvexSyncExecutionGate.shared.sessionEpoch == epoch,
+              !LedgerListRefreshGate.isRefreshing, !Task.isCancelled else { return }
+        LedgerListRefreshGate.isRefreshing = true
+        defer { LedgerListRefreshGate.isRefreshing = false }
+        await ConvexSyncExecutionGate.shared.withSlot(expectedEpoch: epoch) {
+            guard authentication.isUnlocked, !Task.isCancelled, memberRaw == viewer else { return }
+            if let syncOperation {
+                await syncOperation(context)
+            } else {
+                await ConvexSyncService(context: context).syncAll()
+            }
+        }
+        guard authentication.isUnlocked, !Task.isCancelled, memberRaw == viewer,
+              ConvexSyncExecutionGate.shared.sessionEpoch == epoch else { return }
+        financials.requestReload()
     }
 }
 
 struct LedgerRefreshButton: View {
-    @Environment(\.refresh) private var refresh
+    @Environment(\.ledgerRetryAction) private var retryAction
+    @EnvironmentObject private var authentication: AppAuthenticationSession
     var body: some View {
-        Button("Retry") { Task { await refresh?() } }
-            .disabled(refresh == nil)
+        Button("Retry") {
+            guard authentication.isUnlocked else { return }
+            retryAction?()
+        }
+            .disabled(retryAction == nil)
     }
 }

@@ -156,6 +156,27 @@ final class ConvexSubscriptionClientTests: XCTestCase {
         )
         XCTAssertEqual(value, 42)
     }
+
+    func testCancellationClosesBlockedReceiveBeforeWatchdog() async {
+        let gate = Gate()
+        let receiving = expectation(description: "receive started")
+        let finished = expectation(description: "receive finished after cancellation")
+        let task = Task {
+            defer { finished.fulfill() }
+            _ = try? await ConvexSubscriptionClient.withTimeout(
+                seconds: 60,
+                onTimeout: { XCTFail("watchdog must not fire") },
+                onCancel: { gate.open() }, // stands in for socket.cancel(...)
+                operation: {
+                    receiving.fulfill()
+                    try await gate.wait()
+                }
+            )
+        }
+        await fulfillment(of: [receiving], timeout: 1)
+        task.cancel()
+        await fulfillment(of: [finished], timeout: 1)
+    }
 }
 
 /// An await that ignores task cancellation and only returns once `open()`
