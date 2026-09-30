@@ -1,7 +1,253 @@
 import SwiftData
+import SwiftUI
 import XCTest
+#if os(iOS)
+import UIKit
+#endif
 
 final class ConvexSyncServiceTests: XCTestCase {
+    #if os(iOS)
+    @MainActor
+    func testActivityRetrySurvivesUnavailableButtonDisappearingAfterPartialRows() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        defaults.set(false, forKey: "app_lock_enabled")
+        let authentication = AppAuthenticationSession(defaults: defaults)
+        let financials = CanonicalFinancialSourceStore()
+        let model = PartialRowsRefreshModel()
+        let partial = expectation(description: "transactions appeared before remaining files")
+        let buttonGone = expectation(description: "unavailable Retry button disappeared")
+        let completed = expectation(description: "remaining files finished")
+        let releaseRemaining = RetryActionGate()
+        let schema = Schema([TodoItem.self])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)],
+        )
+        let root = PartialRowsRefreshHarness(model: model, buttonGone: { buttonGone.fulfill() })
+            .modifier(LedgerListRefresh(syncOperation: { _ in
+                model.applied.append("transactions")
+                model.hasRows = true
+                partial.fulfill()
+                await releaseRemaining.wait() // later file response can ignore cancellation
+                if !Task.isCancelled {
+                    model.applied.append(contentsOf: ["budget", "finances", "versions"])
+                    completed.fulfill()
+                }
+            }))
+            .environmentObject(authentication)
+            .environment(financials)
+            .modelContainer(container)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = UIHostingController(rootView: root)
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        await fulfillment(of: [partial, buttonGone], timeout: 3)
+        XCTAssertEqual(model.applied, ["transactions"])
+        releaseRemaining.open()
+        await fulfillment(of: [completed], timeout: 3)
+        XCTAssertEqual(model.applied, ["transactions", "budget", "finances", "versions"])
+    }
+
+    @MainActor
+    func testActivityRetryTapCannotLaunchInNewSessionAfterQueuedStart() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        defaults.set(false, forKey: "app_lock_enabled")
+        let authentication = AppAuthenticationSession(defaults: defaults)
+        let financials = CanonicalFinancialSourceStore()
+        let model = PartialRowsRefreshModel()
+        let tapped = expectation(description: "Retry action submitted")
+        let staleRead = expectation(description: "old tap did not start in new session")
+        staleRead.isInverted = true
+        let schema = Schema([TodoItem.self])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)],
+        )
+        let root = PartialRowsRefreshHarness(
+            model: model, buttonGone: {}, invalidateAfterStart: true, actionSubmitted: { tapped.fulfill() },
+        )
+            .modifier(LedgerListRefresh(syncOperation: { _ in staleRead.fulfill() }))
+            .environmentObject(authentication)
+            .environment(financials)
+            .modelContainer(container)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = UIHostingController(rootView: root)
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        await fulfillment(of: [tapped, staleRead], timeout: 0.2)
+        XCTAssertFalse(model.hasRows)
+    }
+    #endif
+
+    @MainActor
+    func testClosingOneWindowPreservesConsumedAndQueuedPushInBothCallbackOrders() async {
+        for socketFirst in [true, false] {
+            let windows = ConvexSyncWindowPresence()
+            let closing = UUID(), survivor = UUID()
+            windows.register(closing)
+            windows.register(survivor)
+            let releaseFirst = RetryActionGate()
+            let firstEntered = expectation(description: "first push entered")
+            let replayed = expectation(description: "latest push replayed")
+            var applied: [Double] = []
+            let controller = ConvexSyncRetryController(now: { 100 }, sleep: { _ in })
+            controller.submitPush(["todos": 1], member: "victor") { versions, _ in
+                firstEntered.fulfill()
+                await releaseFirst.wait()
+                applied.append(versions["todos"] ?? -1)
+            }
+            await fulfillment(of: [firstEntered], timeout: 1)
+            controller.submitPush(["todos": 2], member: "victor") { versions, _ in
+                applied.append(versions["todos"] ?? -1)
+                replayed.fulfill()
+            }
+            if socketFirst {
+                windows.subscriptionEnded(closing) { controller.cancel() }
+                windows.windowDisappeared(closing) { controller.cancel() }
+            } else {
+                windows.windowDisappeared(closing) { controller.cancel() }
+                windows.subscriptionEnded(closing) { controller.cancel() }
+            }
+            XCTAssertEqual(windows.count, 1)
+            XCTAssertTrue(controller.isSyncRunning)
+            releaseFirst.open()
+            await fulfillment(of: [replayed], timeout: 1)
+            XCTAssertEqual(applied, [1, 2])
+            controller.cancel()
+        }
+    }
+
+    @MainActor
+    func testClosingOneWindowPreservesOneShotRetryInBothCallbackOrders() async {
+        for socketFirst in [true, false] {
+            let windows = ConvexSyncWindowPresence()
+            let closing = UUID(), survivor = UUID()
+            windows.register(closing)
+            windows.register(survivor)
+            let timerDue = RetryActionGate()
+            let fired = expectation(description: "retry timer fired")
+            let controller = ConvexSyncRetryController(now: { 100 }, sleep: { _ in await timerDue.wait() })
+            controller.schedule(deadline: 115, member: "victor") { _, _ in fired.fulfill() }
+            if socketFirst {
+                windows.subscriptionEnded(closing) { controller.cancel() }
+                windows.windowDisappeared(closing) { controller.cancel() }
+            } else {
+                windows.windowDisappeared(closing) { controller.cancel() }
+                windows.subscriptionEnded(closing) { controller.cancel() }
+            }
+            timerDue.open()
+            await fulfillment(of: [fired], timeout: 1)
+            controller.cancel()
+        }
+    }
+
+    @MainActor
+    func testLastWindowCleanupAndIdempotenceInBothCallbackOrders() async {
+        for socketFirst in [true, false] {
+            let windows = ConvexSyncWindowPresence()
+            let closing = UUID()
+            windows.register(closing)
+            windows.register(closing)
+            let gate = ConvexSyncExecutionGate()
+            let oldEpoch = gate.sessionEpoch
+            let release = RetryActionGate()
+            let entered = expectation(description: "active read entered")
+            var activeSawCancellation = false
+            var queuedRuns = 0
+            let active = Task { @MainActor in
+                await gate.withSlot(expectedEpoch: oldEpoch) {
+                    entered.fulfill()
+                    await release.wait()
+                    activeSawCancellation = Task.isCancelled
+                }
+            }
+            await fulfillment(of: [entered], timeout: 1)
+            let queued = Task { @MainActor in
+                await gate.withSlot(expectedEpoch: oldEpoch) { queuedRuns += 1 }
+            }
+            for _ in 0 ..< 100 where gate.queuedCount == 0 { await Task.yield() }
+            XCTAssertEqual(gate.queuedCount, 1)
+            let controller = ConvexSyncRetryController(now: { 100 }, sleep: { _ in })
+            let foregroundRelease = RetryActionGate()
+            let profileRelease = RetryActionGate()
+            let foreground = Task { await foregroundRelease.wait() }
+            let profile = Task { await profileRelease.wait() }
+            var cleanupCount = 0
+            let cleanup = {
+                cleanupCount += 1
+                gate.invalidateSession()
+                controller.cancel()
+                foreground.cancel()
+                profile.cancel()
+            }
+            if socketFirst {
+                windows.subscriptionEnded(closing, cancelShared: cleanup)
+                windows.windowDisappeared(closing, cancelShared: cleanup)
+            } else {
+                windows.windowDisappeared(closing, cancelShared: cleanup)
+                windows.subscriptionEnded(closing, cancelShared: cleanup)
+            }
+            windows.windowDisappeared(closing, cancelShared: cleanup) // duplicate callback
+            XCTAssertEqual(windows.count, 0)
+            XCTAssertGreaterThanOrEqual(cleanupCount, 1)
+            XCTAssertTrue(foreground.isCancelled)
+            XCTAssertTrue(profile.isCancelled)
+            await active.value
+            await queued.value
+            XCTAssertEqual(queuedRuns, 0)
+            release.open()
+            foregroundRelease.open()
+            profileRelease.open()
+            await foreground.value
+            await profile.value
+            // A fresh window cannot execute the old epoch, even if the old
+            // transport returns after the new window registers.
+            let reopened = UUID()
+            windows.register(reopened)
+            await gate.withSlot(expectedEpoch: oldEpoch) { queuedRuns += 1 }
+            XCTAssertEqual(queuedRuns, 0)
+            XCTAssertTrue(activeSawCancellation)
+        }
+    }
+
+    @MainActor
+    func testLastWindowCancelsActiveQueuedPushAndPendingRetryInBothCallbackOrders() async {
+        for socketFirst in [true, false] {
+            let windows = ConvexSyncWindowPresence()
+            let closing = UUID()
+            windows.register(closing)
+            let release = RetryActionGate()
+            let entered = expectation(description: "active push entered")
+            let finished = expectation(description: "cancelled push exited")
+            var sawCancellation = false
+            var queuedRuns = 0
+            let controller = ConvexSyncRetryController(now: { 100 }, sleep: { _ in })
+            controller.submitPush(["todos": 1], member: "victor") { _, _ in
+                entered.fulfill()
+                await release.wait() // transport ignores cancellation
+                sawCancellation = Task.isCancelled
+                finished.fulfill()
+            }
+            await fulfillment(of: [entered], timeout: 1)
+            controller.submitPush(["todos": 2], member: "victor") { _, _ in queuedRuns += 1 }
+            controller.schedule(deadline: 115, member: "victor") { _, _ in queuedRuns += 1 }
+            let cleanup = { controller.cancel() }
+            if socketFirst {
+                windows.subscriptionEnded(closing, cancelShared: cleanup)
+                windows.windowDisappeared(closing, cancelShared: cleanup)
+            } else {
+                windows.windowDisappeared(closing, cancelShared: cleanup)
+                windows.subscriptionEnded(closing, cancelShared: cleanup)
+            }
+            release.open()
+            await fulfillment(of: [finished], timeout: 1)
+            for _ in 0 ..< 10 { await Task.yield() }
+            XCTAssertTrue(sawCancellation)
+            XCTAssertEqual(queuedRuns, 0)
+            XCTAssertFalse(controller.isSyncRunning)
+        }
+    }
+
     @MainActor
     func testExecutionGateSerializesEveryManualEntryAgainstPushAndRetryInBothOrders() async {
         for manual in ["startup", "foreground", "profile", "read-retry", "list-refresh"] {
@@ -756,6 +1002,40 @@ private final class RetryActionGate {
         continuation = nil
     }
 }
+
+#if os(iOS)
+@MainActor
+private final class PartialRowsRefreshModel: ObservableObject {
+    @Published var hasRows = false
+    var applied: [String] = []
+    var started = false
+}
+
+private struct PartialRowsRefreshHarness: View {
+    @ObservedObject var model: PartialRowsRefreshModel
+    let buttonGone: @MainActor () -> Void
+    var invalidateAfterStart = false
+    var actionSubmitted: (@MainActor () -> Void)? = nil
+    @Environment(\.ledgerRetryAction) private var retryAction
+
+    var body: some View {
+        List {
+            if model.hasRows {
+                Text("Transaction row")
+            } else {
+                LedgerRefreshButton().onDisappear(perform: buttonGone)
+            }
+        }
+        .onAppear {
+            guard !model.started else { return }
+            model.started = true
+            retryAction?()
+            if invalidateAfterStart { ConvexSyncExecutionGate.shared.invalidateSession() }
+            actionSubmitted?()
+        }
+    }
+}
+#endif
 
 private final class RecordingSyncMetadataStore: SyncMetadataStoring {
     private var values: [String: Any] = [:]

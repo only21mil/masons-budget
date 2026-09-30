@@ -10,6 +10,36 @@ protocol SyncMetadataStoring: AnyObject {
     func removeObject(forKey defaultName: String)
 }
 
+/// WindowGroup can host more than one scene while sync work is App-owned.
+/// Excluding the departing ID gives the same answer whether its task cancels
+/// before or after the view's onDisappear callback removes it.
+@MainActor
+final class ConvexSyncWindowPresence {
+    private var visible: Set<UUID> = []
+
+    var count: Int { visible.count }
+
+    func register(_ id: UUID) { visible.insert(id) }
+
+    @discardableResult
+    func unregister(_ id: UUID) -> Bool {
+        guard visible.remove(id) != nil else { return false }
+        return visible.isEmpty
+    }
+
+    func hasOtherWindow(excluding id: UUID) -> Bool {
+        visible.contains { $0 != id }
+    }
+
+    func subscriptionEnded(_ id: UUID, cancelShared: () -> Void) {
+        if !hasOtherWindow(excluding: id) { cancelShared() }
+    }
+
+    func windowDisappeared(_ id: UUID, cancelShared: () -> Void) {
+        if unregister(id) { cancelShared() }
+    }
+}
+
 /// Serializes every app-initiated Convex version check and file sync.
 /// Callers keep their own task, so cancelling a view's manual refresh does
 /// not cancel an unrelated push that owns the next slot.

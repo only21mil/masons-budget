@@ -80,6 +80,7 @@ struct MasonsBudgetApp: App {
     @StateObject private var authentication = AppAuthenticationSession()
     @State private var priceTimer: Timer?
     @State private var syncRetry = ConvexSyncRetryController()
+    @State private var syncWindows = ConvexSyncWindowPresence()
     @State private var foregroundSyncTask: Task<Void, Never>?
     @State private var profileSyncTask: Task<Void, Never>?
     @State private var foregroundSyncID = UUID()
@@ -97,6 +98,12 @@ struct MasonsBudgetApp: App {
 
     var body: some Scene {
         WindowGroup {
+            ConvexSyncWindowScope(
+                onAppear: { syncWindows.register($0) },
+                onDisappear: { windowID in
+                    syncWindows.windowDisappeared(windowID) { cancelSharedSync() }
+                },
+            ) { windowID in
             ZStack {
                 if authentication.isUnlocked {
                     ContentView()
@@ -104,7 +111,7 @@ struct MasonsBudgetApp: App {
                             await syncFromConvex()
                             guard authentication.isUnlocked, !Task.isCancelled else { return }
                             startPriceRefresh()
-                            await subscribeToVersions()
+                            await subscribeToVersions(windowID: windowID)
                         }
                 } else {
                     LockScreenView()
@@ -190,6 +197,7 @@ struct MasonsBudgetApp: App {
             .environmentObject(taskUndoStore)
             .themed()
             .preferredColorScheme(appearanceMode.colorScheme)
+            }
         }
         .modelContainer(sharedModelContainer)
         #if os(macOS)
@@ -229,6 +237,13 @@ struct MasonsBudgetApp: App {
         profileSyncTask?.cancel()
         profileSyncTask = nil
         profileSyncID = UUID()
+    }
+
+    @MainActor
+    private func cancelSharedSync() {
+        ConvexSyncExecutionGate.shared.invalidateSession()
+        syncRetry.cancel()
+        cancelAppSyncTasks()
     }
 
     @MainActor
@@ -329,10 +344,13 @@ struct MasonsBudgetApp: App {
     /// The `.task` above cancels this when the view disappears (app lock),
     /// which tears down the socket through the cancellation handler.
     @MainActor
-    private func subscribeToVersions() async {
+    private func subscribeToVersions(windowID: UUID) async {
         let client = ConvexSubscriptionClient()
         let retryController = syncRetry
-        defer { syncRetry.cancel() }
+        let windows = syncWindows
+        defer {
+            windows.subscriptionEnded(windowID) { retryController.cancel() }
+        }
         let args = ConvexClient.authenticatedArguments(
             endpoint: "api/query",
             args: [:],
@@ -352,7 +370,9 @@ struct MasonsBudgetApp: App {
             }
         } onCancel: {
             client.cancel()
-            Task { @MainActor in retryController.cancel() }
+            Task { @MainActor in
+                windows.subscriptionEnded(windowID) { retryController.cancel() }
+            }
         }
     }
 
@@ -365,5 +385,18 @@ struct MasonsBudgetApp: App {
                 await refreshPrices()
             }
         }
+    }
+}
+
+private struct ConvexSyncWindowScope<Content: View>: View {
+    @State private var windowID = UUID()
+    let onAppear: @MainActor (UUID) -> Void
+    let onDisappear: @MainActor (UUID) -> Void
+    @ViewBuilder let content: (UUID) -> Content
+
+    var body: some View {
+        content(windowID)
+            .onAppear { onAppear(windowID) }
+            .onDisappear { onDisappear(windowID) }
     }
 }
