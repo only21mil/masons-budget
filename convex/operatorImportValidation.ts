@@ -94,6 +94,11 @@ function unique(pairs: readonly [string, string][], code: string) { const seen =
 export async function canonicalizeOperatorImportEnvelope(input: unknown): Promise<CanonicalOperatorImport> {
   const envelope = parseOperatorImportEnvelope(input);
   unique(envelope.ops.map((op) => [op.op_id, op.op_id]), "DUPLICATE_OP_ID"); unique(envelope.ops.map((op) => [op.record_id, op.op_id]), "DUPLICATE_RECORD_ID"); unique(envelope.ops.map((op) => [op.source_locator, op.op_id]), "DUPLICATE_SOURCE_LOCATOR"); unique(envelope.ops.map((op) => [naturalKeyForOperatorImportOp(op), op.op_id]), "DUPLICATE_NATURAL_KEY");
+  unique(envelope.ops.flatMap((op): [string, string][] =>
+    op.kind === "transaction" && op.supersedes_record_id !== undefined
+      ? [[naturalKeyForOperatorImportOp({ ...op, record_id: op.supersedes_record_id }), op.op_id]]
+      : []
+  ), "DUPLICATE_CORRECTION_TARGET");
   const ops: CanonicalOperatorImportOp[] = []; for (const op of envelope.ops) ops.push({ ...op, natural_key: naturalKeyForOperatorImportOp(op), semantic_fingerprint: await semanticFingerprintForOperatorImportOp(op) });
   const attestations = new Map(envelope.duplicate_attestations.map((a) => [`${a.op_ids[0]}\u0000${a.op_ids[1]}\u0000${a.semantic_fingerprint}`, a])); const seen = new Map<string, string>();
   for (const op of ops) { const prior = seen.get(op.semantic_fingerprint); if (prior === undefined) { seen.set(op.semantic_fingerprint, op.op_id); continue; } const pair = [prior, op.op_id].sort() as [string, string], key = `${pair[0]}\u0000${pair[1]}\u0000${op.semantic_fingerprint}`; if (!attestations.delete(key)) throw new OperatorImportValidationError("SEMANTIC_DUPLICATE", "batch.ops", "semantic duplicate requires exact fingerprint-bound attestation", { op_ids: pair, semantic_fingerprint: op.semantic_fingerprint }); }

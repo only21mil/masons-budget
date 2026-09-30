@@ -64,13 +64,12 @@ type ExpectedRow = {
   readonly content: Readonly<Record<string, StableValue | undefined>>;
   readonly existing: LedgerDoc | undefined;
   // Set for a transaction correction op: the wrong row this op replaces.
-  // targetRow is undefined when the target is already gone and tombstoned
-  // (a replay, or a device-side delete) — then only the corrected row is inserted.
+  // Fresh corrections require a live target; exact retries use the receipt path.
   readonly correction:
     | {
         readonly targetKey: string;
         readonly targetRecordId: string;
-        readonly targetRow: LedgerDoc | undefined;
+        readonly targetRow: LedgerDoc;
       }
     | undefined;
 };
@@ -717,28 +716,25 @@ async function buildAnalysis(ctx: ReadCtx, input: unknown): Promise<Analysis> {
       reject("EXISTING_CONTENT_CONFLICT");
     }
     // A correction op carries the full corrected row plus a pointer at the
-    // wrong row it replaces. The wrong row must exist (or already be
-    // tombstoned, for idempotent replay); posted rows are refused because the
-    // operator cannot unwind their balance legs.
+    // wrong row it replaces. Fresh batches must target a live row: a tombstone
+    // cannot prove which correction retired it. Exact retries use the receipt
+    // path before analysis. Posted rows cannot have their balance legs unwound.
     let correction: ExpectedRow["correction"];
     if (op.kind === "transaction" && op.supersedes_record_id !== undefined) {
       const targetKey = correctionTargetKey(op) as string;
       const targetRecordId = op.supersedes_record_id;
       correctionTargetKeys.add(targetKey);
       const targetRow = state.byNaturalKey.get(targetKey);
-      if (targetRow === undefined) {
-        if (!tombstoneKeys.has(targetKey)) reject("CORRECTION_TARGET_MISSING");
-        correction = { targetKey, targetRecordId, targetRow: undefined };
-      } else {
-        if (
-          "balancePostingVersion" in targetRow &&
-          targetRow.balancePostingVersion === 1n
-        )
-          reject("CORRECTION_POSTED_TRANSACTION");
-        if (!correctionChangesRow(targetRow, content))
-          reject("CORRECTION_NO_CHANGE");
-        correction = { targetKey, targetRecordId, targetRow };
-      }
+      if (targetRow === undefined) reject("CORRECTION_TARGET_MISSING");
+      if (tombstoneKeys.has(targetKey)) reject("TOMBSTONED_RECORD");
+      if (
+        "balancePostingVersion" in targetRow &&
+        targetRow.balancePostingVersion === 1n
+      )
+        reject("CORRECTION_POSTED_TRANSACTION");
+      if (!correctionChangesRow(targetRow, content))
+        reject("CORRECTION_NO_CHANGE");
+      correction = { targetKey, targetRecordId, targetRow };
     }
     rows.push({
       op,
@@ -1125,10 +1121,12 @@ export const applyBatch = internalMutation({
     }
 
     const now = Date.now();
-    const insertedSources = new Set(
-      analysis.rows.filter((row) => !row.existing).map((row) => row.sourceFile),
+    const mutatedSources = new Set(
+      analysis.rows
+        .filter((row) => !row.existing || row.correction !== undefined)
+        .map((row) => row.sourceFile),
     );
-    for (const sourceFile of insertedSources) {
+    for (const sourceFile of mutatedSources) {
       await lockRuntimeSource(ctx, sourceFile);
     }
     for (const row of analysis.rows) {
