@@ -1,0 +1,123 @@
+name: Apple runner public context diagnostic
+on:
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: apple-runner-public-context-diagnostic
+  cancel-in-progress: false
+jobs:
+  public-context:
+    # Before dispatch, verify these labels select ONLY macbook-pro-m5-ghrunner.
+    runs-on: [self-hosted, macOS, ARM64, mason-mbp]
+    timeout-minutes: 2
+    steps:
+      - name: Read-only public context probes
+        shell: bash --noprofile --norc {0}
+        run: |
+          /usr/bin/python3 - <<'PY'
+          import datetime, hashlib, json, os, pathlib, subprocess, sys
+          base = "/tmp/vv-public-chain-rca-20260930/"
+          result = {
+              "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "pid": os.getpid(), "ppid": os.getppid(),
+              "uid": os.getuid(), "euid": os.geteuid(),
+              "gid": os.getgid(), "groups": os.getgroups(),
+              "environment_selected": {
+                  k: os.environ.get(k)
+                  for k in ["HOME", "USER", "LOGNAME", "PATH",
+                            "RUNNER_NAME", "RUNNER_OS", "RUNNER_ARCH"]
+              },
+              "ancestry_selected": [], "fixture_validation": {}, "checks": {}
+          }
+          routing_valid = (
+              os.environ.get("RUNNER_NAME") == "macbook-pro-m5-ghrunner"
+              and os.getuid() == 502 and os.geteuid() == 502 and os.getgid() == 502
+          )
+          expected_fixtures = {
+              "ios48-cert0": "dd78e110d3212eea29756a150f1b2d5d83b39e96f32a68a48e6da88eadfb0d46",
+              "ios48-cert1": "dcf21878c77f4198e4b4614f03d696d89c66c66008d4244e1b99161aac91601f",
+              "mac47-certs/certificate0.der": "cd21452e3a8ce18f7100801766e465335b1accd125809401f9f756f0aebd6c1d",
+              "mac47-certs/certificate1.der": "dcf21878c77f4198e4b4614f03d696d89c66c66008d4244e1b99161aac91601f"
+          }
+          for name, expected in expected_fixtures.items():
+              try:
+                  actual = hashlib.sha256(pathlib.Path(base, name).read_bytes()).hexdigest()
+                  result["fixture_validation"][name] = {
+                      "sha256": actual, "matches_expected": actual == expected
+                  }
+              except OSError:
+                  result["fixture_validation"][name] = {"matches_expected": False}
+          fixtures_valid = all(
+              v["matches_expected"] for v in result["fixture_validation"].values()
+          )
+          result["routing_valid"] = routing_valid
+          result["fixtures_valid"] = fixtures_valid
+          if not routing_valid or not fixtures_valid:
+              result["strict_public_gate_passed"] = False
+              result["evidence_gap"] = "runner routing or public fixture validation failed"
+              print(json.dumps(result, indent=2))
+              sys.exit(1)
+          pid = os.getpid()
+          for _ in range(8):
+              try:
+                  p = subprocess.run(
+                      ["/bin/ps", "-o", "pid=,ppid=,uid=,gid=,comm=", "-p", str(pid)],
+                      capture_output=True, text=True, timeout=5)
+              except (OSError, subprocess.TimeoutExpired) as error:
+                  result["ancestry_selected"].append({"error_class": type(error).__name__})
+                  result["ancestry_coverage_gap"] = True
+                  break
+              result["ancestry_selected"].append({
+                  "exit_code": p.returncode,
+                  "stdout": p.stdout.strip(), "stderr": p.stderr.strip()
+              })
+              fields = p.stdout.strip().split(None, 4)
+              if p.returncode or len(fields) < 2:
+                  break
+              pid = int(fields[1])
+              if pid <= 1:
+                  break
+          checks = {
+              "name": ["/usr/bin/id", "-un"],
+              "directory": ["/usr/bin/dscl", ".", "-read", "/Users/ghrunner", "UniqueID"],
+              "ios_chain": ["/usr/bin/security", "verify-cert",
+                            "-c", base + "ios48-cert0", "-c", base + "ios48-cert1",
+                            "-p", "codeSign", "-L"],
+              "installer_chain": ["/usr/bin/security", "verify-cert",
+                                  "-c", base + "mac47-certs/certificate0.der",
+                                  "-c", base + "mac47-certs/certificate1.der",
+                                  "-p", "basic", "-L"]
+          }
+          for name, args in checks.items():
+              try:
+                  p = subprocess.run(args, capture_output=True, text=True, timeout=15)
+                  result["checks"][name] = {
+                      "exit_code": p.returncode,
+                      "stdout": p.stdout.strip(), "stderr": p.stderr.strip()
+                  }
+              except subprocess.TimeoutExpired:
+                  result["checks"][name] = {"timeout_seconds": 15}
+              except OSError:
+                  result["checks"][name] = {"spawn_failed": True}
+          failures = {}
+          for name, check in result["checks"].items():
+              if "timeout_seconds" in check:
+                  failures[name] = "timeout: evidence gap"
+              elif check.get("spawn_failed"):
+                  failures[name] = "spawn failure: evidence gap"
+              elif check["exit_code"] != 0:
+                  failures[name] = "probe exited nonzero"
+              elif name == "name" and check["stdout"] != "ghrunner":
+                  failures[name] = "unexpected resolved name"
+              elif name == "directory" and check["stdout"] != "UniqueID: 502":
+                  failures[name] = "unexpected DirectoryServices result"
+          result["probe_failure_classes"] = failures
+          passed = (
+              all(v.get("exit_code") == 0 for v in result["checks"].values())
+              and result["checks"]["name"].get("stdout") == "ghrunner"
+              and result["checks"]["directory"].get("stdout") == "UniqueID: 502"
+          )
+          result["strict_public_gate_passed"] = passed
+          print(json.dumps(result, indent=2))
+          sys.exit(0 if passed else 1)
+          PY
