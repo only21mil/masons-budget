@@ -208,7 +208,8 @@ struct MasonsBudgetApp: App {
 
     @MainActor
     private func scheduleSyncRetry(using sync: ConvexSyncService) {
-        guard authentication.isUnlocked, !Task.isCancelled, let deadline = sync.retryDeadline else {
+        guard !Task.isCancelled else { return }
+        guard authentication.isUnlocked, let deadline = sync.retryDeadline else {
             syncRetry.cancelTimer()
             return
         }
@@ -229,6 +230,17 @@ struct MasonsBudgetApp: App {
         }
         guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
         if changed {
+            await sync.syncAll()
+        }
+        scheduleSyncRetry(using: sync)
+    }
+
+    @MainActor
+    private func syncPushedVersions(_ versions: [String: Double], member: String) async {
+        guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
+        let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
+        if await sync.hasUpdates(remote: versions) {
+            guard authentication.isUnlocked, selectedMember == member, !Task.isCancelled else { return }
             await sync.syncAll()
         }
         scheduleSyncRetry(using: sync)
@@ -260,11 +272,14 @@ struct MasonsBudgetApp: App {
             for await versions in client.subscribeVersions(authArgs: args) {
                 guard authentication.isUnlocked, !Task.isCancelled else { break }
                 syncRetry.noteSnapshot(versions)
-                let sync = ConvexSyncService(context: sharedModelContainer.mainContext)
-                if await sync.hasUpdates(remote: versions) {
-                    await sync.syncAll()
+                let member = selectedMember
+                if syncRetry.isRetryRunning {
+                    syncRetry.deferPush { latest in
+                        await syncPushedVersions(latest, member: member)
+                    }
+                    continue
                 }
-                scheduleSyncRetry(using: sync)
+                await syncPushedVersions(versions, member: member)
             }
         } onCancel: {
             client.cancel()

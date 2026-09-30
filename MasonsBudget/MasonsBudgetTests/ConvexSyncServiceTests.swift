@@ -297,6 +297,128 @@ final class ConvexSyncServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testRunningRetryIsCancelledOnLock() async {
+        let entered = expectation(description: "retry action started")
+        let finished = expectation(description: "cancelled action finished")
+        let gate = RetryActionGate()
+        let controller = ConvexSyncRetryController(now: { 100 }, sleep: { _ in })
+        var sawCancellation = false
+        controller.schedule(deadline: 115, member: "victor") { _, _ in
+            entered.fulfill()
+            await gate.wait()
+            sawCancellation = Task.isCancelled
+            finished.fulfill()
+        }
+        await fulfillment(of: [entered], timeout: 1)
+        XCTAssertTrue(controller.isRetryRunning)
+        controller.cancel()
+        // The handle stays live until the action exits, so a new push can
+        // still be queued instead of starting a concurrent read.
+        XCTAssertTrue(controller.isRetryRunning)
+        gate.open()
+        await fulfillment(of: [finished], timeout: 1)
+        XCTAssertTrue(sawCancellation)
+        XCTAssertFalse(controller.isRetryRunning)
+    }
+
+    @MainActor
+    func testPushDuringRetryReplaysLatestSnapshotAfterRead() async {
+        let entered = expectation(description: "retry action started")
+        let replayed = expectation(description: "latest push replayed")
+        let gate = RetryActionGate()
+        let controller = ConvexSyncRetryController(now: { 100 }, sleep: { _ in })
+        var readFinished = false
+        var retryCount = 0
+        var pushCount = 0
+        controller.noteSnapshot(["todos": 42])
+        controller.schedule(deadline: 115, member: "victor") { versions, _ in
+            retryCount += 1
+            XCTAssertEqual(versions, ["todos": 42])
+            entered.fulfill()
+            await gate.wait()
+            readFinished = true
+        }
+        await fulfillment(of: [entered], timeout: 1)
+        controller.noteSnapshot(["todos": 43])
+        controller.deferPush { versions in
+            pushCount += 1
+            XCTAssertTrue(readFinished)
+            XCTAssertEqual(versions, ["todos": 43])
+            replayed.fulfill()
+        }
+        controller.noteSnapshot(["todos": 44])
+        controller.deferPush { versions in
+            pushCount += 1
+            XCTAssertTrue(readFinished)
+            XCTAssertEqual(versions, ["todos": 44])
+            replayed.fulfill()
+        }
+        gate.open()
+        await fulfillment(of: [replayed], timeout: 1)
+        XCTAssertEqual(retryCount, 1)
+        XCTAssertEqual(pushCount, 1)
+    }
+
+    @MainActor
+    func testRunningRetryCanArmNextBackoffWithoutCancellingItself() async {
+        let first = expectation(description: "first retry completed")
+        let second = expectation(description: "next backoff retry ran")
+        let controller = ConvexSyncRetryController(now: { 100 }, sleep: { _ in })
+        controller.schedule(deadline: 115, member: "victor") { _, _ in
+            controller.schedule(deadline: 130, member: "victor") { _, _ in
+                second.fulfill()
+            }
+            XCTAssertFalse(Task.isCancelled)
+            first.fulfill()
+        }
+        await fulfillment(of: [first, second], timeout: 1)
+    }
+
+    @MainActor
+    func testCancelledSyncDoesNotApplyLateFileResponse() async throws {
+        let entered = expectation(description: "todo read started")
+        let gate = RetryActionGate()
+        let store = RecordingSyncMetadataStore()
+        store.set("maddox", forKey: ConvexSyncService.selectedMemberKey)
+        let client = ConvexClient(
+            deploymentURL: try XCTUnwrap(URL(string: "https://example.invalid")),
+            requestExecutor: { request in
+                let body = try XCTUnwrap(request.httpBody)
+                let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+                let path = object["path"] as? String
+                let value: Any
+                if path == "dataFiles:getVersions" {
+                    value = ["todos": 42]
+                } else {
+                    entered.fulfill()
+                    await gate.wait() // deliberately ignores task cancellation
+                    value = [Any]()
+                }
+                let data = try JSONSerialization.data(withJSONObject: ["status": "success", "value": value])
+                let response = try XCTUnwrap(HTTPURLResponse(
+                    url: try XCTUnwrap(request.url), statusCode: 200, httpVersion: nil, headerFields: nil,
+                ))
+                return (data, response)
+            },
+        )
+        let schema = Schema([TodoItem.self, TodoProject.self, TodoArea.self])
+        let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let context = ModelContext(container)
+        context.insert(TodoItem(id: "keep", title: "Keep", owner: .maddox))
+        try context.save()
+        let reader = ConvexDataReader(client: client, rowReadsEnabled: { false })
+        let sync = ConvexSyncService(reader: reader, context: context, metadataStore: store)
+        let task = Task { await sync.syncAll() }
+        await fulfillment(of: [entered], timeout: 1)
+        task.cancel()
+        gate.open()
+        await task.value
+        XCTAssertEqual(try context.fetch(FetchDescriptor<TodoItem>()).map(\.id), ["keep"])
+        XCTAssertNil(store.object(forKey: ConvexSyncService.dataVersionsKey))
+        XCTAssertNil(store.object(forKey: ConvexSyncService.nextRetryKey))
+    }
+
+    @MainActor
     func testTransactionOnlyRefreshPreservesBudgetPaychecks() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: Transaction.self, configurations: configuration)
@@ -328,6 +450,23 @@ final class ConvexSyncServiceTests: XCTestCase {
         } else {
             defaults.removeObject(forKey: key)
         }
+    }
+}
+
+@MainActor
+private final class RetryActionGate {
+    private var isOpen = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
     }
 }
 

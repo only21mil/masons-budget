@@ -15,10 +15,21 @@ protocol SyncMetadataStoring: AnyObject {
 /// due retry uses the newest server versions without another HTTP poll.
 @MainActor
 final class ConvexSyncRetryController {
+    private struct RetryRequest {
+        let deadline: TimeInterval
+        let member: String
+        let action: @MainActor ([String: Double]?, String) async -> Void
+    }
+
     private var latestVersions: [String: Double]?
-    private var retryTask: Task<Void, Never>?
+    private var timerTask: Task<Void, Never>?
+    private var actionTask: Task<Void, Never>?
+    private var queuedRetry: RetryRequest?
+    private var queuedPush: (@MainActor ([String: Double]) async -> Void)?
     private let now: () -> TimeInterval
     private let sleep: @Sendable (TimeInterval) async throws -> Void
+
+    var isRetryRunning: Bool { actionTask != nil }
 
     init(
         now: @escaping () -> TimeInterval = { Date().timeIntervalSince1970 },
@@ -34,32 +45,68 @@ final class ConvexSyncRetryController {
         latestVersions = versions
     }
 
+    /// Coalesce pushes received while a retry is reading. The newest
+    /// snapshot is checked once the active read finishes.
+    func deferPush(_ action: @escaping @MainActor ([String: Double]) async -> Void) {
+        queuedPush = action
+    }
+
     func schedule(
         deadline: TimeInterval,
         member: String,
         action: @escaping @MainActor ([String: Double]?, String) async -> Void
     ) {
+        let request = RetryRequest(deadline: deadline, member: member, action: action)
+        if isRetryRunning {
+            queuedRetry = request
+            return
+        }
+        arm(request)
+    }
+
+    private func arm(_ request: RetryRequest) {
         cancelTimer()
-        let delay = max(0, deadline - now())
-        retryTask = Task { @MainActor in
+        let delay = max(0, request.deadline - now())
+        timerTask = Task { @MainActor in
             do {
                 try await sleep(delay)
             } catch {
                 return
             }
             guard !Task.isCancelled else { return }
-            retryTask = nil
-            await action(latestVersions, member)
+            timerTask = nil
+            runAction { await request.action(self.latestVersions, request.member) }
+        }
+    }
+
+    private func runAction(_ action: @escaping @MainActor () async -> Void) {
+        actionTask = Task { @MainActor in
+            await action()
+            finishAction()
+        }
+    }
+
+    private func finishAction() {
+        actionTask = nil
+        if let queuedPush, let latestVersions {
+            self.queuedPush = nil
+            runAction { await queuedPush(latestVersions) }
+        } else if let queuedRetry {
+            self.queuedRetry = nil
+            arm(queuedRetry)
         }
     }
 
     func cancelTimer() {
-        retryTask?.cancel()
-        retryTask = nil
+        timerTask?.cancel()
+        timerTask = nil
+        queuedRetry = nil
     }
 
     func cancel() {
         cancelTimer()
+        actionTask?.cancel()
+        queuedPush = nil
         latestVersions = nil
     }
 }
@@ -140,6 +187,7 @@ final class ConvexSyncService {
         } else {
             versions = try? await reader.checkVersions()
         }
+        guard !Task.isCancelled, selectedMember == member else { return }
         polledVersions = nil
         let saved = metadataStore.dictionary(forKey: Self.dataVersionsKey) as? [String: Double] ?? [:]
         let sameMember = metadataStore.string(forKey: Self.versionsMemberKey) == member.rawValue
@@ -150,6 +198,7 @@ final class ConvexSyncService {
         var totalEntities = 0
 
         func syncFile(_ name: String, operation: (inout [String]) async -> Int) async {
+            guard !Task.isCancelled, selectedMember == member else { return }
             if incremental, sameMember, !previouslyFailed.contains(name),
                let version = versions?[name], saved[name] == version { return }
             attempted.insert(name)
@@ -175,6 +224,8 @@ final class ConvexSyncService {
             await syncFile("finances", operation: syncFinances)
         }
 
+        guard !Task.isCancelled, selectedMember == member else { return }
+
         do {
             try recordNetWorthSnapshot()
         } catch {
@@ -187,6 +238,7 @@ final class ConvexSyncService {
             completed.removeAll()
             errors.append("Could not save downloaded data")
         }
+        guard !Task.isCancelled, selectedMember == member else { return }
         if versions == nil { errors.append("Could not check for updates") }
         guard selectedMember == member else { return }
         publishSyncResult(
@@ -315,9 +367,17 @@ final class ConvexSyncService {
 
     // MARK: - Individual sync methods
 
+    /// A cancelled retry or a changed profile must not apply a response
+    /// that arrived after the view stopped owning this sync.
+    private func checkSyncActive() throws {
+        try Task.checkCancellation()
+        guard selectedMember == syncingMember else { throw CancellationError() }
+    }
+
     private func syncTransactions(_ errors: inout [String]) async -> Int {
         do {
             let batch = try await reader.readTransactions(viewer: currentMember)
+            try checkSyncActive()
             let models = LedgerMapper.mapTransactions(batch.value)
             let owners = batch.replacementOwners.map { Array($0) } ?? [.victor, .rachel]
             try replaceTransactions(
@@ -336,6 +396,7 @@ final class ConvexSyncService {
     private func syncBudget(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readBudget(viewer: currentMember)
+            try checkSyncActive()
             let currentSnapshot = LedgerMapper.mapBudgetSnapshot(dto)
             let historicalSnapshots = LedgerMapper.mapMonthlyHistory(dto.monthlyHistory)
             let categories = LedgerMapper.mapBudgetCategories(dto.categories)
@@ -355,6 +416,7 @@ final class ConvexSyncService {
     private func syncBTCAccounts(_ errors: inout [String]) async -> Int {
         do {
             let rows = try await reader.readBalanceAccounts(viewer: currentMember)
+            try checkSyncActive()
             let accounts = rows.map { $0.model() }
             try replaceBTCAccounts(ownedBy: [.victor, .rachel], with: accounts)
             return accounts.count
@@ -368,6 +430,7 @@ final class ConvexSyncService {
     private func syncBTCBuys(_ errors: inout [String]) async -> Int {
         do {
             let batch = try await reader.readBTCBuys(viewer: currentMember)
+            try checkSyncActive()
             let models = try batch.value.map { try LedgerMapper.mapBTCBuy($0) }
             try replaceBTCBuys(
                 ownedBy: [.victor, .rachel],
@@ -385,6 +448,7 @@ final class ConvexSyncService {
     private func syncBTCBillPays(_ errors: inout [String]) async -> Int {
         do {
             let dtos = try await reader.readBTCBillPays(viewer: currentMember)
+            try checkSyncActive()
             let models = try dtos.map { try LedgerMapper.mapBTCBillPay($0) }
             try replaceBTCBillPays(ownedBy: [.victor, .rachel], with: models)
             return models.count
@@ -398,6 +462,7 @@ final class ConvexSyncService {
     private func syncTodos(_ errors: inout [String]) async -> Int {
         do {
             let batch = try await reader.readTodos(viewer: currentMember)
+            try checkSyncActive()
             let models = LedgerMapper.mapTodos(batch.value, viewer: currentMember)
             try replaceTodos(
                 visibleTo: currentMember,
@@ -415,6 +480,7 @@ final class ConvexSyncService {
     private func syncFinances(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readFinances(viewer: currentMember)
+            try checkSyncActive()
             let accounts = LedgerMapper.mapFinances(dto, owner: currentMember)
             try replaceHoldingAccounts(visibleTo: currentMember, with: accounts)
             return accounts.count
@@ -428,6 +494,7 @@ final class ConvexSyncService {
     private func syncSonBalances(_ errors: inout [String]) async -> Int {
         do {
             let rows = try await reader.readBalanceAccounts(viewer: currentMember, owner: .mason)
+            try checkSyncActive()
             let accounts = rows.map { $0.model() }
             try replaceBTCAccounts(ownedBy: [.mason], with: accounts)
             return accounts.count
@@ -441,6 +508,7 @@ final class ConvexSyncService {
     private func syncMasonBudget(_ errors: inout [String]) async -> Int {
         do {
             let dto = try await reader.readMasonBudget(viewer: currentMember)
+            try checkSyncActive()
             let categories = LedgerMapper.mapBudgetCategories(dto.categories, owner: .mason)
             let snapshot = makeMasonSnapshot(from: dto)
 
@@ -488,6 +556,7 @@ final class ConvexSyncService {
     private func syncMasonTransactions(_ errors: inout [String]) async -> Int {
         do {
             let dtos = try await reader.readMasonTransactions(viewer: currentMember)
+            try checkSyncActive()
             let models = LedgerMapper.mapTransactions(dtos, owner: .mason)
             try replaceTransactions(ownedBy: [.mason], with: models)
             return models.count
@@ -501,6 +570,7 @@ final class ConvexSyncService {
     private func syncMasonBTCBuys(_ errors: inout [String]) async -> Int {
         do {
             let batch = try await reader.readMasonBTCBuys(viewer: currentMember)
+            try checkSyncActive()
             let models = try batch.value.map { try LedgerMapper.mapBTCBuy($0, owner: .mason) }
             try replaceBTCBuys(
                 ownedBy: [.mason],
