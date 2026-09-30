@@ -160,6 +160,7 @@ jobs:
 
       - name: Manual Apple release signing contract
         run: |
+          python3 .github/workflows/scripts/tests/test_apple_public_keychain_probe.py
           python3 .github/workflows/scripts/tests/test_manual_release_signing.py
           python3 .github/workflows/scripts/tests/test_install_provisioning_profile.py
           python3 .github/workflows/scripts/tests/test_recover_stale_apple_release_artifacts.py
