@@ -288,7 +288,7 @@ jobs:
           ENCODED_PROFILE="$SIGNING_ROOT/$PLATFORM-profile"
           DECODED_PROFILE="$SIGNING_ROOT/$PLATFORM-profile.plist"
           printf '%s' "$PROFILE_B64" | /usr/bin/base64 -D > "$ENCODED_PROFILE"
-          security cms -D -i "$ENCODED_PROFILE" > "$DECODED_PROFILE"
+          security cms -D -k "$KEYCHAIN_PATH" -i "$ENCODED_PROFILE" > "$DECODED_PROFILE"
 
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$DECODED_PROFILE")
           if [ "$PLATFORM" = "macos" ]; then
