@@ -6,7 +6,7 @@ on:
         type: choice
         description: Approved public scope; dispatch only when release queue is idle
         default: context
-        options: [context, keychain]
+        options: [context, keychain, certificates]
 permissions: {}
 concurrency:
   # The keychain probe must not overlap the release's search-list changes.
@@ -145,3 +145,15 @@ jobs:
       - name: Recover only this run's owned public fixture
         if: always()
         run: /usr/bin/python3 .github/workflows/scripts/apple_public_keychain_probe.py cleanup
+  public-certificates:
+    if: inputs.probe == 'certificates'
+    runs-on: [self-hosted, macOS, ARM64, mason-mbp]
+    permissions:
+      contents: read
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read public certificate errors with leaf and supplied G3 chain
+        run: /usr/bin/python3 .github/workflows/scripts/apple_public_keychain_probe.py certificates

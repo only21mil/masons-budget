@@ -148,6 +148,42 @@ class PublicKeychainProbeTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertFalse(result["policy_valid"])
 
+    def test_stdout_policy_failure_is_not_a_false_pass(self):
+        result = probe.verify_leaf(lambda args: subprocess.CompletedProcess(
+            [], 0, "*** policy creation failed", ""), "ios48-cert0", "codeSign")
+        self.assertFalse(result["passed"])
+        self.assertIn("unsupported-policy", result["stderr_classes"])
+
+    def test_public_error_from_stdout_is_retained_and_bounded(self):
+        message = "Cert Verify Result: unable to build chain\n" + "x" * 5000
+        result = probe.verify_leaf(lambda args: subprocess.CompletedProcess(
+            [], 1, message, ""), "ios48-cert0", "codeSign")
+        self.assertFalse(result["passed"])
+        self.assertIn("missing-chain", result["stderr_classes"])
+        self.assertEqual(len(result["public_validation_message"]), 4096)
+
+    def test_certificate_mode_only_verifies_owned_public_copies(self):
+        calls = []
+        def verify(args):
+            calls.append(args)
+            for index, value in enumerate(args):
+                if value == "-c":
+                    path = Path(args[index + 1])
+                    self.assertTrue(path.exists())
+                    self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            return subprocess.CompletedProcess([], 1 if args.count("-c") == 1 else 0,
+                                               "public validation result", "")
+        result = probe.certificate_probe({name: b"public" for name in probe.EXPECTED}, verify)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual({args[0] for args in calls}, {"verify-cert"})
+        self.assertTrue(all("-L" in args and "-k" not in args for args in calls))
+        self.assertFalse(result["checks"]["installer_leaf"]["passed"])
+        self.assertTrue(result["checks"]["installer_supplied_g3"]["passed"])
+        self.assertFalse(result["security_state_changes"])
+        self.assertTrue(result["owned_public_copies_removed"])
+        self.assertTrue(all(not Path(args[i + 1]).exists() for args in calls
+                            for i, value in enumerate(args) if value == "-c"))
+
 
 if __name__ == "__main__":
     unittest.main()
