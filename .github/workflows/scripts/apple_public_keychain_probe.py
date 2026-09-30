@@ -178,6 +178,22 @@ def certificate_probe(fixtures, run=run_security):
     return result
 
 
+def bootstrap_metadata(run=subprocess.run):
+    """Read only the manager label/UID used by Apple's trust routing predicate."""
+    result = {}
+    for command in ("managername", "manageruid"):
+        reply = run(["/bin/launchctl", command], capture_output=True,
+                    text=True, timeout=5)
+        value = reply.stdout.strip()
+        result[command + "_exit_code"] = reply.returncode
+        if command == "managername":
+            result[command] = value if value in (
+                "System", "LoginWindow", "Aqua", "Background", "StandardIO") else "unrecognized"
+        else:
+            result[command] = int(value) if value.isdigit() and len(value) <= 10 else None
+    return result
+
+
 def probe(root, temporary_root, fixtures, run=run_security):
     result = {"observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "pid": os.getpid(), "ppid": os.getppid(), "uid": os.getuid(),
@@ -295,7 +311,9 @@ def main():
             if path.is_symlink() or hashlib.sha256(data).hexdigest() != expected:
                 raise ProbeError("public-fixture-hash-mismatch")
             fixtures[name] = data
-        print(json.dumps({"public_certificate_result": certificate_probe(fixtures)}, indent=2))
+        result = certificate_probe(fixtures)
+        result["bootstrap_metadata"] = bootstrap_metadata()
+        print(json.dumps({"public_certificate_result": result}, indent=2))
         return 0  # A recorded trust failure is diagnostic data, not job failure.
     run_id, attempt = os.environ.get("GITHUB_RUN_ID", ""), os.environ.get("GITHUB_RUN_ATTEMPT", "")
     if not run_id.isdigit() or not attempt.isdigit():

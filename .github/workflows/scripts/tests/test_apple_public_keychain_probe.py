@@ -56,6 +56,26 @@ class FakeSecurity:
 
 
 class PublicKeychainProbeTests(unittest.TestCase):
+    def test_bootstrap_metadata_reads_only_fixed_commands(self):
+        calls = []
+        def fake(args, **kwargs):
+            calls.append(args)
+            self.assertEqual(kwargs["timeout"], 5)
+            return subprocess.CompletedProcess(args, 0,
+                                               "System\n" if args[-1] == "managername" else "0\n", "")
+        result = probe.bootstrap_metadata(fake)
+        self.assertEqual(calls, [["/bin/launchctl", "managername"],
+                                 ["/bin/launchctl", "manageruid"]])
+        self.assertEqual(result["managername"], "System")
+        self.assertEqual(result["manageruid"], 0)
+
+    def test_bootstrap_metadata_does_not_emit_unexpected_output(self):
+        result = probe.bootstrap_metadata(lambda args, **kwargs:
+            subprocess.CompletedProcess(args, 1, "unrecognized unrelated output", ""))
+        self.assertEqual(result["managername"], "unrecognized")
+        self.assertIsNone(result["manageruid"])
+        self.assertEqual(result["managername_exit_code"], 1)
+
     def execute(self, fake):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "owned-public-fixture"
