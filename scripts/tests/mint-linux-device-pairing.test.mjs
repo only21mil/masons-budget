@@ -84,8 +84,10 @@ test("help documents the approved host environment-loading pattern", () => {
   assert.match(result.stdout, /CONVEX_SYNC_TOKEN in the process environment/);
   assert.match(
     result.stdout,
-    /set -a; \. "\$HOME\/\.config\/sats\/secrets\.env"; set \+a/,
+    /export CONVEX_SYNC_TOKEN="\$\("\$HOME\/\.config\/sats\/read-canon\.sh" get CONVEX_SYNC_TOKEN\)"/,
   );
+  assert.doesNotMatch(result.stdout, /secrets\.env/);
+  assert.doesNotMatch(result.stdout, /keen-elephant/);
 });
 
 test("accepts only the exact approved HTTPS household origin", () => {
