@@ -233,7 +233,7 @@ Options:
   --dry-run      Validate configuration without minting, writing, or generating secrets.
 
 Requires CONVEX_SYNC_TOKEN in the process environment unless --dry-run.
-On the approved host, load it without output before running:
+On the approved host, with shell tracing off (set +x), load it without output:
   export CONVEX_SYNC_TOKEN="$("$HOME/.config/sats/read-canon.sh" get CONVEX_SYNC_TOKEN)"
 Only the approved household origin ${APPROVED_CONVEX_ORIGIN} is accepted.
 `);

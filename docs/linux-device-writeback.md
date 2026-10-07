@@ -149,8 +149,10 @@ CONVEX_SYNC_TOKEN="$("$HOME/.config/sats/read-canon.sh" get CONVEX_SYNC_TOKEN)" 
 ```
 
 The command requires `CONVEX_SYNC_TOKEN` in its process environment. Load it
-with `read-canon.sh get`, which prints only the value, so it never appears in
-argv or output. Never source a plaintext `secrets.env`. The command does not
+with `read-canon.sh get`, which prints only the value. The value then reaches
+the command through its environment, never its argv. Run the line with shell
+tracing off (`set +x`), because tracing prints the expanded value to stderr.
+Never source a plaintext `secrets.env`. The command does not
 load repository-local environment files. It mints the household-admin set
 of all four grants explicitly and writes the claim secret to a new `0600` file
 without printing it. It sends the credential only to the exact approved
