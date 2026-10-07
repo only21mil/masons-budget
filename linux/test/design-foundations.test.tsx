@@ -133,6 +133,7 @@ describe("ledger design foundations", () => {
       globalStyles.indexOf("*,\n*::before"),
     )
     for (const alias of [
+      "--vv-actual: var(--vv-ledger-ink)",
       "--vv-warning: var(--vv-ledger-bitcoin)",
       "--vv-stale: var(--vv-ledger-bitcoin)",
       "--vv-info: var(--vv-ledger-ink-secondary)",

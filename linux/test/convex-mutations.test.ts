@@ -269,6 +269,28 @@ describe("paired-device main controller", () => {
     })
   })
 
+  it("treats undefined optional todo fields as absent, as the composers send them", () => {
+    const todo = {
+      kind: "todo.upsert",
+      requestId: "request_todo",
+      actor: "victor",
+      id: "todo_inbox",
+      owner: "victor",
+      title: "Inbox task",
+      done: false,
+      flagged: false,
+    }
+    const built = validateMutationRequest({
+      ...todo,
+      due: undefined,
+      lane: undefined,
+      priority: undefined,
+      createdAt: undefined,
+    })
+    expect(built).toEqual(todo)
+    expect(validateMutationRequest({ ...todo, due: null })).toBeNull()
+  })
+
   it("requires a closed bill-pay budgetEffect and pins the credit-card category", () => {
     const billPay = {
       kind: "btcBillPay.upsert" as const,
