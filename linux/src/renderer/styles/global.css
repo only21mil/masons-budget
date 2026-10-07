@@ -17,6 +17,7 @@
   --vv-text-muted: var(--vv-ledger-ink-secondary);
   --vv-text-dim: var(--vv-ledger-ink-meta);
   --vv-text-inverse: var(--vv-ledger-on-bitcoin);
+  --vv-actual: var(--vv-ledger-ink);
 
   --vv-line: var(--vv-ledger-rule-subtle);
   --vv-line-strong: var(--vv-ledger-rule);

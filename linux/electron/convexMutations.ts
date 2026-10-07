@@ -331,7 +331,7 @@ function optionalText(
   record: Record<string, unknown>,
   key: string,
 ): string | undefined {
-  if (!Object.hasOwn(record, key)) return undefined
+  if (!Object.hasOwn(record, key) || record[key] === undefined) return undefined
   return boundedText(record[key], PAIRED_DEVICE_LIMITS.maxText, true)
 }
 
@@ -642,7 +642,7 @@ export function validateMutationRequest(input: unknown): VogelVaultMutationReque
           ...optionalField("notes", optionalText(record, "notes")),
           ...optionalField(
             "priority",
-            Object.hasOwn(record, "priority") ? int64(record["priority"]) : undefined,
+            record["priority"] === undefined ? undefined : int64(record["priority"]),
           ),
           ...optionalField("createdAt", optionalText(record, "createdAt")),
           ...optionalField("updatedAt", optionalText(record, "updatedAt")),
