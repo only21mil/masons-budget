@@ -234,7 +234,7 @@ Options:
 
 Requires CONVEX_SYNC_TOKEN in the process environment unless --dry-run.
 On the approved host, load it without output before running:
-  set -a; . "$HOME/.config/sats/secrets.env"; set +a
+  export CONVEX_SYNC_TOKEN="$("$HOME/.config/sats/read-canon.sh" get CONVEX_SYNC_TOKEN)"
 Only the approved household origin ${APPROVED_CONVEX_ORIGIN} is accepted.
 `);
 }
