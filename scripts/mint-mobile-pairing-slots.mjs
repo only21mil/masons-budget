@@ -27,6 +27,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { approvedConvexOrigin } from "./mint-linux-device-pairing.mjs";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const defaultConvexUrl = "https://framework-desktop.tail69757d.ts.net";
 const deviceProfiles = ["victor", "rachel", "mason", "maddox"];
@@ -118,7 +120,13 @@ const outFile = argValue(
 const manifestFile = outFile.replace(/\.json$/, "-slots.json");
 
 const env = { ...parseEnvFile(path.join(repoRoot, ".env.local")), ...process.env };
-const convexUrl = (env.CONVEX_URL || defaultConvexUrl).replace(/\/$/, "");
+let convexUrl;
+try {
+  convexUrl = approvedConvexOrigin(env.CONVEX_URL || defaultConvexUrl);
+} catch (error) {
+  console.error(`ERROR: ${error.message}`);
+  process.exit(2);
+}
 const syncToken = env.CONVEX_SYNC_TOKEN || "";
 if (!dryRun && !syncToken) {
   console.error("ERROR: CONVEX_SYNC_TOKEN required (.env.local or env).");
@@ -148,6 +156,7 @@ function b64url(bytes) {
 async function convexMutation(fnPath, fnArgs) {
   const resp = await fetch(`${convexUrl}/api/mutation`, {
     method: "POST",
+    redirect: "error",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: fnPath, args: fnArgs, format: "json" }),
   });
