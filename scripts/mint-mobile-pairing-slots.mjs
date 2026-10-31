@@ -141,7 +141,10 @@ if (dryRun) {
   process.exit(0);
 }
 
-if (fs.existsSync(outFile) || fs.existsSync(manifestFile)) {
+// lstat, not existsSync: a dangling symlink must also stop the run before any
+// slot is minted, or the exclusive write below fails after minting.
+const pathTaken = (file) => fs.lstatSync(file, { throwIfNoEntry: false }) !== undefined;
+if (pathTaken(outFile) || pathTaken(manifestFile)) {
   console.error("ERROR: Refusing to overwrite an existing pairing output file.");
   process.exit(2);
 }

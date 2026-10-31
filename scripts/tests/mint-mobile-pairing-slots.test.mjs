@@ -132,7 +132,9 @@ test("writes two distinct new private outputs and never replaces existing ones",
     await writeFile(path.join(directory, "existing-manifest-slots.json"), "prior\n", { mode: 0o644 });
     const linkedOut = path.join(directory, "linked-out.json");
     await symlink(existingOut, linkedOut);
-    for (const out of [existingOut, existingManifestOut, linkedOut]) {
+    const danglingOut = path.join(directory, "dangling-out.json");
+    await symlink(path.join(directory, "missing-target.json"), danglingOut);
+    for (const out of [existingOut, existingManifestOut, linkedOut, danglingOut]) {
       assert.equal(await mint(out), 2, path.basename(out));
     }
     assert.equal(await readFile(existingOut, "utf8"), "prior\n");
