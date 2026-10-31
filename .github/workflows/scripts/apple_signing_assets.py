@@ -155,9 +155,10 @@ def error_detail(payload):
     return "; ".join(parts)[:400]
 
 
-# Wordings Apple uses for a certificate type at its cap. A bare "maximum" or
-# "limit" also appears in unrelated validation errors, which must not revoke.
-CAP_PHRASES = ("already have a current", "maximum number", "certificate limit")
+# Wordings Apple uses for a certificate type at its cap. "maximum" or "limit"
+# alone also appears in unrelated validation errors, which must not revoke;
+# a cap worded any other way fails closed.
+CAP_PHRASES = ("already have a current", "certificate limit")
 
 
 def cap_reached(status, payload):
