@@ -63,9 +63,7 @@ test("dry-run validates inputs without a token, request, or file write", async (
 });
 
 test("the archive-embedding b64 payload is no longer produced (L-10)", async () => {
-  const source = await import("node:fs/promises").then((fs) =>
-    fs.readFile(script, "utf8"),
-  );
+  const source = await readFile(script, "utf8");
   assert.ok(
     !/writeFileSync\([^)]*\.b64/.test(source),
     "mint script must not write a base64 claim-secret payload",
