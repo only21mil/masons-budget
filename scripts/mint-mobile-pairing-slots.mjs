@@ -27,10 +27,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { approvedConvexOrigin } from "./mint-linux-device-pairing.mjs";
+import {
+  APPROVED_CONVEX_ORIGIN,
+  approvedConvexOrigin,
+} from "./mint-linux-device-pairing.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const defaultConvexUrl = "https://framework-desktop.tail69757d.ts.net";
 const deviceProfiles = ["victor", "rachel", "mason", "maddox"];
 
 function parseEnvFile(file) {
@@ -68,7 +70,7 @@ Options:
   --dry-run     Validate arguments and show destination paths without minting or writing files.
 
 Requires CONVEX_SYNC_TOKEN in .env.local or env.
-CONVEX_URL defaults to ${defaultConvexUrl}.
+CONVEX_URL defaults to ${APPROVED_CONVEX_ORIGIN}.
 Writes the private pairing URL JSON (0600) and a redacted slot manifest (0600,
 pairIds only) — pairing URLs are per-install claim secrets and are NEVER
 embedded in distributable archives.
@@ -122,7 +124,7 @@ const manifestFile = outFile.replace(/\.json$/, "-slots.json");
 const env = { ...parseEnvFile(path.join(repoRoot, ".env.local")), ...process.env };
 let convexUrl;
 try {
-  convexUrl = approvedConvexOrigin(env.CONVEX_URL || defaultConvexUrl);
+  convexUrl = approvedConvexOrigin(env.CONVEX_URL || APPROVED_CONVEX_ORIGIN);
 } catch (error) {
   console.error(`ERROR: ${error.message}`);
   process.exit(2);
