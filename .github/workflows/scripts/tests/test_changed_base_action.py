@@ -206,6 +206,20 @@ class ChangedBaseActionTests(unittest.TestCase):
                 self.assert_verify_all(result, outputs)
         self.assertEqual(fixture.fetches(), [])
 
+    def test_git_quoted_changed_paths_verify_every_tree(self):
+        fixture = self.fixture()
+        for name in ("MasonsBudget/Caf\u00e9.swift", "android/tab\tname.kt", "linux/new\nline.ts", 'linux/quote".ts'):
+            with self.subTest(name=name):
+                target = fixture.checkout / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("quoted")
+                fixture.git(["add", name], cwd=fixture.checkout)
+                fixture.git(["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "quoted"],
+                            cwd=fixture.checkout)
+                result, outputs, _ = fixture.run(BASE_SHA=fixture.main_tip, HEAD_SHA=fixture.rev("HEAD", cwd=fixture.checkout))
+                self.assert_verify_all(result, outputs)
+                fixture.git(["reset", "-q", "--hard", fixture.head], cwd=fixture.checkout)
+
     def test_shallow_checkout_without_shared_history_verifies_every_tree(self):
         fixture = self.fixture(depth=1)
         result, outputs, _ = fixture.run(BASE_SHA=fixture.main_tip, BASE_REF="main")
