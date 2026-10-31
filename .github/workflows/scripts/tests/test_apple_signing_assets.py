@@ -260,7 +260,11 @@ class CapDetectionTests(unittest.TestCase):
         rate_limited = {"errors": [{"status": "429", "title": "Rate limit exceeded", "detail": "The request rate limit has been reached."}]}
         self.assertFalse(MODULE.cap_reached(429, rate_limited))
 
-    def test_maximum_or_limit_in_detail_is_a_cap(self) -> None:
+    def test_unrelated_maximum_wording_is_not_a_cap(self) -> None:
+        too_long = {"errors": [{"title": "x", "detail": "csrContent exceeds the maximum supported length."}]}
+        self.assertFalse(MODULE.cap_reached(409, too_long))
+
+    def test_known_cap_wordings_are_a_cap(self) -> None:
         self.assertTrue(MODULE.cap_reached(400, CAP_ERROR))
         limit = {"errors": [{"title": "x", "detail": "certificate limit exceeded"}]}
         self.assertTrue(MODULE.cap_reached(400, limit))

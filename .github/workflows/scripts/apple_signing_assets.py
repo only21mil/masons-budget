@@ -155,6 +155,11 @@ def error_detail(payload):
     return "; ".join(parts)[:400]
 
 
+# Wordings Apple uses for a certificate type at its cap. A bare "maximum" or
+# "limit" also appears in unrelated validation errors, which must not revoke.
+CAP_PHRASES = ("already have a current", "maximum number", "certificate limit")
+
+
 def cap_reached(status, payload):
     """Apple refused the POST because the type is at its certificate limit.
 
@@ -165,7 +170,7 @@ def cap_reached(status, payload):
     if status not in (400, 409):
         return False
     detail = error_detail(payload).lower()
-    return "maximum" in detail or "limit" in detail
+    return any(phrase in detail for phrase in CAP_PHRASES)
 
 
 def transient(status, payload):
