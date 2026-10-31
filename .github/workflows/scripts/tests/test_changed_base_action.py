@@ -71,12 +71,14 @@ class Fixture:
     def rev(self, ref, *, cwd):
         return self.git(["rev-parse", ref], cwd=cwd).stdout.strip()
 
-    def commit(self, path, content, message):
-        target = self.author / path
+    def commit(self, path, content, message, *, repo=None):
+        repo = repo or self.author
+        target = repo / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
-        self.git(["add", path], cwd=self.author)
-        self.git(["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", message], cwd=self.author)
+        self.git(["add", path], cwd=repo)
+        self.git(["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", message], cwd=repo)
+        return self.rev("HEAD", cwd=repo)
 
     def write_shims(self):
         """Count fetches and sleeps; optionally fail the first N fetches."""
@@ -210,13 +212,8 @@ class ChangedBaseActionTests(unittest.TestCase):
         fixture = self.fixture()
         for name in ("MasonsBudget/Caf\u00e9.swift", "android/tab\tname.kt", "linux/new\nline.ts", 'linux/quote".ts'):
             with self.subTest(name=name):
-                target = fixture.checkout / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text("quoted")
-                fixture.git(["add", name], cwd=fixture.checkout)
-                fixture.git(["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "quoted"],
-                            cwd=fixture.checkout)
-                result, outputs, _ = fixture.run(BASE_SHA=fixture.main_tip, HEAD_SHA=fixture.rev("HEAD", cwd=fixture.checkout))
+                head = fixture.commit(name, "quoted", "quoted", repo=fixture.checkout)
+                result, outputs, _ = fixture.run(BASE_SHA=fixture.main_tip, HEAD_SHA=head)
                 self.assert_verify_all(result, outputs)
                 fixture.git(["reset", "-q", "--hard", fixture.head], cwd=fixture.checkout)
 
