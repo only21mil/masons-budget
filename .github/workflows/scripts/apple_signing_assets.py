@@ -156,9 +156,11 @@ def error_detail(payload):
 
 
 def cap_reached(status, payload):
-    """Apple refused the POST because the type is at its certificate limit."""
-    if status == 409:
-        return True
+    """Apple refused the POST because the type is at its certificate limit.
+
+    Only Apple's cap detail counts. A 409 alone also covers unrelated
+    conflicts, such as an invalid CSR, that must never revoke a certificate.
+    """
     detail = error_detail(payload).lower()
     return "maximum" in detail or "limit" in detail
 

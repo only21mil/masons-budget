@@ -253,8 +253,8 @@ class PemStrippingTests(unittest.TestCase):
 
 
 class CapDetectionTests(unittest.TestCase):
-    def test_409_is_a_cap(self) -> None:
-        self.assertTrue(MODULE.cap_reached(409, {"errors": []}))
+    def test_409_without_cap_detail_is_not_a_cap(self) -> None:
+        self.assertFalse(MODULE.cap_reached(409, {"errors": []}))
 
     def test_maximum_or_limit_in_detail_is_a_cap(self) -> None:
         self.assertTrue(MODULE.cap_reached(400, CAP_ERROR))
@@ -321,6 +321,19 @@ class CertificateCapTests(unittest.TestCase):
 
         with self.assertRaisesRegex(MODULE.MintError, "key lacks the role"):
             MODULE.create_certificate(forbidden, TOKEN, "DISTRIBUTION", "QUJD", revoke_oldest=True)
+
+    def test_unrecognized_409_never_revokes_even_with_flag(self) -> None:
+        methods = []
+
+        def conflict(method, path, token, body=None):
+            methods.append(method)
+            if method == "POST":
+                return 409, {"errors": [{"title": "Conflict", "detail": "The certificate signing request is invalid."}]}
+            return 200, {"data": [self.old, self.newer], "links": {}}
+
+        with self.assertRaisesRegex(MODULE.MintError, "signing request is invalid"):
+            MODULE.create_certificate(conflict, TOKEN, "DISTRIBUTION", "QUJD", revoke_oldest=True)
+        self.assertEqual(methods, ["POST"])
 
     def test_oldest_by_expiry(self) -> None:
         self.assertEqual(MODULE.oldest_certificate([self.newer, self.old])["id"], "OLD")
