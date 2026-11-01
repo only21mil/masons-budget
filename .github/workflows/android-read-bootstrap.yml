@@ -124,12 +124,14 @@ jobs:
             exit 1
           fi
 
-      - name: Upload both same-signed APKs
+      # The bootstrap APK embeds the one-time enrollment capability, and this
+      # public repository's Actions artifacts are readable by other users, so
+      # only the clean replacement is uploaded.
+      - name: Upload the clean replacement APK
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: vogel-vault-read-bootstrap-and-clean
+          name: vogel-vault-clean-replacement
           path: |
-            ${{ steps.private_inputs.outputs.artifacts }}/vogel-vault-read-bootstrap.apk
             ${{ steps.private_inputs.outputs.artifacts }}/vogel-vault-clean-replacement.apk
           if-no-files-found: error
           retention-days: 1
