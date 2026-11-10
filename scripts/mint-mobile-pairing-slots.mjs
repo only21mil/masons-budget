@@ -117,6 +117,10 @@ const outFile = argValue(
     `vv-build${build}-pairing-urls.json`,
   ),
 );
+if (!outFile.endsWith(".json")) {
+  console.error("ERROR: --out must end in .json so the redacted manifest gets its own path.");
+  process.exit(2);
+}
 // Redacted manifest: identifies the slots for records and support without
 // carrying any claim secret. Kept out of any distributable archive by policy.
 const manifestFile = outFile.replace(/\.json$/, "-slots.json");
@@ -145,6 +149,14 @@ if (dryRun) {
   console.log(`out=${outFile}`);
   console.log(`redacted-manifest=${manifestFile}`);
   process.exit(0);
+}
+
+// lstat, not existsSync: a dangling symlink must also stop the run before any
+// slot is minted, or the exclusive write below fails after minting.
+const pathTaken = (file) => fs.lstatSync(file, { throwIfNoEntry: false }) !== undefined;
+if (pathTaken(outFile) || pathTaken(manifestFile)) {
+  console.error("ERROR: Refusing to overwrite an existing pairing output file.");
+  process.exit(2);
 }
 
 function b64url(bytes) {
@@ -194,7 +206,7 @@ for (let i = 1; i <= count; i++) {
 }
 
 fs.mkdirSync(path.dirname(outFile), { recursive: true, mode: 0o700 });
-fs.writeFileSync(outFile, JSON.stringify(urls, null, 2) + "\n", { mode: 0o600 });
+fs.writeFileSync(outFile, JSON.stringify(urls, null, 2) + "\n", { flag: "wx", mode: 0o600 });
 fs.writeFileSync(
   manifestFile,
   JSON.stringify(
@@ -209,7 +221,7 @@ fs.writeFileSync(
     null,
     2,
   ) + "\n",
-  { mode: 0o600 },
+  { flag: "wx", mode: 0o600 },
 );
 
 console.log(`wrote ${urls.length} pairing URLs -> ${outFile}`);
