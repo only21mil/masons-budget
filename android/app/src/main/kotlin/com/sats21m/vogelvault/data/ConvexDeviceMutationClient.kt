@@ -24,6 +24,8 @@ internal data class ConvexDeviceCredential(
         require(DEVICE_TOKEN.matches(deviceToken)) { "device token is malformed" }
     }
 
+    override fun toString(): String = "ConvexDeviceCredential(redacted)"
+
     companion object {
         // Server-minted components are Base64URL. Retain colon compatibility
         // for legacy IDs, but reserve dot exclusively for the envelope separator.

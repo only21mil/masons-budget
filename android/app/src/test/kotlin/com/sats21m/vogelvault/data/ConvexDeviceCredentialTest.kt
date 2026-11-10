@@ -1,8 +1,10 @@
 package com.sats21m.vogelvault.data
 
+import com.sats21m.vogelvault.domain.FamilyMember
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 
 class ConvexDeviceCredentialTest {
     @Test
@@ -14,6 +16,18 @@ class ConvexDeviceCredentialTest {
 
         assertEquals(deviceId, parsed.deviceId)
         assertEquals(deviceToken, parsed.deviceToken)
+    }
+
+    @Test
+    fun `string form redacts the credential while equality and copy are unchanged`() {
+        val credential = ConvexDeviceCredential("synthetic-device-id", "s".repeat(43), FamilyMember.MASON)
+
+        val rendered = "$credential"
+        assertFalse(rendered.contains(credential.deviceToken))
+        assertFalse(rendered.contains(credential.deviceId))
+        assertEquals(ConvexDeviceCredential("synthetic-device-id", "s".repeat(43), FamilyMember.MASON), credential)
+        assertEquals("t".repeat(43), credential.copy(deviceToken = "t".repeat(43)).deviceToken)
+        assertEquals(credential, credential.copy())
     }
 
     @Test

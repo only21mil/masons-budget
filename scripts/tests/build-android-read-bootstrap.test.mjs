@@ -140,6 +140,21 @@ test("manual workflow retains branch signer cleanup and retention gates", async 
   }
 });
 
+test("manual workflow uploads only the clean replacement APK", async () => {
+  const source = await readFile(
+    path.join(repoRoot, ".github/workflows/android-read-bootstrap.yml"),
+    "utf8",
+  );
+  const uploads = source
+    .split(/\n(?= {6}- )/)
+    .filter((step) => step.includes("uses: actions/upload-artifact@"));
+  assert.equal(uploads.length, 1);
+  const paths = uploads[0].match(/^ {10}path: \|\n((?: {12}.*\n?)+)/m)?.[1];
+  assert.deepEqual(paths?.trim().split(/\s*\n\s*/), [
+    "${{ steps.private_inputs.outputs.artifacts }}/vogel-vault-clean-replacement.apk",
+  ]);
+});
+
 test("approved manual CI builds bootstrap then scrubbed clean APK with exact uncached assembly", async () => {
   const directory = await privateDirectory("vv-android-bootstrap-invoke-");
   const input = await pairingFile(directory);

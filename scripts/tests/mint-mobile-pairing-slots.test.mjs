@@ -75,6 +75,89 @@ test("the archive-embedding b64 payload is no longer produced (L-10)", async () 
   assert.match(source, /redacted slot manifest/);
 });
 
+test("refuses unapproved origins and redirects before writing any credential", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "vv-mobile-pair-origin-"));
+  const outputDir = path.join(directory, "out");
+  const syncToken = "synthetic-sync-token-for-origin-test";
+
+  // Every child fetch is routed to this local server, which redirects the
+  // credential-bearing POST. No request may leave the machine.
+  const requestedPaths = [];
+  const server = http.createServer((request, response) => {
+    request.resume();
+    requestedPaths.push(request.url);
+    if (request.url === "/api/mutation") {
+      response.writeHead(307, { Location: "/redirected" }).end();
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ status: "success", value: null }));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const preload = path.join(directory, "route-fetch.mjs");
+  await writeFile(
+    preload,
+    "const realFetch = globalThis.fetch;\n" +
+      "globalThis.fetch = (_url, init) => realFetch(process.env.VV_TEST_ROUTE, init);\n",
+  );
+
+  async function mint(convexUrl) {
+    const env = {
+      PATH: process.env.PATH,
+      HOME: directory,
+      CONVEX_SYNC_TOKEN: syncToken,
+      VV_TEST_ROUTE: `http://127.0.0.1:${server.address().port}/api/mutation`,
+      ...(convexUrl === undefined ? {} : { CONVEX_URL: convexUrl }),
+    };
+    const child = spawn(
+      process.execPath,
+      [
+        "--import",
+        preload,
+        script,
+        "--build",
+        "999",
+        "--count",
+        "1",
+        "--profile",
+        "victor",
+        "--out",
+        path.join(outputDir, "pairing-urls.json"),
+      ],
+      { cwd: repoRoot, env, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let output = "";
+    child.stdout.on("data", (chunk) => (output += chunk));
+    child.stderr.on("data", (chunk) => (output += chunk));
+    const [status] = await once(child, "close");
+    return { status, output };
+  }
+
+  try {
+    for (const convexUrl of [
+      "http://framework-desktop.tail69757d.ts.net",
+      "https://example.invalid",
+      "https://user:pass@framework-desktop.tail69757d.ts.net",
+      "https://framework-desktop.tail69757d.ts.net/path",
+    ]) {
+      const result = await mint(convexUrl);
+      assert.equal(result.status, 2, convexUrl);
+      assert.match(result.output, /CONVEX_URL must be exactly/);
+      assert.doesNotMatch(result.output, new RegExp(syncToken));
+    }
+    assert.deepEqual(requestedPaths, []);
+
+    const redirected = await mint(undefined);
+    assert.notEqual(redirected.status, 0);
+    assert.deepEqual(requestedPaths, ["/api/mutation"]);
+    await assert.rejects(readdir(outputDir), /ENOENT/);
+  } finally {
+    server.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("writes two distinct new private outputs and never replaces existing ones", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "vv-mobile-pair-out-"));
 

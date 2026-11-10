@@ -98,6 +98,11 @@ runs:
           if ! git diff --name-only "$base" "$head" > "$output_file"; then
             verify_all "Comparison range could not be diffed; verifying every tree."
           fi
+          # Git quotes names with unusual bytes, and the tree-prefix consumers
+          # do not decode them, so such a range cannot be routed safely.
+          if grep -q '^"' "$output_file"; then
+            verify_all "Changed paths include git-quoted names; verifying every tree."
+          fi
           {
             echo "verify-all=false"
             echo "base=$base"
