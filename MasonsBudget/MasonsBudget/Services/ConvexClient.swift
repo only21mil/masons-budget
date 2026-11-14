@@ -47,7 +47,7 @@ enum ConvexConfig {
     /// The audited production deployment. A mutable preference here allowed a
     /// local setting or stale migration value to redirect authenticated traffic.
     static var deploymentURL: URL {
-        URL(string: "https://framework-desktop.tail69757d.ts.net")!
+        URL(string: "https://victors-macbook-pro.tail69757d.ts.net")!
     }
 
     // Resolving a token performs Security-framework I/O (and the Wave-1
@@ -423,7 +423,19 @@ enum AppWritebackConfig {
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !raw.isEmpty
         else { return nil }
-        return URL(string: raw)
+        return resolvedBaseURL(raw)
+    }
+
+    /// Existing pairing credentials belong to the same restored household
+    /// deployment. Resolve its retired origin without rewriting credentials.
+    static func resolvedBaseURL(_ raw: String) -> URL? {
+        guard let url = URL(string: raw) else { return nil }
+        guard url.host?.lowercased() == "framework-desktop.tail69757d.ts.net" else { return url }
+        guard url.scheme == "https", url.user == nil, url.password == nil,
+              url.port == nil || url.port == 443,
+              url.path.isEmpty || url.path == "/", url.query == nil, url.fragment == nil
+        else { return nil }
+        return ConvexConfig.deploymentURL
     }
 
     static var deviceID: String {
@@ -1410,7 +1422,7 @@ final class AppWritebackClient: Sendable {
         guard let host = url.host?.lowercased() else { return false }
         if host == "convex.cloud" || host.hasSuffix(".convex.cloud") { return true }
         // Self-hosted backend on the tailnet (household origin, pinned in deploymentURL).
-        return host == "framework-desktop.tail69757d.ts.net"
+        return host == "victors-macbook-pro.tail69757d.ts.net"
     }
 
     private static func randomBase64URL(byteCount: Int) throws -> String {

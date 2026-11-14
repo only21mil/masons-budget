@@ -7,6 +7,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+internal const val HOUSEHOLD_DEPLOYMENT_URL = "https://victors-macbook-pro.tail69757d.ts.net"
+
+/** Resolve the retired origin in existing encrypted settings without changing credentials. */
+private fun restoredDeploymentUrl(raw: String?): String? {
+    val trimmed = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    return when (trimmed) {
+        "https://framework-desktop.tail69757d.ts.net",
+        "https://framework-desktop.tail69757d.ts.net/",
+        -> HOUSEHOLD_DEPLOYMENT_URL
+        else -> trimmed
+    }
+}
+
 /**
  * The Vogel Vault — Android Convex read configuration.
  *
@@ -41,7 +54,7 @@ class ConvexConfig(
     val remoteReadEnabled: Boolean = false,
 ) {
     /** Trimmed, with blank treated as absent — a whitespace-only setting is a typo, not a value. */
-    val deploymentUrl: String? = deploymentUrl?.trim()?.takeIf { it.isNotEmpty() }
+    val deploymentUrl: String? = restoredDeploymentUrl(deploymentUrl)
 
     private val readToken: String? = readToken?.trim()?.takeIf { it.isNotEmpty() }
 

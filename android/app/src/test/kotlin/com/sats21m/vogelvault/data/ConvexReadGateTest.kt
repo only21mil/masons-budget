@@ -41,6 +41,22 @@ internal fun testToken(): String = "vv-test-" + UUID.randomUUID()
 class ConvexReadGateTest {
 
     @Test
+    fun `existing household configuration reads from restored deployment without losing its token`() {
+        val token = testToken()
+        for (oldOrigin in listOf(
+            "https://framework-desktop.tail69757d.ts.net",
+            "https://framework-desktop.tail69757d.ts.net/",
+        )) {
+            val config = ConvexConfig(oldOrigin, token, remoteReadEnabled = true)
+            assertEquals(HOUSEHOLD_DEPLOYMENT_URL, config.deploymentUrl)
+            assertEquals("$HOUSEHOLD_DEPLOYMENT_URL/api/query", config.queryEndpoint())
+            assertEquals(token, config.readTokenOrNull())
+            assertTrue(config.allowsRemoteRead)
+            assertFalse(config.toString().contains(token))
+        }
+    }
+
+    @Test
     fun `remote reads are off by default`() {
         val config = ConvexConfig()
 
@@ -87,7 +103,7 @@ class ConvexReadGateTest {
     fun `a cleartext deployment url is refused rather than downgraded`() {
         val poster = RecordingPoster()
         val config = ConvexConfig(
-            deploymentUrl = "http://framework-desktop.tail69757d.ts.net",
+            deploymentUrl = "http://victors-macbook-pro.tail69757d.ts.net",
             readToken = testToken(),
             remoteReadEnabled = true,
         )
@@ -162,6 +178,6 @@ class ConvexReadGateTest {
          * thing standing between anyone and the household's finances. It is not
          * a secret and never was; the token is.
          */
-        const val DEPLOYMENT = "https://framework-desktop.tail69757d.ts.net"
+        const val DEPLOYMENT = "https://victors-macbook-pro.tail69757d.ts.net"
     }
 }

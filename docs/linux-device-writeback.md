@@ -154,7 +154,7 @@ argv or output. Never source a plaintext `secrets.env`. The command does not
 load repository-local environment files. It mints the household-admin set
 of all four grants explicitly and writes the claim secret to a new `0600` file
 without printing it. It sends the credential only to the exact approved
-household origin `https://framework-desktop.tail69757d.ts.net`, the self-hosted
+household origin `https://victors-macbook-pro.tail69757d.ts.net`, the self-hosted
 Convex system of record on the tailnet. It refuses redirects and validates a
 bounded response before writing anything. Review configuration
 without a token or side effect:

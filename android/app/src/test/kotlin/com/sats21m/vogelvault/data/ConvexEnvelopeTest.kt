@@ -218,6 +218,6 @@ class ConvexEnvelopeTest {
         )
 
     private companion object {
-        const val DEPLOYMENT = "https://framework-desktop.tail69757d.ts.net"
+        const val DEPLOYMENT = "https://victors-macbook-pro.tail69757d.ts.net"
     }
 }

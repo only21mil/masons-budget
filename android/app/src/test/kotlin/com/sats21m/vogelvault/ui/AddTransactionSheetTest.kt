@@ -429,7 +429,7 @@ class AddTransactionSheetTest {
 
     private companion object {
         const val BTC_PRICE_CENTS = 11_700_000L
-        const val DEPLOYMENT = "https://framework-desktop.tail69757d.ts.net"
+        const val DEPLOYMENT = "https://victors-macbook-pro.tail69757d.ts.net"
 
         /** The wire sourceFile every VICTOR-owned row in these tests is sent under. */
         val ADULT_TX_SCOPE = FamilyMember.VICTOR.ledgerOwner.transactionsDataFileName

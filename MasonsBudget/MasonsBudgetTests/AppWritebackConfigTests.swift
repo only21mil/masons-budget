@@ -2,6 +2,24 @@ import Foundation
 import XCTest
 
 final class AppWritebackConfigTests: XCTestCase {
+    func testRetiredHouseholdPairingOriginResolvesToRestoredDeployment() {
+        for oldOrigin in [
+            "https://framework-desktop.tail69757d.ts.net",
+            "https://framework-desktop.tail69757d.ts.net/",
+        ] {
+            XCTAssertEqual(
+                AppWritebackConfig.resolvedBaseURL(oldOrigin),
+                ConvexConfig.deploymentURL,
+            )
+        }
+        XCTAssertNil(AppWritebackConfig.resolvedBaseURL("http://framework-desktop.tail69757d.ts.net"))
+        XCTAssertNil(AppWritebackConfig.resolvedBaseURL("https://framework-desktop.tail69757d.ts.net/path"))
+        XCTAssertEqual(
+            AppWritebackConfig.resolvedBaseURL("https://example.convex.cloud")?.absoluteString,
+            "https://example.convex.cloud",
+        )
+    }
+
     override func setUp() {
         super.setUp()
         AppWritebackConfig.clear()
