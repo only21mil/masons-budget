@@ -50,6 +50,14 @@ enum ConvexConfig {
         URL(string: "https://victors-macbook-pro.tail69757d.ts.net")!
     }
 
+    /// Whether `url` addresses the household deployment, the only origin the
+    /// household read token may be sent to.
+    static func isHouseholdDeployment(_ url: URL) -> Bool {
+        url.scheme == "https" && url.host?.lowercased() == deploymentURL.host
+            && (url.port == nil || url.port == 443) && url.user == nil && url.password == nil
+            && (url.path.isEmpty || url.path == "/") && url.query == nil && url.fragment == nil
+    }
+
     // Resolving a token performs Security-framework I/O (and the Wave-1
     // migration side effect) on every read of the migrating store. Memoize the
     // resolved values and invalidate on explicit set/remove so the per-request
@@ -863,18 +871,9 @@ final class AppWritebackClient: Sendable {
     ) async throws {
         let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
-              let scheme = url.scheme,
-              let host = url.host,
-              let pair = Self.pairFragment(from: url)
+              let pair = Self.pairFragment(from: url),
+              let baseURL = Self.pairingBaseURL(from: url)
         else {
-            throw AppWritebackError.invalidPairingURL
-        }
-
-        var baseComponents = URLComponents()
-        baseComponents.scheme = scheme
-        baseComponents.host = host
-        baseComponents.port = url.port
-        guard let baseURL = baseComponents.url else {
             throw AppWritebackError.invalidPairingURL
         }
 
@@ -926,6 +925,18 @@ final class AppWritebackClient: Sendable {
             deviceToken: deviceToken,
             profile: profile,
         ) else { throw AppWritebackError.credentialStorageFailed }
+    }
+
+    /// The deployment a pairing link claims against. Links issued before the
+    /// household backend moved name its retired origin; they claim against the
+    /// current one, so the pairing proof never reaches the retired host.
+    static func pairingBaseURL(from url: URL) -> URL? {
+        guard let scheme = url.scheme, let host = url.host else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = host
+        components.port = url.port
+        return components.url.flatMap { AppWritebackConfig.resolvedBaseURL($0.absoluteString) }
     }
 
     func claimBundledPairing(
@@ -1018,8 +1029,12 @@ final class AppWritebackClient: Sendable {
         activeProfile: FamilyMember,
     ) async throws -> Double {
         let taskSession = try await taskSession(activeProfile: activeProfile)
+        // The row reader sends the household read token; never to another paired origin.
+        guard ConvexConfig.isHouseholdDeployment(taskSession.baseURL) else {
+            throw AppWritebackError.invalidBaseURL
+        }
         let reader = ConvexRowReader(client: ConvexClient(
-            deploymentURL: taskSession.baseURL,
+            deploymentURL: ConvexConfig.deploymentURL,
             session: session,
         ))
         let matches = try await reader.todos(viewer: activeProfile).filter { todo in

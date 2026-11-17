@@ -20,6 +20,33 @@ final class AppWritebackConfigTests: XCTestCase {
         )
     }
 
+    func testPairingLinkIssuedBeforeTheMoveClaimsAgainstTheCurrentDeployment() throws {
+        let retired = try XCTUnwrap(URL(string: "https://framework-desktop.tail69757d.ts.net/#pair=p.s"))
+        XCTAssertEqual(AppWritebackClient.pairingBaseURL(from: retired), ConvexConfig.deploymentURL)
+        let lookalike = try XCTUnwrap(URL(string: "https://framework-desktop.tail69757d.ts.net.example.test/#pair=p.s"))
+        XCTAssertEqual(
+            AppWritebackClient.pairingBaseURL(from: lookalike)?.host,
+            "framework-desktop.tail69757d.ts.net.example.test",
+        )
+        let cloud = try XCTUnwrap(URL(string: "https://example.convex.cloud/#pair=p.s"))
+        XCTAssertEqual(AppWritebackClient.pairingBaseURL(from: cloud)?.absoluteString, "https://example.convex.cloud")
+    }
+
+    func testHouseholdReadTokenOnlyGoesToTheHouseholdDeployment() throws {
+        for accepted in ["https://victors-macbook-pro.tail69757d.ts.net", "https://victors-macbook-pro.tail69757d.ts.net/"] {
+            XCTAssertTrue(ConvexConfig.isHouseholdDeployment(try XCTUnwrap(URL(string: accepted))), accepted)
+        }
+        for refused in [
+            "https://example.convex.cloud",
+            "https://victors-macbook-pro.tail69757d.ts.net.example.test",
+            "http://victors-macbook-pro.tail69757d.ts.net",
+            "https://victors-macbook-pro.tail69757d.ts.net:8443",
+            "https://framework-desktop.tail69757d.ts.net",
+        ] {
+            XCTAssertFalse(ConvexConfig.isHouseholdDeployment(try XCTUnwrap(URL(string: refused))), refused)
+        }
+    }
+
     override func setUp() {
         super.setUp()
         AppWritebackConfig.clear()
