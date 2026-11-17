@@ -17,6 +17,7 @@ import {
 import path from "node:path"
 
 import type { VogelVaultMember, VogelVaultMutationKind } from "../shared/ipc.ts"
+import { currentHouseholdOrigin } from "./approvedDeployment.ts"
 
 const STORE_DIRECTORY = "paired-device"
 const STORE_FILE = "credential.json"
@@ -141,7 +142,7 @@ function deploymentOrigin(value: unknown): string {
   ) {
     throw new CredentialStorageError("invalid")
   }
-  return parsed.origin
+  return currentHouseholdOrigin(parsed.origin)
 }
 
 function boundedBase64Url(value: unknown, min: number, max: number): string {

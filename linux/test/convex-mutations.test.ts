@@ -95,8 +95,12 @@ describe("paired-device main controller", () => {
     expect(resolveApprovedDeploymentOrigin(
       "  https://victors-macbook-pro.tail69757d.ts.net/  ",
     )).toBe("https://victors-macbook-pro.tail69757d.ts.net")
+    // Launchers installed before the backend moved still name the retired host.
     expect(resolveApprovedDeploymentOrigin(
       "https://framework-desktop.tail69757d.ts.net/",
+    )).toBe("https://victors-macbook-pro.tail69757d.ts.net")
+    expect(resolveApprovedDeploymentOrigin(
+      "https://framework-desktop.tail69757d.ts.net.attacker.test/",
     )).toBeNull()
     expect(resolveApprovedDeploymentOrigin(
       "https://other.convex.cloud/",

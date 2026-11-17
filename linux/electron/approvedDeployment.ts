@@ -10,6 +10,17 @@
 
 export const APPROVED_CONVEX_ORIGIN = "https://victors-macbook-pro.tail69757d.ts.net"
 
+// The household backend moved off F-D in November 2026. Launcher settings and
+// paired-device credentials saved before the move still name this origin. They
+// resolve to the approved origin in memory; nothing is rewritten, and no request
+// is ever sent to the retired host.
+const RETIRED_CONVEX_ORIGIN = "https://framework-desktop.tail69757d.ts.net"
+
+/** Map a saved household origin to where the household backend lives now. */
+export function currentHouseholdOrigin(origin: string): string {
+  return origin === RETIRED_CONVEX_ORIGIN ? APPROVED_CONVEX_ORIGIN : origin
+}
+
 /**
  * Resolve the one household deployment the main process approves.
  *
@@ -32,9 +43,9 @@ export function resolveApprovedDeploymentOrigin(raw: string | undefined): string
     parsed.pathname !== "/" ||
     parsed.search !== "" ||
     parsed.hash !== "" ||
-    parsed.origin !== APPROVED_CONVEX_ORIGIN
+    currentHouseholdOrigin(parsed.origin) !== APPROVED_CONVEX_ORIGIN
   ) {
     return null
   }
-  return parsed.origin
+  return APPROVED_CONVEX_ORIGIN
 }

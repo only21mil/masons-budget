@@ -159,6 +159,35 @@ describe("paired-device credential storage", () => {
     await expect(store.load()).resolves.toEqual({ ...saved, profile: null })
   })
 
+  it("loads a credential paired before the backend moved as the current household origin", async () => {
+    const root = await temporaryRoot()
+    const store = createDeviceCredentialStore({
+      appReady: () => true,
+      platform: "linux",
+      safeStorage: protectedStorage(),
+      userDataPath: root,
+    })
+    const saved = await store.save(fixture())
+
+    const file = path.join(root, "paired-device", "credential.json")
+    const envelope = JSON.parse(await readFile(file, "utf8")) as { encryptedPayload: string }
+    const protectedPayload = Buffer.from(envelope.encryptedPayload, "base64").toString("utf8")
+    const payload = JSON.parse(protectedPayload.slice("protected:".length)) as Record<string, unknown>
+    payload.deploymentOrigin = "https://framework-desktop.tail69757d.ts.net"
+    envelope.encryptedPayload = Buffer.from(
+      `protected:${JSON.stringify(payload)}`,
+      "utf8",
+    ).toString("base64")
+    const before = JSON.stringify(envelope)
+    await writeFile(file, before, { mode: 0o600 })
+
+    await expect(store.load()).resolves.toEqual({
+      ...saved,
+      deploymentOrigin: "https://victors-macbook-pro.tail69757d.ts.net",
+    })
+    expect(await readFile(file, "utf8")).toBe(before)
+  })
+
   it.each([
     ["deploymentOrigin", "https://attacker.convex.cloud"],
     ["deviceId", "attacker_device_abcdefghijkl"],
