@@ -90,6 +90,13 @@ actor ConvexDataReader {
         return document
     }
 
+    /// The `btcAccounts` row key for a balance-document account key. Mason's
+    /// rows are stored as `son-<key>-mason` (`btcAccountMirrorKey` in
+    /// convex/tables.ts); adult keys are stored unchanged.
+    static func btcAccountMirrorKey(owner: FamilyMember, canonicalKey: String) -> String {
+        owner == .mason ? "son-\(canonicalKey)-mason" : canonicalKey
+    }
+
     /// Account rows retain dynamic account keys and canonical owners, including children.
     func readBalanceAccounts(viewer: FamilyMember, owner: FamilyMember? = nil) async throws -> [SyncedBTCAccount] {
         let targetOwner = owner ?? viewer.ledgerOwner
@@ -104,7 +111,8 @@ actor ConvexDataReader {
                       rows.count == document.accounts.count,
                       rows.allSatisfy({ row in
                           row.owner == document.owner && document.accounts.contains {
-                              $0.key == row.key && $0.sats == row.sats && $0.custody == row.custody
+                              Self.btcAccountMirrorKey(owner: document.owner, canonicalKey: $0.key) == row.key
+                                  && $0.sats == row.sats && $0.custody == row.custody
                           }
                       })
                 else { throw ConvexRowDecodeError.incompleteSnapshot }
