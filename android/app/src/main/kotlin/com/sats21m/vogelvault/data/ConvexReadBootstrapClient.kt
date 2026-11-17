@@ -404,7 +404,7 @@ internal class ConvexReadBootstrapRepository(
 
     private fun persist(credential: BootstrapCredential): ReadBootstrapStatus {
         val next = ConvexConfig(
-            deploymentUrl = PRODUCTION_DEPLOYMENT,
+            deploymentUrl = HOUSEHOLD_DEPLOYMENT_URL,
             readToken = credential.readToken,
             remoteReadEnabled = true,
         )
@@ -434,6 +434,5 @@ private fun ConvexConfig.hasSameReadCredential(other: ConvexConfig): Boolean =
         readTokenOrNull() == other.readTokenOrNull() &&
         remoteReadEnabled == other.remoteReadEnabled
 
-private const val PRODUCTION_DEPLOYMENT = HOUSEHOLD_DEPLOYMENT_URL
 private const val READ_BOOTSTRAP_DEVICE_ID_BYTES = 16
 private const val READ_BOOTSTRAP_DEVICE_TOKEN_BYTES = 32

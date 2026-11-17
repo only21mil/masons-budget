@@ -1421,8 +1421,8 @@ final class AppWritebackClient: Sendable {
     private static func isConvexBaseURL(_ url: URL) -> Bool {
         guard let host = url.host?.lowercased() else { return false }
         if host == "convex.cloud" || host.hasSuffix(".convex.cloud") { return true }
-        // Self-hosted backend on the tailnet (household origin, pinned in deploymentURL).
-        return host == "victors-macbook-pro.tail69757d.ts.net"
+        // Self-hosted backend on the tailnet: the household origin pinned in deploymentURL.
+        return host == ConvexConfig.deploymentURL.host?.lowercased()
     }
 
     private static func randomBase64URL(byteCount: Int) throws -> String {

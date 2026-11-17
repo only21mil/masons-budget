@@ -178,6 +178,6 @@ class ConvexReadGateTest {
          * thing standing between anyone and the household's finances. It is not
          * a secret and never was; the token is.
          */
-        const val DEPLOYMENT = "https://victors-macbook-pro.tail69757d.ts.net"
+        const val DEPLOYMENT = HOUSEHOLD_DEPLOYMENT_URL
     }
 }

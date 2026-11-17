@@ -1,5 +1,6 @@
 package com.sats21m.vogelvault.ui
 
+import com.sats21m.vogelvault.data.HOUSEHOLD_DEPLOYMENT_URL
 import com.sats21m.vogelvault.data.ConvexConfig
 import com.sats21m.vogelvault.data.ConvexDeviceMutationClient
 import com.sats21m.vogelvault.data.ConvexDeviceCredential
@@ -267,7 +268,7 @@ class TransactionDetailScreenTest {
         )
 
     private companion object {
-        const val DEPLOYMENT = "https://victors-macbook-pro.tail69757d.ts.net"
+        const val DEPLOYMENT = HOUSEHOLD_DEPLOYMENT_URL
         const val REVISION = 1_777_777_777_777L
     }
 }

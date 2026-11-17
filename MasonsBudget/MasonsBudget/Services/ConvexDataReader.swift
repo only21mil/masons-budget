@@ -135,9 +135,9 @@ actor ConvexDataReader {
                 guard targetOwner == .mason else { throw ConvexRowDecodeError.missingDocument }
                 let dto = try await client.fetchFile("son-balances", as: LegacySonBalancesDTO.self)
                 return [
-                    SyncedBTCAccount(key: "son-strike-mason", label: "Strike", custody: .exchange, btc: dto.strike, fiat: 0, owner: .mason),
-                    SyncedBTCAccount(key: "son-river-mason", label: "River", custody: .exchange, btc: dto.river, fiat: 0, owner: .mason),
-                    SyncedBTCAccount(key: "son-coldcard-mason", label: "Multisig", custody: .selfCustody, btc: dto.coldcard, fiat: 0, owner: .mason),
+                    SyncedBTCAccount(key: Self.btcAccountMirrorKey(owner: .mason, canonicalKey: "strike"), label: "Strike", custody: .exchange, btc: dto.strike, fiat: 0, owner: .mason),
+                    SyncedBTCAccount(key: Self.btcAccountMirrorKey(owner: .mason, canonicalKey: "river"), label: "River", custody: .exchange, btc: dto.river, fiat: 0, owner: .mason),
+                    SyncedBTCAccount(key: Self.btcAccountMirrorKey(owner: .mason, canonicalKey: "coldcard"), label: "Multisig", custody: .selfCustody, btc: dto.coldcard, fiat: 0, owner: .mason),
                 ]
             },
         )
