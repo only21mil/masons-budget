@@ -53,8 +53,13 @@ enum ConvexConfig {
     /// Whether `url` addresses the household deployment, the only origin the
     /// household read token may be sent to.
     static func isHouseholdDeployment(_ url: URL) -> Bool {
-        url.scheme == "https" && url.host?.lowercased() == deploymentURL.host
-            && (url.port == nil || url.port == 443) && url.user == nil && url.password == nil
+        url.host?.lowercased() == deploymentURL.host && isBareHTTPSOrigin(url)
+    }
+
+    /// An HTTPS origin on the default port with nothing else in the URL.
+    static func isBareHTTPSOrigin(_ url: URL) -> Bool {
+        url.scheme == "https" && (url.port == nil || url.port == 443)
+            && url.user == nil && url.password == nil
             && (url.path.isEmpty || url.path == "/") && url.query == nil && url.fragment == nil
     }
 
@@ -439,11 +444,7 @@ enum AppWritebackConfig {
     static func resolvedBaseURL(_ raw: String) -> URL? {
         guard let url = URL(string: raw) else { return nil }
         guard url.host?.lowercased() == "framework-desktop.tail69757d.ts.net" else { return url }
-        guard url.scheme == "https", url.user == nil, url.password == nil,
-              url.port == nil || url.port == 443,
-              url.path.isEmpty || url.path == "/", url.query == nil, url.fragment == nil
-        else { return nil }
-        return ConvexConfig.deploymentURL
+        return ConvexConfig.isBareHTTPSOrigin(url) ? ConvexConfig.deploymentURL : nil
     }
 
     static var deviceID: String {
