@@ -991,8 +991,8 @@ final class AppWritebackClient: Sendable {
         id: String,
         activeProfile: FamilyMember,
     ) async throws -> Double {
-        // taskSession only returns the household deployment, the one origin the
-        // row reader's household read token may go to.
+        // Pairs if needed and checks the profile binding. The reader below is
+        // fixed to the household deployment, the only origin its read token may reach.
         _ = try await taskSession(activeProfile: activeProfile)
         let reader = ConvexRowReader(client: ConvexClient(
             deploymentURL: ConvexConfig.deploymentURL,
@@ -1393,7 +1393,6 @@ final class AppWritebackClient: Sendable {
         guard let code = object?["code"] as? String else { return nil }
         return AppWritebackRemoteErrorCode(rawValue: code)
     }
-
 
     private static func randomBase64URL(byteCount: Int) throws -> String {
         var bytes = [UInt8](repeating: 0, count: byteCount)
