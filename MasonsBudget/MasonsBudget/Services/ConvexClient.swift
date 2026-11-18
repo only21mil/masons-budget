@@ -47,7 +47,20 @@ enum ConvexConfig {
     /// The audited production deployment. A mutable preference here allowed a
     /// local setting or stale migration value to redirect authenticated traffic.
     static var deploymentURL: URL {
-        URL(string: "https://framework-desktop.tail69757d.ts.net")!
+        URL(string: "https://victors-macbook-pro.tail69757d.ts.net")!
+    }
+
+    /// Whether `url` addresses the household deployment, the only origin the
+    /// household read token may be sent to.
+    static func isHouseholdDeployment(_ url: URL) -> Bool {
+        url.host?.lowercased() == deploymentURL.host && isBareHTTPSOrigin(url)
+    }
+
+    /// An HTTPS origin on the default port with nothing else in the URL.
+    static func isBareHTTPSOrigin(_ url: URL) -> Bool {
+        url.scheme == "https" && (url.port == nil || url.port == 443)
+            && url.user == nil && url.password == nil
+            && (url.path.isEmpty || url.path == "/") && url.query == nil && url.fragment == nil
     }
 
     // Resolving a token performs Security-framework I/O (and the Wave-1
@@ -423,7 +436,15 @@ enum AppWritebackConfig {
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !raw.isEmpty
         else { return nil }
-        return URL(string: raw)
+        return resolvedBaseURL(raw)
+    }
+
+    /// Existing pairing credentials belong to the same restored household
+    /// deployment. Resolve its retired origin without rewriting credentials.
+    static func resolvedBaseURL(_ raw: String) -> URL? {
+        guard let url = URL(string: raw) else { return nil }
+        guard url.host?.lowercased() == "framework-desktop.tail69757d.ts.net" else { return url }
+        return ConvexConfig.isBareHTTPSOrigin(url) ? ConvexConfig.deploymentURL : nil
     }
 
     static var deviceID: String {
@@ -851,69 +872,35 @@ final class AppWritebackClient: Sendable {
     ) async throws {
         let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed),
-              let scheme = url.scheme,
-              let host = url.host,
-              let pair = Self.pairFragment(from: url)
+              let pair = Self.pairFragment(from: url),
+              let baseURL = Self.pairingBaseURL(from: url)
         else {
             throw AppWritebackError.invalidPairingURL
         }
 
-        var baseComponents = URLComponents()
-        baseComponents.scheme = scheme
-        baseComponents.host = host
-        baseComponents.port = url.port
-        guard let baseURL = baseComponents.url else {
+        // Pairing is pinned to the household deployment: a link cannot choose
+        // where the proof, and later the device's writes, are sent.
+        guard ConvexConfig.isHouseholdDeployment(baseURL) else {
             throw AppWritebackError.invalidPairingURL
         }
-
-        if Self.isConvexBaseURL(baseURL) {
-            try await claimConvexPairing(
-                baseURL: baseURL,
-                pair: pair,
-                deviceName: deviceName,
-                profile: profile,
-            )
-            return
-        }
-
-        let endpoint = baseURL
-            .appendingPathComponent("api")
-            .appendingPathComponent("mobile")
-            .appendingPathComponent("pair")
-            .appendingPathComponent("claim")
-        guard endpoint.scheme == "https" || endpoint.host == "localhost" || endpoint.host == "127.0.0.1" else {
-            throw AppWritebackError.invalidBaseURL
-        }
-
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "pairId": pair.pairID,
-            "proofHash": pair.proofHash,
-            "deviceName": deviceName,
-        ])
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw AppWritebackError.httpError(0)
-        }
-        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        if http.statusCode != 200 {
-            throw AppWritebackError.serverError
-        }
-        guard let deviceID = object?["deviceId"] as? String,
-              let deviceToken = object?["deviceToken"] as? String
-        else {
-            throw AppWritebackError.unexpectedResponse
-        }
-
-        guard AppWritebackConfig.save(
-            baseURL: baseURL.absoluteString,
-            deviceID: deviceID,
-            deviceToken: deviceToken,
+        try await claimConvexPairing(
+            baseURL: baseURL,
+            pair: pair,
+            deviceName: deviceName,
             profile: profile,
-        ) else { throw AppWritebackError.credentialStorageFailed }
+        )
+    }
+
+    /// The deployment a pairing link claims against. Links issued before the
+    /// household backend moved name its retired origin; they claim against the
+    /// current one, so the pairing proof never reaches the retired host.
+    static func pairingBaseURL(from url: URL) -> URL? {
+        guard let scheme = url.scheme, let host = url.host else { return nil }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = host
+        components.port = url.port
+        return components.url.flatMap { AppWritebackConfig.resolvedBaseURL($0.absoluteString) }
     }
 
     func claimBundledPairing(
@@ -1005,9 +992,11 @@ final class AppWritebackClient: Sendable {
         id: String,
         activeProfile: FamilyMember,
     ) async throws -> Double {
-        let taskSession = try await taskSession(activeProfile: activeProfile)
+        // Pairs if needed and checks the profile binding. The reader below is
+        // fixed to the household deployment, the only origin its read token may reach.
+        _ = try await taskSession(activeProfile: activeProfile)
         let reader = ConvexRowReader(client: ConvexClient(
-            deploymentURL: taskSession.baseURL,
+            deploymentURL: ConvexConfig.deploymentURL,
             session: session,
         ))
         let matches = try await reader.todos(viewer: activeProfile).filter { todo in
@@ -1064,7 +1053,7 @@ final class AppWritebackClient: Sendable {
               !AppWritebackConfig.deviceID.isEmpty,
               !AppWritebackConfig.deviceToken.isEmpty
         else { throw AppWritebackError.notConfigured }
-        guard Self.isConvexBaseURL(baseURL) else {
+        guard ConvexConfig.isHouseholdDeployment(baseURL) else {
             throw AppWritebackError.serverError
         }
 
@@ -1287,7 +1276,7 @@ final class AppWritebackClient: Sendable {
         if let error = Self.ledgerProfileBindingError(boundProfile: AppWritebackConfig.boundProfile, activeProfile: activeProfile) {
             throw AppWritebackError.remote(error)
         }
-        guard Self.isConvexBaseURL(baseURL) else { throw AppWritebackError.invalidBaseURL }
+        guard ConvexConfig.isHouseholdDeployment(baseURL) else { throw AppWritebackError.invalidBaseURL }
         return (baseURL, AppWritebackConfig.deviceID, AppWritebackConfig.deviceToken)
     }
 
@@ -1313,7 +1302,7 @@ final class AppWritebackClient: Sendable {
         ) {
             throw AppWritebackError.remote(bindingError)
         }
-        guard Self.isConvexBaseURL(baseURL) else {
+        guard ConvexConfig.isHouseholdDeployment(baseURL) else {
             throw AppWritebackError.invalidBaseURL
         }
         return (
@@ -1404,13 +1393,6 @@ final class AppWritebackClient: Sendable {
         }
         guard let code = object?["code"] as? String else { return nil }
         return AppWritebackRemoteErrorCode(rawValue: code)
-    }
-
-    private static func isConvexBaseURL(_ url: URL) -> Bool {
-        guard let host = url.host?.lowercased() else { return false }
-        if host == "convex.cloud" || host.hasSuffix(".convex.cloud") { return true }
-        // Self-hosted backend on the tailnet (household origin, pinned in deploymentURL).
-        return host == "framework-desktop.tail69757d.ts.net"
     }
 
     private static func randomBase64URL(byteCount: Int) throws -> String {

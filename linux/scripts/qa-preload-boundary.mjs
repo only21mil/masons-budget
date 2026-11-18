@@ -331,11 +331,19 @@ require_(
   mutationUrls.length === 0,
   "convexMutations: only the reviewed household origin is pinned",
 )
+// Besides the household origin, approvedDeployment.ts names only the retired
+// origin that saved settings may still hold, and maps it onto the household
+// origin, so the retired host is never an outbound destination.
 const approvedOriginUrls = approvedDeploymentSource.match(/https?:\/\/[A-Za-z0-9._:/-]+/g) ?? []
 require_(
-  approvedOriginUrls.length === 1 &&
-    approvedOriginUrls[0] === "https://framework-desktop.tail69757d.ts.net",
-  "approvedDeployment: exactly the reviewed household origin is pinned",
+  approvedOriginUrls.length === 2 &&
+    approvedOriginUrls[0] === "https://victors-macbook-pro.tail69757d.ts.net" &&
+    approvedOriginUrls[1] === "https://framework-desktop.tail69757d.ts.net" &&
+    approvedDeploymentSource.includes(
+      "return origin === RETIRED_CONVEX_ORIGIN ? APPROVED_CONVEX_ORIGIN : origin",
+    ) &&
+    approvedDeploymentSource.includes("return APPROVED_CONVEX_ORIGIN\n"),
+  "approvedDeployment: only the household origin is pinned; the retired origin maps onto it",
 )
 require_(
   convexMutationsSource.includes('"convex_encoded_json"') &&
@@ -481,7 +489,7 @@ for (const [input, expected] of fileNameCases) {
 const SAMPLE_CREDENTIAL = "not-a-real-read-credential-0000"
 // The deployment origin is pinned like mutations, so the sample is the
 // household origin itself — it is repo-public, never a secret.
-const SAMPLE_DEPLOYMENT = "https://framework-desktop.tail69757d.ts.net"
+const SAMPLE_DEPLOYMENT = "https://victors-macbook-pro.tail69757d.ts.net"
 
 const enabledEnv = {
   VOGEL_VAULT_REMOTE_READ: "1",

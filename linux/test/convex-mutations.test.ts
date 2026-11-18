@@ -90,19 +90,26 @@ function transactionRequest() {
 describe("paired-device main controller", () => {
   it("pins trusted routing to the one approved production origin", () => {
     expect(resolveApprovedDeploymentOrigin(
+      "https://victors-macbook-pro.tail69757d.ts.net/",
+    )).toBe("https://victors-macbook-pro.tail69757d.ts.net")
+    expect(resolveApprovedDeploymentOrigin(
+      "  https://victors-macbook-pro.tail69757d.ts.net/  ",
+    )).toBe("https://victors-macbook-pro.tail69757d.ts.net")
+    // Launchers installed before the backend moved still name the retired host.
+    expect(resolveApprovedDeploymentOrigin(
       "https://framework-desktop.tail69757d.ts.net/",
-    )).toBe("https://framework-desktop.tail69757d.ts.net")
-    expect(resolveApprovedDeploymentOrigin(
-      "  https://framework-desktop.tail69757d.ts.net/  ",
-    )).toBe("https://framework-desktop.tail69757d.ts.net")
-    expect(resolveApprovedDeploymentOrigin(
-      "https://other.convex.cloud/",
-    )).toBeNull()
+    )).toBe("https://victors-macbook-pro.tail69757d.ts.net")
     expect(resolveApprovedDeploymentOrigin(
       "https://framework-desktop.tail69757d.ts.net.attacker.test/",
     )).toBeNull()
     expect(resolveApprovedDeploymentOrigin(
-      "https://framework-desktop.tail69757d.ts.net/path",
+      "https://other.convex.cloud/",
+    )).toBeNull()
+    expect(resolveApprovedDeploymentOrigin(
+      "https://victors-macbook-pro.tail69757d.ts.net.attacker.test/",
+    )).toBeNull()
+    expect(resolveApprovedDeploymentOrigin(
+      "https://victors-macbook-pro.tail69757d.ts.net/path",
     )).toBeNull()
   })
 
@@ -490,7 +497,7 @@ describe("paired-device main controller", () => {
     })
     await expect(invalidController.pair({
       pairingInput:
-        "https://framework-desktop.tail69757d.ts.net/#pair=pair_identifier.secret_identifier",
+        "https://victors-macbook-pro.tail69757d.ts.net/#pair=pair_identifier.secret_identifier",
       deviceName: "Fedora desktop",
     }, "victor")).resolves.toEqual({ status: "failed", code: "invalid-input" })
   })

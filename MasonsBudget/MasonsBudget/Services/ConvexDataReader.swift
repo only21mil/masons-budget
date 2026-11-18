@@ -90,6 +90,13 @@ actor ConvexDataReader {
         return document
     }
 
+    /// The `btcAccounts` row key for a balance-document account key. Mason's
+    /// rows are stored as `son-<key>-mason` (`btcAccountMirrorKey` in
+    /// convex/tables.ts); adult keys are stored unchanged.
+    static func btcAccountMirrorKey(owner: FamilyMember, canonicalKey: String) -> String {
+        owner == .mason ? "son-\(canonicalKey)-mason" : canonicalKey
+    }
+
     /// Account rows retain dynamic account keys and canonical owners, including children.
     func readBalanceAccounts(viewer: FamilyMember, owner: FamilyMember? = nil) async throws -> [SyncedBTCAccount] {
         let targetOwner = owner ?? viewer.ledgerOwner
@@ -104,7 +111,8 @@ actor ConvexDataReader {
                       rows.count == document.accounts.count,
                       rows.allSatisfy({ row in
                           row.owner == document.owner && document.accounts.contains {
-                              $0.key == row.key && $0.sats == row.sats && $0.custody == row.custody
+                              Self.btcAccountMirrorKey(owner: document.owner, canonicalKey: $0.key) == row.key
+                                  && $0.sats == row.sats && $0.custody == row.custody
                           }
                       })
                 else { throw ConvexRowDecodeError.incompleteSnapshot }
@@ -127,9 +135,9 @@ actor ConvexDataReader {
                 guard targetOwner == .mason else { throw ConvexRowDecodeError.missingDocument }
                 let dto = try await client.fetchFile("son-balances", as: LegacySonBalancesDTO.self)
                 return [
-                    SyncedBTCAccount(key: "son-strike-mason", label: "Strike", custody: .exchange, btc: dto.strike, fiat: 0, owner: .mason),
-                    SyncedBTCAccount(key: "son-river-mason", label: "River", custody: .exchange, btc: dto.river, fiat: 0, owner: .mason),
-                    SyncedBTCAccount(key: "son-coldcard-mason", label: "Multisig", custody: .selfCustody, btc: dto.coldcard, fiat: 0, owner: .mason),
+                    SyncedBTCAccount(key: Self.btcAccountMirrorKey(owner: .mason, canonicalKey: "strike"), label: "Strike", custody: .exchange, btc: dto.strike, fiat: 0, owner: .mason),
+                    SyncedBTCAccount(key: Self.btcAccountMirrorKey(owner: .mason, canonicalKey: "river"), label: "River", custody: .exchange, btc: dto.river, fiat: 0, owner: .mason),
+                    SyncedBTCAccount(key: Self.btcAccountMirrorKey(owner: .mason, canonicalKey: "coldcard"), label: "Multisig", custody: .selfCustody, btc: dto.coldcard, fiat: 0, owner: .mason),
                 ]
             },
         )

@@ -136,10 +136,11 @@ test("refuses unapproved origins and redirects before writing any credential", a
 
   try {
     for (const convexUrl of [
-      "http://framework-desktop.tail69757d.ts.net",
+      "https://framework-desktop.tail69757d.ts.net",
+      "http://victors-macbook-pro.tail69757d.ts.net",
       "https://example.invalid",
-      "https://user:pass@framework-desktop.tail69757d.ts.net",
-      "https://framework-desktop.tail69757d.ts.net/path",
+      "https://user:pass@victors-macbook-pro.tail69757d.ts.net",
+      "https://victors-macbook-pro.tail69757d.ts.net/path",
     ]) {
       const result = await mint(convexUrl);
       assert.equal(result.status, 2, convexUrl);

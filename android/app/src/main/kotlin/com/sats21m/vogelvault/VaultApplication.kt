@@ -554,7 +554,7 @@ open class VaultApplication : Application() {
 }
 
 // Public routing configuration, not a credential.
-internal const val PRODUCTION_DEPLOYMENT = "https://framework-desktop.tail69757d.ts.net"
+internal const val PRODUCTION_DEPLOYMENT = com.sats21m.vogelvault.data.HOUSEHOLD_DEPLOYMENT_URL
 
 internal fun bundledReadBootstrapPair(): String =
     BuildConfig.CONVEX_READ_BOOTSTRAP_PAIR

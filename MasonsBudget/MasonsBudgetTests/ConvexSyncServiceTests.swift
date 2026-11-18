@@ -711,7 +711,7 @@ final class ConvexSyncServiceTests: XCTestCase {
                         let owners = scope == "visible" ? ["victor", "mason"] : ["victor"]
                         value = ["complete": true, "rows": owners.map { owner -> [String: Any] in
                             ["owner": owner, "schemaVersion": 2, "asOf": "2026-09-01",
-                             "accounts": [["key": owner + "-wallet", "label": owner, "custody": "exchange", "sats": 100_000_000]],
+                             "accounts": [["key": owner == "mason" ? "strike" : owner + "-wallet", "label": owner, "custody": "exchange", "sats": 100_000_000]],
                              "totals": ["sats": 100_000_000, "exchangeSats": 100_000_000, "selfCustodySats": 0]]
                         }]
                     } else if path == "tables:listBtcAccounts" {
@@ -719,7 +719,7 @@ final class ConvexSyncServiceTests: XCTestCase {
                         XCTAssertEqual(args?["scope"] as? String, "visible")
                         value = ["complete": true, "rows": ["victor", "mason"].map { owner -> [String: Any] in
                             ["owner": owner, "schemaVersion": 2, "asOf": "2026-09-01",
-                             "key": owner + "-wallet", "label": owner, "custody": "exchange", "sats": 100_000_000]
+                             "key": owner == "mason" ? "son-strike-mason" : owner + "-wallet", "label": owner, "custody": "exchange", "sats": 100_000_000]
                         }]
                     } else if path == "dataFiles:get", args?["name"] as? String == "son-balances" {
                         value = ["strike": 1, "river": 0, "coldcard": 0, "total": 1, "lastUpdated": "2026-09-01"]
@@ -747,8 +747,14 @@ final class ConvexSyncServiceTests: XCTestCase {
             let child = accounts.filter { $0.ownerMember == .mason }
             XCTAssertEqual(child.reduce(Decimal(0)) { $0 + $1.btc }, 1)
             XCTAssertFalse(child.contains { $0.key == "obsolete-mason" })
-            XCTAssertTrue(child.contains { $0.key == (rowReads ? "mason-wallet" : "son-strike-mason") })
+            XCTAssertTrue(child.contains { $0.key == "son-strike-mason" })
         }
+    }
+
+    func testBalanceAccountMirrorKeyMatchesBackendRowKeys() {
+        XCTAssertEqual(ConvexDataReader.btcAccountMirrorKey(owner: .mason, canonicalKey: "coldcard"), "son-coldcard-mason")
+        XCTAssertEqual(ConvexDataReader.btcAccountMirrorKey(owner: .victor, canonicalKey: "coldcard"), "coldcard")
+        XCTAssertEqual(ConvexDataReader.btcAccountMirrorKey(owner: .rachel, canonicalKey: "river"), "river")
     }
 
     @MainActor
