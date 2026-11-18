@@ -32,6 +32,25 @@ final class AppWritebackConfigTests: XCTestCase {
         XCTAssertEqual(AppWritebackClient.pairingBaseURL(from: cloud)?.absoluteString, "https://example.convex.cloud")
     }
 
+    func testPairingRefusesEveryOriginButTheHouseholdBeforeSendingTheProof() async {
+        let client = AppWritebackClient(session: URLSession(configuration: .ephemeral))
+        for link in [
+            "https://keen-elephant-452.convex.cloud/#pair=pairid.secret",
+            "https://example.convex.cloud/#pair=pairid.secret",
+            "https://victors-macbook-pro.tail69757d.ts.net.example.test/#pair=pairid.secret",
+            "https://pairing.example.test/#pair=pairid.secret",
+        ] {
+            do {
+                try await client.claimPairing(pairingURL: link, deviceName: "Test", profile: .victor)
+                XCTFail("Pairing must refuse \(link)")
+            } catch {
+                guard case AppWritebackError.invalidPairingURL = error else {
+                    return XCTFail("Expected invalidPairingURL before any request for \(link), received \(error)")
+                }
+            }
+        }
+    }
+
     func testHouseholdReadTokenOnlyGoesToTheHouseholdDeployment() throws {
         for accepted in ["https://victors-macbook-pro.tail69757d.ts.net", "https://victors-macbook-pro.tail69757d.ts.net/"] {
             XCTAssertTrue(ConvexConfig.isHouseholdDeployment(try XCTUnwrap(URL(string: accepted))), accepted)

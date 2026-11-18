@@ -877,54 +877,17 @@ final class AppWritebackClient: Sendable {
             throw AppWritebackError.invalidPairingURL
         }
 
-        if Self.isConvexBaseURL(baseURL) {
-            try await claimConvexPairing(
-                baseURL: baseURL,
-                pair: pair,
-                deviceName: deviceName,
-                profile: profile,
-            )
-            return
+        // Pairing is pinned to the household deployment: a link cannot choose
+        // where the proof, and later the device's writes, are sent.
+        guard ConvexConfig.isHouseholdDeployment(baseURL) else {
+            throw AppWritebackError.invalidPairingURL
         }
-
-        let endpoint = baseURL
-            .appendingPathComponent("api")
-            .appendingPathComponent("mobile")
-            .appendingPathComponent("pair")
-            .appendingPathComponent("claim")
-        guard endpoint.scheme == "https" || endpoint.host == "localhost" || endpoint.host == "127.0.0.1" else {
-            throw AppWritebackError.invalidBaseURL
-        }
-
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "pairId": pair.pairID,
-            "proofHash": pair.proofHash,
-            "deviceName": deviceName,
-        ])
-
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw AppWritebackError.httpError(0)
-        }
-        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        if http.statusCode != 200 {
-            throw AppWritebackError.serverError
-        }
-        guard let deviceID = object?["deviceId"] as? String,
-              let deviceToken = object?["deviceToken"] as? String
-        else {
-            throw AppWritebackError.unexpectedResponse
-        }
-
-        guard AppWritebackConfig.save(
-            baseURL: baseURL.absoluteString,
-            deviceID: deviceID,
-            deviceToken: deviceToken,
+        try await claimConvexPairing(
+            baseURL: baseURL,
+            pair: pair,
+            deviceName: deviceName,
             profile: profile,
-        ) else { throw AppWritebackError.credentialStorageFailed }
+        )
     }
 
     /// The deployment a pairing link claims against. Links issued before the
@@ -1028,11 +991,9 @@ final class AppWritebackClient: Sendable {
         id: String,
         activeProfile: FamilyMember,
     ) async throws -> Double {
-        let taskSession = try await taskSession(activeProfile: activeProfile)
-        // The row reader sends the household read token; never to another paired origin.
-        guard ConvexConfig.isHouseholdDeployment(taskSession.baseURL) else {
-            throw AppWritebackError.invalidBaseURL
-        }
+        // taskSession only returns the household deployment, the one origin the
+        // row reader's household read token may go to.
+        _ = try await taskSession(activeProfile: activeProfile)
         let reader = ConvexRowReader(client: ConvexClient(
             deploymentURL: ConvexConfig.deploymentURL,
             session: session,
@@ -1091,7 +1052,7 @@ final class AppWritebackClient: Sendable {
               !AppWritebackConfig.deviceID.isEmpty,
               !AppWritebackConfig.deviceToken.isEmpty
         else { throw AppWritebackError.notConfigured }
-        guard Self.isConvexBaseURL(baseURL) else {
+        guard ConvexConfig.isHouseholdDeployment(baseURL) else {
             throw AppWritebackError.serverError
         }
 
@@ -1314,7 +1275,7 @@ final class AppWritebackClient: Sendable {
         if let error = Self.ledgerProfileBindingError(boundProfile: AppWritebackConfig.boundProfile, activeProfile: activeProfile) {
             throw AppWritebackError.remote(error)
         }
-        guard Self.isConvexBaseURL(baseURL) else { throw AppWritebackError.invalidBaseURL }
+        guard ConvexConfig.isHouseholdDeployment(baseURL) else { throw AppWritebackError.invalidBaseURL }
         return (baseURL, AppWritebackConfig.deviceID, AppWritebackConfig.deviceToken)
     }
 
@@ -1340,7 +1301,7 @@ final class AppWritebackClient: Sendable {
         ) {
             throw AppWritebackError.remote(bindingError)
         }
-        guard Self.isConvexBaseURL(baseURL) else {
+        guard ConvexConfig.isHouseholdDeployment(baseURL) else {
             throw AppWritebackError.invalidBaseURL
         }
         return (
@@ -1433,12 +1394,6 @@ final class AppWritebackClient: Sendable {
         return AppWritebackRemoteErrorCode(rawValue: code)
     }
 
-    private static func isConvexBaseURL(_ url: URL) -> Bool {
-        guard let host = url.host?.lowercased() else { return false }
-        if host == "convex.cloud" || host.hasSuffix(".convex.cloud") { return true }
-        // Self-hosted backend on the tailnet: the household origin pinned in deploymentURL.
-        return host == ConvexConfig.deploymentURL.host?.lowercased()
-    }
 
     private static func randomBase64URL(byteCount: Int) throws -> String {
         var bytes = [UInt8](repeating: 0, count: byteCount)
